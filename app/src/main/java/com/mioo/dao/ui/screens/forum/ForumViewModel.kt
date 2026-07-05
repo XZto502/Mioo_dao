@@ -109,6 +109,7 @@ class ForumViewModel @Inject constructor(
                         }
                         if (newThreads.isNotEmpty()) {
                             currentPage++
+                            threadRepository.smartPreloadThreads(newThreads)
                         }
                     }
                     is XdResponse.Error -> {
@@ -150,6 +151,7 @@ class ForumViewModel @Inject constructor(
                         }
                         if (freshThreads.isNotEmpty()) {
                             currentPage++
+                            threadRepository.smartPreloadThreads(freshThreads)
                         }
                     }
                     is XdResponse.Error -> {

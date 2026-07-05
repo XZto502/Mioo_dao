@@ -9,6 +9,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import com.mioo.dao.data.model.XdResponse
 import javax.inject.Inject
 
 import com.mioo.dao.data.local.HistoryEntity
@@ -115,5 +118,58 @@ class SettingsViewModel @Inject constructor(
 
     suspend fun saveNewThreadDraft(draft: String) {
         settingsRepository.saveNewThreadDraft(draft)
+    }
+
+    private val _cacheSizeState = MutableStateFlow("0.0 KB")
+    val cacheSizeState: StateFlow<String> = _cacheSizeState.asStateFlow()
+
+    private val _preloadProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val preloadProgressState: StateFlow<Pair<Int, Int>?> = _preloadProgress.asStateFlow()
+
+    private val _isPreloading = MutableStateFlow(false)
+    val isPreloadingState: StateFlow<Boolean> = _isPreloading.asStateFlow()
+
+    init {
+        updateCacheSize()
+    }
+
+    fun updateCacheSize() {
+        viewModelScope.launch {
+            threadRepository.getCacheSize().collect { size ->
+                _cacheSizeState.value = size
+            }
+        }
+    }
+
+    fun clearCache() {
+        viewModelScope.launch {
+            threadRepository.clearCache().collect { response ->
+                if (response is XdResponse.Success) {
+                    updateCacheSize()
+                }
+            }
+        }
+    }
+
+    fun preloadBookmarks() {
+        if (_isPreloading.value) return
+        _isPreloading.value = true
+        viewModelScope.launch {
+            threadRepository.preloadBookmarks { current, total ->
+                _preloadProgress.value = Pair(current, total)
+            }.collect { response ->
+                _isPreloading.value = false
+                _preloadProgress.value = null
+                updateCacheSize()
+            }
+        }
+    }
+
+    fun updateSmartPreloadMode(mode: String) {
+        settingsRepository.updateSmartPreloadMode(mode)
+    }
+
+    fun updatePreloadCount(count: Int) {
+        settingsRepository.updatePreloadCount(count)
     }
 }

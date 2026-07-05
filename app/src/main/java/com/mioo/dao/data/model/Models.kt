@@ -21,5 +21,7 @@ data class UserSettings(
     val blockedThreads: List<String> = emptyList(),
     val blockedUsers: List<String> = emptyList(),
     val pinnedForums: List<String> = emptyList(),
-    val blockedKeywords: List<String> = emptyList()
+    val blockedKeywords: List<String> = emptyList(),
+    val smartPreloadMode: String = "WIFI_ONLY",
+    val preloadCount: Int = 10
 )

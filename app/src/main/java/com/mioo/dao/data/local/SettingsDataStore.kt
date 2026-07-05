@@ -39,6 +39,8 @@ class SettingsDataStore(private val context: Context) {
         val KEY_BLOCKED_KEYWORDS = stringPreferencesKey("blocked_keywords")
         val KEY_THREAD_DRAFTS = stringPreferencesKey("thread_drafts")
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
+        val KEY_SMART_PRELOAD_MODE = stringPreferencesKey("smart_preload_mode")
+        val KEY_PRELOAD_COUNT = intPreferencesKey("preload_count")
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data
@@ -312,6 +314,30 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
+    val smartPreloadModeFlow: Flow<String> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_SMART_PRELOAD_MODE] ?: "WIFI_ONLY"
+        }
+
+    val preloadCountFlow: Flow<Int> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_PRELOAD_COUNT] ?: 10
+        }
+
     suspend fun saveUserHash(userHash: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_USER_HASH] = userHash
@@ -321,6 +347,18 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveDarkMode(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_DARK_MODE] = enabled
+        }
+    }
+
+    suspend fun saveSmartPreloadMode(mode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SMART_PRELOAD_MODE] = mode
+        }
+    }
+
+    suspend fun savePreloadCount(count: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_PRELOAD_COUNT] = count
         }
     }
 

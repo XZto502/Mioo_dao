@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.mioo.dao.data.local.AppDatabase
 import com.mioo.dao.data.local.HistoryDao
+import com.mioo.dao.data.local.CacheDao
 import com.mioo.dao.data.local.SettingsDataStore
 import dagger.Module
 import dagger.Provides
@@ -23,13 +24,21 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "mioo_dao.db"
-        ).build()
+        )
+        .fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides
     @Singleton
     fun provideHistoryDao(database: AppDatabase): HistoryDao {
         return database.historyDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCacheDao(database: AppDatabase): CacheDao {
+        return database.cacheDao()
     }
 
     @Provides

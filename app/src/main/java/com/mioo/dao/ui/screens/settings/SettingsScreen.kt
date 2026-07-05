@@ -49,6 +49,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -690,6 +693,148 @@ fun SettingsScreen(
                             }
                         }
                         HorizontalDivider()
+                    }
+                }
+            }
+        }
+
+        // 5. Offline and Caching Settings (离线与缓存设置)
+        val cacheSize by viewModel.cacheSizeState.collectAsState()
+        val isPreloading by viewModel.isPreloadingState.collectAsState()
+        val preloadProgress by viewModel.preloadProgressState.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Save, contentDescription = "离线缓存")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "离线阅读与智能预加载",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后会在网络连接可用时预先下载帖子，方便您在无网环境下进行阅读。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Cache Size & Clear
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "本地离线缓存大小",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                        Text(
+                            text = cacheSize,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.clearCache() },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("清除缓存")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Smart Preload Mode
+                Text(
+                    text = "自动预加载网络模式",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "WIFI_ONLY" to "仅限 WiFi",
+                        "ALL_NETWORKS" to "所有网络",
+                        "DISABLED" to "关闭"
+                    ).forEach { (mode, label) ->
+                        val selected = settings.smartPreloadMode == mode
+                        FilterChip(
+                            selected = selected,
+                            onClick = { viewModel.updateSmartPreloadMode(mode) },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Preload Count Slider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "列表预加载数: ${settings.preloadCount} 串",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                    )
+                }
+                Slider(
+                    value = settings.preloadCount.toFloat(),
+                    onValueChange = { viewModel.updatePreloadCount(it.toInt()) },
+                    valueRange = 5f..30f,
+                    steps = 4
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Preload Bookmarks
+                Button(
+                    onClick = { viewModel.preloadBookmarks() },
+                    enabled = !isPreloading,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(if (isPreloading) "正在缓存收藏夹..." else "一键缓存所有收藏串")
+                }
+
+                if (isPreloading && preloadProgress != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val (current, total) = preloadProgress!!
+                    val progressFraction = if (total > 0) current.toFloat() / total.toFloat() else 0f
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { progressFraction },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "$current / $total",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
