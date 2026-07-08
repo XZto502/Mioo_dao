@@ -2,6 +2,7 @@ package com.mioo.dao.ui.screens.settings
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.journeyapps.barcodescanner.ScanContract
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -837,6 +839,71 @@ fun SettingsScreen(
                         )
                     }
                 }
+            }
+        }
+
+        // 6. About the App (关于应用)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = "关于应用")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "关于 喵岛",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("v1.1.0", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("开源协议", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("GPL v3", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("项目源码 (GitHub)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "https://github.com/XZto502/Mioo_dao",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/XZto502/Mioo_dao"))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                // ignore
+                            }
+                        }
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = "喵岛是一款专为 X岛 (nmbxd.com) 设计开发的第三方 Android 客户端，支持毛玻璃拟态、自动静默草稿箱、多维关键字屏蔽、本地离线阅读与智能预加载、一键全串下载等丰富功能。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
