@@ -550,10 +550,12 @@ fun ForumScreen(
                     }
                 }
 
-                PullToRefreshContainer(
-                    state = pullToRefreshState,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                )
+                if (pullToRefreshState.isRefreshing || pullToRefreshState.progress > 0f) {
+                    PullToRefreshContainer(
+                        state = pullToRefreshState,
+                        modifier = Modifier.align(Alignment.TopCenter)
+                    )
+                }
             }
         }
     }
