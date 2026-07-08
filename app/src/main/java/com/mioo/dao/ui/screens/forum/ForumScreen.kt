@@ -440,7 +440,11 @@ fun ForumScreen(
                         bottom = 100.dp
                     )
                 ) {
-                    items(filteredThreads, key = { it.id }) { thread ->
+                    items(
+                        items = filteredThreads,
+                        key = { it.id },
+                        contentType = { "thread_card" }
+                    ) { thread ->
                         var showBlockDialog by remember { mutableStateOf(false) }
 
                             if (showBlockDialog) {

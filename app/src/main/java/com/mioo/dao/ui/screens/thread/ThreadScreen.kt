@@ -355,19 +355,27 @@ fun ThreadScreen(
                                 )
                             }
 
+                            val mainThreadPostData = remember(mainThread) { mainThread.toPostData() }
+                            val onQuoteClickRemembered = remember { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } }
+                            val onImageClickRemembered = remember { { url: String -> activeImageUrl = url } }
+                            val onLongClickRemembered = remember { { showBlockDialog = true } }
                             ThreadCard(
-                                postData = mainThread.toPostData(),
+                                postData = mainThreadPostData,
                                 replyCount = mainThread.replyCount ?: 0,
                                 onThreadClick = {},
-                                onQuoteClick = { quoteNo -> viewModel.showRefPopup(quoteNo) },
-                                onImageClick = { url -> activeImageUrl = url },
-                                onLongClick = { showBlockDialog = true }
+                                onQuoteClick = onQuoteClickRemembered,
+                                onImageClick = onImageClickRemembered,
+                                onLongClick = onLongClickRemembered
                             )
                         }
                     }
 
 
-                    items(filteredReplies, key = { it.id }) { reply ->
+                    items(
+                        items = filteredReplies,
+                        key = { it.id },
+                        contentType = { "reply_card" }
+                    ) { reply ->
                         val quoteIds = remember(reply.content) {
                             val decoded = reply.content.decodeHtmlEntities()
                             val matcher = java.util.regex.Pattern.compile(">>(?:No\\.)?(\\d+)").matcher(decoded)

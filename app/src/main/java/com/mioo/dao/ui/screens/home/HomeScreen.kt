@@ -199,7 +199,11 @@ fun TimelineList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp)
         ) {
-            items(threads, key = { it.id }) { thread ->
+            items(
+                items = threads,
+                key = { it.id },
+                contentType = { "thread_card" }
+            ) { thread ->
                 var showBlockDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
 
                 if (showBlockDialog) {

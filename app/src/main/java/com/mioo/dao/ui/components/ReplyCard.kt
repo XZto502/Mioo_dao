@@ -245,7 +245,10 @@ fun ReplyCard(
                         .clickable { onImageClick(imageUrl) }
                 ) {
                     AsyncImage(
-                        model = imageUrl,
+                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(imageUrl)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = "Reply Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()
@@ -334,7 +337,10 @@ fun QuotedPostBox(
                         .clickable { onImageClick(imageUrl) }
                 ) {
                     AsyncImage(
-                        model = imageUrl,
+                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(imageUrl)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = "Quote Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()

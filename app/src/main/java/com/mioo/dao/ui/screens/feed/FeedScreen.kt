@@ -179,7 +179,11 @@ fun FeedScreen(
                     )
                 ) {
                     if (uiState.selectedFolderId == null) {
-                        items(uiState.bookmarkedThreads, key = { it.id }) { bookmark ->
+                        items(
+                            items = uiState.bookmarkedThreads,
+                            key = { it.id },
+                            contentType = { "thread_card" }
+                        ) { bookmark ->
                             val dismissState = rememberSwipeToDismissBoxState(
                                 confirmValueChange = { value ->
                                     if (value == SwipeToDismissBoxValue.EndToStart) {
@@ -229,7 +233,11 @@ fun FeedScreen(
                             )
                         }
                     } else {
-                        items(uiState.remoteThreads, key = { it.idStr }) { thread ->
+                        items(
+                            items = uiState.remoteThreads,
+                            key = { it.idStr },
+                            contentType = { "thread_card" }
+                        ) { thread ->
                             val dismissState = rememberSwipeToDismissBoxState(
                                 confirmValueChange = { value ->
                                     if (value == SwipeToDismissBoxValue.EndToStart) {

@@ -174,7 +174,10 @@ fun ThreadCard(
                         .clickable { onImageClick(imageUrl) }
                 ) {
                     AsyncImage(
-                        model = imageUrl,
+                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(imageUrl)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = "Thread Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()
