@@ -47,9 +47,7 @@ fun RefPopup(
     onDismiss: () -> Unit,
     onQuoteClick: (String) -> Unit,
     onImageClick: (String) -> Unit,
-    onViewThreadClick: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
-    currentThreadId: String? = null
+    modifier: Modifier = Modifier
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -248,29 +246,6 @@ fun RefPopup(
                                     .clip(MaterialTheme.shapes.medium)
                                     .clickable { onImageClick(imageUrl) }
                             )
-                        }
-
-                        // View Original Thread right aligned text
-                        val isMainThread = postData.resto == null || postData.resto == "0" || postData.resto == postData.id
-                        if (isMainThread) {
-                            val targetThreadId = postData.id
-                            val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
-                            if (targetThreadId != "0" && targetThreadId != "null" && targetThreadId.isNotBlank() && !isCurrentThread) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onViewThreadClick(targetThreadId) }
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    Text(
-                                        text = "查看原串",
-                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
                         }
                     }
                 }

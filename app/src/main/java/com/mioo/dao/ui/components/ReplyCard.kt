@@ -42,9 +42,7 @@ fun ReplyCard(
     onCardClick: () -> Unit,
     onCardLongClick: () -> Unit,
     modifier: Modifier = Modifier,
-    quotedPosts: List<PostData> = emptyList(),
-    onViewThreadClick: (String) -> Unit = {},
-    currentThreadId: String? = null
+    quotedPosts: List<PostData> = emptyList()
 ) {
     Card(
         modifier = modifier
@@ -205,9 +203,7 @@ fun ReplyCard(
                             quote = quote,
                             quoteColor = quoteColor,
                             onQuoteClick = onQuoteClick,
-                            onImageClick = onImageClick,
-                            onViewThreadClick = onViewThreadClick,
-                            currentThreadId = currentThreadId
+                            onImageClick = onImageClick
                         )
                     } else {
                         // Fallback if regex fails to match (e.g. duplicate quote or already processed)
@@ -215,9 +211,7 @@ fun ReplyCard(
                             quote = quote,
                             quoteColor = quoteColor,
                             onQuoteClick = onQuoteClick,
-                            onImageClick = onImageClick,
-                            onViewThreadClick = onViewThreadClick,
-                            currentThreadId = currentThreadId
+                            onImageClick = onImageClick
                         )
                     }
                 }
@@ -265,9 +259,7 @@ fun QuotedPostBox(
     quoteColor: Color,
     onQuoteClick: (String) -> Unit,
     onImageClick: (String) -> Unit,
-    onViewThreadClick: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
-    currentThreadId: String? = null
+    modifier: Modifier = Modifier
 ) {
     val isDeleted = quote.content.contains("该引用不存在") || quote.content.contains("该帖不存在") || quote.content.contains("已被删除")
 
@@ -354,29 +346,6 @@ fun QuotedPostBox(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // View Original Thread right aligned text
-            val isMainThread = quote.resto == null || quote.resto == "0" || quote.resto == quote.id
-            if (isMainThread && !isDeleted) {
-                val targetThreadId = quote.id
-                val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
-                if (targetThreadId != "0" && targetThreadId != "null" && targetThreadId.isNotBlank() && !isCurrentThread) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onViewThreadClick(targetThreadId) }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Text(
-                            text = "查看原串",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-            }
         }
 
         // Overlapping Quote Number Label
