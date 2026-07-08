@@ -1,6 +1,7 @@
 package com.mioo.dao.ui.screens.settings
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -34,6 +35,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Image
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -102,6 +106,21 @@ fun SettingsScreen(
             }
             viewModel.addCookie(cookieToAdd)
             Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scanQrFromUri(context, uri) { decodedText ->
+                if (decodedText != null) {
+                    viewModel.addCookie(decodedText)
+                    Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "未在图片中检测到二维码", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
@@ -178,7 +197,16 @@ fun SettingsScreen(
                                     scanLauncher.launch(options)
                                 }
                             ) {
-                                Icon(Icons.Default.CameraAlt, contentDescription = "扫码输入")
+                                Icon(Icons.Default.CameraAlt, contentDescription = "相机扫码")
+                            }
+                            IconButton(
+                                onClick = {
+                                    galleryLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
+                            ) {
+                                Icon(Icons.Default.Image, contentDescription = "相册扫码")
                             }
                             IconButton(
                                 onClick = {
@@ -889,5 +917,32 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+}
+
+private fun scanQrFromUri(context: Context, uri: Uri, onResult: (String?) -> Unit) {
+    try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+        inputStream?.close()
+
+        if (bitmap == null) {
+            onResult(null)
+            return
+        }
+
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        bitmap.recycle()
+
+        val source = com.google.zxing.RGBLuminanceSource(width, height, pixels)
+        val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+        val reader = com.google.zxing.qrcode.QRCodeReader()
+        val result = reader.decode(binaryBitmap)
+        onResult(result.text)
+    } catch (e: Exception) {
+        onResult(null)
     }
 }
