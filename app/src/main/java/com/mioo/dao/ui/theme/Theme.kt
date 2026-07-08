@@ -250,74 +250,12 @@ fun MiooDaoTheme(
             typography = scaledTypography,
             shapes = Shapes
         ) {
-            val infiniteTransition = rememberInfiniteTransition(label = "backgroundFlow")
-            
-            // Blob 1: top-left primary glow
-            val blob1ShiftX by infiniteTransition.animateFloat(
-                initialValue = -120f,
-                targetValue = 0f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 25000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "blob1ShiftX"
-            )
-            val blob1ShiftY by infiniteTransition.animateFloat(
-                initialValue = -100f,
-                targetValue = 40f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 18000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "blob1ShiftY"
-            )
-
-            // Blob 2: bottom-right secondary glow
-            val blob2ShiftX by infiniteTransition.animateFloat(
-                initialValue = 120f,
-                targetValue = 0f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 30000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "blob2ShiftX"
-            )
-            val blob2ShiftY by infiniteTransition.animateFloat(
-                initialValue = 120f,
-                targetValue = 20f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 22000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "blob2ShiftY"
-            )
-
-            // Blob 3: center-right accent
-            val blob3ShiftX by infiniteTransition.animateFloat(
-                initialValue = 100f,
-                targetValue = -40f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 20000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "blob3ShiftX"
-            )
-            val blob3ShiftY by infiniteTransition.animateFloat(
-                initialValue = -60f,
-                targetValue = 80f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 27000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "blob3ShiftY"
-            )
-
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(colorScheme.background)
             ) {
-                // Background blurred blobs
+                // Background blurred blobs (static for peak rendering performance)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -328,7 +266,7 @@ fun MiooDaoTheme(
                         modifier = Modifier
                             .size(400.dp)
                             .align(Alignment.TopStart)
-                            .offset(x = blob1ShiftX.dp, y = blob1ShiftY.dp)
+                            .offset(x = (-60).dp, y = (-30).dp)
                             .background(
                                 color = colorScheme.primary.copy(alpha = 0.25f),
                                 shape = androidx.compose.foundation.shape.CircleShape
@@ -339,7 +277,7 @@ fun MiooDaoTheme(
                         modifier = Modifier
                             .size(450.dp)
                             .align(Alignment.BottomEnd)
-                            .offset(x = blob2ShiftX.dp, y = blob2ShiftY.dp)
+                            .offset(x = 60.dp, y = 70.dp)
                             .background(
                                 color = colorScheme.tertiary.copy(alpha = 0.18f),
                                 shape = androidx.compose.foundation.shape.CircleShape
@@ -350,7 +288,7 @@ fun MiooDaoTheme(
                         modifier = Modifier
                             .size(250.dp)
                             .align(Alignment.CenterEnd)
-                            .offset(x = blob3ShiftX.dp, y = blob3ShiftY.dp)
+                            .offset(x = 30.dp, y = 10.dp)
                             .background(
                                 color = colorScheme.secondary.copy(alpha = 0.15f),
                                 shape = androidx.compose.foundation.shape.CircleShape
