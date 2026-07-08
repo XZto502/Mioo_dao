@@ -121,12 +121,7 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {
                             TextButton(
                                 onClick = {
-                                    try {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
-                                        startActivity(intent)
-                                    } catch (e: Exception) {
-                                        // ignore
-                                    }
+                                    com.mioo.dao.utils.UpdateDownloader.downloadAndInstall(this@MainActivity, release)
                                     showUpdateDialog = null
                                 }
                             ) {

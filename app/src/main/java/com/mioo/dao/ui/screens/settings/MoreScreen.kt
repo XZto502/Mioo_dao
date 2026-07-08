@@ -308,12 +308,7 @@ fun MoreScreen(
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            // ignore
-                        }
+                        com.mioo.dao.utils.UpdateDownloader.downloadAndInstall(context, release)
                         manualReleaseFound = null
                     }
                 ) {
