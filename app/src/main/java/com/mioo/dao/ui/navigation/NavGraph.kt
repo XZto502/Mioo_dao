@@ -155,7 +155,9 @@ fun MiooDaoNavGraph(
 
             // More (Settings Root) screen
             composable(Screen.Settings.route) {
+                val viewModel: SettingsViewModel = hiltViewModel()
                 MoreScreen(
+                    viewModel = viewModel,
                     onNavigateToSettings = {
                         navController.navigate(Screen.SettingsDetail.route)
                     },

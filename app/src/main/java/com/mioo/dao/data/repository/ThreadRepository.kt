@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.mioo.dao.data.api.XdApiService
+import com.mioo.dao.data.api.GithubApiService
+import com.mioo.dao.data.model.GithubRelease
 import com.mioo.dao.data.local.BookmarkEntity
 import com.mioo.dao.data.local.CacheDao
 import com.mioo.dao.data.local.CacheEntity
@@ -79,11 +81,13 @@ interface ThreadRepository {
     fun preloadBookmarks(onProgress: (Int, Int) -> Unit): Flow<XdResponse<Unit>>
     fun smartPreloadThreads(threads: List<Thread>)
     fun downloadFullThread(tid: String): Flow<XdResponse<Unit>>
+    fun checkLatestRelease(): Flow<XdResponse<GithubRelease>>
 }
 
 @Singleton
 class ThreadRepositoryImpl @Inject constructor(
     private val apiService: XdApiService,
+    private val githubApiService: GithubApiService,
     private val historyDao: HistoryDao,
     private val cacheDao: CacheDao,
     private val settingsDataStore: SettingsDataStore,
@@ -480,6 +484,15 @@ class ThreadRepositoryImpl @Inject constructor(
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
             emit(XdResponse.Error(message = e.localizedMessage ?: "Download failed", throwable = e))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun checkLatestRelease(): Flow<XdResponse<GithubRelease>> = flow {
+        try {
+            val release = githubApiService.getLatestRelease()
+            emit(XdResponse.Success(release))
+        } catch (e: Exception) {
+            emit(XdResponse.Error(message = e.localizedMessage ?: "Failed to check update", throwable = e))
         }
     }.flowOn(Dispatchers.IO)
 }

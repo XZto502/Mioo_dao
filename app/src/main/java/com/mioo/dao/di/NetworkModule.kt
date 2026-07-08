@@ -2,6 +2,7 @@ package com.mioo.dao.di
 
 import com.mioo.dao.data.api.CookieInterceptor
 import com.mioo.dao.data.api.XdApiService
+import com.mioo.dao.data.api.GithubApiService
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import dagger.Module
@@ -65,5 +66,19 @@ object NetworkModule {
     @Singleton
     fun provideXdApiService(retrofit: Retrofit): XdApiService {
         return retrofit.create(XdApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGithubApiService(
+        okHttpClient: OkHttpClient,
+        moshi: Moshi
+    ): GithubApiService {
+        val githubRetrofit = Retrofit.Builder()
+            .baseUrl("https://api.github.com/")
+            .client(okHttpClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+        return githubRetrofit.create(GithubApiService::class.java)
     }
 }

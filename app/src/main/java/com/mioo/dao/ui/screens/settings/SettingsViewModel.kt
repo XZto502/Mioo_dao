@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.mioo.dao.data.model.XdResponse
+import com.mioo.dao.data.model.GithubRelease
 import javax.inject.Inject
 
 import com.mioo.dao.data.local.HistoryEntity
@@ -171,5 +172,13 @@ class SettingsViewModel @Inject constructor(
 
     fun updatePreloadCount(count: Int) {
         settingsRepository.updatePreloadCount(count)
+    }
+
+    fun checkUpdate(onResult: (XdResponse<GithubRelease>) -> Unit) {
+        viewModelScope.launch {
+            threadRepository.checkLatestRelease().collect { response ->
+                onResult(response)
+            }
+        }
     }
 }

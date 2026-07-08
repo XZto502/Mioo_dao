@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
+import com.mioo.dao.data.model.GithubRelease
+import com.mioo.dao.data.model.XdResponse
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -31,12 +33,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+
 @Composable
 fun MoreScreen(
+    viewModel: SettingsViewModel,
     onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var manualReleaseFound by remember { mutableStateOf<GithubRelease?>(null) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -131,7 +143,6 @@ fun MoreScreen(
         }
 
         // About the App (关于应用)
-        val context = LocalContext.current
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(2.dp)
@@ -163,10 +174,69 @@ fun MoreScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("v1.1.0", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("v1.1.0", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isCheckingUpdate) "正在检查..." else "检查更新",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isCheckingUpdate) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable(enabled = !isCheckingUpdate) {
+                                isCheckingUpdate = true
+                                viewModel.checkUpdate { response ->
+                                    isCheckingUpdate = false
+                                    when (response) {
+                                        is XdResponse.Success -> {
+                                            val release = response.data
+                                            val currentVersion = try {
+                                                val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                                                packageInfo.versionName ?: "1.0"
+                                            } catch (e: Exception) {
+                                                "1.0"
+                                            }
+                                            
+                                            val cleanCurrent = currentVersion.trim().lowercase().removePrefix("v")
+                                            val cleanLatest = release.tagName.trim().lowercase().removePrefix("v")
+                                            
+                                            val isNewer = if (cleanCurrent == cleanLatest) false else {
+                                                val currentParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
+                                                val latestParts = cleanLatest.split(".").mapNotNull { it.toIntOrNull() }
+                                                val minLength = minOf(currentParts.size, latestParts.size)
+                                                var newer = false
+                                                var decided = false
+                                                for (i in 0 until minLength) {
+                                                    if (latestParts[i] > currentParts[i]) {
+                                                        newer = true
+                                                        decided = true
+                                                        break
+                                                    }
+                                                    if (latestParts[i] < currentParts[i]) {
+                                                        newer = false
+                                                        decided = true
+                                                        break
+                                                    }
+                                                }
+                                                if (!decided) latestParts.size > currentParts.size else newer
+                                            }
+                                            
+                                            if (isNewer) {
+                                                manualReleaseFound = release
+                                            } else {
+                                                android.widget.Toast.makeText(context, "已经是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        is XdResponse.Error -> {
+                                            android.widget.Toast.makeText(context, "检查更新失败: ${response.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 
@@ -208,5 +278,53 @@ fun MoreScreen(
                 )
             }
         }
+    }
+
+    if (manualReleaseFound != null) {
+        val release = manualReleaseFound!!
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { manualReleaseFound = null },
+            title = { Text("发现新版本 (${release.tagName})") },
+            text = {
+                Column {
+                    if (!release.name.isNullOrBlank()) {
+                        Text(
+                            text = release.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    if (!release.body.isNullOrBlank()) {
+                        Text(
+                            text = release.body,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        Text("没有提供更新说明。")
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            // ignore
+                        }
+                        manualReleaseFound = null
+                    }
+                ) {
+                    Text("立即更新")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { manualReleaseFound = null }) {
+                    Text("以后再说")
+                }
+            }
+        )
     }
 }
