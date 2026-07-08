@@ -42,7 +42,9 @@ fun ReplyCard(
     onCardClick: () -> Unit,
     onCardLongClick: () -> Unit,
     modifier: Modifier = Modifier,
-    quotedPosts: List<PostData> = emptyList()
+    quotedPosts: List<PostData> = emptyList(),
+    onViewThreadClick: (String) -> Unit = {},
+    currentThreadId: String? = null
 ) {
     Card(
         modifier = modifier
@@ -203,7 +205,9 @@ fun ReplyCard(
                             quote = quote,
                             quoteColor = quoteColor,
                             onQuoteClick = onQuoteClick,
-                            onImageClick = onImageClick
+                            onImageClick = onImageClick,
+                            onViewThreadClick = onViewThreadClick,
+                            currentThreadId = currentThreadId
                         )
                     } else {
                         // Fallback if regex fails to match (e.g. duplicate quote or already processed)
@@ -211,7 +215,9 @@ fun ReplyCard(
                             quote = quote,
                             quoteColor = quoteColor,
                             onQuoteClick = onQuoteClick,
-                            onImageClick = onImageClick
+                            onImageClick = onImageClick,
+                            onViewThreadClick = onViewThreadClick,
+                            currentThreadId = currentThreadId
                         )
                     }
                 }
@@ -259,7 +265,9 @@ fun QuotedPostBox(
     quoteColor: Color,
     onQuoteClick: (String) -> Unit,
     onImageClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onViewThreadClick: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
+    currentThreadId: String? = null
 ) {
     val isDeleted = quote.content.contains("该引用不存在") || quote.content.contains("该帖不存在") || quote.content.contains("已被删除")
 
@@ -270,11 +278,7 @@ fun QuotedPostBox(
                 .fillMaxWidth()
                 .border(1.dp, quoteColor, RoundedCornerShape(4.dp))
                 .clip(RoundedCornerShape(4.dp))
-                .clickable {
-                    if (!isDeleted) {
-                        onQuoteClick(quote.id)
-                    }
-                }
+                .clickable { /* Consume click to prevent parent card navigation, but do not open RefPopup */ }
                 .padding(12.dp)
         ) {
             Spacer(modifier = Modifier.height(2.dp)) // space for the overlapping label
@@ -316,13 +320,12 @@ fun QuotedPostBox(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Quoted Content
+            // Quoted Content — do NOT pass onQuoteClick so clicking text inside the box won't open RefPopup
             HtmlContent(
                 html = quote.content,
-                onQuoteClick = onQuoteClick,
+                onQuoteClick = { },
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth(),
-                onTextClick = { onQuoteClick(quote.id) } // fallback click for text
+                modifier = Modifier.fillMaxWidth()
             )
 
             // Attached Image
@@ -346,6 +349,28 @@ fun QuotedPostBox(
                 }
             }
 
+            // View Original Thread button
+            val isMainThread = quote.resto == null || quote.resto == "0" || quote.resto == quote.id
+            if (isMainThread && !isDeleted) {
+                val targetThreadId = quote.id
+                val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
+                if (targetThreadId != "0" && targetThreadId != "null" && targetThreadId.isNotBlank() && !isCurrentThread) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onViewThreadClick(targetThreadId) }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Text(
+                            text = "查看原串",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
         }
 
         // Overlapping Quote Number Label
