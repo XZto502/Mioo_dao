@@ -71,12 +71,17 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideGithubApiService(
-        okHttpClient: OkHttpClient,
         moshi: Moshi
     ): GithubApiService {
+        val cleanClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .build()
+
         val githubRetrofit = Retrofit.Builder()
             .baseUrl("https://api.github.com/")
-            .client(okHttpClient)
+            .client(cleanClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
         return githubRetrofit.create(GithubApiService::class.java)
