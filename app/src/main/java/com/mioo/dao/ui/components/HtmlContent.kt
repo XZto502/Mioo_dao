@@ -26,6 +26,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.mioo.dao.ui.theme.DaoTheme
 import java.util.regex.Pattern
 
+private val HTML_TAG_REGEX = Regex("<[^>]+>")
+private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>")
+private val HTML_PATTERN = Pattern.compile(
+    "(?:<font\\s+color=\"([^\"]+)\"[^>]*>(.*?)</font>)|" +
+    "(?:<span\\s+style=\"[^\"]*color:\\s*([^;\"]+)[^\"]*\"[^>]*>(.*?)</span>)|" +
+    "(?:<a\\s+href=\"([^\"]+)\"[^>]*>(.*?)</a>)|" +
+    "(>>(?:No\\.)?(\\d+))",
+    Pattern.CASE_INSENSITIVE or Pattern.DOTALL
+)
+
 fun String.decodeHtmlEntities(): String {
     return this
         .replace("&gt;", ">")
@@ -45,7 +55,7 @@ fun String.decodeHtmlEntities(): String {
  * This prevents any raw <xxx> tags from leaking into the displayed text.
  */
 fun String.stripRemainingHtmlTags(): String {
-    return this.replace(Regex("<[^>]+>"), "")
+    return this.replace(HTML_TAG_REGEX, "")
 }
 
 /**
@@ -64,21 +74,9 @@ fun parseHtmlToAnnotatedString(
 ): AnnotatedString {
     return buildAnnotatedString {
         // Clean line breaks and decode HTML entities before parsing
-        val cleaned = html.replace(Regex("(?i)<br\\s*/?>"), "\n").decodeHtmlEntities()
+        val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
 
-        // Regex notes:
-        // - <font color="xxx">...</font> : groups 1,2
-        // - <span style="...color: xxx...">...</span> : groups 3,4
-        // - <a href="xxx" ...>...</a> : groups 5,6  (allows extra attrs after href)
-        // - >>No.xxxx or >>xxxx : groups 7,8
-        val pattern = Pattern.compile(
-            "(?:<font\\s+color=\"([^\"]+)\"[^>]*>(.*?)</font>)|" +
-            "(?:<span\\s+style=\"[^\"]*color:\\s*([^;\"]+)[^\"]*\"[^>]*>(.*?)</span>)|" +
-            "(?:<a\\s+href=\"([^\"]+)\"[^>]*>(.*?)</a>)|" +
-            "(>>(?:No\\.)?(\\d+))",
-            Pattern.CASE_INSENSITIVE or Pattern.DOTALL
-        )
-        val matcher = pattern.matcher(cleaned)
+        val matcher = HTML_PATTERN.matcher(cleaned)
 
         var lastIndex = 0
         while (matcher.find()) {
