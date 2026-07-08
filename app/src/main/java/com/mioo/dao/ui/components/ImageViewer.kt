@@ -39,7 +39,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 fun ImageViewer(
     imageUrl: String,
     onDismiss: () -> Unit,
-    enableWatermark: Boolean,
     modifier: Modifier = Modifier
 ) {
     var scale by remember { mutableStateOf(1f) }
@@ -140,7 +139,6 @@ fun ImageViewer(
                     com.mioo.dao.utils.ImageDownloader.downloadImage(
                         context = context,
                         imageUrl = imageUrl,
-                        enableWatermark = enableWatermark,
                         scope = scope
                     )
                 },

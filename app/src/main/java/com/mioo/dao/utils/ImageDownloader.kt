@@ -3,10 +3,6 @@ package com.mioo.dao.utils
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
@@ -29,18 +25,16 @@ object ImageDownloader {
     fun downloadImage(
         context: Context,
         imageUrl: String,
-        enableWatermark: Boolean,
         scope: CoroutineScope
     ) {
         Toast.makeText(context, "正在开始保存图片...", Toast.LENGTH_SHORT).show()
         
         scope.launch(Dispatchers.IO) {
             try {
-                // 1. Fetch image from Coil (utilizes cache if available)
+                // Fetch image from Coil (utilizes cache if available)
                 val loader = ImageLoader(context)
                 val request = ImageRequest.Builder(context)
                     .data(imageUrl)
-                    .allowHardware(false) // Must be false to extract Bitmap
                     .build()
                 
                 val result = loader.execute(request)
@@ -52,25 +46,17 @@ object ImageDownloader {
                 }
                 
                 val drawable = result.drawable
-                val loadedBitmap = (drawable as? BitmapDrawable)?.bitmap
-                if (loadedBitmap == null) {
+                val bitmap = (drawable as? BitmapDrawable)?.bitmap
+                if (bitmap == null) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, "图片转换失败", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
                 
-                // Copy bitmap so it's mutable if we need to apply watermark
-                var finalBitmap = loadedBitmap.copy(Bitmap.Config.ARGB_8888, true)
-                
-                // 2. Add Watermark if enabled
-                if (enableWatermark) {
-                    finalBitmap = addWatermarkToBitmap(finalBitmap)
-                }
-                
-                // 3. Save to Gallery
+                // Save to Gallery
                 val filename = "mioo_image_${System.currentTimeMillis()}.jpg"
-                val savedUri = saveBitmapToGallery(context, finalBitmap, filename)
+                val savedUri = saveBitmapToGallery(context, bitmap, filename)
                 
                 withContext(Dispatchers.Main) {
                     if (savedUri != null) {
@@ -85,37 +71,6 @@ object ImageDownloader {
                 }
             }
         }
-    }
-
-    private fun addWatermarkToBitmap(src: Bitmap): Bitmap {
-        val width = src.width
-        val height = src.height
-        val result = Bitmap.createBitmap(width, height, src.config)
-        val canvas = Canvas(result)
-        canvas.drawBitmap(src, 0f, 0f, null)
-        
-        val paint = Paint().apply {
-            color = Color.WHITE
-            alpha = 180 // Semi-transparent
-            textSize = (width * 0.035f).coerceIn(16f, 48f) // Scale text size dynamically based on image width
-            isAntiAlias = true
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            // Add a subtle shadow/outline for readability on white backgrounds
-            setShadowLayer(3f, 1f, 1f, Color.BLACK)
-        }
-        
-        val watermarkText = "喵岛 App"
-        
-        // Position watermark at the bottom-right corner with margin
-        val xMargin = width * 0.04f
-        val yMargin = height * 0.04f
-        val textWidth = paint.measureText(watermarkText)
-        
-        val x = width - textWidth - xMargin
-        val y = height - yMargin
-        
-        canvas.drawText(watermarkText, x, y, paint)
-        return result
     }
 
     private fun saveBitmapToGallery(context: Context, bitmap: Bitmap, filename: String): Uri? {

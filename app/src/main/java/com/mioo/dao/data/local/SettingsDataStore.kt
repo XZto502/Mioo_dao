@@ -41,7 +41,6 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
         val KEY_SMART_PRELOAD_MODE = stringPreferencesKey("smart_preload_mode")
         val KEY_PRELOAD_COUNT = intPreferencesKey("preload_count")
-        val KEY_ENABLE_WATERMARK = booleanPreferencesKey("enable_watermark")
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data
@@ -339,18 +338,6 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_PRELOAD_COUNT] ?: 10
         }
 
-    val enableWatermarkFlow: Flow<Boolean> = context.dataStore.data
-        .catch { exception ->
-            if (exception is IOException) {
-                emit(emptyPreferences())
-            } else {
-                throw exception
-            }
-        }
-        .map { preferences ->
-            preferences[KEY_ENABLE_WATERMARK] ?: true
-        }
-
     suspend fun saveUserHash(userHash: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_USER_HASH] = userHash
@@ -372,12 +359,6 @@ class SettingsDataStore(private val context: Context) {
     suspend fun savePreloadCount(count: Int) {
         context.dataStore.edit { preferences ->
             preferences[KEY_PRELOAD_COUNT] = count
-        }
-    }
-
-    suspend fun saveEnableWatermark(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[KEY_ENABLE_WATERMARK] = enabled
         }
     }
 

@@ -33,8 +33,7 @@ class SettingsRepository @Inject constructor(
         settingsDataStore.pinnedForumsFlow,
         settingsDataStore.blockedKeywordsFlow,
         settingsDataStore.smartPreloadModeFlow,
-        settingsDataStore.preloadCountFlow,
-        settingsDataStore.enableWatermarkFlow
+        settingsDataStore.preloadCountFlow
     ) { args ->
         val cookie = args[0] as? String
         val themeModeStr = args[1] as String
@@ -56,7 +55,6 @@ class SettingsRepository @Inject constructor(
         val blockedKeywords = args[11] as List<String>
         val smartPreloadMode = args[12] as String
         val preloadCount = args[13] as Int
-        val enableWatermark = args[14] as Boolean
 
         val themeMode = try {
             ThemeMode.valueOf(themeModeStr)
@@ -77,8 +75,7 @@ class SettingsRepository @Inject constructor(
             pinnedForums = pinnedForums,
             blockedKeywords = blockedKeywords,
             smartPreloadMode = smartPreloadMode,
-            preloadCount = preloadCount,
-            enableWatermark = enableWatermark
+            preloadCount = preloadCount
         )
     }.stateIn(
         scope = repositoryScope,
@@ -98,11 +95,7 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    fun updateEnableWatermark(enabled: Boolean) {
-        repositoryScope.launch {
-            settingsDataStore.saveEnableWatermark(enabled)
-        }
-    }
+
 
     fun updateCookie(cookie: String) {
         repositoryScope.launch {
