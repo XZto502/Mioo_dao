@@ -386,22 +386,24 @@ fun ThreadScreen(
                             list
                         }
                         
-                        val quotedPostsData = quoteIds.mapNotNull { id ->
-                            uiState.quoteCache[id]?.let {
-                                val isFollowUp = it.resto != null && it.resto > 0L
-                                PostData(
-                                    id = it.idStr,
-                                    title = it.title ?: "",
-                                    userName = it.name ?: "无名氏",
-                                    userId = it.userHash,
-                                    createdAt = it.now,
-                                    content = it.content,
-                                    imageUrl = if (it.imageUrl != null) "https://image.nmb.best/image/${it.imageUrl}" else null,
-                                    isPo = it.userHash == uiState.thread?.userHash,
-                                    isAdmin = it.isAdmin,
-                                    isSage = it.isSage,
-                                    resto = if (isFollowUp) it.resto.toString() else it.idStr
-                                )
+                        val quotedPostsData = remember(quoteIds, uiState.quoteCache, uiState.thread?.userHash) {
+                            quoteIds.mapNotNull { id ->
+                                uiState.quoteCache[id]?.let {
+                                    val isFollowUp = it.resto != null && it.resto > 0L
+                                    PostData(
+                                        id = it.idStr,
+                                        title = it.title ?: "",
+                                        userName = it.name ?: "无名氏",
+                                        userId = it.userHash,
+                                        createdAt = it.now,
+                                        content = it.content,
+                                        imageUrl = if (it.imageUrl != null) "https://image.nmb.best/image/${it.imageUrl}" else null,
+                                        isPo = it.userHash == uiState.thread?.userHash,
+                                        isAdmin = it.isAdmin,
+                                        isSage = it.isSage,
+                                        resto = if (isFollowUp) it.resto.toString() else it.idStr
+                                    )
+                                }
                             }
                         }
 

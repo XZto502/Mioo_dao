@@ -33,6 +33,11 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mioo.dao.ui.theme.DaoTheme
 
+sealed interface PostContentBlock {
+    data class Text(val html: String) : PostContentBlock
+    data class Quote(val quote: PostData) : PostContentBlock
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ReplyCard(
@@ -169,50 +174,52 @@ fun ReplyCard(
             }
 
             // Parse and split HTML if we have inline quoted posts to show
-            if (quotedPosts.isEmpty()) {
-                HtmlContent(
-                    html = postData.content,
-                    onQuoteClick = onQuoteClick,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth(),
-                    onTextClick = onCardClick,
-                    onLongClick = onCardLongClick
-                )
-            } else {
-                var currentHtml = postData.content
-                val quoteColor = MaterialTheme.colorScheme.primary
+            val contentBlocks = androidx.compose.runtime.remember(postData.content, quotedPosts) {
+                if (quotedPosts.isEmpty()) {
+                    listOf(PostContentBlock.Text(postData.content))
+                } else {
+                    val blocks = mutableListOf<PostContentBlock>()
+                    var currentHtml = postData.content
+                    quotedPosts.forEach { quote ->
+                        val quoteRegex = Regex("(?:<font[^>]*>)?\\s*(?:&gt;&gt;|>>)(?:No\\.)?${quote.id}\\s*(?:</font>)?", RegexOption.IGNORE_CASE)
+                        val match = quoteRegex.find(currentHtml)
 
-                quotedPosts.forEach { quote ->
-                    val quoteRegex = Regex("(?:<font[^>]*>)?\\s*(?:&gt;&gt;|>>)(?:No\\.)?${quote.id}\\s*(?:</font>)?", RegexOption.IGNORE_CASE)
-                    val match = quoteRegex.find(currentHtml)
+                        if (match != null) {
+                            val beforeText = currentHtml.substring(0, match.range.last + 1)
+                            currentHtml = currentHtml.substring(match.range.last + 1)
 
-                    if (match != null) {
-                        val beforeText = currentHtml.substring(0, match.range.last + 1)
-                        currentHtml = currentHtml.substring(match.range.last + 1)
-
-                        if (beforeText.isNotBlank()) {
-                            HtmlContent(
-                                html = beforeText,
-                                onQuoteClick = onQuoteClick,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.fillMaxWidth(),
-                                onTextClick = onCardClick,
-                                onLongClick = onCardLongClick
-                            )
+                            if (beforeText.isNotBlank()) {
+                                blocks.add(PostContentBlock.Text(beforeText))
+                            }
+                            blocks.add(PostContentBlock.Quote(quote))
+                        } else {
+                            // Fallback if regex fails to match (e.g. duplicate quote or already processed)
+                            blocks.add(PostContentBlock.Quote(quote))
                         }
+                    }
+                    if (currentHtml.isNotBlank()) {
+                        blocks.add(PostContentBlock.Text(currentHtml))
+                    }
+                    blocks
+                }
+            }
 
-                        QuotedPostBox(
-                            quote = quote,
-                            quoteColor = quoteColor,
+            contentBlocks.forEach { block ->
+                when (block) {
+                    is PostContentBlock.Text -> {
+                        HtmlContent(
+                            html = block.html,
                             onQuoteClick = onQuoteClick,
-                            onImageClick = onImageClick,
-                            onViewThreadClick = onViewThreadClick,
-                            currentThreadId = currentThreadId
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.fillMaxWidth(),
+                            onTextClick = onCardClick,
+                            onLongClick = onCardLongClick
                         )
-                    } else {
-                        // Fallback if regex fails to match (e.g. duplicate quote or already processed)
+                    }
+                    is PostContentBlock.Quote -> {
+                        val quoteColor = MaterialTheme.colorScheme.primary
                         QuotedPostBox(
-                            quote = quote,
+                            quote = block.quote,
                             quoteColor = quoteColor,
                             onQuoteClick = onQuoteClick,
                             onImageClick = onImageClick,
@@ -220,18 +227,6 @@ fun ReplyCard(
                             currentThreadId = currentThreadId
                         )
                     }
-                }
-
-                if (currentHtml.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    HtmlContent(
-                        html = currentHtml,
-                        onQuoteClick = onQuoteClick,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.fillMaxWidth(),
-                        onTextClick = onCardClick,
-                        onLongClick = onCardLongClick
-                    )
                 }
             }
 
