@@ -2,6 +2,14 @@ package com.mioo.dao.ui.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.navigation.NavBackStackEntry
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,6 +76,42 @@ fun MiooDaoNavGraph(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    val slideEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        slideInHorizontally(
+            initialOffsetX = { it },
+            animationSpec = tween(300, easing = FastOutSlowInEasing)
+        ) + fadeIn(animationSpec = tween(300))
+    }
+
+    val slideExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        slideOutHorizontally(
+            targetOffsetX = { -it },
+            animationSpec = tween(300, easing = FastOutSlowInEasing)
+        ) + fadeOut(animationSpec = tween(300))
+    }
+
+    val slidePopEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        slideInHorizontally(
+            initialOffsetX = { -it },
+            animationSpec = tween(300, easing = FastOutSlowInEasing)
+        ) + fadeIn(animationSpec = tween(300))
+    }
+
+    val slidePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        slideOutHorizontally(
+            targetOffsetX = { it },
+            animationSpec = tween(300, easing = FastOutSlowInEasing)
+        ) + fadeOut(animationSpec = tween(300))
+    }
+
+    val fadeEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        fadeIn(animationSpec = tween(220))
+    }
+
+    val fadeExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        fadeOut(animationSpec = tween(220))
+    }
+
     val bottomBarItems = listOf(
         Triple(Screen.Forum.route, Icons.Default.Home, "板块"),
         Triple(Screen.Feed.route, Icons.Default.Bookmark, "收藏"),
@@ -132,7 +176,13 @@ fun MiooDaoNavGraph(
             // Inner screens handle bottom padding via their LazyColumn contentPadding.
         ) {
             // Forum screen (Default start destination)
-            composable(Screen.Forum.route) {
+            composable(
+                route = Screen.Forum.route,
+                enterTransition = fadeEnter,
+                exitTransition = fadeExit,
+                popEnterTransition = fadeEnter,
+                popExitTransition = fadeExit
+            ) {
                 val viewModel: ForumViewModel = hiltViewModel()
                 ForumScreen(
                     viewModel = viewModel,
@@ -143,7 +193,13 @@ fun MiooDaoNavGraph(
             }
 
             // Feed screen
-            composable(Screen.Feed.route) {
+            composable(
+                route = Screen.Feed.route,
+                enterTransition = fadeEnter,
+                exitTransition = fadeExit,
+                popEnterTransition = fadeEnter,
+                popExitTransition = fadeExit
+            ) {
                 val viewModel: FeedViewModel = hiltViewModel()
                 FeedScreen(
                     viewModel = viewModel,
@@ -154,7 +210,13 @@ fun MiooDaoNavGraph(
             }
 
             // More (Settings Root) screen
-            composable(Screen.Settings.route) {
+            composable(
+                route = Screen.Settings.route,
+                enterTransition = fadeEnter,
+                exitTransition = fadeExit,
+                popEnterTransition = fadeEnter,
+                popExitTransition = fadeExit
+            ) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 MoreScreen(
                     viewModel = viewModel,
@@ -170,30 +232,10 @@ fun MiooDaoNavGraph(
             // Settings Detail screen
             composable(
                 route = Screen.SettingsDetail.route,
-                enterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300)
-                    )
-                },
-                exitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300)
-                    )
-                },
-                popEnterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300)
-                    )
-                },
-                popExitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300)
-                    )
-                }
+                enterTransition = slideEnter,
+                exitTransition = slideExit,
+                popEnterTransition = slidePopEnter,
+                popExitTransition = slidePopExit
             ) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 SettingsScreen(
@@ -207,30 +249,10 @@ fun MiooDaoNavGraph(
             // Browsing History screen
             composable(
                 route = Screen.BrowsingHistory.route,
-                enterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300)
-                    )
-                },
-                exitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300)
-                    )
-                },
-                popEnterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300)
-                    )
-                },
-                popExitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300)
-                    )
-                }
+                enterTransition = slideEnter,
+                exitTransition = slideExit,
+                popEnterTransition = slidePopEnter,
+                popExitTransition = slidePopExit
             ) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 HistoryScreen(
@@ -250,30 +272,10 @@ fun MiooDaoNavGraph(
                 arguments = listOf(
                     navArgument("threadId") { type = NavType.StringType }
                 ),
-                enterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300)
-                    )
-                },
-                exitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(300)
-                    )
-                },
-                popEnterTransition = {
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300)
-                    )
-                },
-                popExitTransition = {
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(300)
-                    )
-                }
+                enterTransition = slideEnter,
+                exitTransition = slideExit,
+                popEnterTransition = slidePopEnter,
+                popExitTransition = slidePopExit
             ) {
                 val viewModel: ThreadViewModel = hiltViewModel()
                 ThreadScreen(
