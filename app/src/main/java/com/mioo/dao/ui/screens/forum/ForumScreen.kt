@@ -407,14 +407,7 @@ fun ForumScreen(
                     .padding(paddingValues)
                     .nestedScroll(pullToRefreshState.nestedScrollConnection)
             ) {
-                if (uiState.isLoading && uiState.threads.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                } else if (uiState.threads.isEmpty() && !uiState.isLoading) {
+                if (uiState.threads.isEmpty() && !uiState.isLoading) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
