@@ -149,7 +149,8 @@ fun HomeScreen(
                         listState = timelineListState,
                         onThreadClick = onNavigateToThread,
                         onBlockThread = { settingsViewModel.addBlockedThread(it) },
-                        onBlockUser = { settingsViewModel.addBlockedUser(it) }
+                        onBlockUser = { settingsViewModel.addBlockedUser(it) },
+                        enableWatermark = settingsState.enableWatermark
                     )
                     1 -> ForumList(
                         forumGroups = uiState.forumGroups,
@@ -183,7 +184,8 @@ fun TimelineList(
     listState: LazyListState,
     onThreadClick: (String) -> Unit,
     onBlockThread: (String) -> Unit,
-    onBlockUser: (String) -> Unit
+    onBlockUser: (String) -> Unit,
+    enableWatermark: Boolean
 ) {
     var freeCopyText by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var activeImageUrl by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
@@ -281,7 +283,8 @@ fun TimelineList(
     activeImageUrl?.let { imageUrl ->
         ImageViewer(
             imageUrl = imageUrl,
-            onDismiss = { activeImageUrl = null }
+            onDismiss = { activeImageUrl = null },
+            enableWatermark = enableWatermark
         )
     }
 }

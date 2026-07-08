@@ -101,6 +101,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.removeBlockedUser(userHash)
     }
 
+    fun updateEnableWatermark(enabled: Boolean) {
+        settingsRepository.updateEnableWatermark(enabled)
+    }
+
     fun togglePinForum(forumId: String) {
         settingsRepository.togglePinForum(forumId)
     }

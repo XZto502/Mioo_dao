@@ -497,7 +497,8 @@ fun ThreadScreen(
             activeImageUrl?.let { imageUrl ->
                 ImageViewer(
                     imageUrl = imageUrl,
-                    onDismiss = { activeImageUrl = null }
+                    onDismiss = { activeImageUrl = null },
+                    enableWatermark = settingsState.enableWatermark
                 )
             }
 

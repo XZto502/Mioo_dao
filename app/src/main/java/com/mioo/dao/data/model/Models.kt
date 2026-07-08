@@ -23,5 +23,6 @@ data class UserSettings(
     val pinnedForums: List<String> = emptyList(),
     val blockedKeywords: List<String> = emptyList(),
     val smartPreloadMode: String = "WIFI_ONLY",
-    val preloadCount: Int = 10
+    val preloadCount: Int = 10,
+    val enableWatermark: Boolean = true
 )

@@ -31,15 +31,22 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+
 @Composable
 fun ImageViewer(
     imageUrl: String,
     onDismiss: () -> Unit,
+    enableWatermark: Boolean,
     modifier: Modifier = Modifier
 ) {
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var isLoading by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -123,6 +130,29 @@ fun ImageViewer(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Close viewer",
+                    tint = Color.White
+                )
+            }
+
+            // Download button overlay
+            IconButton(
+                onClick = {
+                    com.mioo.dao.utils.ImageDownloader.downloadImage(
+                        context = context,
+                        imageUrl = imageUrl,
+                        enableWatermark = enableWatermark,
+                        scope = scope
+                    )
+                },
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 16.dp, end = 72.dp)
+                    .align(Alignment.TopEnd)
+                    .background(Color.Black.copy(alpha = 0.6f), shape = CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "Download Image",
                     tint = Color.White
                 )
             }
