@@ -36,7 +36,8 @@ data class ThreadUiState(
     val refPostData: PostData? = null,
     val isRefLoading: Boolean = false,
     val refError: String? = null,
-    val quoteCache: Map<String, Reply> = emptyMap()
+    val quoteCache: Map<String, Reply> = emptyMap(),
+    val isDownloading: Boolean = false
 )
 
 @HiltViewModel
@@ -318,5 +319,23 @@ class ThreadViewModel @Inject constructor(
 
     fun dismissRefPopup() {
         _uiState.update { it.copy(refPostId = null, refPostData = null, refError = null) }
+    }
+
+    fun downloadThread(onResult: (String) -> Unit) {
+        if (_uiState.value.isDownloading) return
+        _uiState.update { it.copy(isDownloading = true) }
+        viewModelScope.launch {
+            threadRepository.downloadFullThread(threadId).collect { response ->
+                _uiState.update { it.copy(isDownloading = false) }
+                when (response) {
+                    is XdResponse.Success -> {
+                        onResult("下载完成，已加入本地收藏")
+                    }
+                    is XdResponse.Error -> {
+                        onResult("下载失败: ${response.message}")
+                    }
+                }
+            }
+        }
     }
 }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Face
@@ -190,6 +191,27 @@ fun ThreadScreen(
                             contentDescription = "只看楼主",
                             tint = if (uiState.showPoOnly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
+                    }
+                    // Download Thread button
+                    if (uiState.isDownloading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(horizontal = 12.dp)
+                                .size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        IconButton(onClick = {
+                            Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
+                            viewModel.downloadThread { msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "下载本串"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

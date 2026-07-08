@@ -78,6 +78,7 @@ interface ThreadRepository {
     fun getCacheSize(): Flow<String>
     fun preloadBookmarks(onProgress: (Int, Int) -> Unit): Flow<XdResponse<Unit>>
     fun smartPreloadThreads(threads: List<Thread>)
+    fun downloadFullThread(tid: String): Flow<XdResponse<Unit>>
 }
 
 @Singleton
@@ -445,4 +446,36 @@ class ThreadRepositoryImpl @Inject constructor(
             }
         }
     }
+
+    override fun downloadFullThread(tid: String): Flow<XdResponse<Unit>> = flow {
+        try {
+            val page1 = apiService.thread(tid, 1)
+            saveToHistory(page1)
+            addBookmark(page1)
+            
+            val json1 = threadAdapter.toJson(page1)
+            cacheDao.insertCache(CacheEntity("thread_$tid", 1, json1))
+            
+            val totalReplies = page1.replyCount ?: 0
+            val repliesPage1Size = page1.replies?.size ?: 0
+            
+            if (totalReplies > repliesPage1Size && repliesPage1Size > 0) {
+                val pageSize = repliesPage1Size
+                val totalPages = (totalReplies + pageSize - 1) / pageSize
+                
+                for (page in 2..totalPages) {
+                    try {
+                        val threadPage = apiService.thread(tid, page)
+                        val jsonPage = threadAdapter.toJson(threadPage)
+                        cacheDao.insertCache(CacheEntity("thread_$tid", page, jsonPage))
+                        delay(300)
+                    } catch (e: Exception) {
+                    }
+                }
+            }
+            emit(XdResponse.Success(Unit))
+        } catch (e: Exception) {
+            emit(XdResponse.Error(message = e.localizedMessage ?: "Download failed", throwable = e))
+        }
+    }.flowOn(Dispatchers.IO)
 }
