@@ -1,6 +1,7 @@
 package com.mioo.dao.ui.theme
 
 import android.app.Activity
+import androidx.compose.ui.graphics.Brush
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -255,11 +256,9 @@ fun MiooDaoTheme(
                     .fillMaxSize()
                     .background(colorScheme.background)
             ) {
-                // Background blurred blobs (static for peak rendering performance)
+                // Background blurred blobs (optimized with Brush.radialGradient to avoid expensive runtime blur overhead)
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .blur(120.dp)
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     // Blob 1: top-left primary glow
                     Box(
@@ -268,8 +267,12 @@ fun MiooDaoTheme(
                             .align(Alignment.TopStart)
                             .offset(x = (-60).dp, y = (-30).dp)
                             .background(
-                                color = colorScheme.primary.copy(alpha = 0.25f),
-                                shape = androidx.compose.foundation.shape.CircleShape
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        colorScheme.primary.copy(alpha = 0.22f),
+                                        Color.Transparent
+                                    )
+                                )
                             )
                     )
                     // Blob 2: bottom-right secondary glow
@@ -279,8 +282,12 @@ fun MiooDaoTheme(
                             .align(Alignment.BottomEnd)
                             .offset(x = 60.dp, y = 70.dp)
                             .background(
-                                color = colorScheme.tertiary.copy(alpha = 0.18f),
-                                shape = androidx.compose.foundation.shape.CircleShape
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        colorScheme.tertiary.copy(alpha = 0.16f),
+                                        Color.Transparent
+                                    )
+                                )
                             )
                     )
                     // Blob 3: center-right accent
@@ -290,8 +297,12 @@ fun MiooDaoTheme(
                             .align(Alignment.CenterEnd)
                             .offset(x = 30.dp, y = 10.dp)
                             .background(
-                                color = colorScheme.secondary.copy(alpha = 0.15f),
-                                shape = androidx.compose.foundation.shape.CircleShape
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        colorScheme.secondary.copy(alpha = 0.12f),
+                                        Color.Transparent
+                                    )
+                                )
                             )
                     )
                 }
