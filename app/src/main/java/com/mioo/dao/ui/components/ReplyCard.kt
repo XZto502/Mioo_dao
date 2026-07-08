@@ -269,6 +269,8 @@ fun QuotedPostBox(
     modifier: Modifier = Modifier,
     currentThreadId: String? = null
 ) {
+    val isDeleted = quote.content.contains("该引用不存在") || quote.content.contains("该帖不存在") || quote.content.contains("已被删除")
+
     Box(modifier = modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
         // The main bordered container
         Column(
@@ -276,7 +278,11 @@ fun QuotedPostBox(
                 .fillMaxWidth()
                 .border(1.dp, quoteColor, RoundedCornerShape(4.dp))
                 .clip(RoundedCornerShape(4.dp))
-                .clickable { onQuoteClick(quote.id) }
+                .clickable {
+                    if (!isDeleted) {
+                        onQuoteClick(quote.id)
+                    }
+                }
                 .padding(12.dp)
         ) {
             Spacer(modifier = Modifier.height(2.dp)) // space for the overlapping label
@@ -352,7 +358,7 @@ fun QuotedPostBox(
 
             // View Original Thread right aligned text
             val isMainThread = quote.resto == null || quote.resto == "0" || quote.resto == quote.id
-            if (isMainThread) {
+            if (isMainThread && !isDeleted) {
                 val targetThreadId = quote.id
                 val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
                 if (targetThreadId != "0" && targetThreadId != "null" && targetThreadId.isNotBlank() && !isCurrentThread) {

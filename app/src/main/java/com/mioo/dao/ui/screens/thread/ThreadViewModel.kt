@@ -161,8 +161,30 @@ class ThreadViewModel @Inject constructor(
             // Otherwise, fetch from repository
             viewModelScope.launch {
                 threadRepository.getRefPost(id).collect { response ->
-                    if (response is XdResponse.Success) {
-                        _uiState.update { it.copy(quoteCache = it.quoteCache + (id to response.data)) }
+                    when (response) {
+                        is XdResponse.Success -> {
+                            _uiState.update { it.copy(quoteCache = it.quoteCache + (id to response.data)) }
+                        }
+                        is XdResponse.Error -> {
+                            val placeholder = Reply(
+                                id = id.toLongOrNull() ?: 0L,
+                                fid = null,
+                                now = "",
+                                userHash = "",
+                                name = null,
+                                email = null,
+                                title = null,
+                                content = "该引用不存在或已被删除",
+                                img = null,
+                                ext = null,
+                                sage = 0,
+                                admin = 0,
+                                hide = 0,
+                                replyCount = 0,
+                                resto = null
+                            )
+                            _uiState.update { it.copy(quoteCache = it.quoteCache + (id to placeholder)) }
+                        }
                     }
                 }
             }
