@@ -126,9 +126,8 @@ fun ForumScreen(
             viewModel.refresh()
         }
     }
-    val isLoadingOrRefreshing = uiState.isLoading || uiState.isRefreshing
-    LaunchedEffect(isLoadingOrRefreshing) {
-        if (isLoadingOrRefreshing) {
+    LaunchedEffect(uiState.isRefreshing) {
+        if (uiState.isRefreshing) {
             pullToRefreshState.startRefresh()
         } else {
             pullToRefreshState.endRefresh()
@@ -408,7 +407,14 @@ fun ForumScreen(
                     .padding(paddingValues)
                     .nestedScroll(pullToRefreshState.nestedScrollConnection)
             ) {
-                if (uiState.threads.isEmpty() && !uiState.isLoading) {
+                if (uiState.isLoading && uiState.threads.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (uiState.threads.isEmpty() && !uiState.isLoading) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
