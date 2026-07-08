@@ -250,13 +250,18 @@ fun TimelineList(
                     )
                 }
 
+                val postData = remember(thread) { thread.toPostData() }
+                val onThreadClickRemembered = remember(thread) { { onThreadClick(thread.idStr) } }
+                val onImageClickRemembered = remember { { imageUrl: String -> activeImageUrl = imageUrl } }
+                val onLongClickRemembered = remember { { showBlockDialog = true } }
+
                 ThreadCard(
-                    postData = thread.toPostData(),
+                    postData = postData,
                     replyCount = thread.replyCount ?: 0,
-                    onThreadClick = { onThreadClick(thread.idStr) },
+                    onThreadClick = onThreadClickRemembered,
                     onQuoteClick = {},
-                    onImageClick = { imageUrl -> activeImageUrl = imageUrl },
-                    onLongClick = { showBlockDialog = true }
+                    onImageClick = onImageClickRemembered,
+                    onLongClick = onLongClickRemembered
                 )
             }
         }

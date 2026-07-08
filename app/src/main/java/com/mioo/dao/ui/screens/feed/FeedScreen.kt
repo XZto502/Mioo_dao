@@ -215,10 +215,12 @@ fun FeedScreen(
                                     }
                                 },
                                 content = {
+                                    val postData = remember(bookmark) { bookmark.toPostData() }
+                                    val onThreadClickRemembered = remember(bookmark) { { onNavigateToThread(bookmark.id) } }
                                     ThreadCard(
-                                        postData = bookmark.toPostData(),
+                                        postData = postData,
                                         replyCount = 0,
-                                        onThreadClick = { onNavigateToThread(bookmark.id) },
+                                        onThreadClick = onThreadClickRemembered,
                                         onQuoteClick = {},
                                         onImageClick = {}
                                     )
@@ -263,10 +265,12 @@ fun FeedScreen(
                                     }
                                 },
                                 content = {
+                                    val postData = remember(thread) { thread.toPostData(null) }
+                                    val onThreadClickRemembered = remember(thread) { { onNavigateToThread(thread.idStr) } }
                                     ThreadCard(
-                                        postData = thread.toPostData(null),
+                                        postData = postData,
                                         replyCount = thread.replyCount ?: 0,
-                                        onThreadClick = { onNavigateToThread(thread.idStr) },
+                                        onThreadClick = onThreadClickRemembered,
                                         onQuoteClick = {},
                                         onImageClick = {}
                                     )

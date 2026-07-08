@@ -457,16 +457,21 @@ fun ThreadScreen(
                             )
                         }
 
+                        val isPo = reply.userHash == uiState.thread?.userHash
+                        val postData = remember(reply, isPo) { reply.toPostData(isPo) }
+                        val onQuoteClickRemembered = remember(reply) { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } }
+                        val onImageClickRemembered = remember { { url: String -> activeImageUrl = url } }
+                        val onCardLongClickRemembered = remember { { showReplyBlockDialog = true } }
+                        val onViewThreadClickRemembered = remember { { threadId: String -> onNavigateToThread(threadId) } }
+
                         ReplyCard(
-                            postData = reply.toPostData(
-                                isPo = reply.userHash == uiState.thread?.userHash
-                            ),
-                            onQuoteClick = { quoteNo -> viewModel.showRefPopup(quoteNo) },
-                            onImageClick = { url -> activeImageUrl = url },
+                            postData = postData,
+                            onQuoteClick = onQuoteClickRemembered,
+                            onImageClick = onImageClickRemembered,
                             onCardClick = {},
-                            onCardLongClick = { showReplyBlockDialog = true },
+                            onCardLongClick = onCardLongClickRemembered,
                             quotedPosts = quotedPostsData,
-                            onViewThreadClick = { threadId -> onNavigateToThread(threadId) },
+                            onViewThreadClick = onViewThreadClickRemembered,
                             currentThreadId = viewModel.threadId
                         )
                     }
