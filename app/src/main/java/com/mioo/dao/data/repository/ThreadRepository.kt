@@ -416,33 +416,37 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override fun smartPreloadThreads(threads: List<Thread>) {
         preloadScope.launch {
-            val mode = settingsDataStore.smartPreloadModeFlow.first()
-            if (mode == "DISABLED") return@launch
+            try {
+                val mode = settingsDataStore.smartPreloadModeFlow.first()
+                if (mode == "DISABLED") return@launch
 
-            if (mode == "WIFI_ONLY") {
-                val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-                val activeNetwork = connectivityManager.activeNetwork
-                val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-                val isWifi = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                if (!isWifi) return@launch
-            }
-
-            val preloadCount = settingsDataStore.preloadCountFlow.first()
-            val threadsToPreload = threads.take(preloadCount)
-
-            for (thread in threadsToPreload) {
-                val tid = thread.idStr
-                val cached = cacheDao.getCache("thread_$tid", 1)
-                val isRecentlyCached = cached != null && (System.currentTimeMillis() - cached.cachedAt < 10 * 60 * 1000)
-                if (isRecentlyCached) continue
-
-                try {
-                    val response = apiService.thread(tid, 1)
-                    val json = threadAdapter.toJson(response)
-                    cacheDao.insertCache(CacheEntity("thread_$tid", 1, json))
-                    delay(500)
-                } catch (e: Exception) {
+                if (mode == "WIFI_ONLY") {
+                    val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                    val activeNetwork = connectivityManager.activeNetwork
+                    val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+                    val isWifi = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                    if (!isWifi) return@launch
                 }
+
+                val preloadCount = settingsDataStore.preloadCountFlow.first()
+                val threadsToPreload = threads.take(preloadCount)
+
+                for (thread in threadsToPreload) {
+                    val tid = thread.idStr
+                    val cached = cacheDao.getCache("thread_$tid", 1)
+                    val isRecentlyCached = cached != null && (System.currentTimeMillis() - cached.cachedAt < 10 * 60 * 1000)
+                    if (isRecentlyCached) continue
+
+                    try {
+                        val response = apiService.thread(tid, 1)
+                        val json = threadAdapter.toJson(response)
+                        cacheDao.insertCache(CacheEntity("thread_$tid", 1, json))
+                        delay(500)
+                    } catch (e: Exception) {
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ThreadRepo", "Error preloading threads", e)
             }
         }
     }
