@@ -221,84 +221,30 @@ fun ReplyCard(
                 }
             }
 
-            var isExpanded by remember { mutableStateOf(false) }
-            var contentHeight by remember { mutableStateOf(0) }
-            val density = LocalDensity.current
-            val maxCollapseHeight = 260.dp
-            val maxCollapseHeightPx = with(density) { maxCollapseHeight.roundToPx() }
-            val isCollapsible = contentHeight > maxCollapseHeightPx
-
-            Box(
+            Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { layoutCoordinates ->
-                            if (!isExpanded) {
-                                contentHeight = layoutCoordinates.size.height
-                            }
+                contentBlocks.forEach { block ->
+                    when (block) {
+                        is PostContentBlock.Text -> {
+                            HtmlContent(
+                                html = block.html,
+                                onQuoteClick = onQuoteClick,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.fillMaxWidth(),
+                                onTextClick = onCardClick,
+                                onLongClick = onCardLongClick
+                            )
                         }
-                        .then(
-                            if (isCollapsible && !isExpanded) {
-                                Modifier.height(maxCollapseHeight)
-                            } else {
-                                Modifier
-                            }
-                        )
-                        .animateContentSize()
-                ) {
-                    contentBlocks.forEach { block ->
-                        when (block) {
-                            is PostContentBlock.Text -> {
-                                HtmlContent(
-                                    html = block.html,
-                                    onQuoteClick = onQuoteClick,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    onTextClick = onCardClick,
-                                    onLongClick = onCardLongClick
-                                )
-                            }
-                            is PostContentBlock.Quote -> {
-                                val quoteColor = MaterialTheme.colorScheme.primary
-                                QuotedPostBox(
-                                    quote = block.quote,
-                                    quoteColor = quoteColor,
-                                    onQuoteClick = onQuoteClick,
-                                    onImageClick = onImageClick,
-                                    onViewThreadClick = onViewThreadClick,
-                                    currentThreadId = currentThreadId
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (isCollapsible && !isExpanded) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(80.dp)
-                            .align(Alignment.BottomCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        DaoTheme.colors.replyCardBg.copy(alpha = 0.95f)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
-                        androidx.compose.material3.TextButton(
-                            onClick = { isExpanded = true },
-                            modifier = Modifier.padding(bottom = 0.dp)
-                        ) {
-                            Text(
-                                text = "展开全文",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
+                        is PostContentBlock.Quote -> {
+                            val quoteColor = MaterialTheme.colorScheme.primary
+                            QuotedPostBox(
+                                quote = block.quote,
+                                quoteColor = quoteColor,
+                                onQuoteClick = onQuoteClick,
+                                onImageClick = onImageClick,
+                                onViewThreadClick = onViewThreadClick,
+                                currentThreadId = currentThreadId
                             )
                         }
                     }
