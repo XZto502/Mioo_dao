@@ -19,7 +19,11 @@ object UpdateDownloader {
 
     fun downloadAndInstall(context: Context, release: GithubRelease) {
         val apkAsset = release.assets?.firstOrNull { it.name.endsWith(".apk") }
-        val downloadUrl = apkAsset?.browserDownloadUrl ?: release.htmlUrl
+        var downloadUrl = apkAsset?.browserDownloadUrl ?: release.htmlUrl
+
+        if (downloadUrl.contains("github.com") && downloadUrl.contains("/releases/download/")) {
+            downloadUrl = "https://ghfast.top/$downloadUrl"
+        }
 
         if (downloadUrl == release.htmlUrl) {
             // No APK found, fallback to browser
@@ -72,7 +76,44 @@ object UpdateDownloader {
             override fun onReceive(ctx: Context, intent: Intent) {
                 val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
                 if (id == downloadId) {
-                    installApk(ctx)
+                    val manager = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    val query = DownloadManager.Query().setFilterById(downloadId)
+                    val cursor = manager.query(query)
+                    var isSuccess = false
+                    var errorCode = -1
+                    if (cursor != null && cursor.moveToFirst()) {
+                        val statusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                        val reasonIdx = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                        if (statusIdx != -1) {
+                            val status = cursor.getInt(statusIdx)
+                            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                                isSuccess = true
+                            } else if (status == DownloadManager.STATUS_FAILED) {
+                                errorCode = if (reasonIdx != -1) cursor.getInt(reasonIdx) else -1
+                            }
+                        }
+                        cursor.close()
+                    }
+
+                    if (isSuccess) {
+                        Toast.makeText(ctx, "下载完成，正在调起安装...", Toast.LENGTH_SHORT).show()
+                        installApk(ctx)
+                    } else {
+                        val errorDetail = when (errorCode) {
+                            DownloadManager.ERROR_CANNOT_RESUME -> "无法恢复下载"
+                            DownloadManager.ERROR_DEVICE_NOT_FOUND -> "找不到存储设备"
+                            DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "文件已存在"
+                            DownloadManager.ERROR_FILE_ERROR -> "存储文件错误"
+                            DownloadManager.ERROR_HTTP_DATA_ERROR -> "HTTP 数据错误"
+                            DownloadManager.ERROR_INSUFFICIENT_SPACE -> "存储空间不足"
+                            DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "重定向次数过多"
+                            DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "未处理的 HTTP 代码"
+                            DownloadManager.ERROR_UNKNOWN -> "未知错误"
+                            else -> "网络连接失败或连接超时 (代码: $errorCode)"
+                        }
+                        Toast.makeText(ctx, "更新包下载失败: $errorDetail", Toast.LENGTH_LONG).show()
+                    }
+
                     // Clean up receiver
                     try {
                         ctx.applicationContext.unregisterReceiver(this)
