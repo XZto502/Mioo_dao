@@ -216,8 +216,17 @@ fun MoreScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val versionContext = LocalContext.current
+                    val currentVer = remember(versionContext) {
+                        try {
+                            val packageInfo = versionContext.packageManager.getPackageInfo(versionContext.packageName, 0)
+                            packageInfo.versionName ?: "1.0.0"
+                        } catch (e: Exception) {
+                            "1.0.0"
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("v1.1.0", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text("v$currentVer", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (isCheckingUpdate) "正在检查..." else "检查更新",
@@ -232,9 +241,9 @@ fun MoreScreen(
                                             val release = response.data
                                             val currentVersion = try {
                                                 val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                                                packageInfo.versionName ?: "1.0"
+                                                packageInfo.versionName ?: "1.0.0"
                                             } catch (e: Exception) {
-                                                "1.0"
+                                                "1.0.0"
                                             }
                                             
                                             val cleanCurrent = currentVersion.trim().lowercase().removePrefix("v")
