@@ -254,10 +254,16 @@ fun SettingsScreen(
                         val label = if (note.isNotBlank()) "$note · $displayName" else displayName
 
                         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectCookie(index) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 RadioButton(
                                     selected = isSelected,
-                                    onClick = { viewModel.selectCookie(index) }
+                                    onClick = null
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
@@ -465,12 +471,13 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { viewModel.updateThemeMode(mode) }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
                             selected = settings.themeMode == mode,
-                            onClick = { viewModel.updateThemeMode(mode) }
+                            onClick = null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -514,12 +521,13 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { viewModel.updateThemeColor(colorKey) }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
                             selected = settings.themeColor == colorKey,
-                            onClick = { viewModel.updateThemeColor(colorKey) }
+                            onClick = null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
