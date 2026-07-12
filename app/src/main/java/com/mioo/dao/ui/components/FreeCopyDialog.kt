@@ -50,7 +50,7 @@ fun FreeCopyDialog(
                     )
                 )
             },
-            containerColor = Color.Transparent
+            containerColor = MaterialTheme.colorScheme.background
         ) { paddingValues ->
             SelectionContainer(
                 modifier = Modifier
