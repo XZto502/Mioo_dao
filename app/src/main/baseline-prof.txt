@@ -1,0 +1,77 @@
+# Baseline Profile for MiooDao
+# AOT-compile critical startup, navigation, and scrolling paths.
+
+# --- App entry & DI ---
+Lcom/mioo/dao/MainActivity;
+Lcom/mioo/dao/MiooDaoApp;
+HSPLcom/mioo/dao/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/mioo/dao/MiooDaoApp;->onCreate()V
+HSPLcom/mioo/dao/MiooDaoApp;->newImageLoader()Lcoil/ImageLoader;
+
+# --- Navigation & theme ---
+Lcom/mioo/dao/ui/navigation/NavGraphKt;
+Lcom/mioo/dao/ui/navigation/Screen;
+Lcom/mioo/dao/ui/navigation/Screen$Forum;
+Lcom/mioo/dao/ui/navigation/Screen$Feed;
+Lcom/mioo/dao/ui/navigation/Screen$Settings;
+Lcom/mioo/dao/ui/navigation/Screen$Thread;
+Lcom/mioo/dao/ui/theme/ThemeKt;
+Lcom/mioo/dao/ui/theme/ColorKt;
+Lcom/mioo/dao/ui/theme/TypeKt;
+Lcom/mioo/dao/ui/theme/ShapeKt;
+HSPLcom/mioo/dao/ui/theme/ThemeKt;->MiooDaoTheme(ZLjava/lang/String;FLkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+
+# --- Hot UI components (list scroll) ---
+Lcom/mioo/dao/ui/components/ThreadCardKt;
+Lcom/mioo/dao/ui/components/ReplyCardKt;
+Lcom/mioo/dao/ui/components/HtmlContentKt;
+Lcom/mioo/dao/ui/components/HtmlParseCache;
+Lcom/mioo/dao/ui/components/PostData;
+Lcom/mioo/dao/ui/components/ReplyDisplayItem;
+Lcom/mioo/dao/ui/components/ThreadListItem;
+Lcom/mioo/dao/ui/components/ThreadListItemKt;
+Lcom/mioo/dao/ui/components/BookmarkListItem;
+Lcom/mioo/dao/ui/components/StablePostList;
+Lcom/mioo/dao/ui/components/ImagePrefetcherKt;
+Lcom/mioo/dao/ui/components/RefPopupKt;
+Lcom/mioo/dao/ui/components/ImageViewerKt;
+Lcom/mioo/dao/ui/components/GlassModifiersKt;
+HSPLcom/mioo/dao/ui/components/HtmlContentKt;->parseHtmlToAnnotatedString(Ljava/lang/String;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;)Landroidx/compose/ui/text/AnnotatedString;
+HSPLcom/mioo/dao/ui/components/HtmlParseCache;->getOrParse(Ljava/lang/String;Landroidx/compose/ui/graphics/Color;)Landroidx/compose/ui/text/AnnotatedString;
+
+# --- Primary screens ---
+Lcom/mioo/dao/ui/screens/forum/ForumScreenKt;
+Lcom/mioo/dao/ui/screens/forum/ForumViewModel;
+Lcom/mioo/dao/ui/screens/forum/ForumUiState;
+Lcom/mioo/dao/ui/screens/thread/ThreadScreenKt;
+Lcom/mioo/dao/ui/screens/thread/ThreadViewModel;
+Lcom/mioo/dao/ui/screens/thread/ThreadUiState;
+Lcom/mioo/dao/ui/screens/thread/ReplyComposerState;
+Lcom/mioo/dao/ui/screens/feed/FeedScreenKt;
+Lcom/mioo/dao/ui/screens/feed/FeedViewModel;
+Lcom/mioo/dao/ui/screens/feed/FeedUiState;
+Lcom/mioo/dao/ui/screens/home/HomeScreenKt;
+Lcom/mioo/dao/ui/screens/home/HomeViewModel;
+Lcom/mioo/dao/ui/screens/home/HomeUiState;
+Lcom/mioo/dao/ui/screens/settings/SettingsScreenKt;
+Lcom/mioo/dao/ui/screens/settings/SettingsViewModel;
+Lcom/mioo/dao/ui/screens/settings/MoreScreenKt;
+Lcom/mioo/dao/ui/screens/settings/HistoryScreenKt;
+
+# --- Data layer (network + cache hot path) ---
+Lcom/mioo/dao/data/repository/ThreadRepositoryImpl;
+Lcom/mioo/dao/data/repository/ForumRepositoryImpl;
+Lcom/mioo/dao/data/repository/SettingsRepository;
+Lcom/mioo/dao/data/repository/FeedRepositoryImpl;
+Lcom/mioo/dao/data/api/XdApiService;
+Lcom/mioo/dao/data/api/CookieInterceptor;
+HSPLcom/mioo/dao/data/api/CookieInterceptor;->intercept(Lokhttp3/Interceptor$Chain;)Lokhttp3/Response;
+Lcom/mioo/dao/data/local/SettingsDataStore;
+Lcom/mioo/dao/data/local/AppDatabase;
+Lcom/mioo/dao/data/local/CacheDao;
+Lcom/mioo/dao/data/local/HistoryDao;
+Lcom/mioo/dao/data/model/Thread;
+Lcom/mioo/dao/data/model/Reply;
+Lcom/mioo/dao/data/model/UserSettings;
+Lcom/mioo/dao/di/NetworkModule;
+Lcom/mioo/dao/di/DatabaseModule;

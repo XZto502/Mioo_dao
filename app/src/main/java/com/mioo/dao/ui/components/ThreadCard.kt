@@ -22,16 +22,23 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
+import coil.size.Size
 import com.mioo.dao.ui.theme.DaoTheme
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -43,8 +50,14 @@ fun ThreadCard(
     onQuoteClick: (String) -> Unit,
     onImageClick: (String) -> Unit,
     modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    /** Truncate body in list for cheaper measure/layout on cold scroll. */
+    contentMaxLines: Int = 8,
+    /** List cards let the parent Card handle gestures — skip HtmlContent pointerInput. */
+    enableHtmlGestures: Boolean = false
 ) {
+    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    val border = remember(outline) { BorderStroke(0.5.dp, outline) }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -57,9 +70,7 @@ fun ThreadCard(
             containerColor = DaoTheme.colors.threadCardBg
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-        )
+        border = border
     ) {
         Column(
             modifier = Modifier
@@ -154,14 +165,17 @@ fun ThreadCard(
                 )
             }
 
-            // HTML content
+            // HTML content — list mode skips gesture plumbing (card handles clicks)
             HtmlContent(
                 html = postData.content,
                 onQuoteClick = onQuoteClick,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.fillMaxWidth(),
-                onTextClick = onThreadClick,
-                onLongClick = onLongClick
+                maxLines = contentMaxLines,
+                overflow = TextOverflow.Ellipsis,
+                onTextClick = if (enableHtmlGestures) onThreadClick else null,
+                onLongClick = if (enableHtmlGestures) onLongClick else null,
+                enableGestures = enableHtmlGestures
             )
 
             // Attached Image Thumbnail
@@ -173,11 +187,21 @@ fun ThreadCard(
                         .clip(MaterialTheme.shapes.medium)
                         .clickable { onImageClick(imageUrl) }
                 ) {
-                    AsyncImage(
-                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    val context = LocalContext.current
+                    val imageRequest = remember(imageUrl) {
+                        ImageRequest.Builder(context)
                             .data(imageUrl)
-                            .crossfade(true)
-                            .build(),
+                            .crossfade(false)
+                            .size(Size(360, 360))
+                            .precision(Precision.INEXACT)
+                            .memoryCacheKey(imageUrl)
+                            .diskCacheKey(imageUrl)
+                            // Avoid thrashing decoder during first fling
+                            .allowHardware(true)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = imageRequest,
                         contentDescription = "Thread Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()

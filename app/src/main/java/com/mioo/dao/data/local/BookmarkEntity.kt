@@ -12,5 +12,12 @@ data class BookmarkEntity(
     val now: String,
     val title: String?,
     val name: String?,
-    val timestamp: Long = System.currentTimeMillis()
-)
+    val timestamp: Long = System.currentTimeMillis(),
+    /** Reply count when user last opened this thread. */
+    val lastReadReplyCount: Int = 0,
+    /** Latest known reply count (refreshed in background). */
+    val lastKnownReplyCount: Int = 0
+) {
+    val newReplyCount: Int
+        get() = (lastKnownReplyCount - lastReadReplyCount).coerceAtLeast(0)
+}

@@ -239,8 +239,17 @@ fun RefPopup(
                         // Attached Image
                         postData.imageUrl?.let { imageUrl ->
                             Spacer(modifier = Modifier.height(12.dp))
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            val imageRequest = androidx.compose.runtime.remember(imageUrl) {
+                                coil.request.ImageRequest.Builder(context)
+                                    .data(imageUrl)
+                                    .crossfade(true)
+                                    .size(coil.size.Size(300, 300))
+                                    .precision(coil.size.Precision.INEXACT)
+                                    .build()
+                            }
                             AsyncImage(
-                                model = imageUrl,
+                                model = imageRequest,
                                 contentDescription = "Attached Thumbnail",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -251,25 +260,23 @@ fun RefPopup(
                         }
 
                         // View Original Thread right aligned text
-                        val isMainThread = postData.resto == null || postData.resto == "0" || postData.resto == postData.id
-                        if (isMainThread) {
-                            val targetThreadId = postData.id
-                            val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
-                            if (targetThreadId != "0" && targetThreadId != "null" && targetThreadId.isNotBlank() && !isCurrentThread) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onViewThreadClick(targetThreadId) }
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    Text(
-                                        text = "查看原串",
-                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                        val targetThreadId = postData.resto
+                        val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
+                        val hasValidThread = !targetThreadId.isNullOrBlank() && targetThreadId != "0" && targetThreadId != "null"
+                        if (hasValidThread && !isCurrentThread) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onViewThreadClick(targetThreadId!!) }
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Text(
+                                    text = "查看原串",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
                     }

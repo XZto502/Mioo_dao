@@ -1,82 +1,58 @@
 package com.mioo.dao.data.api
 
-import com.mioo.dao.data.local.SettingsDataStore
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import com.mioo.dao.data.repository.SettingsRepository
 import okhttp3.Interceptor
 import okhttp3.Response
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Attaches userhash / auth cookies without blocking the OkHttp dispatcher.
+ * Reads the in-memory [SettingsRepository.settings] snapshot (eagerly shared),
+ * so list scrolling + pagination never pay a DataStore round-trip per request.
+ */
 @Singleton
 class CookieInterceptor @Inject constructor(
-    private val settingsDataStore: SettingsDataStore
+    private val settingsRepository: SettingsRepository
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
+        val settings = settingsRepository.settings.value
         val originalRequest = chain.request()
 
-        val selectedIndex = runBlocking { settingsDataStore.selectedCookieIndexFlow.first() }
-        val cookiesList = runBlocking { settingsDataStore.cookiesListFlow.first() }
-        val oldUserHash = runBlocking { settingsDataStore.userHashFlow.first() }
-        val authCookie = runBlocking { settingsDataStore.authCookieFlow.first() }
-        
-        var activeCookie = if (selectedIndex in cookiesList.indices) {
-            cookiesList[selectedIndex]
-        } else {
-            oldUserHash
-        }
-        
-        if (activeCookie?.startsWith("{") == true) {
-            try {
-                val json = org.json.JSONObject(activeCookie)
-                val hash = json.optString("cookie", "")
-                if (hash.isNotEmpty()) {
-                    activeCookie = hash
-                } else {
-                    val userHash = json.optString("userhash", "")
-                    if (userHash.isNotEmpty()) {
-                        activeCookie = userHash
-                    }
-                }
-            } catch (e: Exception) {
-                // ignore
-            }
-        }
+        var activeCookie = settings.cookiesList.getOrNull(settings.selectedCookieIndex)
+            ?: settings.cookie.takeIf { it.isNotBlank() }
+        activeCookie = extractHash(activeCookie)
+
+        var authCookie = extractHash(settings.authCookie.takeIf { it.isNotBlank() })
 
         val requestBuilder = originalRequest.newBuilder()
-        requestBuilder.header("User-Agent", "HavfunClient-Android")
+            .header("User-Agent", "HavfunClient-Android")
 
-        val cookies = mutableListOf<String>()
+        val cookieParts = ArrayList<String>(2)
         if (!activeCookie.isNullOrBlank()) {
-            cookies.add("userhash=$activeCookie")
+            cookieParts.add("userhash=$activeCookie")
         }
-        var actualAuthCookie = authCookie
-        if (actualAuthCookie?.startsWith("{") == true) {
-            try {
-                val json = org.json.JSONObject(actualAuthCookie)
-                val hash = json.optString("cookie", "")
-                if (hash.isNotEmpty()) {
-                    actualAuthCookie = hash
-                } else {
-                    val userHash = json.optString("userhash", "")
-                    if (userHash.isNotEmpty()) {
-                        actualAuthCookie = userHash
-                    }
-                }
-            } catch (e: Exception) {
-                // ignore
-            }
+        if (!authCookie.isNullOrBlank()) {
+            cookieParts.add("auth=$authCookie")
         }
-
-        if (!actualAuthCookie.isNullOrBlank()) {
-            cookies.add("auth=$actualAuthCookie")
-        }
-
-        if (cookies.isNotEmpty()) {
-            requestBuilder.header("Cookie", cookies.joinToString("; "))
+        if (cookieParts.isNotEmpty()) {
+            requestBuilder.header("Cookie", cookieParts.joinToString("; "))
         }
 
         return chain.proceed(requestBuilder.build())
+    }
+
+    private fun extractHash(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        if (!raw.startsWith("{")) return raw
+        return try {
+            val json = org.json.JSONObject(raw)
+            json.optString("cookie", "")
+                .ifEmpty { json.optString("userhash", "") }
+                .ifEmpty { raw }
+        } catch (_: Exception) {
+            raw
+        }
     }
 }

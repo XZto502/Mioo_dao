@@ -37,6 +37,33 @@ import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.theme.DaoTheme
 import androidx.compose.ui.graphics.Color
 
+/** Lightweight strip for history previews — avoids per-row Regex allocation. */
+private fun stripSimpleHtml(html: String): String {
+    if (html.isEmpty()) return html
+    val sb = StringBuilder(html.length)
+    var i = 0
+    while (i < html.length) {
+        val c = html[i]
+        when {
+            c == '<' -> {
+                val end = html.indexOf('>', i)
+                i = if (end < 0) html.length else end + 1
+            }
+            c == '&' -> {
+                when {
+                    html.startsWith("&nbsp;", i) -> { sb.append(' '); i += 6 }
+                    html.startsWith("&gt;", i) -> { sb.append('>'); i += 4 }
+                    html.startsWith("&lt;", i) -> { sb.append('<'); i += 4 }
+                    html.startsWith("&amp;", i) -> { sb.append('&'); i += 5 }
+                    else -> { sb.append(c); i++ }
+                }
+            }
+            else -> { sb.append(c); i++ }
+        }
+    }
+    return sb.toString().trim()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
@@ -99,7 +126,17 @@ fun HistoryScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(historyList, key = { it.id }) { item ->
+                items(
+                    items = historyList,
+                    key = { it.id },
+                    contentType = { "history_row" }
+                ) { item ->
+                    val cleanContent = remember(item.content) {
+                        stripSimpleHtml(item.content)
+                    }
+                    val titleText = remember(item.title, item.id) {
+                        if (!item.title.isNullOrBlank()) item.title else "No.${item.id}"
+                    }
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -111,7 +148,6 @@ fun HistoryScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val titleText = if (!item.title.isNullOrBlank()) item.title else "No.${item.id}"
                             Text(
                                 text = titleText,
                                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
@@ -127,9 +163,6 @@ fun HistoryScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(6.dp))
-                        val cleanContent = remember(item.content) {
-                            item.content.replace(Regex("<.*?>|&nbsp;|&gt;"), "").trim()
-                        }
                         Text(
                             text = cleanContent,
                             style = MaterialTheme.typography.bodyMedium,

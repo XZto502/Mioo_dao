@@ -22,4 +22,20 @@ interface CacheDao {
 
     @Query("SELECT SUM(LENGTH(jsonResponse)) FROM api_cache")
     suspend fun getTotalCacheSize(): Long?
+
+    /**
+     * Best-effort full-text scan over cached thread JSON (no server search API).
+     * Limited to keep UI responsive.
+     */
+    @Query(
+        """
+        SELECT * FROM api_cache
+        WHERE cacheKey LIKE 'thread_%'
+          AND page = 1
+          AND jsonResponse LIKE '%' || :query || '%'
+        ORDER BY cachedAt DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchThreadCache(query: String, limit: Int = 30): List<CacheEntity>
 }

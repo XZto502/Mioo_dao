@@ -43,6 +43,12 @@ object DatabaseModule {
 
     @Provides
     @Singleton
+    fun provideProgressDao(database: AppDatabase): com.mioo.dao.data.local.ProgressDao {
+        return database.progressDao()
+    }
+
+    @Provides
+    @Singleton
     fun provideSettingsDataStore(@ApplicationContext context: Context): SettingsDataStore {
         return SettingsDataStore(context)
     }

@@ -11,7 +11,12 @@ import com.mioo.dao.data.local.CacheDao
 import com.mioo.dao.data.local.CacheEntity
 import com.mioo.dao.data.local.HistoryDao
 import com.mioo.dao.data.local.HistoryEntity
+import com.mioo.dao.data.local.ProgressDao
 import com.mioo.dao.data.local.SettingsDataStore
+import com.mioo.dao.data.local.ThreadProgressEntity
+import com.mioo.dao.data.model.LocalSearchHit
+import com.mioo.dao.data.model.LocalSearchResult
+import com.mioo.dao.data.model.LocalSearchSource
 import com.mioo.dao.data.model.Reply
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
@@ -69,6 +74,16 @@ interface ThreadRepository {
     suspend fun addBookmark(thread: Thread)
     suspend fun removeBookmark(id: String)
     suspend fun insertBookmarks(threads: List<Thread>)
+    suspend fun markBookmarkRead(threadId: String, replyCount: Int)
+    suspend fun refreshBookmarkReplyCounts(limit: Int = 20)
+
+    // Reading progress
+    suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int)
+    suspend fun getThreadProgress(threadId: String): ThreadProgressEntity?
+    suspend fun clearThreadProgress(threadId: String)
+
+    /** Local-only search (no server search API). */
+    suspend fun searchLocal(query: String): LocalSearchResult
 
     // Remote Feed operations
     fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>>
@@ -90,127 +105,150 @@ class ThreadRepositoryImpl @Inject constructor(
     private val githubApiService: GithubApiService,
     private val historyDao: HistoryDao,
     private val cacheDao: CacheDao,
+    private val progressDao: ProgressDao,
     private val settingsDataStore: SettingsDataStore,
     @ApplicationContext private val context: Context,
     private val moshi: com.squareup.moshi.Moshi
 ) : ThreadRepository {
 
+    companion object {
+        private val HTML_OR_NEWLINE = Regex("<.*?>|\\n")
+    }
+
     private val threadListType = Types.newParameterizedType(List::class.java, Thread::class.java)
     private val threadListAdapter = moshi.adapter<List<Thread>>(threadListType)
     private val threadAdapter = moshi.adapter(Thread::class.java)
+    private val replyAdapter = moshi.adapter(Reply::class.java)
     private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         val cacheKey = "showf_$fid"
+        var emittedCache = false
         try {
-            val response = apiService.showf(fid, page)
-            val json = threadListAdapter.toJson(response)
-            cacheDao.insertCache(CacheEntity(cacheKey, page, json))
-            emit(XdResponse.Success(response))
-        } catch (e: Exception) {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
-                try {
-                    val cachedList = threadListAdapter.fromJson(cached.jsonResponse)
-                    if (cachedList != null) {
-                        emit(XdResponse.Success(cachedList))
-                        return@flow
-                    }
-                } catch (jsonEx: Exception) {
+                val cachedList = runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull()
+                if (cachedList != null) {
+                    emit(XdResponse.Success(cachedList))
+                    emittedCache = true
                 }
             }
-            val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) "该板块或串不存在" else e.localizedMessage ?: "Network error"
-            emit(XdResponse.Error(message = msg, throwable = e))
+            val response = apiService.showf(fid, page)
+            cacheDao.insertCache(CacheEntity(cacheKey, page, threadListAdapter.toJson(response)))
+            emit(XdResponse.Success(response))
+        } catch (e: Exception) {
+            if (!emittedCache) {
+                val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
+                    "该板块或串不存在"
+                } else {
+                    e.localizedMessage ?: "Network error"
+                }
+                emit(XdResponse.Error(message = msg, throwable = e))
+            }
         }
     }.flowOn(Dispatchers.IO)
 
     override fun getTimeline(id: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         val cacheKey = "timeline_$id"
+        var emittedCache = false
         try {
-            val response = apiService.timeline(id, page)
-            val json = threadListAdapter.toJson(response)
-            cacheDao.insertCache(CacheEntity(cacheKey, page, json))
-            emit(XdResponse.Success(response))
-        } catch (e: Exception) {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
-                try {
-                    val cachedList = threadListAdapter.fromJson(cached.jsonResponse)
-                    if (cachedList != null) {
-                        emit(XdResponse.Success(cachedList))
-                        return@flow
-                    }
-                } catch (jsonEx: Exception) {
+                val cachedList = runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull()
+                if (cachedList != null) {
+                    emit(XdResponse.Success(cachedList))
+                    emittedCache = true
                 }
             }
-            val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) "该串不存在或已被删除" else e.localizedMessage ?: "Network error"
-            emit(XdResponse.Error(message = msg, throwable = e))
+            val response = apiService.timeline(id, page)
+            cacheDao.insertCache(CacheEntity(cacheKey, page, threadListAdapter.toJson(response)))
+            emit(XdResponse.Success(response))
+        } catch (e: Exception) {
+            if (!emittedCache) {
+                val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
+                    "该串不存在或已被删除"
+                } else {
+                    e.localizedMessage ?: "Network error"
+                }
+                emit(XdResponse.Error(message = msg, throwable = e))
+            }
         }
     }.flowOn(Dispatchers.IO)
 
     override fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>> = flow {
         val cacheKey = "thread_$tid"
+        var emittedCache = false
         try {
-            val response = apiService.thread(tid, page)
-            saveToHistory(response)
-            val json = threadAdapter.toJson(response)
-            cacheDao.insertCache(CacheEntity(cacheKey, page, json))
-            emit(XdResponse.Success(response))
-        } catch (e: Exception) {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
-                try {
-                    val cachedThread = threadAdapter.fromJson(cached.jsonResponse)
-                    if (cachedThread != null) {
-                        emit(XdResponse.Success(cachedThread))
-                        return@flow
-                    }
-                } catch (jsonEx: Exception) {
+                val cachedThread = runCatching { threadAdapter.fromJson(cached.jsonResponse) }.getOrNull()
+                if (cachedThread != null) {
+                    emit(XdResponse.Success(cachedThread))
+                    emittedCache = true
                 }
             }
-            val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) "该串不存在或已被删除" else e.localizedMessage ?: "Network error"
-            emit(XdResponse.Error(message = msg, throwable = e))
+            val response = apiService.thread(tid, page)
+            // Only write history on first page to avoid DB thrash during infinite scroll
+            if (page <= 1) {
+                saveToHistory(response)
+            }
+            cacheDao.insertCache(CacheEntity(cacheKey, page, threadAdapter.toJson(response)))
+            emit(XdResponse.Success(response))
+        } catch (e: Exception) {
+            if (!emittedCache) {
+                val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
+                    "该串不存在或已被删除"
+                } else {
+                    e.localizedMessage ?: "Network error"
+                }
+                emit(XdResponse.Error(message = msg, throwable = e))
+            }
         }
     }.flowOn(Dispatchers.IO)
 
     override fun getPoDetail(tid: String, page: Int): Flow<XdResponse<Thread>> = flow {
         val cacheKey = "po_$tid"
+        var emittedCache = false
         try {
-            val response = apiService.po(tid, page)
-            val json = threadAdapter.toJson(response)
-            cacheDao.insertCache(CacheEntity(cacheKey, page, json))
-            emit(XdResponse.Success(response))
-        } catch (e: Exception) {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
-                try {
-                    val cachedThread = threadAdapter.fromJson(cached.jsonResponse)
-                    if (cachedThread != null) {
-                        emit(XdResponse.Success(cachedThread))
-                        return@flow
-                    }
-                } catch (jsonEx: Exception) {
+                val cachedThread = runCatching { threadAdapter.fromJson(cached.jsonResponse) }.getOrNull()
+                if (cachedThread != null) {
+                    emit(XdResponse.Success(cachedThread))
+                    emittedCache = true
                 }
             }
-            val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) "该串不存在或已被删除" else e.localizedMessage ?: "Network error"
-            emit(XdResponse.Error(message = msg, throwable = e))
+            val response = apiService.po(tid, page)
+            cacheDao.insertCache(CacheEntity(cacheKey, page, threadAdapter.toJson(response)))
+            emit(XdResponse.Success(response))
+        } catch (e: Exception) {
+            if (!emittedCache) {
+                val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
+                    "该串不存在或已被删除"
+                } else {
+                    e.localizedMessage ?: "Network error"
+                }
+                emit(XdResponse.Error(message = msg, throwable = e))
+            }
         }
     }.flowOn(Dispatchers.IO)
 
     override fun getRefPost(id: String): Flow<XdResponse<Reply>> = flow {
         try {
             val responseString = apiService.ref(id).string()
-            val adapter = moshi.adapter(Reply::class.java)
             try {
-                val reply = adapter.fromJson(responseString)
+                val reply = replyAdapter.fromJson(responseString)
                 if (reply != null) {
                     emit(XdResponse.Success(reply))
                 } else {
                     emit(XdResponse.Error(message = "引用的串解析失败"))
                 }
             } catch (e: Exception) {
-                // Not a valid JSON reply, likely an HTML error string from the server (e.g., "该引用内容不存在")
-                val cleanError = responseString.replace(Regex("<.*?>|\\n"), "").replace("\"", "").trim()
+                // Not a valid JSON reply, likely an HTML error string from the server
+                val cleanError = responseString
+                    .replace(HTML_OR_NEWLINE, "")
+                    .replace("\"", "")
+                    .trim()
                 val errorMsg = cleanError.ifEmpty { "该引用不存在或已被删除" }
                 emit(XdResponse.Error(message = errorMsg))
             }
@@ -311,6 +349,7 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun isBookmarked(id: String): Flow<Boolean> = historyDao.isBookmarked(id)
 
     override suspend fun addBookmark(thread: Thread) {
+        val count = thread.replyCount ?: 0
         historyDao.insertBookmark(
             BookmarkEntity(
                 id = thread.idStr,
@@ -319,7 +358,9 @@ class ThreadRepositoryImpl @Inject constructor(
                 userid = thread.userHash,
                 now = thread.now,
                 title = thread.title,
-                name = thread.name
+                name = thread.name,
+                lastReadReplyCount = count,
+                lastKnownReplyCount = count
             )
         )
     }
@@ -329,18 +370,136 @@ class ThreadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun insertBookmarks(threads: List<Thread>) {
-        threads.forEach { thread ->
-            val entity = BookmarkEntity(
+        if (threads.isEmpty()) return
+        val entities = threads.map { thread ->
+            val count = thread.replyCount ?: 0
+            BookmarkEntity(
                 id = thread.idStr,
                 fid = thread.fidStr,
                 content = thread.content,
                 userid = thread.userHash,
                 now = thread.now,
                 title = thread.title,
-                name = thread.name
+                name = thread.name,
+                lastReadReplyCount = count,
+                lastKnownReplyCount = count
             )
-            historyDao.insertBookmark(entity)
         }
+        historyDao.insertBookmarks(entities)
+    }
+
+    override suspend fun markBookmarkRead(threadId: String, replyCount: Int) {
+        historyDao.markBookmarkRead(threadId, replyCount)
+    }
+
+    override suspend fun refreshBookmarkReplyCounts(limit: Int) {
+        val bookmarks = historyDao.getAllBookmarks().first().take(limit)
+        for (bookmark in bookmarks) {
+            try {
+                val thread = apiService.thread(bookmark.id, 1)
+                val count = thread.replyCount ?: 0
+                historyDao.updateKnownReplyCount(bookmark.id, count)
+                // Keep local snapshot content mildly fresh
+                historyDao.insertBookmark(
+                    bookmark.copy(
+                        content = thread.content,
+                        title = thread.title,
+                        now = thread.now,
+                        lastKnownReplyCount = count
+                    )
+                )
+                delay(200)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    override suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int) {
+        progressDao.upsert(
+            ThreadProgressEntity(
+                threadId = threadId,
+                page = page.coerceAtLeast(1),
+                firstVisibleIndex = firstVisibleIndex.coerceAtLeast(0)
+            )
+        )
+    }
+
+    override suspend fun getThreadProgress(threadId: String): ThreadProgressEntity? {
+        return progressDao.get(threadId)
+    }
+
+    override suspend fun clearThreadProgress(threadId: String) {
+        progressDao.delete(threadId)
+    }
+
+    override suspend fun searchLocal(query: String): LocalSearchResult {
+        val q = query.trim()
+        if (q.isEmpty()) {
+            return LocalSearchResult(query = q)
+        }
+
+        val digitsOnly = q.removePrefix("No.").removePrefix("no.").removePrefix(">>").trim()
+        val directThreadId = digitsOnly.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+
+        val historyHits = historyDao.searchHistory(q).map { entity ->
+            LocalSearchHit(
+                threadId = entity.id,
+                title = entity.title,
+                snippet = entity.content,
+                userId = entity.userid,
+                source = LocalSearchSource.HISTORY,
+                timestamp = entity.timestamp
+            )
+        }
+        val bookmarkHits = historyDao.searchBookmarks(q).map { entity ->
+            LocalSearchHit(
+                threadId = entity.id,
+                title = entity.title,
+                snippet = entity.content,
+                userId = entity.userid,
+                source = LocalSearchSource.BOOKMARK,
+                timestamp = entity.timestamp,
+                newReplyCount = entity.newReplyCount
+            )
+        }
+
+        val cacheHits = mutableListOf<LocalSearchHit>()
+        try {
+            val caches = cacheDao.searchThreadCache(q)
+            for (cache in caches) {
+                val thread = runCatching { threadAdapter.fromJson(cache.jsonResponse) }.getOrNull()
+                    ?: continue
+                cacheHits.add(
+                    LocalSearchHit(
+                        threadId = thread.idStr,
+                        title = thread.title,
+                        snippet = thread.content,
+                        userId = thread.userHash,
+                        source = LocalSearchSource.CACHE,
+                        timestamp = cache.cachedAt
+                    )
+                )
+            }
+        } catch (_: Exception) {
+        }
+
+        // Deduplicate by threadId, prefer bookmark > history > cache
+        val merged = LinkedHashMap<String, LocalSearchHit>()
+        fun putPrefer(hit: LocalSearchHit) {
+            val existing = merged[hit.threadId]
+            if (existing == null || hit.source.priority < existing.source.priority) {
+                merged[hit.threadId] = hit
+            }
+        }
+        bookmarkHits.forEach(::putPrefer)
+        historyHits.forEach(::putPrefer)
+        cacheHits.forEach(::putPrefer)
+
+        return LocalSearchResult(
+            query = q,
+            directThreadId = directThreadId,
+            hits = merged.values.sortedByDescending { it.timestamp }
+        )
     }
 
     override fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {

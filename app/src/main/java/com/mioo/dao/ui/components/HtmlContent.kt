@@ -3,40 +3,43 @@ package com.mioo.dao.ui.components
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.material3.Text
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import com.mioo.dao.ui.theme.DaoTheme
 import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
 private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>")
 private val HTML_PATTERN = Pattern.compile(
     "(?:<font\\s+color=\"([^\"]+)\"[^>]*>(.*?)</font>)|" +
-    "(?:<span\\s+style=\"[^\"]*color:\\s*([^;\"]+)[^\"]*\"[^>]*>(.*?)</span>)|" +
-    "(?:<a\\s+href=\"([^\"]+)\"[^>]*>(.*?)</a>)|" +
-    "(>>(?:No\\.)?(\\d+))",
+        "(?:<span\\s+style=\"[^\"]*color:\\s*([^;\"]+)[^\"]*\"[^>]*>(.*?)</span>)|" +
+        "(?:<a\\s+href=\"([^\"]+)\"[^>]*>(.*?)</a>)|" +
+        "(>>(?:No\\.)?(\\d+))",
     Pattern.CASE_INSENSITIVE or Pattern.DOTALL
 )
 
 fun String.decodeHtmlEntities(): String {
+    // Fast path: skip scan when no entities present
+    if (indexOf('&') < 0) return this
     return this
         .replace("&gt;", ">")
         .replace("&lt;", "<")
@@ -55,17 +58,12 @@ fun String.decodeHtmlEntities(): String {
  * This prevents any raw <xxx> tags from leaking into the displayed text.
  */
 fun String.stripRemainingHtmlTags(): String {
+    if (indexOf('<') < 0) return this
     return this.replace(HTML_TAG_REGEX, "")
 }
 
 /**
  * Parsed X-Island HTML comments into a styled Compose AnnotatedString.
- * Handles:
- * - `<br>` and `<br />` for line breaks
- * - `<font color="#xxxxxx">...</font>` for colored texts
- * - `<span style="color: xxx">...</span>` for styled span texts
- * - `<a href="xxx" ...>...</a>` for links (with extra attributes like target, rel)
- * - `>>No.xxxx` and `>>xxxx` for quote links
  */
 fun parseHtmlToAnnotatedString(
     html: String,
@@ -73,14 +71,11 @@ fun parseHtmlToAnnotatedString(
     defaultGreenColor: Color = Color(0xFF789922)
 ): AnnotatedString {
     return buildAnnotatedString {
-        // Clean line breaks and decode HTML entities before parsing
         val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
-
         val matcher = HTML_PATTERN.matcher(cleaned)
 
         var lastIndex = 0
         while (matcher.find()) {
-            // Append normal text before the matched pattern (strip any leftover tags)
             val gap = cleaned.substring(lastIndex, matcher.start()).stripRemainingHtmlTags()
             append(gap)
 
@@ -99,7 +94,6 @@ fun parseHtmlToAnnotatedString(
                 }.getOrDefault(defaultGreenColor)
 
                 val start = length
-                // Strip nested tags inside font content
                 append(fontText.stripRemainingHtmlTags())
                 addStyle(SpanStyle(color = color), start, length)
             } else if (spanColor != null && spanText != null) {
@@ -156,9 +150,42 @@ fun parseHtmlToAnnotatedString(
             lastIndex = matcher.end()
         }
 
-        // Append remaining text (strip any leftover tags)
         if (lastIndex < cleaned.length) {
             append(cleaned.substring(lastIndex).stripRemainingHtmlTags())
+        }
+    }
+}
+
+/** Cache key: html + packed ARGB of quote color. */
+private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int)
+
+/**
+ * Shared HTML → AnnotatedString cache. Safe for background pre-warm and UI lookup.
+ */
+object HtmlParseCache {
+    private val cache = android.util.LruCache<HtmlCacheKey, AnnotatedString>(500)
+
+    fun getOrParse(html: String, quoteLinkColor: Color): AnnotatedString {
+        val key = HtmlCacheKey(html, quoteLinkColor.toArgb())
+        cache.get(key)?.let { return it }
+        val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor)
+        cache.put(key, parsed)
+        return parsed
+    }
+
+    /**
+     * Pre-parse HTML blobs on a background thread so first scroll frames hit the cache.
+     * Call from [Dispatchers.Default] / [Dispatchers.IO].
+     */
+    fun prewarm(htmlList: Collection<String>, quoteLinkColor: Color) {
+        if (htmlList.isEmpty()) return
+        val colorArgb = quoteLinkColor.toArgb()
+        for (html in htmlList) {
+            if (html.isBlank()) continue
+            val key = HtmlCacheKey(html, colorArgb)
+            if (cache.get(key) == null) {
+                cache.put(key, parseHtmlToAnnotatedString(html, quoteLinkColor))
+            }
         }
     }
 }
@@ -173,49 +200,78 @@ fun HtmlContent(
     overflow: TextOverflow = TextOverflow.Clip,
     onTextClick: (() -> Unit)? = null,
     onLinkClick: ((url: String) -> Unit)? = null,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    /**
+     * When false, skip pointerInput gesture setup (parent Card already handles click/long-press).
+     * Use for dense forum/timeline lists to cut cold-start scroll work.
+     */
+    enableGestures: Boolean = true
 ) {
     val quoteLinkColor = MaterialTheme.colorScheme.primary
-    val annotatedString = remember(html, quoteLinkColor) {
-        parseHtmlToAnnotatedString(html, quoteLinkColor)
+    val quoteColorArgb = quoteLinkColor.toArgb()
+    val annotatedString = remember(html, quoteColorArgb) {
+        HtmlParseCache.getOrParse(html, quoteLinkColor)
     }
     val context = LocalContext.current
     var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
 
-    val finalLinkClick = onLinkClick ?: { url ->
-        runCatching {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            context.startActivity(intent)
+    val surfaceColor = MaterialTheme.colorScheme.onSurface
+    val mergedStyle = remember(style, surfaceColor) { style.copy(color = surfaceColor) }
+
+    val textModifier = if (!enableGestures) {
+        modifier
+    } else {
+        val defaultLinkClick = remember(context) {
+            { url: String ->
+                runCatching {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    context.startActivity(intent)
+                }
+                Unit
+            }
+        }
+        val finalLinkClick = onLinkClick ?: defaultLinkClick
+        val onQuoteClickState = rememberUpdatedState(onQuoteClick)
+        val onTextClickState = rememberUpdatedState(onTextClick)
+        val onLongClickState = rememberUpdatedState(onLongClick)
+        val finalLinkClickState = rememberUpdatedState(finalLinkClick)
+
+        modifier.pointerInput(annotatedString) {
+            detectTapGestures(
+                onTap = { pos ->
+                    layoutResult?.let { layout ->
+                        val offset = layout.getOffsetForPosition(pos)
+                        val quoteAnnotation = annotatedString.getStringAnnotations(
+                            tag = "QUOTE_CLICK", start = offset, end = offset
+                        ).firstOrNull()
+                        val linkAnnotation = annotatedString.getStringAnnotations(
+                            tag = "LINK_CLICK", start = offset, end = offset
+                        ).firstOrNull()
+
+                        when {
+                            quoteAnnotation != null -> onQuoteClickState.value(quoteAnnotation.item)
+                            linkAnnotation != null -> finalLinkClickState.value(linkAnnotation.item)
+                            else -> onTextClickState.value?.invoke()
+                        }
+                    }
+                },
+                onLongPress = {
+                    onLongClickState.value?.invoke()
+                }
+            )
         }
     }
 
     Text(
         text = annotatedString,
-        modifier = modifier.pointerInput(annotatedString, onTextClick, onLongClick) {
-            detectTapGestures(
-                onTap = { pos ->
-                    layoutResult?.let { layout ->
-                        val offset = layout.getOffsetForPosition(pos)
-                        val quoteAnnotation = annotatedString.getStringAnnotations(tag = "QUOTE_CLICK", start = offset, end = offset).firstOrNull()
-                        val linkAnnotation = annotatedString.getStringAnnotations(tag = "LINK_CLICK", start = offset, end = offset).firstOrNull()
-
-                        if (quoteAnnotation != null) {
-                            onQuoteClick(quoteAnnotation.item)
-                        } else if (linkAnnotation != null) {
-                            finalLinkClick(linkAnnotation.item)
-                        } else {
-                            onTextClick?.invoke()
-                        }
-                    }
-                },
-                onLongPress = {
-                    onLongClick?.invoke()
-                }
-            )
-        },
-        style = style.copy(color = MaterialTheme.colorScheme.onSurface),
+        modifier = textModifier,
+        style = mergedStyle,
         maxLines = maxLines,
         overflow = overflow,
-        onTextLayout = { layoutResult = it }
+        onTextLayout = if (enableGestures) {
+            { layoutResult = it }
+        } else {
+            {}
+        }
     )
 }

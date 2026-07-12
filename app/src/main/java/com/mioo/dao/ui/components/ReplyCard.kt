@@ -33,6 +33,16 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mioo.dao.ui.theme.DaoTheme
 
+private val quotePatternCache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
+private fun getQuoteRegex(quoteId: String): Regex {
+    return quotePatternCache.getOrPut(quoteId) {
+        Regex("(?:<font[^>]*>)?\\s*(?:&gt;&gt;|>>)(?:No\\.)?${Regex.escape(quoteId)}\\s*(?:</font>)?", RegexOption.IGNORE_CASE)
+    }
+}
+
+private val EMPTY_QUOTE_CLICK: (String) -> Unit = {}
+
 sealed interface PostContentBlock {
     data class Text(val html: String) : PostContentBlock
     data class Quote(val quote: PostData) : PostContentBlock
@@ -47,7 +57,7 @@ fun ReplyCard(
     onCardClick: () -> Unit,
     onCardLongClick: () -> Unit,
     modifier: Modifier = Modifier,
-    quotedPosts: List<PostData> = emptyList(),
+    quotedPosts: StablePostList = StablePostList(emptyList()),
     onViewThreadClick: (String) -> Unit = {},
     currentThreadId: String? = null
 ) {
@@ -173,15 +183,14 @@ fun ReplyCard(
                 )
             }
 
-            // Parse and split HTML if we have inline quoted posts to show
             val contentBlocks = androidx.compose.runtime.remember(postData.content, quotedPosts) {
-                if (quotedPosts.isEmpty()) {
+                if (quotedPosts.list.isEmpty()) {
                     listOf(PostContentBlock.Text(postData.content))
                 } else {
                     val blocks = mutableListOf<PostContentBlock>()
                     var currentHtml = postData.content
-                    quotedPosts.forEach { quote ->
-                        val quoteRegex = Regex("(?:<font[^>]*>)?\\s*(?:&gt;&gt;|>>)(?:No\\.)?${quote.id}\\s*(?:</font>)?", RegexOption.IGNORE_CASE)
+                    quotedPosts.list.forEach { quote ->
+                        val quoteRegex = getQuoteRegex(quote.id)
                         val match = quoteRegex.find(currentHtml)
 
                         if (match != null) {
@@ -239,11 +248,19 @@ fun ReplyCard(
                         .clip(MaterialTheme.shapes.medium)
                         .clickable { onImageClick(imageUrl) }
                 ) {
-                    AsyncImage(
-                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val imageRequest = androidx.compose.runtime.remember(imageUrl) {
+                        coil.request.ImageRequest.Builder(context)
                             .data(imageUrl)
-                            .crossfade(true)
-                            .build(),
+                            .crossfade(false)
+                            .size(coil.size.Size(300, 300))
+                            .precision(coil.size.Precision.INEXACT)
+                            .memoryCacheKey(imageUrl)
+                            .diskCacheKey(imageUrl)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = imageRequest,
                         contentDescription = "Reply Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()
@@ -318,7 +335,7 @@ fun QuotedPostBox(
             // Quoted Content — do NOT pass onQuoteClick so clicking text inside the box won't open RefPopup
             HtmlContent(
                 html = quote.content,
-                onQuoteClick = { },
+                onQuoteClick = EMPTY_QUOTE_CLICK,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -332,11 +349,17 @@ fun QuotedPostBox(
                         .clip(MaterialTheme.shapes.medium)
                         .clickable { onImageClick(imageUrl) }
                 ) {
-                    AsyncImage(
-                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val imageRequest = androidx.compose.runtime.remember(imageUrl) {
+                        coil.request.ImageRequest.Builder(context)
                             .data(imageUrl)
                             .crossfade(true)
-                            .build(),
+                            .size(coil.size.Size(300, 300))
+                            .precision(coil.size.Precision.INEXACT)
+                            .build()
+                    }
+                    AsyncImage(
+                        model = imageRequest,
                         contentDescription = "Quote Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()
@@ -345,25 +368,23 @@ fun QuotedPostBox(
             }
 
             // View Original Thread button
-            val isMainThread = quote.resto == null || quote.resto == "0" || quote.resto == quote.id
-            if (isMainThread && !isDeleted) {
-                val targetThreadId = quote.id
-                val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
-                if (targetThreadId != "0" && targetThreadId != "null" && targetThreadId.isNotBlank() && !isCurrentThread) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onViewThreadClick(targetThreadId) }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Text(
-                            text = "查看原串",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                        )
-                    }
+            val targetThreadId = quote.resto
+            val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
+            val hasValidThread = !targetThreadId.isNullOrBlank() && targetThreadId != "0" && targetThreadId != "null"
+            if (!isDeleted && hasValidThread && !isCurrentThread) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onViewThreadClick(targetThreadId!!) }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "查看原串",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
                 }
             }
         }

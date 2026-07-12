@@ -73,6 +73,14 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.deleteCookie(cookie)
     }
 
+    fun setCookieNote(cookie: String, note: String) {
+        settingsRepository.setCookieNote(cookie, note)
+    }
+
+    fun exportCookiesJson(): String = settingsRepository.exportCookiesJson()
+
+    fun importCookiesJson(json: String): Int = settingsRepository.importCookiesJson(json)
+
     fun updateAuthCookie(authCookie: String) {
         settingsRepository.updateAuthCookie(authCookie)
     }

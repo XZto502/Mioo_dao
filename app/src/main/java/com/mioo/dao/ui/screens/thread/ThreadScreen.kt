@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -35,11 +36,17 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
@@ -62,6 +69,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import com.mioo.dao.ui.components.FreeCopyDialog
 import androidx.compose.material3.Text
@@ -71,12 +79,16 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -89,18 +101,25 @@ import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.model.Reply
-import com.mioo.dao.data.model.Thread
+import com.mioo.dao.data.model.XdWebSearch
+import com.mioo.dao.ui.components.HtmlParseCache
 import com.mioo.dao.ui.components.PostData
+import com.mioo.dao.ui.components.PrefetchListImages
+import com.mioo.dao.ui.components.ReplyDisplayItem
+import com.mioo.dao.ui.components.StablePostList
 import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
-import com.mioo.dao.ui.components.decodeHtmlEntities
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, kotlinx.coroutines.FlowPreview::class)
 @Composable
 fun ThreadScreen(
     viewModel: ThreadViewModel,
@@ -111,11 +130,100 @@ fun ThreadScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val settingsState by settingsViewModel.settingsState.collectAsState()
+    // Recreate list state when thread content first appears so continue-reading can
+    // open at the saved index (no paint-at-top then scrollToItem hitch).
+    val hasThreadContent = uiState.thread != null
+    val listState = remember(viewModel.threadId, hasThreadContent) {
+        LazyListState(
+            firstVisibleItemIndex = (uiState.pendingScrollIndex ?: 0).coerceAtLeast(0),
+            firstVisibleItemScrollOffset = 0
+        )
+    }
+    val quoteCache = viewModel.quoteCache
+    // Must re-read startPage when it changes (e.g. prepend earlier pages after resume).
+    val listStartPage = uiState.startPage
+    val totalPages = viewModel.totalPages
+    val currentScrollPage = remember(listStartPage, totalPages) {
+        derivedStateOf {
+            val firstVisibleIndex = listState.firstVisibleItemIndex
+            val page = if (firstVisibleIndex <= 0) {
+                listStartPage
+            } else {
+                // index 0 is OP card; replies start at 1
+                val replyIndex = firstVisibleIndex - 1
+                listStartPage + (replyIndex / 19)
+            }
+            page.coerceIn(1, totalPages.coerceAtLeast(1))
+        }
+    }
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
+    var showPageJumpDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    androidx.compose.runtime.LaunchedEffect(settingsState.blockedThreads) {
+    val emptyLambda = remember { {} }
+    val quoteLinkColor = MaterialTheme.colorScheme.primary
+
+    // Persist reading progress while scrolling / on leave
+    LaunchedEffect(listState, viewModel.threadId) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex to currentScrollPage.value
+        }
+            .distinctUntilChanged()
+            .debounce(600)
+            .collect { (index, page) ->
+                viewModel.saveReadingProgress(page = page, firstVisibleIndex = index)
+            }
+    }
+    DisposableEffect(viewModel.threadId, listState) {
+        onDispose {
+            viewModel.saveReadingProgress(
+                page = currentScrollPage.value,
+                firstVisibleIndex = listState.firstVisibleItemIndex
+            )
+        }
+    }
+
+    // Consume seed after open; only scrollToItem for mid-session jumps (list state already alive).
+    LaunchedEffect(uiState.pendingScrollIndex, uiState.displayItems.size, uiState.isLoading, listState) {
+        val index = uiState.pendingScrollIndex ?: return@LaunchedEffect
+        if (uiState.isLoading) return@LaunchedEffect
+        if (uiState.thread == null) return@LaunchedEffect
+
+        // If LazyListState was created with this index, we are already there — no jump.
+        if (listState.firstVisibleItemIndex != index) {
+            val targetMinCount = index + 1
+            var attempts = 0
+            while (listState.layoutInfo.totalItemsCount < targetMinCount && attempts < 8) {
+                delay(8)
+                attempts++
+            }
+            val maxIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+            val target = index.coerceIn(0, maxIndex)
+            if (listState.firstVisibleItemIndex != target) {
+                listState.scrollToItem(target)
+            }
+        }
+        viewModel.consumePendingScrollIndex()
+    }
+
+    // HTML prewarm: only near-viewport first; rest later (less hitch on resume open)
+    LaunchedEffect(uiState.displayItems, uiState.mainPostData?.content, quoteLinkColor, listState.firstVisibleItemIndex) {
+        if (uiState.displayItems.isEmpty()) return@LaunchedEffect
+        val bodies = uiState.displayItems.map { it.postData.content }
+        val focus = listState.firstVisibleItemIndex.coerceAtLeast(0)
+        val near = bodies.drop((focus - 1).coerceAtLeast(0)).take(8)
+        val head = listOfNotNull(uiState.mainPostData?.content) + near
+        withContext(Dispatchers.Default) {
+            HtmlParseCache.prewarm(head, quoteLinkColor)
+        }
+        delay(450)
+        withContext(Dispatchers.Default) {
+            HtmlParseCache.prewarm(bodies, quoteLinkColor)
+        }
+    }
+
+    LaunchedEffect(settingsState.blockedThreads) {
         if (settingsState.blockedThreads.contains(viewModel.threadId)) {
             Toast.makeText(context, "该帖子已被屏蔽", Toast.LENGTH_SHORT).show()
             onBackClick()
@@ -138,6 +246,50 @@ fun ThreadScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        val tid = viewModel.threadId
+                        val link = XdWebSearch.threadUrl(tid)
+                        val title = uiState.thread?.title?.takeIf { it.isNotBlank() } ?: "No.$tid"
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, title)
+                            putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
+                        }
+                        context.startActivity(Intent.createChooser(send, "分享串"))
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "分享")
+                    }
+                    if (viewModel.totalPages > 1) {
+                        OutlinedButton(
+                            onClick = { showPageJumpDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.padding(end = 4.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            ),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MenuBook,
+                                    contentDescription = "跳转页码",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "${currentScrollPage.value}/${viewModel.totalPages}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                     // Subscription button
                     Box {
                         IconButton(onClick = {
@@ -220,48 +372,30 @@ fun ThreadScreen(
             )
         },
         bottomBar = {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            ReplyInputArea(
-                replyText = uiState.replyText,
-                quotedPostNo = uiState.quotedPostNo,
+            // Isolated collector: typing only recomposes the input bar, not the reply list
+            ReplyInputBar(
+                viewModel = viewModel,
                 cookies = settingsState.cookiesList,
                 selectedCookieIndex = settingsState.selectedCookieIndex,
-                isReplying = uiState.isReplying,
-                replyError = uiState.replyError,
-                onCookieSelect = { settingsViewModel.selectCookie(it) },
-                onReplyTextChange = { viewModel.updateReplyText(it) },
-                onCancelQuote = { viewModel.setQuotedPost(null) },
-                onSend = { file -> 
-                    val currentCookie = settingsState.cookiesList.getOrNull(settingsState.selectedCookieIndex) ?: "无名氏"
-                    // Extract name from cookie json if possible
-                    var authorName = "无名氏"
-                    try {
-                        if (currentCookie.startsWith("{")) {
-                            val json = org.json.JSONObject(currentCookie)
-                            authorName = json.optString("name", "无名氏")
-                        }
-                    } catch (e: Exception) {}
-                    viewModel.submitReply(author = authorName, imageFile = file)
-                }
+                onCookieSelect = { settingsViewModel.selectCookie(it) }
             )
         },
         modifier = modifier.imePadding(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Color.Transparent
     ) { paddingValues ->
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (uiState.isLoading) {
+            if (uiState.isLoading && uiState.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
                 }
-            } else if (uiState.errorMessage != null) {
+            } else if (uiState.errorMessage != null && uiState.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -273,217 +407,180 @@ fun ThreadScreen(
                     )
                 }
             } else {
-                val filteredReplies = remember(uiState.posts, settingsState.blockedUsers, settingsState.blockedKeywords) {
-                    uiState.posts.filter { reply ->
-                        !settingsState.blockedUsers.contains(reply.userHash) &&
-                        settingsState.blockedKeywords.none { keyword ->
-                            reply.content?.contains(keyword, ignoreCase = true) == true
-                        }
+                val displayItems = uiState.displayItems
+                val poUserHash = uiState.thread?.userHash
+                val mainThread = uiState.thread
+                val mainPostData = uiState.mainPostData
+
+                // Align image URL list with LazyColumn indices (optional main item at 0)
+                val prefetchUrls = remember(mainPostData, displayItems) {
+                    buildList(displayItems.size + 1) {
+                        add(mainPostData?.imageUrl)
+                        displayItems.forEach { add(it.postData.imageUrl) }
+                    }
+                }
+                PrefetchListImages(
+                    imageUrls = prefetchUrls,
+                    listState = listState,
+                    sizePx = 300,
+                    ahead = 5,
+                    initialDelayMs = 500
+                )
+
+                val shouldLoadMore = remember {
+                    derivedStateOf {
+                        val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+                            ?: return@derivedStateOf false
+                        lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 2
                     }
                 }
 
+                LaunchedEffect(shouldLoadMore.value) {
+                    if (shouldLoadMore.value && !uiState.isLoading && !uiState.isLastPage) {
+                        viewModel.loadNextPage()
+                    }
+                }
+
+                // After mid-thread resume/jump, scrolling up loads earlier pages
+                // so the page indicator can decrease with content.
+                LaunchedEffect(listState, uiState.startPage, uiState.isLoading) {
+                    snapshotFlow {
+                        Triple(
+                            listState.firstVisibleItemIndex,
+                            listState.isScrollInProgress,
+                            uiState.startPage
+                        )
+                    }
+                        .distinctUntilChanged()
+                        .collect { (index, scrolling, startPage) ->
+                            if (index > 3) {
+                                viewModel.allowPreviousLoad()
+                            }
+                            // Only request previous page while user is actively scrolling near top
+                            if (scrolling &&
+                                !uiState.isLoading &&
+                                startPage > 1 &&
+                                index <= 2
+                            ) {
+                                viewModel.loadPreviousPage()
+                            }
+                        }
+                }
+
+                // Keep viewport stable when older replies are prepended above
+                LaunchedEffect(uiState.prependAnchorCount) {
+                    val n = uiState.prependAnchorCount ?: return@LaunchedEffect
+                    if (n > 0) {
+                        val idx = listState.firstVisibleItemIndex
+                        val offset = listState.firstVisibleItemScrollOffset
+                        // index 0 is OP; only shift when user was already in the reply list
+                        if (idx > 0) {
+                            listState.scrollToItem(idx + n, offset)
+                        }
+                    }
+                    viewModel.consumePrependAnchor()
+                }
+
+                // Stable callbacks shared across all list items
+                val onQuoteClick = remember(viewModel) {
+                    { quoteNo: String -> viewModel.showRefPopup(quoteNo) }
+                }
+                val onImageClick = remember {
+                    { url: String -> activeImageUrl = url }
+                }
+                val onViewThreadClick = remember(onNavigateToThread) {
+                    { tid: String -> onNavigateToThread(tid) }
+                }
+
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    contentPadding = PaddingValues(
                         start = 8.dp,
                         end = 8.dp,
                         top = paddingValues.calculateTopPadding() + 8.dp,
                         bottom = paddingValues.calculateBottomPadding() + 16.dp
                     )
                 ) {
-                    // Render Main Thread
-                    uiState.thread?.let { mainThread ->
-                        item {
+                    if (mainThread != null && mainPostData != null) {
+                        item(key = "main_${mainThread.id}", contentType = "main_thread") {
                             var showBlockDialog by remember { mutableStateOf(false) }
 
                             if (showBlockDialog) {
-                                AlertDialog(
-                                    onDismissRequest = { showBlockDialog = false },
-                                    title = { Text("内容操作 No.${mainThread.idStr}") },
-                                    text = {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            TextButton(
-                                                onClick = {
-                                                    viewModel.setQuotedPost(mainThread.idStr)
-                                                    Toast.makeText(context, "已引用 No.${mainThread.idStr}", Toast.LENGTH_SHORT).show()
-                                                    showBlockDialog = false
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("引用该帖子")
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    settingsViewModel.addBlockedThread(mainThread.idStr)
-                                                    showBlockDialog = false
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("屏蔽此串 (No.${mainThread.idStr})")
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    settingsViewModel.addBlockedUser(mainThread.userHash)
-                                                    showBlockDialog = false
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("屏蔽该发言饼干 (ID: ${mainThread.userHash})")
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    freeCopyText = mainThread.content
-                                                    showBlockDialog = false
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("自由复制帖子内容")
-                                            }
-                                            TextButton(
-                                                onClick = { showBlockDialog = false },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("取消")
-                                            }
-                                        }
+                                PostActionDialog(
+                                    title = "内容操作 No.${mainThread.idStr}",
+                                    onDismiss = { showBlockDialog = false },
+                                    onQuote = {
+                                        viewModel.setQuotedPost(mainThread.idStr)
+                                        Toast.makeText(context, "已引用 No.${mainThread.idStr}", Toast.LENGTH_SHORT).show()
                                     },
-                                    confirmButton = {}
+                                    onBlockThread = {
+                                        settingsViewModel.addBlockedThread(mainThread.idStr)
+                                    },
+                                    onBlockUser = {
+                                        settingsViewModel.addBlockedUser(mainThread.userHash)
+                                    },
+                                    onCopy = {
+                                        freeCopyText = mainThread.content
+                                    },
+                                    blockThreadLabel = "屏蔽此串 (No.${mainThread.idStr})",
+                                    blockUserLabel = "屏蔽该发言饼干 (ID: ${mainThread.userHash})"
                                 )
                             }
 
-                            val mainThreadPostData = remember(mainThread) { mainThread.toPostData() }
-                            val onQuoteClickRemembered = remember { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } }
-                            val onImageClickRemembered = remember { { url: String -> activeImageUrl = url } }
-                            val onLongClickRemembered = remember { { showBlockDialog = true } }
                             ThreadCard(
-                                postData = mainThreadPostData,
+                                postData = mainPostData,
                                 replyCount = mainThread.replyCount ?: 0,
-                                onThreadClick = {},
-                                onQuoteClick = onQuoteClickRemembered,
-                                onImageClick = onImageClickRemembered,
-                                onLongClick = onLongClickRemembered
+                                onThreadClick = emptyLambda,
+                                onQuoteClick = onQuoteClick,
+                                onImageClick = onImageClick,
+                                onLongClick = { showBlockDialog = true }
                             )
                         }
                     }
 
-
                     items(
-                        items = filteredReplies,
+                        items = displayItems,
                         key = { it.id },
-                        contentType = { "reply_card" }
-                    ) { reply ->
-                        val quoteIds = remember(reply.content) {
-                            val decoded = reply.content.decodeHtmlEntities()
-                            val matcher = java.util.regex.Pattern.compile(">>(?:No\\.)?(\\d+)").matcher(decoded)
-                            val list = mutableListOf<String>()
-                            while (matcher.find()) {
-                                matcher.group(1)?.let { list.add(it) }
-                            }
-                            list
+                        contentType = { item ->
+                            if (item.hasImage) "reply_image" else "reply_text"
                         }
-                        
-                        val quotedPostsData = remember(quoteIds, uiState.quoteCache, uiState.thread?.userHash) {
-                            quoteIds.mapNotNull { id ->
-                                uiState.quoteCache[id]?.let {
-                                    val isFollowUp = it.resto != null && it.resto > 0L
-                                    PostData(
-                                        id = it.idStr,
-                                        title = it.title ?: "",
-                                        userName = it.name ?: "无名氏",
-                                        userId = it.userHash,
-                                        createdAt = it.now,
-                                        content = it.content,
-                                        imageUrl = if (it.imageUrl != null) "https://image.nmb.best/image/${it.imageUrl}" else null,
-                                        isPo = it.userHash == uiState.thread?.userHash,
-                                        isAdmin = it.isAdmin,
-                                        isSage = it.isSage,
-                                        resto = if (isFollowUp) it.resto.toString() else it.idStr
-                                    )
-                                }
-                            }
-                        }
-
-                        var showReplyBlockDialog by remember { mutableStateOf(false) }
-
-                        if (showReplyBlockDialog) {
-                            AlertDialog(
-                                onDismissRequest = { showReplyBlockDialog = false },
-                                title = { Text("内容操作 No.${reply.idStr}") },
-                                text = {
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        TextButton(
-                                            onClick = {
-                                                viewModel.setQuotedPost(reply.idStr)
-                                                Toast.makeText(context, "已引用 No.${reply.idStr}", Toast.LENGTH_SHORT).show()
-                                                showReplyBlockDialog = false
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text("引用该帖子")
-                                        }
-                                        TextButton(
-                                            onClick = {
-                                                settingsViewModel.addBlockedThread(viewModel.threadId)
-                                                showReplyBlockDialog = false
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text("屏蔽此串 (No.${viewModel.threadId})")
-                                        }
-                                        TextButton(
-                                            onClick = {
-                                                settingsViewModel.addBlockedUser(reply.userHash)
-                                                showReplyBlockDialog = false
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text("屏蔽该发言饼干 (ID: ${reply.userHash})")
-                                        }
-                                        TextButton(
-                                            onClick = {
-                                                freeCopyText = reply.content
-                                                showReplyBlockDialog = false
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text("自由复制回复内容")
-                                        }
-                                        TextButton(
-                                            onClick = { showReplyBlockDialog = false },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text("取消")
-                                        }
-                                    }
-                                },
-                                confirmButton = {}
-                            )
-                        }
-
-                        val isPo = reply.userHash == uiState.thread?.userHash
-                        val postData = remember(reply, isPo) { reply.toPostData(isPo) }
-                        val onQuoteClickRemembered = remember(reply) { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } }
-                        val onImageClickRemembered = remember { { url: String -> activeImageUrl = url } }
-                        val onCardLongClickRemembered = remember { { showReplyBlockDialog = true } }
-                        val onViewThreadClickRemembered = remember { { threadId: String -> onNavigateToThread(threadId) } }
-
-                        ReplyCard(
-                            postData = postData,
-                            onQuoteClick = onQuoteClickRemembered,
-                            onImageClick = onImageClickRemembered,
-                            onCardClick = {},
-                            onCardLongClick = onCardLongClickRemembered,
-                            quotedPosts = quotedPostsData,
-                            onViewThreadClick = onViewThreadClickRemembered,
-                            currentThreadId = viewModel.threadId
+                    ) { item ->
+                        ThreadReplyRow(
+                            item = item,
+                            quoteCache = quoteCache,
+                            poUserHash = poUserHash,
+                            currentThreadId = viewModel.threadId,
+                            onQuoteClick = onQuoteClick,
+                            onImageClick = onImageClick,
+                            onViewThreadClick = onViewThreadClick,
+                            onCardClick = emptyLambda,
+                            onRequestQuote = {
+                                viewModel.setQuotedPost(item.idStr)
+                                Toast.makeText(context, "已引用 No.${item.idStr}", Toast.LENGTH_SHORT).show()
+                            },
+                            onBlockThread = {
+                                settingsViewModel.addBlockedThread(viewModel.threadId)
+                            },
+                            onBlockUser = {
+                                settingsViewModel.addBlockedUser(item.userHash)
+                            },
+                            onFreeCopy = { freeCopyText = item.rawContent }
                         )
+                    }
+
+                    if (uiState.isLoading && displayItems.isNotEmpty()) {
+                        item(key = "loading_footer", contentType = "loading") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
                     }
                 }
             }
@@ -510,49 +607,341 @@ fun ThreadScreen(
                     postData = uiState.refPostData,
                     isLoading = uiState.isRefLoading,
                     errorMessage = uiState.refError,
-                    onDismiss = { viewModel.dismissRefPopup() },
-                    onQuoteClick = { quoteNo -> viewModel.showRefPopup(quoteNo) },
-                    onImageClick = { url -> activeImageUrl = url },
-                    onViewThreadClick = { threadId ->
+                    onDismiss = remember { { viewModel.dismissRefPopup() } },
+                    onQuoteClick = remember { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } },
+                    onImageClick = remember { { url: String -> activeImageUrl = url } },
+                    onViewThreadClick = remember { { threadId: String ->
                         viewModel.dismissRefPopup()
                         onNavigateToThread(threadId)
-                    },
+                    } },
                     currentThreadId = viewModel.threadId
                 )
             }
         }
     }
+
+    // Page Jump Dialog
+    if (showPageJumpDialog) {
+        PageJumpDialog(
+            currentPage = currentScrollPage.value,
+            totalPages = viewModel.totalPages,
+            onDismiss = { showPageJumpDialog = false },
+            onJump = { page ->
+                viewModel.jumpToPage(page)
+                showPageJumpDialog = false
+            }
+        )
+    }
 }
 
-fun Thread.toPostData(cdnUrl: String = "https://image.nmb.best"): PostData {
-    return PostData(
-        id = this.idStr,
-        title = this.title ?: "",
-        userName = this.name ?: "Anonymous",
-        userId = this.userHash,
-        createdAt = this.now,
-        content = this.content,
-        imageUrl = if (this.imageUrl != null) "$cdnUrl/image/${this.imageUrl}" else null,
-        isPo = false,
-        isAdmin = this.isAdmin,
-        isSage = this.isSage,
-        resto = this.idStr
+@Composable
+fun PageNavigator(
+    currentPage: Int,
+    totalPages: Int,
+    onPrevPage: () -> Unit,
+    onNextPage: () -> Unit,
+    onJumpClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(
+            onClick = onPrevPage,
+            enabled = currentPage > 1
+        ) {
+            Text("< 上一页", style = MaterialTheme.typography.labelMedium)
+        }
+
+        OutlinedButton(
+            onClick = onJumpClick,
+            shape = RoundedCornerShape(16.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.primary
+            ),
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+            )
+        ) {
+            Text(
+                text = "$currentPage / $totalPages",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        TextButton(
+            onClick = onNextPage,
+            enabled = currentPage < totalPages
+        ) {
+            Text("下一页 >", style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+fun PageJumpDialog(
+    currentPage: Int,
+    totalPages: Int,
+    onDismiss: () -> Unit,
+    onJump: (Int) -> Unit
+) {
+    var inputText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("跳转页码") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Quick buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = { onJump(1) },
+                        enabled = currentPage > 1,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("首页", style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { onJump(currentPage - 1) },
+                        enabled = currentPage > 1,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("上一页", style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { onJump(currentPage + 1) },
+                        enabled = currentPage < totalPages,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("下一页", style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { onJump(totalPages) },
+                        enabled = currentPage < totalPages,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("末页", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                // Manual input
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { newValue ->
+                        inputText = newValue.filter { it.isDigit() }
+                    },
+                    label = { Text("页码 (1 - $totalPages)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val page = inputText.toIntOrNull()
+                    if (page != null && page in 1..totalPages) {
+                        onJump(page)
+                    }
+                },
+                enabled = inputText.isNotEmpty() && inputText.toIntOrNull()?.let { it in 1..totalPages } == true
+            ) {
+                Text("跳转")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
     )
 }
 
-fun Reply.toPostData(isPo: Boolean, cdnUrl: String = "https://image.nmb.best"): PostData {
-    return PostData(
-        id = this.idStr,
-        title = this.title ?: "",
-        userName = this.name ?: "Anonymous",
-        userId = this.userHash,
-        createdAt = this.now,
-        content = this.content,
-        imageUrl = if (this.imageUrl != null) "$cdnUrl/image/${this.imageUrl}" else null,
-        isPo = isPo,
-        isAdmin = this.isAdmin,
-        isSage = this.isSage,
-        resto = this.resto?.toString() ?: this.idStr
+/**
+ * Extract a human-readable display name from a cookie JSON string.
+ * Returns the "name" field if available, otherwise falls back to "cookie" or "userhash".
+ * Returns the raw cookie string if it's not valid JSON.
+ */
+fun parseCookieName(cookie: String): String {
+    return try {
+        if (cookie.startsWith("{")) {
+            val json = org.json.JSONObject(cookie)
+            var name = json.optString("name", "")
+            if (name.isEmpty()) name = json.optString("cookie", "")
+            if (name.isEmpty()) name = json.optString("userhash", cookie)
+            name
+        } else {
+            cookie
+        }
+    } catch (e: Exception) {
+        cookie
+    }
+}
+
+/**
+ * Single reply row: only recomposes when this item's data or its observed quote keys change.
+ */
+@Composable
+private fun ThreadReplyRow(
+    item: ReplyDisplayItem,
+    quoteCache: androidx.compose.runtime.snapshots.SnapshotStateMap<String, Reply>,
+    poUserHash: String?,
+    currentThreadId: String,
+    onQuoteClick: (String) -> Unit,
+    onImageClick: (String) -> Unit,
+    onViewThreadClick: (String) -> Unit,
+    onCardClick: () -> Unit,
+    onRequestQuote: () -> Unit,
+    onBlockThread: () -> Unit,
+    onBlockUser: () -> Unit,
+    onFreeCopy: () -> Unit
+) {
+    // Per-key observation: filling quote X does not recompose rows that only need Y
+    val quotedReplies = if (item.quoteIds.isEmpty()) {
+        emptyList()
+    } else {
+        item.quoteIds.mapNotNull { id -> quoteCache[id] }
+    }
+    val quoteLinkColor = MaterialTheme.colorScheme.primary
+    LaunchedEffect(quotedReplies, quoteLinkColor) {
+        if (quotedReplies.isNotEmpty()) {
+            withContext(Dispatchers.Default) {
+                HtmlParseCache.prewarm(quotedReplies.map { it.content }, quoteLinkColor)
+            }
+        }
+    }
+    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash) {
+        StablePostList(
+            quotedReplies.map { quote ->
+                val isFollowUp = quote.resto != null && quote.resto > 0L
+                PostData(
+                    id = quote.idStr,
+                    title = quote.title ?: "",
+                    userName = quote.name ?: "无名氏",
+                    userId = quote.userHash,
+                    createdAt = quote.now,
+                    content = quote.content,
+                    imageUrl = if (quote.imageUrl != null) {
+                        "https://image.nmb.best/image/${quote.imageUrl}"
+                    } else null,
+                    isPo = quote.userHash == poUserHash,
+                    isAdmin = quote.isAdmin,
+                    isSage = quote.isSage,
+                    resto = if (isFollowUp) quote.resto.toString() else quote.idStr
+                )
+            }
+        )
+    }
+
+    var showReplyBlockDialog by remember { mutableStateOf(false) }
+    if (showReplyBlockDialog) {
+        PostActionDialog(
+            title = "内容操作 No.${item.idStr}",
+            onDismiss = { showReplyBlockDialog = false },
+            onQuote = onRequestQuote,
+            onBlockThread = onBlockThread,
+            onBlockUser = onBlockUser,
+            onCopy = onFreeCopy,
+            blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
+            blockUserLabel = "屏蔽该发言饼干 (ID: ${item.userHash})"
+        )
+    }
+
+    ReplyCard(
+        postData = item.postData,
+        onQuoteClick = onQuoteClick,
+        onImageClick = onImageClick,
+        onCardClick = onCardClick,
+        onCardLongClick = { showReplyBlockDialog = true },
+        quotedPosts = quotedPostsData,
+        onViewThreadClick = onViewThreadClick,
+        currentThreadId = currentThreadId
+    )
+}
+
+@Composable
+private fun PostActionDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onQuote: () -> Unit,
+    onBlockThread: () -> Unit,
+    onBlockUser: () -> Unit,
+    onCopy: () -> Unit,
+    blockThreadLabel: String,
+    blockUserLabel: String
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = { onQuote(); onDismiss() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("引用该帖子") }
+                TextButton(
+                    onClick = { onBlockThread(); onDismiss() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(blockThreadLabel) }
+                TextButton(
+                    onClick = { onBlockUser(); onDismiss() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(blockUserLabel) }
+                TextButton(
+                    onClick = { onCopy(); onDismiss() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("自由复制内容") }
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("取消") }
+            }
+        },
+        confirmButton = {}
+    )
+}
+
+/**
+ * Owns [ThreadViewModel.composerState] collection so keystrokes never invalidate
+ * the parent [ThreadScreen] composition scope / LazyColumn.
+ */
+@Composable
+private fun ReplyInputBar(
+    viewModel: ThreadViewModel,
+    cookies: List<String>,
+    selectedCookieIndex: Int,
+    onCookieSelect: (Int) -> Unit
+) {
+    val composerState by viewModel.composerState.collectAsState()
+    ReplyInputArea(
+        replyText = composerState.replyText,
+        quotedPostNo = composerState.quotedPostNo,
+        cookies = cookies,
+        selectedCookieIndex = selectedCookieIndex,
+        isReplying = composerState.isReplying,
+        replyError = composerState.replyError,
+        onCookieSelect = onCookieSelect,
+        onReplyTextChange = remember(viewModel) { { text: String -> viewModel.updateReplyText(text) } },
+        onCancelQuote = remember(viewModel) { { viewModel.setQuotedPost(null) } },
+        onSend = remember(viewModel, cookies, selectedCookieIndex) {
+            { file: java.io.File? ->
+                val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "无名氏"
+                viewModel.submitReply(author = parseCookieName(currentCookie), imageFile = file)
+            }
+        }
     )
 }
 
@@ -736,15 +1125,7 @@ fun ReplyInputArea(
 
                 // Cookie selector
                 val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
-                var displayName = currentCookie
-                try {
-                    if (currentCookie.startsWith("{")) {
-                        val json = org.json.JSONObject(currentCookie)
-                        displayName = json.optString("name", "")
-                        if (displayName.isEmpty()) displayName = json.optString("cookie", "")
-                        if (displayName.isEmpty()) displayName = json.optString("userhash", currentCookie)
-                    }
-                } catch (e: Exception) {}
+                val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
                 val displayText = if (displayName.length > 8) displayName.take(8) + "..." else displayName
 
                 Box {
@@ -761,15 +1142,7 @@ fun ReplyInputArea(
                     ) {
                         cookies.forEachIndexed { index, cookie ->
                             val isSelected = index == selectedCookieIndex
-                            var itemDisplayName = cookie
-                            try {
-                                if (cookie.startsWith("{")) {
-                                    val json = org.json.JSONObject(cookie)
-                                    itemDisplayName = json.optString("name", "")
-                                    if (itemDisplayName.isEmpty()) itemDisplayName = json.optString("cookie", "")
-                                    if (itemDisplayName.isEmpty()) itemDisplayName = json.optString("userhash", cookie)
-                                }
-                            } catch (e: Exception) {}
+                            val itemDisplayName = remember(cookie) { parseCookieName(cookie) }
                             val itemDisplayText = if (itemDisplayName.length > 8) itemDisplayName.take(8) + "..." else itemDisplayName
                             
                             DropdownMenuItem(

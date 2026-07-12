@@ -32,6 +32,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
@@ -49,6 +52,8 @@ import com.mioo.dao.ui.screens.feed.FeedScreen
 import com.mioo.dao.ui.screens.feed.FeedViewModel
 import com.mioo.dao.ui.screens.forum.ForumScreen
 import com.mioo.dao.ui.screens.forum.ForumViewModel
+import com.mioo.dao.ui.screens.search.SearchScreen
+import com.mioo.dao.ui.screens.search.SearchViewModel
 import com.mioo.dao.ui.screens.settings.SettingsScreen
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.screens.settings.MoreScreen
@@ -63,6 +68,7 @@ sealed class Screen(val route: String) {
     object Settings : Screen("settings")
     object SettingsDetail : Screen("settings_detail")
     object BrowsingHistory : Screen("browsing_history")
+    object Search : Screen("search")
     object Thread : Screen("thread/{threadId}") {
         fun createRoute(threadId: String) = "thread/$threadId"
     }
@@ -70,53 +76,80 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun MiooDaoNavGraph(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    pendingThreadId: String? = null,
+    onPendingThreadConsumed: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    val coroutineScope = rememberCoroutineScope()
+    val navigateToThread: (String) -> Unit = remember(navController, coroutineScope) {
+        { id: String ->
+            coroutineScope.launch {
+                // Short delay lets the click ripple start without blocking navigation
+                kotlinx.coroutines.delay(32)
+                navController.navigate(Screen.Thread.createRoute(id))
+            }
+            Unit
+        }
+    }
+
+    androidx.compose.runtime.LaunchedEffect(pendingThreadId) {
+        val id = pendingThreadId ?: return@LaunchedEffect
+        if (id.isNotBlank()) {
+            navController.navigate(Screen.Thread.createRoute(id)) {
+                launchSingleTop = true
+            }
+            onPendingThreadConsumed()
+        }
+    }
+
+    // Snappier transitions reduce perceived latency when opening threads
     val slideEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         slideInHorizontally(
-            initialOffsetX = { it },
-            animationSpec = tween(300, easing = FastOutSlowInEasing)
-        ) + fadeIn(animationSpec = tween(300))
+            initialOffsetX = { it / 3 },
+            animationSpec = tween(220, easing = FastOutSlowInEasing)
+        ) + fadeIn(animationSpec = tween(180))
     }
 
     val slideExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
         slideOutHorizontally(
-            targetOffsetX = { -it },
-            animationSpec = tween(300, easing = FastOutSlowInEasing)
-        ) + fadeOut(animationSpec = tween(300))
+            targetOffsetX = { -it / 5 },
+            animationSpec = tween(200, easing = FastOutSlowInEasing)
+        ) + fadeOut(animationSpec = tween(160))
     }
 
     val slidePopEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         slideInHorizontally(
-            initialOffsetX = { -it },
-            animationSpec = tween(300, easing = FastOutSlowInEasing)
-        ) + fadeIn(animationSpec = tween(300))
+            initialOffsetX = { -it / 5 },
+            animationSpec = tween(200, easing = FastOutSlowInEasing)
+        ) + fadeIn(animationSpec = tween(160))
     }
 
     val slidePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
         slideOutHorizontally(
-            targetOffsetX = { it },
-            animationSpec = tween(300, easing = FastOutSlowInEasing)
-        ) + fadeOut(animationSpec = tween(300))
+            targetOffsetX = { it / 3 },
+            animationSpec = tween(220, easing = FastOutSlowInEasing)
+        ) + fadeOut(animationSpec = tween(180))
     }
 
     val fadeEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        fadeIn(animationSpec = tween(220))
+        fadeIn(animationSpec = tween(150))
     }
 
     val fadeExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        fadeOut(animationSpec = tween(220))
+        fadeOut(animationSpec = tween(120))
     }
 
-    val bottomBarItems = listOf(
-        Triple(Screen.Forum.route, Icons.Default.Home, "板块"),
-        Triple(Screen.Feed.route, Icons.Default.Bookmark, "收藏"),
-        Triple(Screen.Settings.route, Icons.Default.Settings, "更多")
-    )
+    val bottomBarItems = remember {
+        listOf(
+            Triple(Screen.Forum.route, Icons.Default.Home, "板块"),
+            Triple(Screen.Feed.route, Icons.Default.Bookmark, "收藏"),
+            Triple(Screen.Settings.route, Icons.Default.Settings, "更多")
+        )
+    }
 
     // Show bottom bar only on parent tab screens
     val showBottomBar = currentRoute in listOf(Screen.Forum.route, Screen.Feed.route, Screen.Settings.route)
@@ -186,9 +219,22 @@ fun MiooDaoNavGraph(
                 val viewModel: ForumViewModel = hiltViewModel()
                 ForumScreen(
                     viewModel = viewModel,
-                    onNavigateToThread = { id ->
-                        navController.navigate(Screen.Thread.createRoute(id))
-                    }
+                    onNavigateToThread = navigateToThread
+                )
+            }
+
+            composable(
+                route = Screen.Search.route,
+                enterTransition = slideEnter,
+                exitTransition = slideExit,
+                popEnterTransition = slidePopEnter,
+                popExitTransition = slidePopExit
+            ) {
+                val viewModel: SearchViewModel = hiltViewModel()
+                SearchScreen(
+                    viewModel = viewModel,
+                    onBackClick = { navController.popBackStack() },
+                    onNavigateToThread = navigateToThread
                 )
             }
 
@@ -203,9 +249,7 @@ fun MiooDaoNavGraph(
                 val viewModel: FeedViewModel = hiltViewModel()
                 FeedScreen(
                     viewModel = viewModel,
-                    onNavigateToThread = { id ->
-                        navController.navigate(Screen.Thread.createRoute(id))
-                    }
+                    onNavigateToThread = navigateToThread
                 )
             }
 
@@ -225,6 +269,9 @@ fun MiooDaoNavGraph(
                     },
                     onNavigateToHistory = {
                         navController.navigate(Screen.BrowsingHistory.route)
+                    },
+                    onNavigateToSearch = {
+                        navController.navigate(Screen.Search.route)
                     }
                 )
             }
@@ -260,9 +307,7 @@ fun MiooDaoNavGraph(
                     onBackClick = {
                         navController.popBackStack()
                     },
-                    onNavigateToThread = { id ->
-                        navController.navigate(Screen.Thread.createRoute(id))
-                    }
+                    onNavigateToThread = navigateToThread
                 )
             }
 
@@ -281,9 +326,7 @@ fun MiooDaoNavGraph(
                 ThreadScreen(
                     viewModel = viewModel,
                     onBackClick = { navController.popBackStack() },
-                    onNavigateToThread = { id ->
-                        navController.navigate(Screen.Thread.createRoute(id))
-                    }
+                    onNavigateToThread = navigateToThread
                 )
             }
         }

@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +27,7 @@ class SettingsRepository @Inject constructor(
         settingsDataStore.fontSizeScaleFlow,
         settingsDataStore.themeColorFlow,
         settingsDataStore.cookiesListFlow,
+        settingsDataStore.cookieNotesFlow,
         settingsDataStore.selectedCookieIndexFlow,
         settingsDataStore.authCookieFlow,
         settingsDataStore.feedFoldersFlow,
@@ -41,20 +44,22 @@ class SettingsRepository @Inject constructor(
         val themeColor = args[3] as String
         @Suppress("UNCHECKED_CAST")
         val cookiesList = args[4] as List<String>
-        val selectedIndex = args[5] as Int
-        val authCookie = args[6] as? String
         @Suppress("UNCHECKED_CAST")
-        val feedFolders = args[7] as List<com.mioo.dao.data.model.FeedFolder>
+        val cookieNotes = args[5] as Map<String, String>
+        val selectedIndex = args[6] as Int
+        val authCookie = args[7] as? String
         @Suppress("UNCHECKED_CAST")
-        val blockedThreads = args[8] as List<String>
+        val feedFolders = args[8] as List<com.mioo.dao.data.model.FeedFolder>
         @Suppress("UNCHECKED_CAST")
-        val blockedUsers = args[9] as List<String>
+        val blockedThreads = args[9] as List<String>
         @Suppress("UNCHECKED_CAST")
-        val pinnedForums = args[10] as List<String>
+        val blockedUsers = args[10] as List<String>
         @Suppress("UNCHECKED_CAST")
-        val blockedKeywords = args[11] as List<String>
-        val smartPreloadMode = args[12] as String
-        val preloadCount = args[13] as Int
+        val pinnedForums = args[11] as List<String>
+        @Suppress("UNCHECKED_CAST")
+        val blockedKeywords = args[12] as List<String>
+        val smartPreloadMode = args[13] as String
+        val preloadCount = args[14] as Int
 
         val themeMode = try {
             ThemeMode.valueOf(themeModeStr)
@@ -67,6 +72,7 @@ class SettingsRepository @Inject constructor(
             fontSizeScale = fontSizeScale,
             themeColor = themeColor,
             cookiesList = cookiesList,
+            cookieNotes = cookieNotes,
             selectedCookieIndex = selectedIndex,
             authCookie = authCookie ?: "",
             feedFolders = feedFolders,
@@ -94,8 +100,6 @@ class SettingsRepository @Inject constructor(
             settingsDataStore.savePreloadCount(count)
         }
     }
-
-
 
     fun updateCookie(cookie: String) {
         repositoryScope.launch {
@@ -153,13 +157,17 @@ class SettingsRepository @Inject constructor(
             if (indexToDelete != -1) {
                 currentList.removeAt(indexToDelete)
                 settingsDataStore.saveCookiesList(currentList)
-                
+
+                val notes = settings.value.cookieNotes.toMutableMap()
+                notes.remove(cookie)
+                settingsDataStore.saveCookieNotes(notes)
+
                 val newIndex = if (currentList.isEmpty()) 0 else {
                     val prevIndex = settings.value.selectedCookieIndex
                     if (prevIndex >= currentList.size) currentList.size - 1 else prevIndex
                 }
                 settingsDataStore.saveSelectedCookieIndex(newIndex)
-                
+
                 if (currentList.isNotEmpty()) {
                     settingsDataStore.saveUserHash(currentList[newIndex])
                 } else {
@@ -169,13 +177,19 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    fun setCookieNote(cookie: String, note: String) {
+        repositoryScope.launch {
+            val notes = settings.value.cookieNotes.toMutableMap()
+            if (note.isBlank()) notes.remove(cookie) else notes[cookie] = note.trim()
+            settingsDataStore.saveCookieNotes(notes)
+        }
+    }
+
     fun updateAuthCookie(authCookie: String) {
         repositoryScope.launch {
             settingsDataStore.saveAuthCookie(authCookie)
         }
     }
-
-
 
     fun addFeedFolder(folder: com.mioo.dao.data.model.FeedFolder) {
         repositoryScope.launch {
@@ -278,5 +292,56 @@ class SettingsRepository @Inject constructor(
 
     suspend fun saveNewThreadDraft(draft: String) {
         settingsDataStore.saveNewThreadDraft(draft)
+    }
+
+    /** Export cookies + notes + auth as JSON for backup. */
+    fun exportCookiesJson(): String {
+        val s = settings.value
+        val root = JSONObject()
+        root.put("version", 1)
+        root.put("selectedCookieIndex", s.selectedCookieIndex)
+        root.put("authCookie", s.authCookie)
+        val cookiesArr = JSONArray()
+        s.cookiesList.forEach { cookiesArr.put(it) }
+        root.put("cookies", cookiesArr)
+        val notesObj = JSONObject()
+        s.cookieNotes.forEach { (k, v) -> notesObj.put(k, v) }
+        root.put("cookieNotes", notesObj)
+        return root.toString(2)
+    }
+
+    /**
+     * Import cookies package. Returns number of cookies imported.
+     */
+    fun importCookiesJson(json: String): Int {
+        val root = JSONObject(json)
+        val arr = root.optJSONArray("cookies") ?: return 0
+        val list = mutableListOf<String>()
+        for (i in 0 until arr.length()) {
+            val c = arr.optString(i, "")
+            if (c.isNotBlank() && c !in list) list.add(c)
+        }
+        val notesObj = root.optJSONObject("cookieNotes")
+        val notes = mutableMapOf<String, String>()
+        if (notesObj != null) {
+            val keys = notesObj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                notes[k] = notesObj.optString(k, "")
+            }
+        }
+        val auth = root.optString("authCookie", "")
+        val selected = root.optInt("selectedCookieIndex", 0).coerceIn(0, (list.size - 1).coerceAtLeast(0))
+
+        repositoryScope.launch {
+            settingsDataStore.saveCookiesList(list)
+            settingsDataStore.saveCookieNotes(notes)
+            if (auth.isNotBlank()) settingsDataStore.saveAuthCookie(auth)
+            if (list.isNotEmpty()) {
+                settingsDataStore.saveSelectedCookieIndex(selected)
+                settingsDataStore.saveUserHash(list[selected])
+            }
+        }
+        return list.size
     }
 }

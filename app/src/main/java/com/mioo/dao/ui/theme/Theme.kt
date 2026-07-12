@@ -9,7 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
@@ -20,19 +21,14 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
+
 
 private val LightColorScheme = lightColorScheme(
     primary = LightPrimary,
@@ -251,70 +247,46 @@ fun MiooDaoTheme(
             typography = scaledTypography,
             shapes = Shapes
         ) {
+            // Cache glow colors; drawWithCache rebuilds brushes only when size/colors change
+            // (avoids radialGradient allocations during list scroll overdraw).
+            val primaryGlow = remember(colorScheme.primary) { colorScheme.primary.copy(alpha = 0.22f) }
+            val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.16f) }
+            val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.12f) }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(colorScheme.background)
+                    .drawWithCache {
+                        val r1 = 200.dp.toPx()
+                        val c1 = Offset(140.dp.toPx(), 170.dp.toPx())
+                        val brush1 = Brush.radialGradient(
+                            colors = listOf(primaryGlow, Color.Transparent),
+                            center = c1,
+                            radius = r1
+                        )
+                        val r2 = 225.dp.toPx()
+                        val c2 = Offset(size.width + 60.dp.toPx() - r2, size.height + 70.dp.toPx() - r2)
+                        val brush2 = Brush.radialGradient(
+                            colors = listOf(tertiaryGlow, Color.Transparent),
+                            center = c2,
+                            radius = r2
+                        )
+                        val r3 = 125.dp.toPx()
+                        val c3 = Offset(size.width + 30.dp.toPx() - r3, size.height / 2f + 10.dp.toPx())
+                        val brush3 = Brush.radialGradient(
+                            colors = listOf(secondaryGlow, Color.Transparent),
+                            center = c3,
+                            radius = r3
+                        )
+                        onDrawBehind {
+                            drawCircle(brush = brush1, radius = r1, center = c1)
+                            drawCircle(brush = brush2, radius = r2, center = c2)
+                            drawCircle(brush = brush3, radius = r3, center = c3)
+                        }
+                    }
             ) {
-                // Background blurred blobs (optimized with Brush.radialGradient to avoid expensive runtime blur overhead)
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    // Blob 1: top-left primary glow
-                    Box(
-                        modifier = Modifier
-                            .size(400.dp)
-                            .align(Alignment.TopStart)
-                            .offset(x = (-60).dp, y = (-30).dp)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        colorScheme.primary.copy(alpha = 0.22f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                    // Blob 2: bottom-right secondary glow
-                    Box(
-                        modifier = Modifier
-                            .size(450.dp)
-                            .align(Alignment.BottomEnd)
-                            .offset(x = 60.dp, y = 70.dp)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        colorScheme.tertiary.copy(alpha = 0.16f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                    // Blob 3: center-right accent
-                    Box(
-                        modifier = Modifier
-                            .size(250.dp)
-                            .align(Alignment.CenterEnd)
-                            .offset(x = 30.dp, y = 10.dp)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        colorScheme.secondary.copy(alpha = 0.12f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                }
-
-                // Content layer
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Transparent)
-                ) {
-                    content()
-                }
+                content()
             }
         }
     }

@@ -93,8 +93,15 @@ fun ImageViewer(
                     },
                 contentAlignment = Alignment.Center
             ) {
+                val imageRequest = remember(imageUrl) {
+                    coil.request.ImageRequest.Builder(context)
+                        .data(imageUrl)
+                        .crossfade(false)
+                        .allowHardware(true)
+                        .build()
+                }
                 AsyncImage(
-                    model = imageUrl,
+                    model = imageRequest,
                     contentDescription = "Zoomable Image",
                     contentScale = ContentScale.Fit,
                     onState = { state ->

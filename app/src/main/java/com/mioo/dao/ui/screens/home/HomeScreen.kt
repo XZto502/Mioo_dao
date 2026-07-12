@@ -19,7 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.ListAlt
-import androidx.compose.material3.Badge
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,13 +32,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,20 +44,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import com.mioo.dao.ui.components.ImageViewer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.mioo.dao.data.model.ForumGroup
-import com.mioo.dao.data.model.Thread
-import com.mioo.dao.ui.components.PostData
-import com.mioo.dao.ui.components.ThreadCard
-import com.mioo.dao.ui.components.FreeCopyDialog
-import com.mioo.dao.ui.theme.DaoTheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.mioo.dao.data.model.ForumGroup
+import com.mioo.dao.ui.components.FreeCopyDialog
+import com.mioo.dao.ui.components.HtmlParseCache
+import com.mioo.dao.ui.components.ImageViewer
+import com.mioo.dao.ui.components.PrefetchListImages
+import com.mioo.dao.ui.components.ThreadCard
+import com.mioo.dao.ui.components.ThreadListItem
+import com.mioo.dao.ui.screens.settings.SettingsViewModel
+import com.mioo.dao.ui.theme.DaoTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,27 +73,21 @@ fun HomeScreen(
     settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val settingsState by settingsViewModel.settingsState.collectAsState()
-    val blockedThreads = settingsState.blockedThreads
-    val blockedUsers = settingsState.blockedUsers
-    val blockedKeywords = settingsState.blockedKeywords
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Timeline", "Forums")
+    val tabs = remember { listOf("Timeline", "Forums") }
     val timelineListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-
-
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Mioo DAO") },
                 actions = {
-                    IconButton(onClick = { 
+                    IconButton(onClick = {
                         scope.launch {
                             if (selectedTab == 0) timelineListState.animateScrollToItem(0)
                         }
-                        viewModel.refreshData() 
+                        viewModel.refreshData()
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = "刷新")
                     }
@@ -133,19 +129,9 @@ fun HomeScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                val filteredThreads = remember(uiState.timelineThreads, blockedThreads, blockedUsers, blockedKeywords) {
-                    uiState.timelineThreads.filter { thread ->
-                        !blockedThreads.contains(thread.idStr) && 
-                        !blockedUsers.contains(thread.userHash) &&
-                        blockedKeywords.none { keyword ->
-                            thread.title?.contains(keyword, ignoreCase = true) == true ||
-                            thread.content?.contains(keyword, ignoreCase = true) == true
-                        }
-                    }
-                }
                 when (selectedTab) {
                     0 -> TimelineList(
-                        threads = filteredThreads,
+                        items = uiState.displayItems,
                         listState = timelineListState,
                         onThreadClick = onNavigateToThread,
                         onBlockThread = { settingsViewModel.addBlockedThread(it) },
@@ -161,34 +147,36 @@ fun HomeScreen(
     }
 }
 
-fun Thread.toPostData(cdnUrl: String = "https://image.nmb.best"): PostData {
-    return PostData(
-        id = this.idStr,
-        title = this.title ?: "",
-        userName = this.name ?: "Anonymous",
-        userId = this.userHash,
-        createdAt = this.now,
-        content = this.content,
-        imageUrl = if (this.imageUrl != null) "$cdnUrl/image/${this.imageUrl}" else null,
-        isPo = false,
-        isAdmin = this.isAdmin,
-        isSage = this.isSage,
-        resto = this.idStr
-    )
-}
-
 @Composable
 fun TimelineList(
-    threads: List<Thread>,
+    items: List<ThreadListItem>,
     listState: LazyListState,
     onThreadClick: (String) -> Unit,
     onBlockThread: (String) -> Unit,
     onBlockUser: (String) -> Unit
 ) {
-    var freeCopyText by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    var activeImageUrl by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var freeCopyText by remember { mutableStateOf<String?>(null) }
+    var activeImageUrl by remember { mutableStateOf<String?>(null) }
+    val emptyStringLambda = remember { { _: String -> } }
+    val quoteLinkColor = MaterialTheme.colorScheme.primary
 
-    if (threads.isEmpty()) {
+    LaunchedEffect(items, quoteLinkColor) {
+        if (items.isNotEmpty()) {
+            withContext(Dispatchers.Default) {
+                HtmlParseCache.prewarm(items.map { it.postData.content }, quoteLinkColor)
+            }
+        }
+    }
+
+    val prefetchUrls = remember(items) { items.map { it.postData.imageUrl } }
+    PrefetchListImages(
+        imageUrls = prefetchUrls,
+        listState = listState,
+        sizePx = 360,
+        ahead = 10
+    )
+
+    if (items.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("No active threads", style = MaterialTheme.typography.bodyMedium)
         }
@@ -200,11 +188,11 @@ fun TimelineList(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp)
         ) {
             items(
-                items = threads,
+                items = items,
                 key = { it.id },
-                contentType = { "thread_card" }
-            ) { thread ->
-                var showBlockDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
+                contentType = { item -> if (item.hasImage) "thread_image" else "thread_text" }
+            ) { item ->
+                var showBlockDialog by remember { mutableStateOf(false) }
 
                 if (showBlockDialog) {
                     AlertDialog(
@@ -217,25 +205,25 @@ fun TimelineList(
                             ) {
                                 TextButton(
                                     onClick = {
-                                        onBlockThread(thread.idStr)
+                                        onBlockThread(item.idStr)
                                         showBlockDialog = false
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("屏蔽此串 (No.${thread.idStr})")
+                                    Text("屏蔽此串 (No.${item.idStr})")
                                 }
                                 TextButton(
                                     onClick = {
-                                        onBlockUser(thread.userHash)
+                                        onBlockUser(item.userHash)
                                         showBlockDialog = false
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("屏蔽发言饼干 (ID: ${thread.userHash})")
+                                    Text("屏蔽发言饼干 (ID: ${item.userHash})")
                                 }
                                 TextButton(
                                     onClick = {
-                                        freeCopyText = thread.content
+                                        freeCopyText = item.rawContent
                                         showBlockDialog = false
                                     },
                                     modifier = Modifier.fillMaxWidth()
@@ -254,18 +242,20 @@ fun TimelineList(
                     )
                 }
 
-                val postData = remember(thread) { thread.toPostData() }
-                val onThreadClickRemembered = remember(thread) { { onThreadClick(thread.idStr) } }
-                val onImageClickRemembered = remember { { imageUrl: String -> activeImageUrl = imageUrl } }
-                val onLongClickRemembered = remember { { showBlockDialog = true } }
+                val onThreadClickRemembered = remember(item.idStr) {
+                    { onThreadClick(item.idStr) }
+                }
+                val onImageClickRemembered = remember {
+                    { imageUrl: String -> activeImageUrl = imageUrl }
+                }
 
                 ThreadCard(
-                    postData = postData,
-                    replyCount = thread.replyCount ?: 0,
+                    postData = item.postData,
+                    replyCount = item.replyCount,
                     onThreadClick = onThreadClickRemembered,
-                    onQuoteClick = {},
+                    onQuoteClick = emptyStringLambda,
                     onImageClick = onImageClickRemembered,
-                    onLongClick = onLongClickRemembered
+                    onLongClick = { showBlockDialog = true }
                 )
             }
         }
@@ -297,7 +287,7 @@ fun ForumList(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         forumGroups.forEach { group ->
-            item {
+            item(key = "group_${group.id}", contentType = "forum_group_header") {
                 Text(
                     text = group.name,
                     style = MaterialTheme.typography.titleMedium,
@@ -307,7 +297,7 @@ fun ForumList(
                 )
                 Divider(color = MaterialTheme.colorScheme.outlineVariant)
             }
-            items(group.forums) { forum ->
+            items(group.forums, key = { it.id }, contentType = { "forum_card" }) { forum ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()

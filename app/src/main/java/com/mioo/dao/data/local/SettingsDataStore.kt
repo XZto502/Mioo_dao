@@ -30,6 +30,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_FONT_SIZE_SCALE = floatPreferencesKey("font_size_scale")
         val KEY_THEME_COLOR = stringPreferencesKey("theme_color")
         val KEY_COOKIES_LIST = stringPreferencesKey("cookies_list")
+        val KEY_COOKIE_NOTES = stringPreferencesKey("cookie_notes")
         val KEY_SELECTED_COOKIE_INDEX = intPreferencesKey("selected_cookie_index")
         val KEY_AUTH_COOKIE = stringPreferencesKey("auth_cookie")
         val KEY_FEED_FOLDERS = stringPreferencesKey("feed_folders")
@@ -162,6 +163,31 @@ class SettingsDataStore(private val context: Context) {
                 }
             } else {
                 listStr.split(",").filter { it.isNotBlank() }
+            }
+        }
+
+    val cookieNotesFlow: Flow<Map<String, String>> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            val jsonStr = preferences[KEY_COOKIE_NOTES] ?: ""
+            if (jsonStr.isEmpty()) emptyMap()
+            else try {
+                val obj = org.json.JSONObject(jsonStr)
+                val map = mutableMapOf<String, String>()
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    map[key] = obj.optString(key, "")
+                }
+                map
+            } catch (_: Exception) {
+                emptyMap()
             }
         }
 
@@ -403,6 +429,16 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
+    suspend fun saveCookieNotes(notes: Map<String, String>) {
+        context.dataStore.edit { preferences ->
+            val obj = org.json.JSONObject()
+            notes.forEach { (k, v) ->
+                if (v.isNotBlank()) obj.put(k, v)
+            }
+            preferences[KEY_COOKIE_NOTES] = obj.toString()
+        }
+    }
+
     suspend fun saveSelectedCookieIndex(index: Int) {
         context.dataStore.edit { preferences ->
             preferences[KEY_SELECTED_COOKIE_INDEX] = index
@@ -467,18 +503,18 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    suspend fun getThreadDraft(threadId: String): String {
+    suspend fun getThreadDraft(threadId: String): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val preferences = context.dataStore.data.first()
         val jsonStr = preferences[KEY_THREAD_DRAFTS] ?: ""
         if (jsonStr.isNotEmpty()) {
             try {
                 val jsonObject = org.json.JSONObject(jsonStr)
-                return jsonObject.optString(threadId, "")
+                return@withContext jsonObject.optString(threadId, "")
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
-        return ""
+        ""
     }
 
     suspend fun saveThreadDraft(threadId: String, draft: String) {
@@ -502,9 +538,9 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    suspend fun getNewThreadDraft(): String {
+    suspend fun getNewThreadDraft(): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val preferences = context.dataStore.data.first()
-        return preferences[KEY_NEW_THREAD_DRAFT] ?: ""
+        preferences[KEY_NEW_THREAD_DRAFT] ?: ""
     }
 
     suspend fun saveNewThreadDraft(draft: String) {
@@ -520,13 +556,17 @@ class SettingsDataStore(private val context: Context) {
     }
 
     /**
-     * Synchronously read last forum ID (blocking, use only during init).
+     * Read last forum ID and name combined in a single DataStore read call on Dispatchers.IO.
      */
-    suspend fun getLastForumId(): String? = lastForumIdFlow.first()
-
-    /**
-     * Synchronously read last forum name (blocking, use only during init).
-     */
-    suspend fun getLastForumName(): String? = lastForumNameFlow.first()
+    suspend fun getLastForum(): Pair<String, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val preferences = context.dataStore.data.first()
+            val id = preferences[KEY_LAST_FORUM_ID] ?: "-1"
+            val name = preferences[KEY_LAST_FORUM_NAME] ?: "时间线"
+            id to name
+        } catch (e: Exception) {
+            "-1" to "时间线"
+        }
+    }
 
 }

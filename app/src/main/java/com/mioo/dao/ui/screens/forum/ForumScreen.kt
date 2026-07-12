@@ -95,11 +95,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.ui.components.PostData
+import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
+import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -119,6 +124,7 @@ fun ForumScreen(
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val emptyStringLambda = remember { { _: String -> } }
 
     val pullToRefreshState = rememberPullToRefreshState()
     if (pullToRefreshState.isRefreshing) {
@@ -194,16 +200,16 @@ fun ForumScreen(
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val pinnedForumsList = remember(uiState.forumGroups, settingsState.pinnedForums) {
+                    uiState.forumGroups.flatMap { it.forums }
+                        .filter { settingsState.pinnedForums.contains(it.id) }
+                        .distinctBy { it.id }
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Pinned Forums (置顶版块) Section
-                    val pinnedForumsList = uiState.forumGroups.flatMap { it.forums }
-                        .filter { settingsState.pinnedForums.contains(it.id) }
-                        .distinctBy { it.id }
-
                     if (pinnedForumsList.isNotEmpty()) {
                         item {
                             Text(
@@ -214,7 +220,7 @@ fun ForumScreen(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                         }
-                        items(pinnedForumsList, key = { "pinned_${it.id}" }) { forum ->
+                        items(pinnedForumsList, key = { "pinned_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
                             val isSelected = forum.id == viewModel.forumId
                             val containerColor = if (isSelected) {
                                 MaterialTheme.colorScheme.primaryContainer
@@ -286,7 +292,7 @@ fun ForumScreen(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                         }
-                        items(group.forums, key = { "${group.id}_${it.id}" }) { forum ->
+                        items(group.forums, key = { "${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
                             val isSelected = forum.id == viewModel.forumId
                             val containerColor = if (isSelected) {
                                 MaterialTheme.colorScheme.primaryContainer
@@ -415,19 +421,36 @@ fun ForumScreen(
                         Text("该板块下暂无帖子。", style = MaterialTheme.typography.bodyMedium)
                     }
                 } else {
-                    val blockedThreads = settingsState.blockedThreads
-                    val blockedUsers = settingsState.blockedUsers
-                    val blockedKeywords = settingsState.blockedKeywords
-                val filteredThreads = remember(uiState.threads, blockedThreads, blockedUsers, blockedKeywords) {
-                    uiState.threads.filter { thread ->
-                        !blockedThreads.contains(thread.idStr) && 
-                        !blockedUsers.contains(thread.userHash) &&
-                        blockedKeywords.none { keyword ->
-                            thread.title?.contains(keyword, ignoreCase = true) == true ||
-                            thread.content?.contains(keyword, ignoreCase = true) == true
+                    val displayItems = uiState.displayItems
+                    val quoteLinkColor = MaterialTheme.colorScheme.primary
+                    // Warm only first screenful immediately; rest after first scroll settles
+                    LaunchedEffect(displayItems, quoteLinkColor) {
+                        if (displayItems.isEmpty()) return@LaunchedEffect
+                        val bodies = displayItems.map { it.postData.content }
+                        withContext(Dispatchers.Default) {
+                            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                                bodies.take(6),
+                                quoteLinkColor
+                            )
+                        }
+                        delay(800)
+                        withContext(Dispatchers.Default) {
+                            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                                bodies.drop(6).take(20),
+                                quoteLinkColor
+                            )
                         }
                     }
-                }
+                    val prefetchUrls = remember(displayItems) {
+                        displayItems.map { it.postData.imageUrl }
+                    }
+                    PrefetchListImages(
+                        imageUrls = prefetchUrls,
+                        listState = listState,
+                        sizePx = 360,
+                        ahead = 5,
+                        initialDelayMs = 600
+                    )
 
                 LazyColumn(
                     state = listState,
@@ -441,10 +464,12 @@ fun ForumScreen(
                     )
                 ) {
                     items(
-                        items = filteredThreads,
+                        items = displayItems,
                         key = { it.id },
-                        contentType = { "thread_card" }
-                    ) { thread ->
+                        contentType = { item ->
+                            if (item.hasImage) "thread_image" else "thread_text"
+                        }
+                    ) { item ->
                         var showBlockDialog by remember { mutableStateOf(false) }
 
                             if (showBlockDialog) {
@@ -458,25 +483,25 @@ fun ForumScreen(
                                         ) {
                                             TextButton(
                                                 onClick = {
-                                                    settingsViewModel.addBlockedThread(thread.idStr)
+                                                    settingsViewModel.addBlockedThread(item.idStr)
                                                     showBlockDialog = false
                                                 },
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
-                                                Text("屏蔽此串 (No.${thread.idStr})")
+                                                Text("屏蔽此串 (No.${item.idStr})")
                                             }
                                             TextButton(
                                                 onClick = {
-                                                    settingsViewModel.addBlockedUser(thread.userHash)
+                                                    settingsViewModel.addBlockedUser(item.userHash)
                                                     showBlockDialog = false
                                                 },
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
-                                                Text("屏蔽发言饼干 (ID: ${thread.userHash})")
+                                                Text("屏蔽发言饼干 (ID: ${item.userHash})")
                                             }
                                             TextButton(
                                                 onClick = {
-                                                    freeCopyText = thread.content
+                                                    freeCopyText = item.rawContent
                                                     showBlockDialog = false
                                                 },
                                                 modifier = Modifier.fillMaxWidth()
@@ -495,22 +520,27 @@ fun ForumScreen(
                                 )
                             }
 
-                            val postData = remember(thread) { thread.toPostData() }
-                            val onThreadClickRemembered = remember(thread) { { onNavigateToThread(thread.idStr) } }
-                            val onImageClickRemembered = remember { { imageUrl: String -> activeImageUrl = imageUrl } }
-                            val onLongClickRemembered = remember { { showBlockDialog = true } }
+                            val onThreadClickRemembered = remember(item.idStr) {
+                                { onNavigateToThread(item.idStr) }
+                            }
+                            val onImageClickRemembered = remember {
+                                { imageUrl: String -> activeImageUrl = imageUrl }
+                            }
+                            val onLongClickRemembered = remember {
+                                { showBlockDialog = true }
+                            }
 
                             ThreadCard(
-                                postData = postData,
-                                replyCount = thread.replyCount ?: 0,
+                                postData = item.postData,
+                                replyCount = item.replyCount,
                                 onThreadClick = onThreadClickRemembered,
-                                onQuoteClick = {},
+                                onQuoteClick = emptyStringLambda,
                                 onImageClick = onImageClickRemembered,
                                 onLongClick = onLongClickRemembered
                             )
                         }
 
-                        if (uiState.isLoading && filteredThreads.isNotEmpty()) {
+                        if (uiState.isLoading && displayItems.isNotEmpty()) {
                             item {
                                 Box(
                                     modifier = Modifier
@@ -613,22 +643,6 @@ fun ForumScreen(
             onDismiss = { activeImageUrl = null }
         )
     }
-}
-
-fun Thread.toPostData(cdnUrl: String = "https://image.nmb.best"): PostData {
-    return PostData(
-        id = this.idStr,
-        title = this.title ?: "",
-        userName = this.name ?: "Anonymous",
-        userId = this.userHash,
-        createdAt = this.now,
-        content = this.content,
-        imageUrl = if (this.imageUrl != null) "$cdnUrl/image/${this.imageUrl}" else null,
-        isPo = false,
-        isAdmin = this.isAdmin,
-        isSage = this.isSage,
-        resto = this.idStr
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

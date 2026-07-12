@@ -8,6 +8,8 @@
     <application
         android:name=".MiooDaoApp"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@style/Theme.MiooDao">
         
@@ -15,10 +17,29 @@
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.MiooDao">
+            android:theme="@style/Theme.MiooDao"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep links: open thread URLs in-app -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.nmbxd.com" android:pathPrefix="/t/" />
+                <data android:scheme="https" android:host="nmbxd.com" android:pathPrefix="/t/" />
+                <data android:scheme="https" android:host="www.nmbxd1.com" android:pathPrefix="/t/" />
+                <data android:scheme="https" android:host="nmbxd1.com" android:pathPrefix="/t/" />
+            </intent-filter>
+
+            <!-- Share text containing thread links / No.xxx -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 

@@ -249,35 +249,69 @@ fun SettingsScreen(
                                 }
                             }
                         } catch (e: Exception) {}
+                        val note = settings.cookieNotes[cookie].orEmpty()
+                        val label = if (note.isNotBlank()) "$note · $displayName" else displayName
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = isSelected,
-                                onClick = { viewModel.selectCookie(index) }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = displayName,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            IconButton(
-                                onClick = { viewModel.deleteCookie(cookie) }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "删除饼干",
-                                    tint = MaterialTheme.colorScheme.error
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = { viewModel.selectCookie(index) }
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = label,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                IconButton(onClick = { viewModel.deleteCookie(cookie) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "删除饼干",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
+                            OutlinedTextField(
+                                value = note,
+                                onValueChange = { viewModel.setCookieNote(cookie, it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 48.dp, end = 8.dp),
+                                singleLine = true,
+                                placeholder = { Text("备注名（如：日常饼干）") },
+                                textStyle = MaterialTheme.typography.bodySmall
+                            )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            val json = viewModel.exportCookiesJson()
+                            val clip = android.content.ClipData.newPlainText("mioo_cookies", json)
+                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            cm.setPrimaryClip(clip)
+                            Toast.makeText(context, "饼干备份已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                        }) { Text("导出饼干") }
+                        OutlinedButton(onClick = {
+                            try {
+                                val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                    as android.content.ClipboardManager
+                                val clipText = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+                                if (clipText.isBlank()) {
+                                    Toast.makeText(context, "剪贴板为空", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val n = viewModel.importCookiesJson(clipText)
+                                    Toast.makeText(context, "已导入 $n 个饼干", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "导入失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }) { Text("从剪贴板导入") }
                     }
                 }
                 
