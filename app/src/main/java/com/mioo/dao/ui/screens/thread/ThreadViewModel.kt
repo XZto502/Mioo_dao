@@ -63,7 +63,9 @@ data class ThreadUiState(
      * After prepending an earlier page, UI should keep the same content under the finger
      * by adding this many list indices (reply rows only; not the main post header).
      */
-    val prependAnchorCount: Int? = null
+    val prependAnchorCount: Int? = null,
+    val showImagesOnly: Boolean = false,
+    val searchQuery: String = ""
 )
 
 /** Reply composer state — isolated so typing does not recompose the LazyColumn. */
@@ -190,7 +192,9 @@ class ThreadViewModel @Inject constructor(
                 mainPostData = null,
                 isLastPage = false,
                 pendingScrollIndex = null,
-                prependAnchorCount = null
+                prependAnchorCount = null,
+                showImagesOnly = false,
+                searchQuery = ""
             )
         }
 
@@ -316,7 +320,9 @@ class ThreadViewModel @Inject constructor(
                                 posts = combinedPosts,
                                 poUserHash = threadData.userHash,
                                 blockedUsers = blockedUsers,
-                                blockedKeywords = blockedKeywords
+                                blockedKeywords = blockedKeywords,
+                                showImagesOnly = _uiState.value.showImagesOnly,
+                                searchQuery = _uiState.value.searchQuery
                             )
                         }
                         if (gen != loadGeneration) return@collect
@@ -439,12 +445,16 @@ class ThreadViewModel @Inject constructor(
             val thread = _uiState.value.thread
             val posts = rawPosts
             if (thread == null && posts.isEmpty()) return@launch
+            val showImagesOnly = _uiState.value.showImagesOnly
+            val searchQuery = _uiState.value.searchQuery
             val items = withContext(Dispatchers.Default) {
                 buildDisplayItems(
                     posts = posts,
                     poUserHash = thread?.userHash,
                     blockedUsers = blockedUsers,
-                    blockedKeywords = blockedKeywords
+                    blockedKeywords = blockedKeywords,
+                    showImagesOnly = showImagesOnly,
+                    searchQuery = searchQuery
                 )
             }
             _uiState.update { it.copy(displayItems = items) }
@@ -455,16 +465,28 @@ class ThreadViewModel @Inject constructor(
         posts: List<Reply>,
         poUserHash: String?,
         blockedUsers: Set<String>,
-        blockedKeywords: List<String>
+        blockedKeywords: List<String>,
+        showImagesOnly: Boolean = false,
+        searchQuery: String = ""
     ): List<ReplyDisplayItem> {
         if (posts.isEmpty()) return emptyList()
         val result = ArrayList<ReplyDisplayItem>(posts.size)
+        val q = searchQuery.trim()
         for (reply in posts) {
+            if (showImagesOnly && reply.img.isNullOrBlank()) continue
             if (reply.userHash in blockedUsers) continue
             if (blockedKeywords.isNotEmpty() &&
                 blockedKeywords.any { reply.content.contains(it, ignoreCase = true) }
             ) {
                 continue
+            }
+            if (q.isNotEmpty()) {
+                val matchesKeyword = reply.content.contains(q, ignoreCase = true) ||
+                        (reply.title?.contains(q, ignoreCase = true) == true) ||
+                        (reply.name?.contains(q, ignoreCase = true) == true)
+                val matchesUser = reply.userHash.equals(q, ignoreCase = true) ||
+                        reply.idStr.equals(q, ignoreCase = true)
+                if (!matchesKeyword && !matchesUser) continue
             }
             val isPo = poUserHash != null && reply.userHash == poUserHash
             result.add(
@@ -616,6 +638,16 @@ class ThreadViewModel @Inject constructor(
     fun togglePoOnly() {
         _uiState.update { it.copy(showPoOnly = !it.showPoOnly) }
         loadThreadDetails()
+    }
+
+    fun toggleShowImagesOnly() {
+        _uiState.update { it.copy(showImagesOnly = !_uiState.value.showImagesOnly) }
+        scheduleRebuildDisplayItems()
+    }
+
+    fun updateSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+        scheduleRebuildDisplayItems()
     }
 
     fun toggleBookmark(folderUuid: String? = null, onComplete: ((String) -> Unit)? = null) {

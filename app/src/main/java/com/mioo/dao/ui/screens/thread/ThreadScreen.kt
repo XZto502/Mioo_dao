@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ButtonDefaults
@@ -85,6 +88,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
@@ -114,6 +118,7 @@ import com.mioo.dao.ui.components.RefPopup
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -160,7 +165,10 @@ fun ThreadScreen(
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
     var showPageJumpDialog by remember { mutableStateOf(false) }
+    var isSearchMode by remember { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val emptyLambda = remember { {} }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
 
@@ -234,135 +242,213 @@ fun ThreadScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = uiState.thread?.title ?: "详情",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    if (isSearchMode) {
+                        androidx.compose.material3.TextField(
+                            value = uiState.searchQuery,
+                            onValueChange = { query ->
+                                viewModel.updateSearchQuery(query)
+                            },
+                            placeholder = { Text("搜索文本或ID...", style = MaterialTheme.typography.bodyMedium) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
+                        )
+                    } else {
+                        Text(
+                            text = uiState.thread?.title ?: "详情",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    if (isSearchMode) {
+                        IconButton(onClick = {
+                            isSearchMode = false
+                            viewModel.updateSearchQuery("")
+                        }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        }
+                    } else {
+                        IconButton(onClick = onBackClick) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        }
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        val tid = viewModel.threadId
-                        val link = XdWebSearch.threadUrl(tid)
-                        val title = uiState.thread?.title?.takeIf { it.isNotBlank() } ?: "No.$tid"
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, title)
-                            putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
-                        }
-                        context.startActivity(Intent.createChooser(send, "分享串"))
-                    }) {
-                        Icon(Icons.Default.Share, contentDescription = "分享")
-                    }
-                    if (viewModel.totalPages > 1) {
-                        OutlinedButton(
-                            onClick = { showPageJumpDialog = true },
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.padding(end = 4.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                            )
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MenuBook,
-                                    contentDescription = "跳转页码",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "${currentScrollPage.value}/${viewModel.totalPages}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
+                    if (isSearchMode) {
+                        if (uiState.searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.updateSearchQuery("") }) {
+                                Icon(Icons.Default.Close, contentDescription = "清除搜索")
                             }
                         }
-                    }
-                    // Subscription button
-                    Box {
+                    } else {
+                        IconButton(onClick = { isSearchMode = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "串内搜索")
+                        }
                         IconButton(onClick = {
-                            if (uiState.isSubscribed || uiState.feedFolders.isEmpty()) {
-                                // If already subscribed (locally) or no extra folders, just toggle local
-                                viewModel.toggleBookmark(null) { msg ->
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
-                            } else {
-                                // If not subscribed and has extra folders, show menu
-                                showBookmarkMenu = true
+                            val tid = viewModel.threadId
+                            val link = XdWebSearch.threadUrl(tid)
+                            val title = uiState.thread?.title?.takeIf { it.isNotBlank() } ?: "No.$tid"
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, title)
+                                putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
                             }
+                            context.startActivity(Intent.createChooser(send, "分享串"))
                         }) {
-                            Icon(
-                                imageVector = if (uiState.isSubscribed) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                contentDescription = if (uiState.isSubscribed) "取消收藏" else "收藏",
-                                tint = if (uiState.isSubscribed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
+                            Icon(Icons.Default.Share, contentDescription = "分享")
                         }
-
-                        androidx.compose.material3.DropdownMenu(
-                            expanded = showBookmarkMenu,
-                            onDismissRequest = { showBookmarkMenu = false }
-                        ) {
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("本地收藏") },
-                                onClick = {
-                                    showBookmarkMenu = false
+                        if (viewModel.totalPages > 1) {
+                            OutlinedButton(
+                                onClick = { showPageJumpDialog = true },
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.padding(end = 4.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                ),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                )
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MenuBook,
+                                        contentDescription = "跳转页码",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "${currentScrollPage.value}/${viewModel.totalPages}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = {
+                                if (uiState.isSubscribed || uiState.feedFolders.isEmpty()) {
                                     viewModel.toggleBookmark(null) { msg ->
                                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     }
+                                } else {
+                                    showBookmarkMenu = true
                                 }
-                            )
-                            uiState.feedFolders.forEach { folder ->
+                            }) {
+                                Icon(
+                                    imageVector = if (uiState.isSubscribed) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = if (uiState.isSubscribed) "取消收藏" else "收藏",
+                                    tint = if (uiState.isSubscribed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = showBookmarkMenu,
+                                onDismissRequest = { showBookmarkMenu = false }
+                            ) {
                                 androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(folder.name) },
+                                    text = { Text("本地收藏") },
                                     onClick = {
                                         showBookmarkMenu = false
-                                        viewModel.toggleBookmark(folder.uuid) { msg ->
+                                        viewModel.toggleBookmark(null) { msg ->
                                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 )
+                                uiState.feedFolders.forEach { folder ->
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text(folder.name) },
+                                        onClick = {
+                                            showBookmarkMenu = false
+                                            viewModel.toggleBookmark(folder.uuid) { msg ->
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
-                    }
-                    // OP Only toggle button
-                    IconButton(onClick = { viewModel.togglePoOnly() }) {
-                        Icon(
-                            imageVector = Icons.Default.FilterAlt,
-                            contentDescription = "只看楼主",
-                            tint = if (uiState.showPoOnly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    // Download Thread button
-                    if (uiState.isDownloading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(horizontal = 12.dp)
-                                .size(24.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        IconButton(onClick = {
-                            Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
-                            viewModel.downloadThread { msg ->
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+
+                        Box {
+                            IconButton(onClick = { showOverflowMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
                             }
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "下载本串"
-                            )
+
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false }
+                            ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("只看楼主") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        viewModel.togglePoOnly()
+                                    },
+                                    leadingIcon = {
+                                        if (uiState.showPoOnly) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("只看图片") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        viewModel.toggleShowImagesOnly()
+                                    },
+                                    leadingIcon = {
+                                        if (uiState.showImagesOnly) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                )
+                                androidx.compose.material3.HorizontalDivider()
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = {
+                                        if (uiState.isDownloading) {
+                                            Text("正在下载...")
+                                        } else {
+                                            Text("离线下载本串")
+                                        }
+                                    },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        if (!uiState.isDownloading) {
+                                            Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
+                                            viewModel.downloadThread { msg ->
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    enabled = !uiState.isDownloading
+                                )
+                            }
                         }
                     }
                 },
@@ -525,7 +611,12 @@ fun ThreadScreen(
                                         freeCopyText = mainThread.content
                                     },
                                     blockThreadLabel = "屏蔽此串 (No.${mainThread.idStr})",
-                                    blockUserLabel = "屏蔽该发言饼干 (ID: ${mainThread.userHash})"
+                                    blockUserLabel = "屏蔽该发言饼干 (ID: ${mainThread.userHash})",
+                                    onShareCard = {
+                                        scope.launch {
+                                            com.mioo.dao.utils.ShareCardUtil.sharePostCard(context, mainPostData)
+                                        }
+                                    }
                                 )
                             }
 
@@ -843,6 +934,8 @@ private fun ThreadReplyRow(
         )
     }
 
+    val rowContext = LocalContext.current
+    val rowScope = rememberCoroutineScope()
     var showReplyBlockDialog by remember { mutableStateOf(false) }
     if (showReplyBlockDialog) {
         PostActionDialog(
@@ -853,7 +946,12 @@ private fun ThreadReplyRow(
             onBlockUser = onBlockUser,
             onCopy = onFreeCopy,
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
-            blockUserLabel = "屏蔽该发言饼干 (ID: ${item.userHash})"
+            blockUserLabel = "屏蔽该发言饼干 (ID: ${item.userHash})",
+            onShareCard = {
+                rowScope.launch {
+                    com.mioo.dao.utils.ShareCardUtil.sharePostCard(rowContext, item.postData)
+                }
+            }
         )
     }
 
@@ -878,7 +976,8 @@ private fun PostActionDialog(
     onBlockUser: () -> Unit,
     onCopy: () -> Unit,
     blockThreadLabel: String,
-    blockUserLabel: String
+    blockUserLabel: String,
+    onShareCard: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -892,6 +991,12 @@ private fun PostActionDialog(
                     onClick = { onQuote(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("引用该帖子") }
+                if (onShareCard != null) {
+                    TextButton(
+                        onClick = { onShareCard(); onDismiss() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("分享为卡片") }
+                }
                 TextButton(
                     onClick = { onBlockThread(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
