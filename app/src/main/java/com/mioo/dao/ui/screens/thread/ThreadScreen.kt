@@ -578,6 +578,8 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
+                val replyIds = remember(displayItems) { displayItems.map { it.idStr }.toSet() }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -657,7 +659,8 @@ fun ThreadScreen(
                             onBlockUser = {
                                 settingsViewModel.addBlockedUser(item.userHash)
                             },
-                            onFreeCopy = { freeCopyText = item.rawContent }
+                            onFreeCopy = { freeCopyText = item.rawContent },
+                            replyIds = replyIds
                         )
                     }
 
@@ -905,7 +908,8 @@ private fun ThreadReplyRow(
     onRequestQuote: () -> Unit,
     onBlockThread: () -> Unit,
     onBlockUser: () -> Unit,
-    onFreeCopy: () -> Unit
+    onFreeCopy: () -> Unit,
+    replyIds: Set<String>
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
     val quotedReplies = if (item.quoteIds.isEmpty()) {
@@ -921,10 +925,17 @@ private fun ThreadReplyRow(
             }
         }
     }
-    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash) {
+    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, replyIds) {
         StablePostList(
             quotedReplies.map { quote ->
                 val isFollowUp = quote.resto != null && quote.resto > 0L
+                val isCurrentThreadReply = replyIds.contains(quote.idStr)
+                val targetResto = when {
+                    isFollowUp -> quote.resto.toString()
+                    isCurrentThreadReply -> currentThreadId
+                    quote.idStr == currentThreadId -> currentThreadId
+                    else -> quote.idStr
+                }
                 PostData(
                     id = quote.idStr,
                     title = quote.title ?: "",
@@ -938,7 +949,7 @@ private fun ThreadReplyRow(
                     isPo = quote.userHash == poUserHash,
                     isAdmin = quote.isAdmin,
                     isSage = quote.isSage,
-                    resto = if (isFollowUp) quote.resto.toString() else quote.idStr
+                    resto = targetResto
                 )
             }
         )

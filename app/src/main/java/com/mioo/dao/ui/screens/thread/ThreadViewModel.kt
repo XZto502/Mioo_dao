@@ -880,6 +880,14 @@ class ThreadViewModel @Inject constructor(
 
     private fun Reply.toPostDataForRef(poUserHash: String?): PostData {
         val isFollowUp = resto != null && resto > 0L
+        val currentThreadId = threadId
+        val isCurrentThreadReply = _uiState.value.displayItems.any { it.idStr == idStr }
+        val targetResto = when {
+            isFollowUp -> resto.toString()
+            isCurrentThreadReply -> currentThreadId
+            idStr == currentThreadId -> currentThreadId
+            else -> idStr
+        }
         return PostData(
             id = idStr,
             title = title ?: "",
@@ -891,7 +899,7 @@ class ThreadViewModel @Inject constructor(
             isPo = poUserHash != null && userHash == poUserHash,
             isAdmin = isAdmin,
             isSage = isSage,
-            resto = if (isFollowUp) resto.toString() else idStr
+            resto = targetResto
         )
     }
 }
