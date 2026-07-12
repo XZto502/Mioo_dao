@@ -29,10 +29,32 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="www.nmbxd.com" android:pathPrefix="/t/" />
-                <data android:scheme="https" android:host="nmbxd.com" android:pathPrefix="/t/" />
-                <data android:scheme="https" android:host="www.nmbxd1.com" android:pathPrefix="/t/" />
-                <data android:scheme="https" android:host="nmbxd1.com" android:pathPrefix="/t/" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <!-- Supported Hosts -->
+                <data android:host="www.nmbxd.com" />
+                <data android:host="nmbxd.com" />
+                <data android:host="www.nmbxd1.com" />
+                <data android:host="nmbxd1.com" />
+                <data android:host="www.adnmb.com" />
+                <data android:host="adnmb.com" />
+                <data android:host="www.adnmb1.com" />
+                <data android:host="adnmb1.com" />
+                <data android:host="www.adnmb2.com" />
+                <data android:host="adnmb2.com" />
+                <data android:host="www.adnmb3.com" />
+                <data android:host="adnmb3.com" />
+                <data android:host="www.adnmb4.com" />
+                <data android:host="adnmb4.com" />
+                <data android:host="www.adnmb5.com" />
+                <data android:host="adnmb5.com" />
+                <data android:host="adnmb.co" />
+                <data android:host="www.adnmb.co" />
+                <data android:host="nmb.fastmirror.org" />
+                <!-- Supported Path Formats -->
+                <data android:pathPrefix="/t/" />
+                <data android:pathPrefix="/thread/" />
+                <data android:pathPrefix="/Forum/thread/id/" />
             </intent-filter>
 
             <!-- Share text containing thread links / No.xxx -->

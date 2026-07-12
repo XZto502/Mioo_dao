@@ -7,14 +7,14 @@ import android.net.Uri
  * Extract X-island thread ids from share intents / deep links.
  * Supports common patterns:
  * - https://www.nmbxd.com/t/123
- * - https://www.nmbxd1.com/t/123
+ * - https://adnmb.com/t/123
  * - https://nmbxd.com/Forum/thread/id/123
  * - plain "123" / "No.123" / ">>No.123"
  */
 object ThreadLinkParser {
 
     private val pathPatterns = listOf(
-        Regex("""/(?:t|thread)/(\d+)""", RegexOption.IGNORE_CASE),
+        Regex("""/(?:t|thread)(?:/id)?/(\d+)""", RegexOption.IGNORE_CASE),
         Regex("""[?&]id=(\d+)""", RegexOption.IGNORE_CASE),
         Regex("""No\.(\d+)""", RegexOption.IGNORE_CASE),
         Regex(""">>(\d+)""")
