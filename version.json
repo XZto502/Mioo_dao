@@ -1,0 +1,13 @@
+{
+  "tag_name": "v1.0.0",
+  "name": "v1.0.0",
+  "body": "v1.0.0 完整功能优化版\n\n1. 修复大图查看器左右切页手势冲突问题\n2. 修复同一串内的非主串引用框中异常显示“查看原串”的缺陷\n3. 移除文本内容自动折叠和“展开全文”功能\n4. 优化设置页主题与饼干切换项为整行可点击\n5. 更新更新检查为CDN地址避免Rate Limit问题",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.0",
+  "assets": [
+    {
+      "name": "app-debug.apk",
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.0/app-debug.apk",
+      "size": 1
+    }
+  ]
+}
