@@ -185,7 +185,7 @@ private fun ZoomableImageContainer(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
+            .pointerInput(isActive) {
                 detectTapGestures(
                     onDoubleTap = { tapOffset ->
                         if (scale > 1f) {
@@ -201,7 +201,7 @@ private fun ZoomableImageContainer(
                     }
                 )
             }
-            .pointerInput(Unit) {
+            .pointerInput(isActive) {
                 detectZoomableTransformGestures(
                     onGesture = { pan, zoom ->
                         scale = (scale * zoom).coerceIn(1f, 5f)
