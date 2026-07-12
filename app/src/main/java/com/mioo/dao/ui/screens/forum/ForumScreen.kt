@@ -701,7 +701,8 @@ fun CreateThreadDialog(
                             Icon(Icons.Default.Cookie, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
-                            Text(if (currentCookie.length > 8) currentCookie.take(8) + "..." else currentCookie)
+                            val displayName = parseCookieName(currentCookie)
+                            Text(if (displayName.length > 8) displayName.take(8) + "..." else displayName)
                         }
                         DropdownMenu(
                             expanded = cookieMenuExpanded,
@@ -709,10 +710,11 @@ fun CreateThreadDialog(
                         ) {
                             cookies.forEachIndexed { index, cookie ->
                                 val isSelected = index == selectedCookieIndex
+                                val displayName = parseCookieName(cookie)
                                 DropdownMenuItem(
                                     text = { 
                                         Text(
-                                            text = if (cookie.length > 8) cookie.take(8) + "..." else cookie,
+                                            text = if (displayName.length > 8) displayName.take(8) + "..." else displayName,
                                             fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
                                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                         ) 
@@ -867,3 +869,20 @@ fun CreateThreadDialog(
         }
     )
 }
+
+private fun parseCookieName(cookie: String): String {
+    return try {
+        if (cookie.startsWith("{")) {
+            val json = org.json.JSONObject(cookie)
+            var name = json.optString("name", "")
+            if (name.isEmpty()) name = json.optString("cookie", "")
+            if (name.isEmpty()) name = json.optString("userhash", cookie)
+            name
+        } else {
+            cookie
+        }
+    } catch (e: Exception) {
+        cookie
+    }
+}
+
