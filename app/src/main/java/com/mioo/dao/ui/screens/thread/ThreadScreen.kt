@@ -683,10 +683,20 @@ fun ThreadScreen(
                 )
             }
 
+            val imageUrls = remember(uiState.displayItems, uiState.mainPostData) {
+                val list = mutableListOf<String>()
+                uiState.mainPostData?.imageUrl?.let { list.add(it) }
+                uiState.displayItems.forEach { item ->
+                    item.postData.imageUrl?.let { list.add(it) }
+                }
+                list.distinct()
+            }
+
             // Image Viewer Overlay
             activeImageUrl?.let { imageUrl ->
                 ImageViewer(
-                    imageUrl = imageUrl,
+                    initialImageUrl = imageUrl,
+                    imageUrls = imageUrls,
                     onDismiss = { activeImageUrl = null }
                 )
             }

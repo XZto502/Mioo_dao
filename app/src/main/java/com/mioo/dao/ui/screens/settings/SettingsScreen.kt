@@ -60,6 +60,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -797,7 +798,7 @@ fun SettingsScreen(
                 ) {
                     Column {
                         Text(
-                            text = "本地离线缓存大小",
+                            text = "本地离线数据大小",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                         )
@@ -811,7 +812,41 @@ fun SettingsScreen(
                         onClick = { viewModel.clearCache() },
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("清除缓存")
+                        Text("清除数据")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Image Cache Size & Clear
+                val imageCacheSize by viewModel.imageCacheSizeState.collectAsState()
+                val context = LocalContext.current
+                LaunchedEffect(Unit) {
+                    viewModel.updateImageCacheSize(context)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "图片与网络临时缓存",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                        Text(
+                            text = imageCacheSize,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.clearImageCache(context) },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("清理图片")
                     }
                 }
 

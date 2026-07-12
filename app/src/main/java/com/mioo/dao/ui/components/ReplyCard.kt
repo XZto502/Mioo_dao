@@ -22,6 +22,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,6 +36,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mioo.dao.ui.theme.DaoTheme
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Brush
 
 private val quotePatternCache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
 
@@ -213,28 +221,86 @@ fun ReplyCard(
                 }
             }
 
-            contentBlocks.forEach { block ->
-                when (block) {
-                    is PostContentBlock.Text -> {
-                        HtmlContent(
-                            html = block.html,
-                            onQuoteClick = onQuoteClick,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.fillMaxWidth(),
-                            onTextClick = onCardClick,
-                            onLongClick = onCardLongClick
+            var isExpanded by remember { mutableStateOf(false) }
+            var contentHeight by remember { mutableStateOf(0) }
+            val density = LocalDensity.current
+            val maxCollapseHeight = 260.dp
+            val maxCollapseHeightPx = with(density) { maxCollapseHeight.roundToPx() }
+            val isCollapsible = contentHeight > maxCollapseHeightPx
+
+            Box(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { layoutCoordinates ->
+                            if (!isExpanded) {
+                                contentHeight = layoutCoordinates.size.height
+                            }
+                        }
+                        .then(
+                            if (isCollapsible && !isExpanded) {
+                                Modifier.height(maxCollapseHeight)
+                            } else {
+                                Modifier
+                            }
                         )
+                        .animateContentSize()
+                ) {
+                    contentBlocks.forEach { block ->
+                        when (block) {
+                            is PostContentBlock.Text -> {
+                                HtmlContent(
+                                    html = block.html,
+                                    onQuoteClick = onQuoteClick,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onTextClick = onCardClick,
+                                    onLongClick = onCardLongClick
+                                )
+                            }
+                            is PostContentBlock.Quote -> {
+                                val quoteColor = MaterialTheme.colorScheme.primary
+                                QuotedPostBox(
+                                    quote = block.quote,
+                                    quoteColor = quoteColor,
+                                    onQuoteClick = onQuoteClick,
+                                    onImageClick = onImageClick,
+                                    onViewThreadClick = onViewThreadClick,
+                                    currentThreadId = currentThreadId
+                                )
+                            }
+                        }
                     }
-                    is PostContentBlock.Quote -> {
-                        val quoteColor = MaterialTheme.colorScheme.primary
-                        QuotedPostBox(
-                            quote = block.quote,
-                            quoteColor = quoteColor,
-                            onQuoteClick = onQuoteClick,
-                            onImageClick = onImageClick,
-                            onViewThreadClick = onViewThreadClick,
-                            currentThreadId = currentThreadId
-                        )
+                }
+
+                if (isCollapsible && !isExpanded) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .align(Alignment.BottomCenter)
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        DaoTheme.colors.replyCardBg.copy(alpha = 0.95f)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        androidx.compose.material3.TextButton(
+                            onClick = { isExpanded = true },
+                            modifier = Modifier.padding(bottom = 0.dp)
+                        ) {
+                            Text(
+                                text = "展开全文",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -252,14 +318,14 @@ fun ReplyCard(
                     val imageRequest = androidx.compose.runtime.remember(imageUrl) {
                         coil.request.ImageRequest.Builder(context)
                             .data(imageUrl)
-                            .crossfade(false)
+                            .crossfade(true)
                             .size(coil.size.Size(300, 300))
                             .precision(coil.size.Precision.INEXACT)
                             .memoryCacheKey(imageUrl)
                             .diskCacheKey(imageUrl)
                             .build()
                     }
-                    AsyncImage(
+                    ShimmerAsyncImage(
                         model = imageRequest,
                         contentDescription = "Reply Image",
                         contentScale = ContentScale.Crop,
@@ -358,7 +424,7 @@ fun QuotedPostBox(
                             .precision(coil.size.Precision.INEXACT)
                             .build()
                     }
-                    AsyncImage(
+                    ShimmerAsyncImage(
                         model = imageRequest,
                         contentDescription = "Quote Image",
                         contentScale = ContentScale.Crop,

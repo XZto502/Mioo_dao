@@ -191,7 +191,7 @@ fun ThreadCard(
                     val imageRequest = remember(imageUrl) {
                         ImageRequest.Builder(context)
                             .data(imageUrl)
-                            .crossfade(false)
+                            .crossfade(true)
                             .size(Size(360, 360))
                             .precision(Precision.INEXACT)
                             .memoryCacheKey(imageUrl)
@@ -200,7 +200,7 @@ fun ThreadCard(
                             .allowHardware(true)
                             .build()
                     }
-                    AsyncImage(
+                    ShimmerAsyncImage(
                         model = imageRequest,
                         contentDescription = "Thread Image",
                         contentScale = ContentScale.Crop,

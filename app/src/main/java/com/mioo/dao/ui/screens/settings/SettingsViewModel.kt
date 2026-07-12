@@ -134,6 +134,9 @@ class SettingsViewModel @Inject constructor(
     private val _cacheSizeState = MutableStateFlow("0.0 KB")
     val cacheSizeState: StateFlow<String> = _cacheSizeState.asStateFlow()
 
+    private val _imageCacheSizeState = MutableStateFlow("0.00 B")
+    val imageCacheSizeState: StateFlow<String> = _imageCacheSizeState.asStateFlow()
+
     private val _preloadProgress = MutableStateFlow<Pair<Int, Int>?>(null)
     val preloadProgressState: StateFlow<Pair<Int, Int>?> = _preloadProgress.asStateFlow()
 
@@ -152,6 +155,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateImageCacheSize(context: android.content.Context) {
+        viewModelScope.launch {
+            _imageCacheSizeState.value = com.mioo.dao.utils.StorageUtil.getCacheSizeFormatted(context)
+        }
+    }
+
     fun clearCache() {
         viewModelScope.launch {
             threadRepository.clearCache().collect { response ->
@@ -159,6 +168,13 @@ class SettingsViewModel @Inject constructor(
                     updateCacheSize()
                 }
             }
+        }
+    }
+
+    fun clearImageCache(context: android.content.Context) {
+        viewModelScope.launch {
+            com.mioo.dao.utils.StorageUtil.clearImageCache(context)
+            updateImageCacheSize(context)
         }
     }
 
