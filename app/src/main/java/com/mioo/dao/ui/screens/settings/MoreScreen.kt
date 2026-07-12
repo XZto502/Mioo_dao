@@ -220,9 +220,9 @@ fun MoreScreen(
                     val currentVer = remember(versionContext) {
                         try {
                             val packageInfo = versionContext.packageManager.getPackageInfo(versionContext.packageName, 0)
-                            packageInfo.versionName ?: "1.0.0"
+                            packageInfo.versionName ?: "1.0.1"
                         } catch (e: Exception) {
-                            "1.0.0"
+                            "1.0.1"
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -241,9 +241,9 @@ fun MoreScreen(
                                             val release = response.data
                                             val currentVersion = try {
                                                 val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                                                packageInfo.versionName ?: "1.0.0"
+                                                packageInfo.versionName ?: "1.0.1"
                                             } catch (e: Exception) {
-                                                "1.0.0"
+                                                "1.0.1"
                                             }
                                             
                                             val cleanCurrent = currentVersion.trim().lowercase().removePrefix("v")
