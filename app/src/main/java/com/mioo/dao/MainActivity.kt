@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
                 threadRepository.checkLatestRelease().collect { response ->
                     if (response is XdResponse.Success) {
                         val release = response.data
-                        val currentVersion = getAppVersionName(this@MainActivity)
+                        val currentVersion = getAppVersionName()
                         if (isNewerVersion(currentVersion, release.tagName)) {
                             showUpdateDialog = release
                         }
@@ -159,13 +159,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun getAppVersionName(context: Context): String {
-    return try {
-        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        packageInfo.versionName ?: "1.0.2"
-    } catch (e: Exception) {
-        "1.0.2"
-    }
+private fun getAppVersionName(): String {
+    return com.mioo.dao.BuildConfig.VERSION_NAME
 }
 
 private fun isNewerVersion(currentVersion: String, latestVersion: String): Boolean {

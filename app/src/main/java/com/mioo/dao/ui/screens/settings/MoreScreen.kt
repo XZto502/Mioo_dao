@@ -216,15 +216,7 @@ fun MoreScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val versionContext = LocalContext.current
-                    val currentVer = remember(versionContext) {
-                        try {
-                            val packageInfo = versionContext.packageManager.getPackageInfo(versionContext.packageName, 0)
-                            packageInfo.versionName ?: "1.0.2"
-                        } catch (e: Exception) {
-                            "1.0.2"
-                        }
-                    }
+                    val currentVer = com.mioo.dao.BuildConfig.VERSION_NAME
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("v$currentVer", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -239,12 +231,7 @@ fun MoreScreen(
                                     when (response) {
                                         is XdResponse.Success -> {
                                             val release = response.data
-                                            val currentVersion = try {
-                                                val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                                                packageInfo.versionName ?: "1.0.2"
-                                            } catch (e: Exception) {
-                                                "1.0.2"
-                                            }
+                                            val currentVersion = com.mioo.dao.BuildConfig.VERSION_NAME
                                             
                                             val cleanCurrent = currentVersion.trim().lowercase().removePrefix("v")
                                             val cleanLatest = release.tagName.trim().lowercase().removePrefix("v")
