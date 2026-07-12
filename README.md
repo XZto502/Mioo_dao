@@ -1,8 +1,8 @@
 # 喵岛 (MiooDao) 
 
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Android-green.svg)]()
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-purple.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-purple.svg)](https://kotlinlang.org)
 
 **喵岛 (MiooDao)** 是一款专门为匿名版 X岛 (nmbxd.com) 设计的、具备极致美感与现代交互体验的第三方 Android 客户端。
 
