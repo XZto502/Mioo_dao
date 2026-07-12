@@ -261,11 +261,11 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectZo
         awaitFirstDown(false)
         do {
             val event = awaitPointerEvent()
-            val canceled = event.changes.any { it.isConsumed }
-            if (!canceled) {
-                val pointerCount = event.changes.size
-                val isZoomingOrPanned = canConsume() || pointerCount > 1
+            val pointerCount = event.changes.size
+            val isZoomingOrPanned = canConsume() || pointerCount > 1
+            val canceled = event.changes.any { it.isConsumed } && !isZoomingOrPanned
 
+            if (!canceled) {
                 val zoomChange = event.calculateZoom()
                 val panChange = event.calculatePan()
 
