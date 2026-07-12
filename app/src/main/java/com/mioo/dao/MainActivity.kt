@@ -162,9 +162,9 @@ class MainActivity : ComponentActivity() {
 private fun getAppVersionName(context: Context): String {
     return try {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        packageInfo.versionName ?: "1.0.1"
+        packageInfo.versionName ?: "1.0.2"
     } catch (e: Exception) {
-        "1.0.1"
+        "1.0.2"
     }
 }
 

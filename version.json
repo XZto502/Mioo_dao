@@ -1,12 +1,12 @@
 {
-  "tag_name": "v1.0.1",
-  "name": "v1.0.1",
+  "tag_name": "v1.0.2",
+  "name": "v1.0.2",
   "body": "小修",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.1",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.2",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.1/app-debug.apk",
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.2/app-debug.apk",
       "size": 1
     }
   ]
