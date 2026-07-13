@@ -1,13 +1,13 @@
-﻿{
-    "tag_name":  "v1.0.3",
-    "name":  "v1.0.3",
-    "body":  "v1.0.3 更新日志\n\n1. 剪贴板串号智能识别：回到 App 时自动检测剪贴板中的 8 位串号，弹出确认后一键打开对应串，无需手动输入。\n2. 引用体验优化：操作菜单「引用该帖子」改为「引用该串」；删除回复框中的 \u003e\u003eNo.xxx 串号后，上方「正在引用」提示会同步消失。\n3. 剪贴板检测稳定性修复：修正分享 Intent 粘住导致永不检测、焦点未就绪时读剪贴板为空等问题，识别更可靠。",
-    "html_url":  "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.3",
-    "assets":  [
-                   {
-                       "name":  "app-debug.apk",
-                       "browser_download_url":  "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.3/app-debug.apk",
-                       "size":  22671642
-                   }
-               ]
+{
+  "tag_name": "v1.0.3",
+  "name": "v1.0.3",
+  "body": "v1.0.3 更新日志\n\n1. 剪贴板串号智能识别：回到 App 时自动检测剪贴板中的 8 位串号，弹出确认后一键打开对应串，无需手动输入。\n2. 引用体验优化：操作菜单「引用该帖子」改为「引用该串」；删除回复框中的 >>No.xxx 串号后，上方「正在引用」提示会同步消失。\n3. 剪贴板检测稳定性修复：修正分享 Intent 粘住导致永不检测、焦点未就绪时读剪贴板为空等问题，识别更可靠。",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.3",
+  "assets": [
+    {
+      "name": "app-debug.apk",
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.3/app-debug.apk",
+      "size": 22671642
+    }
+  ]
 }
