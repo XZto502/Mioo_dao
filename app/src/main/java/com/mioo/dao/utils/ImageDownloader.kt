@@ -9,7 +9,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
-import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.CoroutineScope
@@ -31,12 +30,14 @@ object ImageDownloader {
         
         scope.launch(Dispatchers.IO) {
             try {
-                // Fetch image from Coil (utilizes cache if available)
-                val loader = ImageLoader(context)
+                // Reuse app singleton ImageLoader (shared memory/disk cache + OkHttp pool)
+                val loader = coil.Coil.imageLoader(context)
                 val request = ImageRequest.Builder(context)
                     .data(imageUrl)
+                    .memoryCacheKey(imageUrl)
+                    .diskCacheKey(imageUrl)
                     .build()
-                
+
                 val result = loader.execute(request)
                 if (result !is SuccessResult) {
                     withContext(Dispatchers.Main) {

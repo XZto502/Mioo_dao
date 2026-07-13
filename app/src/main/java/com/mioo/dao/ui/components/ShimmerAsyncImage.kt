@@ -1,5 +1,6 @@
 package com.mioo.dao.ui.components
 
+import android.content.Context
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -10,15 +11,84 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
+import coil.request.ImageRequest
+import coil.size.Precision
+import coil.size.Size
 
+/**
+ * Shared list-thumbnail decode size (px). Keep prefetch + card requests aligned
+ * so Coil memory hits instead of re-decoding.
+ */
+object ListThumbImage {
+    const val SIZE_PX: Int = 360
+
+    fun request(context: Context, imageUrl: String): ImageRequest {
+        return ImageRequest.Builder(context)
+            .data(imageUrl)
+            .size(Size(SIZE_PX, SIZE_PX))
+            .precision(Precision.INEXACT)
+            .memoryCacheKey(imageUrl)
+            .diskCacheKey(imageUrl)
+            .crossfade(false)
+            .allowHardware(true)
+            .build()
+    }
+}
+
+/**
+ * Lightweight list thumbnail: [AsyncImage] + static placeholder while loading.
+ * Avoids Subcompose overhead and infinite shimmer work for every visible cell.
+ */
+@Composable
+fun ListThumbAsyncImage(
+    imageUrl: String,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop
+) {
+    val context = LocalContext.current
+    val request = remember(imageUrl) {
+        ListThumbImage.request(context, imageUrl)
+    }
+    var isLoading by remember(imageUrl) { mutableStateOf(true) }
+
+    Box(modifier = modifier.background(Color(0xFFE8E8ED))) {
+        AsyncImage(
+            model = request,
+            contentDescription = contentDescription,
+            contentScale = contentScale,
+            modifier = Modifier.matchParentSize(),
+            onState = { state ->
+                isLoading = state is AsyncImagePainter.State.Loading
+            }
+        )
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color(0xFFE4E4E7))
+            )
+        }
+    }
+}
+
+/**
+ * Optional shimmer for non-list surfaces (dialogs / one-off previews).
+ * Animation only runs while the image is in [AsyncImagePainter.State.Loading].
+ */
 @Composable
 fun ShimmerAsyncImage(
     model: Any?,
@@ -26,6 +96,25 @@ fun ShimmerAsyncImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop
 ) {
+    SubcomposeAsyncImage(
+        model = model,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = contentScale
+    ) {
+        when (painter.state) {
+            is AsyncImagePainter.State.Loading -> {
+                ShimmerPlaceholder(modifier = Modifier.matchParentSize())
+            }
+            else -> {
+                SubcomposeAsyncImageContent()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShimmerPlaceholder(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val translateAnim by transition.animateFloat(
         initialValue = 0f,
@@ -36,34 +125,14 @@ fun ShimmerAsyncImage(
         ),
         label = "shimmer_translate"
     )
-
-    val shimmerColors = listOf(
-        Color(0xFFE4E4E7),
-        Color(0xFFF4F4F5),
-        Color(0xFFE4E4E7)
-    )
-
     val brush = Brush.linearGradient(
-        colors = shimmerColors,
+        colors = listOf(
+            Color(0xFFE4E4E7),
+            Color(0xFFF4F4F5),
+            Color(0xFFE4E4E7)
+        ),
         start = Offset.Zero,
         end = Offset(x = translateAnim, y = translateAnim)
     )
-
-    SubcomposeAsyncImage(
-        model = model,
-        contentDescription = contentDescription,
-        modifier = modifier,
-        contentScale = contentScale
-    ) {
-        val state = painter.state
-        if (state is AsyncImagePainter.State.Loading) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(brush)
-            )
-        } else {
-            SubcomposeAsyncImageContent()
-        }
-    }
+    Box(modifier = modifier.background(brush))
 }

@@ -13,22 +13,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
@@ -52,7 +49,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -78,6 +74,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -93,11 +90,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.mioo.dao.data.model.Thread
-import com.mioo.dao.ui.components.PostData
-import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
+import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
@@ -118,13 +113,33 @@ fun ForumScreen(
     val uiState by viewModel.uiState.collectAsState()
     val settingsState by settingsViewModel.settingsState.collectAsState()
     val context = LocalContext.current
-    val listState = rememberLazyListState()
+    // Fresh LazyListState per board so scroll position & keys don't thrash across switches
+    val currentForumId = viewModel.forumId
+    val listState = remember(currentForumId) { LazyListState() }
+    val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val emptyStringLambda = remember { { _: String -> } }
+
+    val previousForumId = rememberSaveable { mutableStateOf(currentForumId) }
+    // True for a short window after board switch — pause prefetch/prewarm during swap
+    var boardSwitchQuiet by remember { mutableStateOf(false) }
+
+    val flatForumIds = remember(uiState.forumGroups, settingsState.pinnedForums) {
+        val pinned = uiState.forumGroups.flatMap { it.forums }
+            .filter { settingsState.pinnedForums.contains(it.id) }
+            .distinctBy { it.id }
+            .map { it.id }
+        val rest = uiState.forumGroups.flatMap { group -> group.forums.map { it.id } }
+        (pinned + rest).distinct()
+    }
+
+    val drawerBlocksMainList =
+        drawerState.currentValue != DrawerValue.Closed ||
+            drawerState.targetValue != DrawerValue.Closed
 
     val pullToRefreshState = rememberPullToRefreshState()
     if (pullToRefreshState.isRefreshing) {
@@ -149,29 +164,57 @@ fun ForumScreen(
         }
     }
 
-    LaunchedEffect(shouldLoadMore.value) {
+    LaunchedEffect(shouldLoadMore.value, currentForumId) {
         if (shouldLoadMore.value && !uiState.isLoading && !uiState.isLastPage) {
             viewModel.loadNextPage()
         }
     }
 
-    // Track forum id across recompositions to avoid scrolling to top when returning from back stack
-    val currentForumId = viewModel.forumId
-    val previousForumId = rememberSaveable { mutableStateOf(currentForumId) }
-
-    // Scroll to top only when forum actually changes
+    // Board change: quiet heavy work briefly (no overlapping list transition)
     LaunchedEffect(currentForumId) {
         if (currentForumId != previousForumId.value) {
-            listState.scrollToItem(0)
+            boardSwitchQuiet = true
             previousForumId.value = currentForumId
+            delay(280)
+            boardSwitchQuiet = false
         }
+    }
+
+    // When drawer opens, jump (no animateScroll) so open gesture stays smooth
+    LaunchedEffect(drawerState.currentValue, currentForumId, flatForumIds) {
+        if (drawerState.currentValue != DrawerValue.Open) return@LaunchedEffect
+        val index = flatForumIds.indexOf(currentForumId)
+        if (index >= 0) {
+            val target = (index + 2).coerceAtMost(
+                (drawerListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+            )
+            runCatching { drawerListState.scrollToItem(target) }
+        }
+    }
+
+    val allowBackgroundWarm = !drawerBlocksMainList && !boardSwitchQuiet
+
+    fun selectBoard(id: String, name: String) {
+        if (id == viewModel.forumId) {
+            scope.launch { drawerState.close() }
+            return
+        }
+        // Start content switch immediately; close drawer in parallel for snappier feel
+        viewModel.selectForum(id, name)
+        scope.launch { drawerState.close() }
     }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = true,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
         drawerContent = {
             ModalDrawerSheet(
-                modifier = Modifier.width(300.dp)
+                modifier = Modifier
+                    .width(300.dp)
+                    .fillMaxSize(),
+                drawerShape = RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp),
+                drawerContainerColor = MaterialTheme.colorScheme.surface
             ) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
@@ -206,12 +249,13 @@ fun ForumScreen(
                         .distinctBy { it.id }
                 }
                 LazyColumn(
+                    state = drawerListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (pinnedForumsList.isNotEmpty()) {
-                        item {
+                        item(key = "header_pinned", contentType = "drawer_header") {
                             Text(
                                 text = "置顶版块",
                                 style = MaterialTheme.typography.labelMedium,
@@ -221,59 +265,24 @@ fun ForumScreen(
                             )
                         }
                         items(pinnedForumsList, key = { "pinned_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
-                            val isSelected = forum.id == viewModel.forumId
-                            val containerColor = if (isSelected) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                Color.Transparent
-                            }
-                            val contentColor = if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .combinedClickable(
-                                        onClick = {
-                                            scope.launch { drawerState.close() }
-                                            viewModel.selectForum(forum.id, forum.name)
-                                        },
-                                        onLongClick = {
-                                            val wasPinned = settingsState.pinnedForums.contains(forum.id)
-                                            settingsViewModel.togglePinForum(forum.id)
-                                            Toast.makeText(
-                                                context,
-                                                if (wasPinned) "已取消置顶" else "已将版块置顶",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    ),
-                                color = containerColor,
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = androidx.compose.material.icons.Icons.Default.Star,
-                                        contentDescription = "已置顶",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = forum.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                                        color = contentColor
-                                    )
+                            ForumDrawerItem(
+                                name = forum.name,
+                                isSelected = forum.id == viewModel.forumId,
+                                showStar = true,
+                                starTint = MaterialTheme.colorScheme.primary,
+                                onClick = { selectBoard(forum.id, forum.name) },
+                                onLongClick = {
+                                    val wasPinned = settingsState.pinnedForums.contains(forum.id)
+                                    settingsViewModel.togglePinForum(forum.id)
+                                    Toast.makeText(
+                                        context,
+                                        if (wasPinned) "已取消置顶" else "已将版块置顶",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
-                            }
+                            )
                         }
-                        item {
+                        item(key = "divider_pinned", contentType = "drawer_divider") {
                             HorizontalDivider(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                 modifier = Modifier.padding(vertical = 4.dp)
@@ -283,7 +292,7 @@ fun ForumScreen(
 
                     // Normal Forum Groups
                     uiState.forumGroups.forEach { group ->
-                        item {
+                        item(key = "header_${group.id}", contentType = "drawer_header") {
                             Text(
                                 text = group.name,
                                 style = MaterialTheme.typography.labelMedium,
@@ -292,77 +301,40 @@ fun ForumScreen(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                         }
-                        items(group.forums, key = { "${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
-                            val isSelected = forum.id == viewModel.forumId
-                            val containerColor = if (isSelected) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                Color.Transparent
-                            }
-                            val contentColor = if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
+                        items(group.forums, key = { "g${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
                             val isPinned = settingsState.pinnedForums.contains(forum.id)
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .combinedClickable(
-                                        onClick = {
-                                            scope.launch { drawerState.close() }
-                                            viewModel.selectForum(forum.id, forum.name)
-                                        },
-                                        onLongClick = {
-                                            settingsViewModel.togglePinForum(forum.id)
-                                            Toast.makeText(
-                                                context,
-                                                if (isPinned) "已取消置顶" else "已将版块置顶",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    ),
-                                color = containerColor,
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                                ) {
-                                    if (isPinned) {
-                                        Icon(
-                                            imageVector = androidx.compose.material.icons.Icons.Default.Star,
-                                            contentDescription = "已置顶",
-                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                    }
-                                    Text(
-                                        text = forum.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                                        color = contentColor
-                                    )
+                            ForumDrawerItem(
+                                name = forum.name,
+                                isSelected = forum.id == viewModel.forumId,
+                                showStar = isPinned,
+                                starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                onClick = { selectBoard(forum.id, forum.name) },
+                                onLongClick = {
+                                    settingsViewModel.togglePinForum(forum.id)
+                                    Toast.makeText(
+                                        context,
+                                        if (isPinned) "已取消置顶" else "已将版块置顶",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
-                            }
+                            )
                         }
                     }
                 }
             }
         }
     ) {
-
-
-        Scaffold(
+            Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
                         Column {
+                            // Instant title swap — no AnimatedContent tax on board change
                             Text(
                                 text = uiState.currentForumName,
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                maxLines = 1
                             )
                             Text(
                                 text = "X岛 · nmbxd.com",
@@ -372,14 +344,22 @@ fun ForumScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Switch Board")
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    if (drawerState.isClosed) drawerState.open()
+                                    else drawerState.close()
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Menu, contentDescription = "切换板块")
                         }
                     },
                     actions = {
-                        IconButton(onClick = { 
-                            scope.launch { listState.animateScrollToItem(0) }
-                            viewModel.refresh() 
+                        IconButton(onClick = {
+                            // Instant jump to top before refresh (no scroll animation)
+                            scope.launch { listState.scrollToItem(0) }
+                            viewModel.refresh()
                         }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
@@ -413,163 +393,21 @@ fun ForumScreen(
                     .padding(paddingValues)
                     .nestedScroll(pullToRefreshState.nestedScrollConnection)
             ) {
-                if (uiState.threads.isEmpty() && !uiState.isLoading) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("该板块下暂无帖子。", style = MaterialTheme.typography.bodyMedium)
-                    }
-                } else {
-                    val displayItems = uiState.displayItems
-                    val quoteLinkColor = MaterialTheme.colorScheme.primary
-                    // Warm only first screenful immediately; rest after first scroll settles
-                    LaunchedEffect(displayItems, quoteLinkColor) {
-                        if (displayItems.isEmpty()) return@LaunchedEffect
-                        val bodies = displayItems.map { it.postData.content }
-                        withContext(Dispatchers.Default) {
-                            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                                bodies.take(6),
-                                quoteLinkColor
-                            )
-                        }
-                        delay(800)
-                        withContext(Dispatchers.Default) {
-                            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                                bodies.drop(6).take(20),
-                                quoteLinkColor
-                            )
-                        }
-                    }
-                    val prefetchUrls = remember(displayItems) {
-                        displayItems.map { it.postData.imageUrl }
-                    }
-                    PrefetchListImages(
-                        imageUrls = prefetchUrls,
+                // Single list instance — no enter/exit overlap of two LazyColumns
+                key(currentForumId) {
+                    ForumThreadListPane(
+                        forumKey = currentForumId,
+                        uiState = uiState,
                         listState = listState,
-                        sizePx = 360,
-                        ahead = 5,
-                        initialDelayMs = 600
+                        emptyStringLambda = emptyStringLambda,
+                        onNavigateToThread = onNavigateToThread,
+                        onImageClick = { activeImageUrl = it },
+                        onBlockThread = { settingsViewModel.addBlockedThread(it) },
+                        onBlockUser = { settingsViewModel.addBlockedUser(it) },
+                        onFreeCopy = { freeCopyText = it },
+                        userScrollEnabled = !drawerBlocksMainList,
+                        warmEnabled = allowBackgroundWarm
                     )
-
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 8.dp,
-                        end = 8.dp,
-                        top = 8.dp,
-                        bottom = 100.dp
-                    )
-                ) {
-                    items(
-                        items = displayItems,
-                        key = { it.id },
-                        contentType = { item ->
-                            if (item.hasImage) "thread_image" else "thread_text"
-                        }
-                    ) { item ->
-                        var showBlockDialog by remember { mutableStateOf(false) }
-
-                            if (showBlockDialog) {
-                                AlertDialog(
-                                    onDismissRequest = { showBlockDialog = false },
-                                    title = { Text("内容操作") },
-                                    text = {
-                                        Column(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            TextButton(
-                                                onClick = {
-                                                    settingsViewModel.addBlockedThread(item.idStr)
-                                                    showBlockDialog = false
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("屏蔽此串 (No.${item.idStr})")
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    settingsViewModel.addBlockedUser(item.userHash)
-                                                    showBlockDialog = false
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("屏蔽发言饼干 (ID: ${item.userHash})")
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    freeCopyText = item.rawContent
-                                                    showBlockDialog = false
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("自由复制帖子内容")
-                                            }
-                                            TextButton(
-                                                onClick = { showBlockDialog = false },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("取消")
-                                            }
-                                        }
-                                    },
-                                    confirmButton = {}
-                                )
-                            }
-
-                            val onThreadClickRemembered = remember(item.idStr) {
-                                { onNavigateToThread(item.idStr) }
-                            }
-                            val onImageClickRemembered = remember {
-                                { imageUrl: String -> activeImageUrl = imageUrl }
-                            }
-                            val onLongClickRemembered = remember {
-                                { showBlockDialog = true }
-                            }
-
-                            ThreadCard(
-                                postData = item.postData,
-                                replyCount = item.replyCount,
-                                onThreadClick = onThreadClickRemembered,
-                                onQuoteClick = emptyStringLambda,
-                                onImageClick = onImageClickRemembered,
-                                onLongClick = onLongClickRemembered
-                            )
-                        }
-
-                        if (uiState.isLoading && displayItems.isNotEmpty()) {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator()
-                                }
-                            }
-                        }
-
-                        if (uiState.isLastPage) {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "已加载全部帖子。",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
 
                 uiState.errorMessage?.let { error ->
@@ -642,6 +480,252 @@ fun ForumScreen(
             imageUrl = imageUrl,
             onDismiss = { activeImageUrl = null }
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ForumDrawerItem(
+    name: String,
+    isSelected: Boolean,
+    showStar: Boolean,
+    starTint: Color,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    // Instant selection colors — no per-item animateColorAsState during drawer swipe
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        Color.Transparent
+    }
+    val contentColor = if (isSelected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        color = containerColor,
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp)
+        ) {
+            if (showStar) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = "已置顶",
+                    tint = starTint,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isSelected) {
+                    androidx.compose.ui.text.font.FontWeight.Bold
+                } else {
+                    androidx.compose.ui.text.font.FontWeight.Normal
+                },
+                color = contentColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun ForumThreadListPane(
+    forumKey: String,
+    uiState: ForumUiState,
+    listState: LazyListState,
+    emptyStringLambda: (String) -> Unit,
+    onNavigateToThread: (String) -> Unit,
+    onImageClick: (String) -> Unit,
+    onBlockThread: (String) -> Unit,
+    onBlockUser: (String) -> Unit,
+    onFreeCopy: (String) -> Unit,
+    userScrollEnabled: Boolean = true,
+    warmEnabled: Boolean = true
+) {
+    if (uiState.threads.isEmpty() && (uiState.isLoading || uiState.isRefreshing)) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    if (uiState.threads.isEmpty() && !uiState.isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("该板块下暂无帖子。", style = MaterialTheme.typography.bodyMedium)
+        }
+        return
+    }
+
+    val displayItems = uiState.displayItems
+    val quoteLinkColor = MaterialTheme.colorScheme.primary
+    LaunchedEffect(displayItems, quoteLinkColor, forumKey, warmEnabled) {
+        if (!warmEnabled || displayItems.isEmpty()) return@LaunchedEffect
+        val bodies = displayItems.map { it.postData.content }
+        withContext(Dispatchers.Default) {
+            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                bodies.take(6),
+                quoteLinkColor
+            )
+        }
+        delay(800)
+        if (!warmEnabled) return@LaunchedEffect
+        withContext(Dispatchers.Default) {
+            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                bodies.drop(6).take(20),
+                quoteLinkColor
+            )
+        }
+    }
+    val prefetchUrls = remember(displayItems) {
+        displayItems.map { it.postData.imageUrl }
+    }
+    PrefetchListImages(
+        imageUrls = prefetchUrls,
+        listState = listState,
+        sizePx = ListThumbImage.SIZE_PX,
+        ahead = 5,
+        initialDelayMs = 600,
+        enabled = warmEnabled
+    )
+
+    LazyColumn(
+        state = listState,
+        userScrollEnabled = userScrollEnabled,
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(
+            start = 8.dp,
+            end = 8.dp,
+            top = 8.dp,
+            bottom = 100.dp
+        )
+    ) {
+        items(
+            items = displayItems,
+            key = { it.id },
+            contentType = { item ->
+                if (item.hasImage) "thread_image" else "thread_text"
+            }
+        ) { item ->
+            var showBlockDialog by remember { mutableStateOf(false) }
+
+            if (showBlockDialog) {
+                AlertDialog(
+                    onDismissRequest = { showBlockDialog = false },
+                    title = { Text("内容操作") },
+                    text = {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    onBlockThread(item.idStr)
+                                    showBlockDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("屏蔽此串 (No.${item.idStr})")
+                            }
+                            TextButton(
+                                onClick = {
+                                    onBlockUser(item.userHash)
+                                    showBlockDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("屏蔽发言饼干 (ID: ${item.userHash})")
+                            }
+                            TextButton(
+                                onClick = {
+                                    onFreeCopy(item.rawContent)
+                                    showBlockDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("自由复制帖子内容")
+                            }
+                            TextButton(
+                                onClick = { showBlockDialog = false },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("取消")
+                            }
+                        }
+                    },
+                    confirmButton = {}
+                )
+            }
+
+            val onThreadClickRemembered = remember(item.idStr) {
+                { onNavigateToThread(item.idStr) }
+            }
+            val onImageClickRemembered = remember {
+                { imageUrl: String -> onImageClick(imageUrl) }
+            }
+            val onLongClickRemembered = remember {
+                { showBlockDialog = true }
+            }
+
+            ThreadCard(
+                postData = item.postData,
+                replyCount = item.replyCount,
+                onThreadClick = onThreadClickRemembered,
+                onQuoteClick = emptyStringLambda,
+                onImageClick = onImageClickRemembered,
+                onLongClick = onLongClickRemembered
+            )
+        }
+
+        if (uiState.isLoading && displayItems.isNotEmpty()) {
+            item(key = "loading_footer") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+
+        if (uiState.isLastPage) {
+            item(key = "end_footer") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "已加载全部帖子。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 

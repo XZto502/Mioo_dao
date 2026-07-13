@@ -239,17 +239,8 @@ fun RefPopup(
                         // Attached Image
                         postData.imageUrl?.let { imageUrl ->
                             Spacer(modifier = Modifier.height(12.dp))
-                            val context = androidx.compose.ui.platform.LocalContext.current
-                            val imageRequest = androidx.compose.runtime.remember(imageUrl) {
-                                coil.request.ImageRequest.Builder(context)
-                                    .data(imageUrl)
-                                    .crossfade(true)
-                                    .size(coil.size.Size(300, 300))
-                                    .precision(coil.size.Precision.INEXACT)
-                                    .build()
-                            }
-                            AsyncImage(
-                                model = imageRequest,
+                            ListThumbAsyncImage(
+                                imageUrl = imageUrl,
                                 contentDescription = "Attached Thumbnail",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier

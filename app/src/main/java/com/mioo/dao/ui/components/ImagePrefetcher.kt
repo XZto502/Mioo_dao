@@ -20,19 +20,27 @@ import kotlinx.coroutines.flow.map
 fun PrefetchListImages(
     imageUrls: List<String?>,
     listState: LazyListState,
-    sizePx: Int = 360,
+    @Suppress("UNUSED_PARAMETER") sizePx: Int = ListThumbImage.SIZE_PX,
     ahead: Int = 6,
     /** Delay before first prefetch so cold-start first scroll isn't decoder-bound. */
-    initialDelayMs: Long = 450
+    initialDelayMs: Long = 450,
+    /**
+     * When false (drawer open / board switch / page transition), do not enqueue decodes
+     * so GPU/CPU stay free for the transition.
+     */
+    enabled: Boolean = true
 ) {
     val context = LocalContext.current
     val imageLoader = context.imageLoader
 
-    LaunchedEffect(imageUrls, listState, sizePx, ahead) {
-        if (imageUrls.isEmpty()) return@LaunchedEffect
+    // Always decode at ListThumbImage.SIZE_PX so prefetch hits the same Coil memory keys as cards.
+    LaunchedEffect(imageUrls, listState, ahead, enabled) {
+        if (!enabled || imageUrls.isEmpty()) return@LaunchedEffect
         delay(initialDelayMs)
+        if (!enabled) return@LaunchedEffect
 
         snapshotFlow {
+            if (!enabled) return@snapshotFlow null
             val info = listState.layoutInfo
             val scrolling = listState.isScrollInProgress
             val first = info.visibleItemsInfo.firstOrNull()?.index ?: listState.firstVisibleItemIndex
@@ -41,7 +49,9 @@ fun PrefetchListImages(
             Triple(scrolling, first, last)
         }
             .distinctUntilChanged()
-            .map { (scrolling, first, last) ->
+            .map { triple ->
+                if (triple == null) return@map null
+                val (scrolling, first, last) = triple
                 // Only warm when finger is up — avoids decode spikes mid-fling
                 if (scrolling) null
                 else {
@@ -52,21 +62,14 @@ fun PrefetchListImages(
             }
             .distinctUntilChanged()
             .collectLatest { range ->
-                if (range == null) return@collectLatest
+                if (range == null || !enabled) return@collectLatest
                 // Small yield between enqueues so UI frames can run
                 var n = 0
                 for (index in range) {
+                    if (!enabled) return@collectLatest
                     val url = imageUrls.getOrNull(index) ?: continue
                     if (url.isBlank()) continue
-                    imageLoader.enqueue(
-                        ImageRequest.Builder(context)
-                            .data(url)
-                            .size(sizePx)
-                            .memoryCacheKey(url)
-                            .diskCacheKey(url)
-                            .allowHardware(true)
-                            .build()
-                    )
+                    imageLoader.enqueue(ListThumbImage.request(context, url))
                     n++
                     if (n % 3 == 0) delay(1)
                 }
@@ -77,21 +80,14 @@ fun PrefetchListImages(
 fun prefetchImageUrls(
     context: android.content.Context,
     urls: Collection<String?>,
-    sizePx: Int = 360,
+    @Suppress("UNUSED_PARAMETER") sizePx: Int = ListThumbImage.SIZE_PX,
     limit: Int = 8
 ) {
     val loader = context.imageLoader
     var count = 0
     for (url in urls) {
         if (url.isNullOrBlank()) continue
-        loader.enqueue(
-            ImageRequest.Builder(context)
-                .data(url)
-                .size(sizePx)
-                .memoryCacheKey(url)
-                .diskCacheKey(url)
-                .build()
-        )
+        loader.enqueue(ListThumbImage.request(context, url))
         count++
         if (count >= limit) break
     }

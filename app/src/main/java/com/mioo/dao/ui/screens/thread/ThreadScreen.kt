@@ -215,20 +215,38 @@ fun ThreadScreen(
         viewModel.consumePendingScrollIndex()
     }
 
-    // HTML prewarm: only near-viewport first; rest later (less hitch on resume open)
-    LaunchedEffect(uiState.displayItems, uiState.mainPostData?.content, quoteLinkColor, listState.firstVisibleItemIndex) {
+    // HTML prewarm: do NOT key on firstVisibleItemIndex (restarts every scroll frame).
+    // Warm head once when content changes; settle-scroll for a light near-viewport pass.
+    LaunchedEffect(uiState.displayItems, uiState.mainPostData?.content, quoteLinkColor) {
         if (uiState.displayItems.isEmpty()) return@LaunchedEffect
         val bodies = uiState.displayItems.map { it.postData.content }
-        val focus = listState.firstVisibleItemIndex.coerceAtLeast(0)
-        val near = bodies.drop((focus - 1).coerceAtLeast(0)).take(8)
-        val head = listOfNotNull(uiState.mainPostData?.content) + near
+        val head = listOfNotNull(uiState.mainPostData?.content) + bodies.take(8)
         withContext(Dispatchers.Default) {
             HtmlParseCache.prewarm(head, quoteLinkColor)
         }
-        delay(450)
+        // Let enter-transition / first frame finish before bulk prewarm
+        delay(500)
         withContext(Dispatchers.Default) {
-            HtmlParseCache.prewarm(bodies, quoteLinkColor)
+            HtmlParseCache.prewarm(bodies.take(40), quoteLinkColor)
         }
+    }
+
+    // Settled-scroll near-viewport warm only (no mid-fling restart)
+    LaunchedEffect(listState, uiState.displayItems, quoteLinkColor) {
+        if (uiState.displayItems.isEmpty()) return@LaunchedEffect
+        snapshotFlow {
+            listState.isScrollInProgress to listState.firstVisibleItemIndex
+        }
+            .distinctUntilChanged()
+            .collect { (scrolling, focus) ->
+                if (scrolling) return@collect
+                val bodies = uiState.displayItems.map { it.postData.content }
+                val near = bodies.drop((focus - 1).coerceAtLeast(0)).take(10)
+                if (near.isEmpty()) return@collect
+                withContext(Dispatchers.Default) {
+                    HtmlParseCache.prewarm(near, quoteLinkColor)
+                }
+            }
     }
 
     LaunchedEffect(settingsState.blockedThreads) {
@@ -508,7 +526,7 @@ fun ThreadScreen(
                 PrefetchListImages(
                     imageUrls = prefetchUrls,
                     listState = listState,
-                    sizePx = 300,
+                    sizePx = com.mioo.dao.ui.components.ListThumbImage.SIZE_PX,
                     ahead = 5,
                     initialDelayMs = 500
                 )
@@ -637,7 +655,10 @@ fun ThreadScreen(
                         items = displayItems,
                         key = { it.id },
                         contentType = { item ->
-                            if (item.hasImage) "reply_image" else "reply_text"
+                            // Finer slots improve Lazy reuse for quote-heavy replies
+                            val q = if (item.quoteIds.isNotEmpty()) "q" else "n"
+                            val i = if (item.hasImage) "i" else "t"
+                            "reply_${q}_$i"
                         }
                     ) { item ->
                         ThreadReplyRow(
@@ -953,6 +974,17 @@ private fun ThreadReplyRow(
                 )
             }
         )
+    }
+
+    // Warm ContentBlockSplitter cache off the main thread before ReplyCard remembers blocks
+    LaunchedEffect(item.rawContent, quotedPostsData) {
+        if (quotedPostsData.list.isEmpty()) return@LaunchedEffect
+        withContext(Dispatchers.Default) {
+            com.mioo.dao.ui.components.ContentBlockSplitter.split(
+                item.rawContent,
+                quotedPostsData.list
+            )
+        }
     }
 
     val rowContext = LocalContext.current

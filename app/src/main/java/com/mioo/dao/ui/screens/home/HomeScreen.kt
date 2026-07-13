@@ -172,7 +172,7 @@ fun TimelineList(
     PrefetchListImages(
         imageUrls = prefetchUrls,
         listState = listState,
-        sizePx = 360,
+        sizePx = com.mioo.dao.ui.components.ListThumbImage.SIZE_PX,
         ahead = 10
     )
 

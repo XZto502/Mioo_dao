@@ -30,15 +30,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import coil.size.Precision
-import coil.size.Size
 import com.mioo.dao.ui.theme.DaoTheme
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -187,21 +182,8 @@ fun ThreadCard(
                         .clip(MaterialTheme.shapes.medium)
                         .clickable { onImageClick(imageUrl) }
                 ) {
-                    val context = LocalContext.current
-                    val imageRequest = remember(imageUrl) {
-                        ImageRequest.Builder(context)
-                            .data(imageUrl)
-                            .crossfade(true)
-                            .size(Size(360, 360))
-                            .precision(Precision.INEXACT)
-                            .memoryCacheKey(imageUrl)
-                            .diskCacheKey(imageUrl)
-                            // Avoid thrashing decoder during first fling
-                            .allowHardware(true)
-                            .build()
-                    }
-                    ShimmerAsyncImage(
-                        model = imageRequest,
+                    ListThumbAsyncImage(
+                        imageUrl = imageUrl,
                         contentDescription = "Thread Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()

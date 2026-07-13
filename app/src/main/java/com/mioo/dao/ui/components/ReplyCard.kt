@@ -34,20 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.mioo.dao.ui.theme.DaoTheme
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.animation.animateContentSize
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.Brush
-
-private val quotePatternCache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
-
-private fun getQuoteRegex(quoteId: String): Regex {
-    return quotePatternCache.getOrPut(quoteId) {
-        Regex("(?:<font[^>]*>)?\\s*(?:&gt;&gt;|>>)(?:No\\.)?${Regex.escape(quoteId)}\\s*(?:</font>)?", RegexOption.IGNORE_CASE)
-    }
-}
 
 private val EMPTY_QUOTE_CLICK: (String) -> Unit = {}
 
@@ -191,34 +178,9 @@ fun ReplyCard(
                 )
             }
 
-            val contentBlocks = androidx.compose.runtime.remember(postData.content, quotedPosts) {
-                if (quotedPosts.list.isEmpty()) {
-                    listOf(PostContentBlock.Text(postData.content))
-                } else {
-                    val blocks = mutableListOf<PostContentBlock>()
-                    var currentHtml = postData.content
-                    quotedPosts.list.forEach { quote ->
-                        val quoteRegex = getQuoteRegex(quote.id)
-                        val match = quoteRegex.find(currentHtml)
-
-                        if (match != null) {
-                            val beforeText = currentHtml.substring(0, match.range.last + 1)
-                            currentHtml = currentHtml.substring(match.range.last + 1)
-
-                            if (beforeText.isNotBlank()) {
-                                blocks.add(PostContentBlock.Text(beforeText))
-                            }
-                            blocks.add(PostContentBlock.Quote(quote))
-                        } else {
-                            // Fallback if regex fails to match (e.g. duplicate quote or already processed)
-                            blocks.add(PostContentBlock.Quote(quote))
-                        }
-                    }
-                    if (currentHtml.isNotBlank()) {
-                        blocks.add(PostContentBlock.Text(currentHtml))
-                    }
-                    blocks
-                }
+            // Cached pure split — avoids re-running regex on every unrelated recompose
+            val contentBlocks = remember(postData.content, quotedPosts) {
+                ContentBlockSplitter.split(postData.content, quotedPosts.list)
             }
 
             Column(
@@ -260,19 +222,8 @@ fun ReplyCard(
                         .clip(MaterialTheme.shapes.medium)
                         .clickable { onImageClick(imageUrl) }
                 ) {
-                    val context = androidx.compose.ui.platform.LocalContext.current
-                    val imageRequest = androidx.compose.runtime.remember(imageUrl) {
-                        coil.request.ImageRequest.Builder(context)
-                            .data(imageUrl)
-                            .crossfade(true)
-                            .size(coil.size.Size(300, 300))
-                            .precision(coil.size.Precision.INEXACT)
-                            .memoryCacheKey(imageUrl)
-                            .diskCacheKey(imageUrl)
-                            .build()
-                    }
-                    ShimmerAsyncImage(
-                        model = imageRequest,
+                    ListThumbAsyncImage(
+                        imageUrl = imageUrl,
                         contentDescription = "Reply Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()
@@ -361,17 +312,8 @@ fun QuotedPostBox(
                         .clip(MaterialTheme.shapes.medium)
                         .clickable { onImageClick(imageUrl) }
                 ) {
-                    val context = androidx.compose.ui.platform.LocalContext.current
-                    val imageRequest = androidx.compose.runtime.remember(imageUrl) {
-                        coil.request.ImageRequest.Builder(context)
-                            .data(imageUrl)
-                            .crossfade(true)
-                            .size(coil.size.Size(300, 300))
-                            .precision(coil.size.Precision.INEXACT)
-                            .build()
-                    }
-                    ShimmerAsyncImage(
-                        model = imageRequest,
+                    ListThumbAsyncImage(
+                        imageUrl = imageUrl,
                         contentDescription = "Quote Image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize()

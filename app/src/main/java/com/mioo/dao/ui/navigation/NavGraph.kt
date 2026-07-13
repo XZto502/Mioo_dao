@@ -6,8 +6,6 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.navigation.NavBackStackEntry
 import androidx.compose.foundation.layout.Box
@@ -106,41 +104,32 @@ fun MiooDaoNavGraph(
         }
     }
 
-    // Snappier transitions reduce perceived latency when opening threads
-    val slideEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        slideInHorizontally(
-            initialOffsetX = { it / 3 },
-            animationSpec = tween(220, easing = FastOutSlowInEasing)
-        ) + fadeIn(animationSpec = tween(180))
-    }
-
-    val slideExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        slideOutHorizontally(
-            targetOffsetX = { -it / 5 },
-            animationSpec = tween(200, easing = FastOutSlowInEasing)
-        ) + fadeOut(animationSpec = tween(160))
-    }
-
-    val slidePopEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        slideInHorizontally(
-            initialOffsetX = { -it / 5 },
-            animationSpec = tween(200, easing = FastOutSlowInEasing)
-        ) + fadeIn(animationSpec = tween(160))
-    }
-
-    val slidePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        slideOutHorizontally(
-            targetOffsetX = { it / 3 },
-            animationSpec = tween(220, easing = FastOutSlowInEasing)
-        ) + fadeOut(animationSpec = tween(180))
-    }
-
+    // Motion budget: keep transitions short so heavy destinations (thread detail)
+    // don't jank mid-slide. Prefer fade-only for Thread; light fade for secondary screens.
     val fadeEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        fadeIn(animationSpec = tween(150))
+        fadeIn(animationSpec = tween(100))
     }
 
     val fadeExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        fadeOut(animationSpec = tween(120))
+        fadeOut(animationSpec = tween(80))
+    }
+
+    // Secondary screens (settings/history/search): short fade — no horizontal slide
+    val secondaryEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        fadeIn(animationSpec = tween(120, easing = FastOutSlowInEasing))
+    }
+
+    val secondaryExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        fadeOut(animationSpec = tween(90))
+    }
+
+    // Thread open/close: fade only (120ms). Slide fought first-frame HTML/image work.
+    val threadEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        fadeIn(animationSpec = tween(120, easing = FastOutSlowInEasing))
+    }
+
+    val threadExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        fadeOut(animationSpec = tween(90))
     }
 
     val bottomBarItems = remember {
@@ -225,10 +214,10 @@ fun MiooDaoNavGraph(
 
             composable(
                 route = Screen.Search.route,
-                enterTransition = slideEnter,
-                exitTransition = slideExit,
-                popEnterTransition = slidePopEnter,
-                popExitTransition = slidePopExit
+                enterTransition = secondaryEnter,
+                exitTransition = secondaryExit,
+                popEnterTransition = secondaryEnter,
+                popExitTransition = secondaryExit
             ) {
                 val viewModel: SearchViewModel = hiltViewModel()
                 SearchScreen(
@@ -279,10 +268,10 @@ fun MiooDaoNavGraph(
             // Settings Detail screen
             composable(
                 route = Screen.SettingsDetail.route,
-                enterTransition = slideEnter,
-                exitTransition = slideExit,
-                popEnterTransition = slidePopEnter,
-                popExitTransition = slidePopExit
+                enterTransition = secondaryEnter,
+                exitTransition = secondaryExit,
+                popEnterTransition = secondaryEnter,
+                popExitTransition = secondaryExit
             ) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 SettingsScreen(
@@ -296,10 +285,10 @@ fun MiooDaoNavGraph(
             // Browsing History screen
             composable(
                 route = Screen.BrowsingHistory.route,
-                enterTransition = slideEnter,
-                exitTransition = slideExit,
-                popEnterTransition = slidePopEnter,
-                popExitTransition = slidePopExit
+                enterTransition = secondaryEnter,
+                exitTransition = secondaryExit,
+                popEnterTransition = secondaryEnter,
+                popExitTransition = secondaryExit
             ) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 HistoryScreen(
@@ -317,10 +306,10 @@ fun MiooDaoNavGraph(
                 arguments = listOf(
                     navArgument("threadId") { type = NavType.StringType }
                 ),
-                enterTransition = slideEnter,
-                exitTransition = slideExit,
-                popEnterTransition = slidePopEnter,
-                popExitTransition = slidePopExit
+                enterTransition = threadEnter,
+                exitTransition = threadExit,
+                popEnterTransition = threadEnter,
+                popExitTransition = threadExit
             ) {
                 val viewModel: ThreadViewModel = hiltViewModel()
                 ThreadScreen(

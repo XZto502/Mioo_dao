@@ -37,13 +37,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
+import coil.size.Precision
+import coil.size.Size
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -216,11 +220,24 @@ private fun ZoomableImageContainer(
             },
         contentAlignment = Alignment.Center
     ) {
-        val imageRequest = remember(imageUrl) {
+        // Cap decode size to ~2x screen to keep zoom sharp without full-res OOM risk
+        val configuration = LocalConfiguration.current
+        val density = LocalDensity.current
+        val maxPx = remember(configuration, density) {
+            val w = with(density) { configuration.screenWidthDp.dp.roundToPx() }
+            val h = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+            // 2× screen for pinch zoom headroom, hard cap 4096
+            (maxOf(w, h) * 2).coerceIn(1080, 4096)
+        }
+        val imageRequest = remember(imageUrl, maxPx) {
             coil.request.ImageRequest.Builder(context)
                 .data(imageUrl)
-                .crossfade(true)
+                .size(Size(maxPx, maxPx))
+                .precision(Precision.INEXACT)
+                .crossfade(false)
                 .allowHardware(true)
+                .memoryCacheKey(imageUrl)
+                .diskCacheKey(imageUrl)
                 .build()
         }
         AsyncImage(

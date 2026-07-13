@@ -43,6 +43,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.components.BookmarkListItem
 import com.mioo.dao.ui.components.HtmlParseCache
+import com.mioo.dao.ui.components.ListThumbImage
+import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.theme.DaoTheme
@@ -182,6 +184,25 @@ fun FeedScreen(
                     }
                 }
                 else -> {
+                    val feedImageUrls = remember(
+                        uiState.selectedFolderId,
+                        uiState.localDisplayItems,
+                        uiState.remoteDisplayItems
+                    ) {
+                        if (uiState.selectedFolderId == null) {
+                            uiState.localDisplayItems.map { it.postData.imageUrl }
+                        } else {
+                            uiState.remoteDisplayItems.map { it.postData.imageUrl }
+                        }
+                    }
+                    PrefetchListImages(
+                        imageUrls = feedImageUrls,
+                        listState = listState,
+                        sizePx = ListThumbImage.SIZE_PX,
+                        ahead = 5,
+                        initialDelayMs = 400
+                    )
+
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
@@ -197,7 +218,9 @@ fun FeedScreen(
                             items(
                                 items = uiState.localDisplayItems,
                                 key = { it.id },
-                                contentType = { "bookmark_card" }
+                                contentType = { item ->
+                                    if (item.postData.imageUrl != null) "bookmark_image" else "bookmark_text"
+                                }
                             ) { item ->
                                 LocalBookmarkRow(
                                     item = item,
