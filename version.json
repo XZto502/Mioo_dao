@@ -1,13 +1,13 @@
-{
-  "tag_name": "v1.0.2",
-  "name": "v1.0.2",
-  "body": "v1.0.2 更新日志\n\n1. 彻底解决大图手势切换卡死：修复图片切页后由于 pointerInput 的 key 固定为 Unit 导致手势监听被解绑、状态引用过期导致手势完全失效的 bug，现已支持流畅的多图双指放大与滑动返回。\n2. 自由复制界面视觉优化：修复自由复制界面（FreeCopyDialog）背景全透明导致的内容重合混乱问题，背景现已统一调整为底层的 Surface 主题色，大幅提升可读性。\n3. 更新下载加速与状态检测：自动将 GitHub 更新安装包下载链接重定向至高速镜像代下载源（ghfast.top），下载提速数十倍，解决国内下载超时问题。增加了对下载进度的状态查询，若下载因网络异常等原因失败将弹出详细的 Toast 提示，彻底杜绝静默失败。",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.2",
-  "assets": [
-    {
-      "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.2/app-debug.apk",
-      "size": 1
-    }
-  ]
+﻿{
+    "tag_name":  "v1.0.3",
+    "name":  "v1.0.3",
+    "body":  "v1.0.3 更新日志\n\n1. 剪贴板串号智能识别：回到 App 时自动检测剪贴板中的 8 位串号，弹出确认后一键打开对应串，无需手动输入。\n2. 引用体验优化：操作菜单「引用该帖子」改为「引用该串」；删除回复框中的 \u003e\u003eNo.xxx 串号后，上方「正在引用」提示会同步消失。\n3. 剪贴板检测稳定性修复：修正分享 Intent 粘住导致永不检测、焦点未就绪时读剪贴板为空等问题，识别更可靠。",
+    "html_url":  "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.3",
+    "assets":  [
+                   {
+                       "name":  "app-debug.apk",
+                       "browser_download_url":  "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.3/app-debug.apk",
+                       "size":  22671642
+                   }
+               ]
 }
