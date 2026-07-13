@@ -686,7 +686,18 @@ class ThreadViewModel @Inject constructor(
     }
 
     fun updateReplyText(text: String) {
-        _composerState.update { it.copy(replyText = text) }
+        _composerState.update { state ->
+            val quoted = state.quotedPostNo
+            // If the user deleted >>No.xxx from the box, drop the "正在引用" chip
+            val stillHasQuote = quoted != null && (
+                text.contains(">>No.$quoted") ||
+                    text.contains(">>$quoted")
+                )
+            state.copy(
+                replyText = text,
+                quotedPostNo = if (stillHasQuote) quoted else null
+            )
+        }
         scheduleDraftSave(text)
     }
 

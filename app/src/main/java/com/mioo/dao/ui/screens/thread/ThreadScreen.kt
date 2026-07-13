@@ -1011,7 +1011,7 @@ private fun PostActionDialog(
                 TextButton(
                     onClick = { onQuote(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("引用该帖子") }
+                ) { Text("引用该串") }
                 if (onShareCard != null) {
                     TextButton(
                         onClick = { onShareCard(); onDismiss() },
@@ -1155,7 +1155,7 @@ fun ReplyInputArea(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "正在回复引用: >>No.$quotedPostNo",
+                        text = "正在引用: >>No.$quotedPostNo",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )

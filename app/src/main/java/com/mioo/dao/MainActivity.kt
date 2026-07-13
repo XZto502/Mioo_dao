@@ -1,8 +1,11 @@
 package com.mioo.dao
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -23,6 +26,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.mioo.dao.data.model.GithubRelease
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.model.XdResponse
@@ -32,8 +38,10 @@ import com.mioo.dao.ui.navigation.MiooDaoNavGraph
 import com.mioo.dao.ui.theme.MiooDaoTheme
 import com.mioo.dao.utils.ThreadLinkParser
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -46,6 +54,17 @@ class MainActivity : ComponentActivity() {
     lateinit var threadRepository: ThreadRepository
 
     private var pendingThreadIdState = mutableStateOf<String?>(null)
+
+    /** Clipboard-detected 8-digit thread id awaiting user confirmation. */
+    private var clipboardThreadCandidate = mutableStateOf<String?>(null)
+
+    /**
+     * Full clipboard text we already asked about (accept or dismiss).
+     * Only suppress while the clipboard content is unchanged.
+     */
+    private var lastPromptedClipboardText: String? = null
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -67,6 +86,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pendingThreadIdState.value = ThreadLinkParser.parseThreadId(intent)
 
+        // Re-check clipboard each time we are resumed and interactive.
+        // Android only reliably allows clipboard reads while focused; a short delay helps.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                delay(250)
+                checkClipboardForThreadId()
+                // Second pass: some OEMs populate the clip a bit later
+                delay(400)
+                checkClipboardForThreadId()
+            }
+        }
+
         setContent {
             val themeConfig by remember {
                 settingsRepository.settings
@@ -83,9 +114,10 @@ class MainActivity : ComponentActivity() {
 
             var showUpdateDialog by remember { mutableStateOf<GithubRelease?>(null) }
             val pendingThreadId by pendingThreadIdState
+            val clipboardThreadId by clipboardThreadCandidate
 
             LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(5000)
+                delay(5000)
                 threadRepository.checkLatestRelease().collect { response ->
                     if (response is XdResponse.Success) {
                         val release = response.data
@@ -106,6 +138,33 @@ class MainActivity : ComponentActivity() {
                     pendingThreadId = pendingThreadId,
                     onPendingThreadConsumed = { pendingThreadIdState.value = null }
                 )
+
+                clipboardThreadId?.let { threadId ->
+                    AlertDialog(
+                        onDismissRequest = {
+                            markClipboardPromptHandled()
+                        },
+                        title = { Text("打开串？") },
+                        text = {
+                            Text("剪贴板中检测到串号 No.$threadId，是否跳转打开？")
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    markClipboardPromptHandled()
+                                    pendingThreadIdState.value = threadId
+                                }
+                            ) {
+                                Text("打开")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { markClipboardPromptHandled() }) {
+                                Text("忽略")
+                            }
+                        }
+                    )
+                }
 
                 showUpdateDialog?.let { release ->
                     AlertDialog(
@@ -152,10 +211,62 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // Most reliable moment to read the clipboard on modern Android
+            mainHandler.post { checkClipboardForThreadId() }
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingThreadIdState.value = ThreadLinkParser.parseThreadId(intent)
+    }
+
+    override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
+
+    private fun markClipboardPromptHandled() {
+        lastPromptedClipboardText = readClipboardText()
+        clipboardThreadCandidate.value = null
+    }
+
+    private fun checkClipboardForThreadId() {
+        if (isFinishing || isDestroyed) return
+        // Already showing a prompt
+        if (clipboardThreadCandidate.value != null) return
+        // Don't interrupt an in-flight deep-link / share navigation
+        if (pendingThreadIdState.value != null) return
+        // Need focus — Android blocks clipboard reads otherwise (returns empty / null)
+        if (!hasWindowFocus()) return
+
+        val text = readClipboardText() ?: return
+        if (text.isBlank()) return
+        // Same clip content already handled
+        if (text == lastPromptedClipboardText) return
+
+        val threadId = ThreadLinkParser.parseEightDigitThreadId(text) ?: return
+        clipboardThreadCandidate.value = threadId
+    }
+
+    private fun readClipboardText(): String? {
+        return try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+            // Avoid hasPrimaryClip() early-return quirks on some OEMs; go straight to primaryClip
+            val clip = cm.primaryClip ?: return null
+            if (clip.itemCount <= 0) return null
+            val item = clip.getItemAt(0)
+            // Prefer plain text; fall back to coerceToText (handles HTML / URI labels)
+            val plain = item.text?.toString()
+            if (!plain.isNullOrBlank()) return plain
+            item.coerceToText(this)?.toString()
+        } catch (_: Exception) {
+            null
+        }
     }
 }
 
