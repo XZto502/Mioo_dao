@@ -21,6 +21,39 @@ fun Uri.toFile(context: Context): File? {
 /** 颜文字快捷面板每行列数 */
 const val KAOMOJI_PER_ROW = 4
 
+/** 骰娘快捷每行列数 */
+const val DICE_PER_ROW = 4
+
+/**
+ * X岛骰娘快捷：发帖/回复正文中插入 `r NdM`，由岛方掷骰回填结果。
+ * 例：r 1d100、r 2d6、r 1d20+5
+ */
+data class DiceShortcut(
+    /** 按钮上显示，如 1d100 */
+    val label: String,
+    /** 完整插入文本，如 r 1d100 */
+    val insertText: String
+)
+
+val DICE_SHORTCUTS = listOf(
+    DiceShortcut("1d4", "r 1d4"),
+    DiceShortcut("1d6", "r 1d6"),
+    DiceShortcut("1d8", "r 1d8"),
+    DiceShortcut("1d10", "r 1d10"),
+    DiceShortcut("1d12", "r 1d12"),
+    DiceShortcut("1d20", "r 1d20"),
+    DiceShortcut("1d100", "r 1d100"),
+    DiceShortcut("2d6", "r 2d6"),
+    DiceShortcut("3d6", "r 3d6"),
+    DiceShortcut("4d6", "r 4d6"),
+    DiceShortcut("2d10", "r 2d10"),
+    DiceShortcut("5d10", "r 5d10"),
+    DiceShortcut("1d100+20", "r 1d100+20"),
+    DiceShortcut("1d100-10", "r 1d100-10"),
+    DiceShortcut("2d20", "r 2d20"),
+    DiceShortcut("3d20", "r 3d20")
+)
+
 /**
  * 岛内常用颜文字（经典列表 + 扩展）。
  * 多行颜文字用 \n 保留换行，点选后整段插入。

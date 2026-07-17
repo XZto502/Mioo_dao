@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Share
@@ -57,6 +58,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.toFile
+import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.ui.components.DiceQuickPanel
 import com.mioo.dao.ui.components.KAOMOJI_LIST
 import com.mioo.dao.ui.components.KAOMOJI_PER_ROW
 import androidx.compose.material3.Card
@@ -1121,12 +1124,16 @@ fun ReplyInputArea(
 ) {
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
+    var diceMenuExpanded by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val view = androidx.compose.ui.platform.LocalView.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     var wasReplying by remember { mutableStateOf(false) }
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(text = replyText, selection = TextRange(replyText.length)))
+    }
 
     fun hideSystemIme() {
         focusManager.clearFocus(force = true)
@@ -1142,13 +1149,20 @@ fun ReplyInputArea(
         }
     }
 
-    var textFieldValue by remember {
-        mutableStateOf(
-            TextFieldValue(
-                text = replyText,
-                selection = TextRange(replyText.length)
-            )
+    fun insertAtCursor(snippet: String) {
+        val text = textFieldValue.text
+        val selection = textFieldValue.selection
+        val start = selection.start.coerceIn(0, text.length)
+        val end = selection.end.coerceIn(0, text.length)
+        val prefix = if (start > 0 && !text[start - 1].isWhitespace()) " " else ""
+        val insert = prefix + snippet
+        val newText = text.substring(0, start) + insert + text.substring(end)
+        val newCursor = start + insert.length
+        textFieldValue = TextFieldValue(
+            text = newText,
+            selection = TextRange(newCursor)
         )
+        onReplyTextChange(newText)
     }
 
     LaunchedEffect(replyText) {
@@ -1274,6 +1288,7 @@ fun ReplyInputArea(
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
                             kaomojiMenuExpanded = false
+                            diceMenuExpanded = false
                         }
                     },
                 maxLines = 4,
@@ -1340,31 +1355,35 @@ fun ReplyInputArea(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Smiley face — 展开时强制收起系统键盘
-                IconButton(onClick = {
-                    val open = !kaomojiMenuExpanded
-                    kaomojiMenuExpanded = open
-                    if (open) hideSystemIme()
-                }) {
-                    Icon(
-                        imageVector = Icons.Default.Face,
-                        contentDescription = "选择颜文字",
-                        tint = if (kaomojiMenuExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                // 骰娘 · 颜文字 · 图片（同组）
+                ComposerToolButtons(
+                    diceSelected = diceMenuExpanded,
+                    kaomojiSelected = kaomojiMenuExpanded,
+                    hasImage = attachedImageUri != null,
+                    onDiceClick = {
+                        val open = !diceMenuExpanded
+                        diceMenuExpanded = open
+                        if (open) {
+                            kaomojiMenuExpanded = false
+                            hideSystemIme()
+                        }
+                    },
+                    onKaomojiClick = {
+                        val open = !kaomojiMenuExpanded
+                        kaomojiMenuExpanded = open
+                        if (open) {
+                            diceMenuExpanded = false
+                            hideSystemIme()
+                        }
+                    },
+                    onImageClick = {
+                        kaomojiMenuExpanded = false
+                        diceMenuExpanded = false
+                        imagePickerLauncher.launch("image/*")
+                    }
+                )
 
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Attach Image
-                IconButton(onClick = { imagePickerLauncher.launch("image/*") }) {
-                    Icon(
-                        imageVector = Icons.Default.AddPhotoAlternate,
-                        contentDescription = "添加图片",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
                 // Send Button
                 val isSendActive = (replyText.isNotBlank() || attachedImageUri != null) && !isReplying
@@ -1393,6 +1412,16 @@ fun ReplyInputArea(
                 }
             }
 
+            AnimatedVisibility(visible = diceMenuExpanded) {
+                DiceQuickPanel(
+                    onInsert = { insertAtCursor(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .height(200.dp)
+                )
+            }
+
             // 3. Kaomoji Panel Row
             AnimatedVisibility(visible = kaomojiMenuExpanded) {
                 Column(
@@ -1419,20 +1448,7 @@ fun ReplyInputArea(
                                     kaomoji
                                 }
                                 TextButton(
-                                    onClick = {
-                                        val text = textFieldValue.text
-                                        val selection = textFieldValue.selection
-                                        val start = selection.start
-                                        val end = selection.end
-                                        val newText = text.substring(0, start) + kaomoji + text.substring(end)
-                                        val newCursorPos = start + kaomoji.length
-                                        
-                                        textFieldValue = TextFieldValue(
-                                            text = newText,
-                                            selection = TextRange(newCursorPos)
-                                        )
-                                        onReplyTextChange(newText)
-                                    },
+                                    onClick = { insertAtCursor(kaomoji) },
                                     modifier = Modifier.weight(1f),
                                     contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
                                 ) {

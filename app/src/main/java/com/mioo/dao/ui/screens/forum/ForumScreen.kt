@@ -27,12 +27,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -48,6 +52,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Menu
@@ -113,6 +118,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.rememberAsyncImagePainter
+import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.ui.components.DiceQuickPanel
 import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.KAOMOJI_LIST
@@ -783,6 +790,7 @@ fun CreateThreadDialog(
     }
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiExpanded by remember { mutableStateOf(false) }
+    var diceExpanded by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
 
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -812,13 +820,16 @@ fun CreateThreadDialog(
         onSubmit(title, finalAuthor, contentValue.text, attachedImageUri)
     }
 
-    fun insertKaomoji(kaomoji: String) {
+    fun insertAtCursor(snippet: String) {
         val text = contentValue.text
         val selection = contentValue.selection
         val start = selection.start.coerceIn(0, text.length)
         val end = selection.end.coerceIn(0, text.length)
-        val newText = text.substring(0, start) + kaomoji + text.substring(end)
-        val newCursor = start + kaomoji.length
+        // 前后补空格，避免粘成其它词
+        val prefix = if (start > 0 && !text[start - 1].isWhitespace()) " " else ""
+        val insert = prefix + snippet
+        val newText = text.substring(0, start) + insert + text.substring(end)
+        val newCursor = start + insert.length
         contentValue = TextFieldValue(
             text = newText,
             selection = TextRange(newCursor)
@@ -859,42 +870,44 @@ fun CreateThreadDialog(
             tokens.forEach { token ->
                 imm?.hideSoftInputFromWindow(token, InputMethodManager.HIDE_NOT_ALWAYS)
             }
-            // 锁住软键盘，避免焦点残留再次弹出
-            window?.setSoftInputMode(
-                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
-                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            )
-        }
-
-        fun restoreSoftInputMode() {
-            val window = (dialogView.parent as? DialogWindowProvider)?.window
-            window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
 
         fun openKaomojiPanel() {
+            diceExpanded = false
             kaomojiExpanded = true
+            hideSystemIme()
+        }
+
+        fun openDicePanel() {
+            kaomojiExpanded = false
+            diceExpanded = true
             hideSystemIme()
         }
 
         fun toggleKaomojiPanel() {
             if (kaomojiExpanded) {
                 kaomojiExpanded = false
-                restoreSoftInputMode()
             } else {
                 openKaomojiPanel()
             }
         }
 
-        // 颜文字展开时持续压键盘（部分机型需要多帧）
-        LaunchedEffect(kaomojiExpanded) {
-            if (kaomojiExpanded) {
+        fun toggleDicePanel() {
+            if (diceExpanded) {
+                diceExpanded = false
+            } else {
+                openDicePanel()
+            }
+        }
+
+        // 颜文字 / 骰娘面板展开时压键盘
+        LaunchedEffect(kaomojiExpanded, diceExpanded) {
+            if (kaomojiExpanded || diceExpanded) {
                 hideSystemIme()
                 delay(32)
                 hideSystemIme()
                 delay(120)
                 hideSystemIme()
-            } else {
-                restoreSoftInputMode()
             }
         }
 
@@ -903,9 +916,12 @@ fun CreateThreadDialog(
             WindowCompat.setDecorFitsSystemWindows(window, false)
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
-            // 不遮罩、透明窗体：透出主界面主题光晕，毛玻璃与其它页一致
+            // 不遮罩、透明窗体：透出主界面主题光晕
             window.setDimAmount(0f)
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            // ADJUST_NOTHING：由 Compose WindowInsets.ime 抬起底栏，避免系统缩放与 insets 冲突
+            @Suppress("DEPRECATION")
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isStatusBarContrastEnforced = false
                 window.isNavigationBarContrastEnforced = false
@@ -923,9 +939,7 @@ fun CreateThreadDialog(
                 .background(colorScheme.background.copy(alpha = 0.78f))
         ) {
             Scaffold(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .imePadding(),
+                modifier = Modifier.fillMaxSize(),
                 containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
@@ -985,17 +999,19 @@ fun CreateThreadDialog(
                     )
                 },
                 bottomBar = {
-                    // 与串内回复底栏一致：glassNavBar + 0 elevation
+                    // 键盘弹出时整体抬到 IME 上方；无键盘时贴合导航条/小白条
                     Surface(
                         color = glassBottom,
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(
+                                WindowInsets.ime.union(WindowInsets.navigationBars)
+                            )
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .navigationBarsPadding()
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             HorizontalDivider(
                                 color = colorScheme.outlineVariant.copy(alpha = 0.35f)
@@ -1075,34 +1091,27 @@ fun CreateThreadDialog(
 
                                 Spacer(modifier = Modifier.weight(1f))
 
-                                IconButton(onClick = { toggleKaomojiPanel() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Face,
-                                        contentDescription = "颜文字",
-                                        tint = if (kaomojiExpanded) {
-                                            colorScheme.primary
-                                        } else {
-                                            colorScheme.onSurfaceVariant
-                                        }
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
+                                ComposerToolButtons(
+                                    diceSelected = diceExpanded,
+                                    kaomojiSelected = kaomojiExpanded,
+                                    hasImage = attachedImageUri != null,
+                                    onDiceClick = { toggleDicePanel() },
+                                    onKaomojiClick = { toggleKaomojiPanel() },
+                                    onImageClick = {
                                         kaomojiExpanded = false
+                                        diceExpanded = false
                                         imagePickerLauncher.launch("image/*")
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AddPhotoAlternate,
-                                        contentDescription = "添加图片",
-                                        tint = if (attachedImageUri != null) {
-                                            colorScheme.primary
-                                        } else {
-                                            colorScheme.onSurfaceVariant
-                                        }
-                                    )
-                                }
+                                )
+                            }
+
+                            AnimatedVisibility(visible = diceExpanded) {
+                                DiceQuickPanel(
+                                    onInsert = { insertAtCursor(it) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(220.dp)
+                                )
                             }
 
                             // 颜文字：每行 4 个；展开时已收起键盘
@@ -1133,7 +1142,7 @@ fun CreateThreadDialog(
                                                     kaomoji
                                                 }
                                                 TextButton(
-                                                    onClick = { insertKaomoji(kaomoji) },
+                                                    onClick = { insertAtCursor(kaomoji) },
                                                     modifier = Modifier.weight(1f),
                                                     contentPadding = PaddingValues(
                                                         horizontal = 2.dp,
@@ -1174,9 +1183,9 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused && kaomojiExpanded) {
+                                if (state.isFocused) {
                                     kaomojiExpanded = false
-                                    restoreSoftInputMode()
+                                    diceExpanded = false
                                 }
                             },
                         singleLine = true,
@@ -1204,9 +1213,9 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused && kaomojiExpanded) {
+                                if (state.isFocused) {
                                     kaomojiExpanded = false
-                                    restoreSoftInputMode()
+                                    diceExpanded = false
                                 }
                             },
                         singleLine = true,
@@ -1245,11 +1254,9 @@ fun CreateThreadDialog(
                                 .fillMaxSize()
                                 .onFocusChanged { state ->
                                     if (state.isFocused) {
-                                        // 点正文：收起颜文字，允许系统键盘
-                                        if (kaomojiExpanded) {
-                                            kaomojiExpanded = false
-                                            restoreSoftInputMode()
-                                        }
+                                        // 点正文：收起快捷面板，系统键盘升起
+                                        kaomojiExpanded = false
+                                        diceExpanded = false
                                     }
                                 },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
