@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.4",
-  "name": "v1.0.4",
-  "body": "v1.0.4 更新日志\n\n1. 发新串全屏编辑：改为蓝岛风格全屏界面，遵循 Material Design 3，大正文区 + 底栏饼干/颜文字/附图，顶栏一键发送。\n2. 无标题隐藏：API 返回「无标题」或空白时，列表、详情、历史、搜索与通知不再展示无意义标题。\n3. 岛内颜文字扩充：补齐经典岛内颜文字与常用扩展/多行颜文字，点选插入完整内容。\n4. 订阅新回复通知：本地轮询云端订阅夹与本地收藏，有新回复时系统通知提醒（可设置间隔）。",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.4",
+  "tag_name": "v1.0.5",
+  "name": "v1.0.5",
+  "body": "- 发新串全屏毛玻璃，铺满状态栏和底部导航区\n- 颜文字每行 4 个\n- 打开颜文字时收起键盘",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.5",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.4/app-debug.apk",
-      "size": 22983777
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.5/app-debug.apk",
+      "size": 22986989
     }
   ]
 }

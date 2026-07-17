@@ -18,6 +18,9 @@ fun Uri.toFile(context: Context): File? {
     }
 }
 
+/** 颜文字快捷面板每行列数 */
+const val KAOMOJI_PER_ROW = 4
+
 /**
  * 岛内常用颜文字（经典列表 + 扩展）。
  * 多行颜文字用 \n 保留换行，点选后整段插入。

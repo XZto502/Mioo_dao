@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -111,9 +112,11 @@ import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.KAOMOJI_LIST
+import com.mioo.dao.ui.components.KAOMOJI_PER_ROW
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
+import com.mioo.dao.ui.components.glassCardColor
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
@@ -121,6 +124,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -816,6 +828,29 @@ fun CreateThreadDialog(
 
     BackHandler(onBack = onDismiss)
 
+    val isDark = isSystemInDarkTheme()
+    val glassField = glassCardColor(isDark)
+    val glassTop = DaoTheme.colors.glassTopBar
+    val glassBottom = DaoTheme.colors.glassNavBar
+    val primaryGlow = remember(colorScheme.primary) { colorScheme.primary.copy(alpha = 0.22f) }
+    val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.16f) }
+    val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.12f) }
+
+    fun openKaomojiPanel() {
+        // 收起系统键盘，用颜文字面板占位
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
+        kaomojiExpanded = true
+    }
+
+    fun toggleKaomojiPanel() {
+        if (kaomojiExpanded) {
+            kaomojiExpanded = false
+        } else {
+            openKaomojiPanel()
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -825,15 +860,61 @@ fun CreateThreadDialog(
             dismissOnClickOutside = false
         )
     ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = colorScheme.surface
+        val dialogView = LocalView.current
+        SideEffect {
+            val window = (dialogView.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
+            WindowCompat.getInsetsController(window, dialogView).apply {
+                isAppearanceLightStatusBars = !isDark
+                isAppearanceLightNavigationBars = !isDark
+            }
+        }
+
+        // 全屏背景 + 流光光晕（与主题一致），顶/底栏毛玻璃延伸进状态栏与小白条
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colorScheme.background)
+                .drawWithCache {
+                    val r1 = 200.dp.toPx()
+                    val c1 = Offset(140.dp.toPx(), 170.dp.toPx())
+                    val brush1 = Brush.radialGradient(
+                        colors = listOf(primaryGlow, Color.Transparent),
+                        center = c1,
+                        radius = r1
+                    )
+                    val r2 = 225.dp.toPx()
+                    val c2 = Offset(size.width + 60.dp.toPx() - r2, size.height + 70.dp.toPx() - r2)
+                    val brush2 = Brush.radialGradient(
+                        colors = listOf(tertiaryGlow, Color.Transparent),
+                        center = c2,
+                        radius = r2
+                    )
+                    val r3 = 125.dp.toPx()
+                    val c3 = Offset(size.width + 30.dp.toPx() - r3, size.height / 2f + 10.dp.toPx())
+                    val brush3 = Brush.radialGradient(
+                        colors = listOf(secondaryGlow, Color.Transparent),
+                        center = c3,
+                        radius = r3
+                    )
+                    onDrawBehind {
+                        drawCircle(brush = brush1, radius = r1, center = c1)
+                        drawCircle(brush = brush2, radius = r2, center = c2)
+                        drawCircle(brush = brush3, radius = r3, center = c3)
+                    }
+                }
         ) {
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
                     .imePadding(),
-                containerColor = colorScheme.surface,
+                containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
                     TopAppBar(
@@ -881,19 +962,24 @@ fun CreateThreadDialog(
                                 Text("发送")
                             }
                         },
+                        // 内容避开状态栏，背景毛玻璃铺满状态栏区域
+                        windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = colorScheme.surface,
+                            containerColor = glassTop,
                             titleContentColor = colorScheme.onSurface,
                             navigationIconContentColor = colorScheme.onSurface,
-                            actionIconContentColor = colorScheme.primary
+                            actionIconContentColor = colorScheme.primary,
+                            scrolledContainerColor = glassTop
                         )
                     )
                 },
                 bottomBar = {
+                    // 底栏毛玻璃铺满导航条/小白条，内容区再加 navigationBarsPadding
                     Surface(
-                        color = colorScheme.surfaceContainer,
-                        tonalElevation = 2.dp,
-                        shadowElevation = 4.dp
+                        color = glassBottom,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier
@@ -901,10 +987,9 @@ fun CreateThreadDialog(
                                 .navigationBarsPadding()
                         ) {
                             HorizontalDivider(
-                                color = colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                color = colorScheme.outlineVariant.copy(alpha = 0.35f)
                             )
 
-                            // 工具栏：饼干 / 颜文字 / 图片
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -979,15 +1064,7 @@ fun CreateThreadDialog(
 
                                 Spacer(modifier = Modifier.weight(1f))
 
-                                IconButton(
-                                    onClick = {
-                                        kaomojiExpanded = !kaomojiExpanded
-                                        if (kaomojiExpanded) {
-                                            keyboardController?.hide()
-                                            focusManager.clearFocus()
-                                        }
-                                    }
-                                ) {
+                                IconButton(onClick = { toggleKaomojiPanel() }) {
                                     Icon(
                                         imageVector = Icons.Default.Face,
                                         contentDescription = "颜文字",
@@ -1017,16 +1094,16 @@ fun CreateThreadDialog(
                                 }
                             }
 
-                            // 颜文字面板
+                            // 颜文字：每行 4 个；展开时已收起键盘
                             AnimatedVisibility(visible = kaomojiExpanded) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(200.dp)
-                                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                                        .height(220.dp)
+                                        .padding(horizontal = 2.dp, vertical = 4.dp)
                                         .verticalScroll(rememberScrollState())
                                 ) {
-                                    val rows = KAOMOJI_LIST.chunked(3)
+                                    val rows = KAOMOJI_LIST.chunked(KAOMOJI_PER_ROW)
                                     rows.forEach { row ->
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -1038,27 +1115,31 @@ fun CreateThreadDialog(
                                                     kaomoji.lineSequence()
                                                         .firstOrNull { it.isNotBlank() }
                                                         ?.trim()
-                                                        ?.take(12)
+                                                        ?.take(10)
                                                         ?.let { "$it…" }
-                                                        ?: "多行颜文字"
+                                                        ?: "多行"
                                                 } else {
                                                     kaomoji
                                                 }
                                                 TextButton(
                                                     onClick = { insertKaomoji(kaomoji) },
-                                                    modifier = Modifier.weight(1f)
+                                                    modifier = Modifier.weight(1f),
+                                                    contentPadding = PaddingValues(
+                                                        horizontal = 2.dp,
+                                                        vertical = 4.dp
+                                                    )
                                                 ) {
                                                     Text(
                                                         text = preview,
-                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        style = MaterialTheme.typography.bodySmall,
                                                         color = colorScheme.primary,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
                                             }
-                                            if (row.size < 3) {
-                                                repeat(3 - row.size) {
+                                            if (row.size < KAOMOJI_PER_ROW) {
+                                                repeat(KAOMOJI_PER_ROW - row.size) {
                                                     Spacer(modifier = Modifier.weight(1f))
                                                 }
                                             }
@@ -1076,7 +1157,6 @@ fun CreateThreadDialog(
                         .padding(innerPadding)
                         .padding(horizontal = 16.dp)
                 ) {
-                    // 标题 / 作者：紧凑 MD3 输入
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
@@ -1091,10 +1171,10 @@ fun CreateThreadDialog(
                         textStyle = MaterialTheme.typography.titleMedium,
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colorScheme.primary,
-                            unfocusedBorderColor = colorScheme.outlineVariant,
-                            focusedContainerColor = colorScheme.surfaceContainerLowest,
-                            unfocusedContainerColor = colorScheme.surfaceContainerLowest
+                            focusedBorderColor = colorScheme.primary.copy(alpha = 0.7f),
+                            unfocusedBorderColor = colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            focusedContainerColor = glassField,
+                            unfocusedContainerColor = glassField
                         )
                     )
 
@@ -1114,18 +1194,17 @@ fun CreateThreadDialog(
                         textStyle = MaterialTheme.typography.bodyLarge,
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colorScheme.primary,
-                            unfocusedBorderColor = colorScheme.outlineVariant,
-                            focusedContainerColor = colorScheme.surfaceContainerLowest,
-                            unfocusedContainerColor = colorScheme.surfaceContainerLowest
+                            focusedBorderColor = colorScheme.primary.copy(alpha = 0.7f),
+                            unfocusedBorderColor = colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            focusedContainerColor = glassField,
+                            unfocusedContainerColor = glassField
                         )
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = colorScheme.outlineVariant.copy(alpha = 0.45f))
+                    HorizontalDivider(color = colorScheme.outlineVariant.copy(alpha = 0.35f))
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 正文：全屏自由输入区（蓝岛式大编辑区）
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -1141,6 +1220,7 @@ fun CreateThreadDialog(
                                 .fillMaxSize()
                                 .onFocusChanged { state ->
                                     if (state.isFocused) {
+                                        // 点正文时收起颜文字，让键盘顶上来
                                         kaomojiExpanded = false
                                     }
                                 },
@@ -1163,7 +1243,6 @@ fun CreateThreadDialog(
                         )
                     }
 
-                    // 图片预览
                     AnimatedVisibility(visible = attachedImageUri != null) {
                         Row(
                             modifier = Modifier
@@ -1177,7 +1256,7 @@ fun CreateThreadDialog(
                                     .clip(RoundedCornerShape(12.dp))
                                     .border(
                                         1.dp,
-                                        colorScheme.outlineVariant,
+                                        colorScheme.outlineVariant.copy(alpha = 0.6f),
                                         RoundedCornerShape(12.dp)
                                     )
                             ) {

@@ -58,6 +58,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.components.KAOMOJI_LIST
+import com.mioo.dao.ui.components.KAOMOJI_PER_ROW
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -1388,7 +1389,7 @@ fun ReplyInputArea(
                         .height(180.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    val rows = KAOMOJI_LIST.chunked(3)
+                    val rows = KAOMOJI_LIST.chunked(KAOMOJI_PER_ROW)
                     rows.forEach { row ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1399,8 +1400,8 @@ fun ReplyInputArea(
                                 val preview = if (isMultiline) {
                                     kaomoji.lineSequence().firstOrNull { it.isNotBlank() }
                                         ?.trim()
-                                        ?.take(12)
-                                        ?.let { "$it…" } ?: "多行颜文字"
+                                        ?.take(10)
+                                        ?.let { "$it…" } ?: "多行"
                                 } else {
                                     kaomoji
                                 }
@@ -1419,20 +1420,20 @@ fun ReplyInputArea(
                                         )
                                         onReplyTextChange(newText)
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
                                 ) {
                                     Text(
                                         text = preview,
-                                        style = MaterialTheme.typography.bodyLarge,
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.primary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
-                            // Fill empty spaces if row has < 3 elements
-                            if (row.size < 3) {
-                                repeat(3 - row.size) {
+                            if (row.size < KAOMOJI_PER_ROW) {
+                                repeat(KAOMOJI_PER_ROW - row.size) {
                                     Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
