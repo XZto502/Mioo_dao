@@ -1,6 +1,10 @@
 package com.mioo.dao.ui.screens.forum
 
+import android.content.Context
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -116,7 +120,6 @@ import com.mioo.dao.ui.components.KAOMOJI_PER_ROW
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
-import com.mioo.dao.ui.components.glassCardColor
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
@@ -127,9 +130,6 @@ import kotlinx.coroutines.withContext
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
@@ -829,27 +829,9 @@ fun CreateThreadDialog(
     BackHandler(onBack = onDismiss)
 
     val isDark = isSystemInDarkTheme()
-    val glassField = glassCardColor(isDark)
+    // 与板块 / 串内页完全同一套毛玻璃色
     val glassTop = DaoTheme.colors.glassTopBar
     val glassBottom = DaoTheme.colors.glassNavBar
-    val primaryGlow = remember(colorScheme.primary) { colorScheme.primary.copy(alpha = 0.22f) }
-    val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.16f) }
-    val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.12f) }
-
-    fun openKaomojiPanel() {
-        // 收起系统键盘，用颜文字面板占位
-        keyboardController?.hide()
-        focusManager.clearFocus(force = true)
-        kaomojiExpanded = true
-    }
-
-    fun toggleKaomojiPanel() {
-        if (kaomojiExpanded) {
-            kaomojiExpanded = false
-        } else {
-            openKaomojiPanel()
-        }
-    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -861,11 +843,69 @@ fun CreateThreadDialog(
         )
     ) {
         val dialogView = LocalView.current
+        val context = LocalContext.current
+
+        fun hideSystemIme() {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            val window = (dialogView.parent as? DialogWindowProvider)?.window
+            val tokens = buildList {
+                dialogView.windowToken?.let { add(it) }
+                window?.decorView?.windowToken?.let { add(it) }
+                window?.currentFocus?.windowToken?.let { add(it) }
+                dialogView.rootView?.windowToken?.let { add(it) }
+            }
+            tokens.forEach { token ->
+                imm?.hideSoftInputFromWindow(token, InputMethodManager.HIDE_NOT_ALWAYS)
+            }
+            // 锁住软键盘，避免焦点残留再次弹出
+            window?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
+                    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+        }
+
+        fun restoreSoftInputMode() {
+            val window = (dialogView.parent as? DialogWindowProvider)?.window
+            window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+
+        fun openKaomojiPanel() {
+            kaomojiExpanded = true
+            hideSystemIme()
+        }
+
+        fun toggleKaomojiPanel() {
+            if (kaomojiExpanded) {
+                kaomojiExpanded = false
+                restoreSoftInputMode()
+            } else {
+                openKaomojiPanel()
+            }
+        }
+
+        // 颜文字展开时持续压键盘（部分机型需要多帧）
+        LaunchedEffect(kaomojiExpanded) {
+            if (kaomojiExpanded) {
+                hideSystemIme()
+                delay(32)
+                hideSystemIme()
+                delay(120)
+                hideSystemIme()
+            } else {
+                restoreSoftInputMode()
+            }
+        }
+
         SideEffect {
             val window = (dialogView.parent as? DialogWindowProvider)?.window ?: return@SideEffect
             WindowCompat.setDecorFitsSystemWindows(window, false)
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            // 不遮罩、透明窗体：透出主界面主题光晕，毛玻璃与其它页一致
+            window.setDimAmount(0f)
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isStatusBarContrastEnforced = false
                 window.isNavigationBarContrastEnforced = false
@@ -876,39 +916,11 @@ fun CreateThreadDialog(
             }
         }
 
-        // 全屏背景 + 流光光晕（与主题一致），顶/底栏毛玻璃延伸进状态栏与小白条
+        // 半透明背景叠在主题流光上；顶/底栏用与其它界面相同的 glass 色
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(colorScheme.background)
-                .drawWithCache {
-                    val r1 = 200.dp.toPx()
-                    val c1 = Offset(140.dp.toPx(), 170.dp.toPx())
-                    val brush1 = Brush.radialGradient(
-                        colors = listOf(primaryGlow, Color.Transparent),
-                        center = c1,
-                        radius = r1
-                    )
-                    val r2 = 225.dp.toPx()
-                    val c2 = Offset(size.width + 60.dp.toPx() - r2, size.height + 70.dp.toPx() - r2)
-                    val brush2 = Brush.radialGradient(
-                        colors = listOf(tertiaryGlow, Color.Transparent),
-                        center = c2,
-                        radius = r2
-                    )
-                    val r3 = 125.dp.toPx()
-                    val c3 = Offset(size.width + 30.dp.toPx() - r3, size.height / 2f + 10.dp.toPx())
-                    val brush3 = Brush.radialGradient(
-                        colors = listOf(secondaryGlow, Color.Transparent),
-                        center = c3,
-                        radius = r3
-                    )
-                    onDrawBehind {
-                        drawCircle(brush = brush1, radius = r1, center = c1)
-                        drawCircle(brush = brush2, radius = r2, center = c2)
-                        drawCircle(brush = brush3, radius = r3, center = c3)
-                    }
-                }
+                .background(colorScheme.background.copy(alpha = 0.78f))
         ) {
             Scaffold(
                 modifier = Modifier
@@ -962,7 +974,6 @@ fun CreateThreadDialog(
                                 Text("发送")
                             }
                         },
-                        // 内容避开状态栏，背景毛玻璃铺满状态栏区域
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = glassTop,
@@ -974,7 +985,7 @@ fun CreateThreadDialog(
                     )
                 },
                 bottomBar = {
-                    // 底栏毛玻璃铺满导航条/小白条，内容区再加 navigationBarsPadding
+                    // 与串内回复底栏一致：glassNavBar + 0 elevation
                     Surface(
                         color = glassBottom,
                         tonalElevation = 0.dp,
@@ -1160,7 +1171,14 @@ fun CreateThreadDialog(
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { state ->
+                                if (state.isFocused && kaomojiExpanded) {
+                                    kaomojiExpanded = false
+                                    restoreSoftInputMode()
+                                }
+                            },
                         singleLine = true,
                         placeholder = {
                             Text(
@@ -1171,10 +1189,10 @@ fun CreateThreadDialog(
                         textStyle = MaterialTheme.typography.titleMedium,
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colorScheme.primary.copy(alpha = 0.7f),
-                            unfocusedBorderColor = colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            focusedContainerColor = glassField,
-                            unfocusedContainerColor = glassField
+                            focusedBorderColor = colorScheme.primary,
+                            unfocusedBorderColor = colorScheme.outlineVariant,
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
                         )
                     )
 
@@ -1183,7 +1201,14 @@ fun CreateThreadDialog(
                     OutlinedTextField(
                         value = author,
                         onValueChange = { author = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { state ->
+                                if (state.isFocused && kaomojiExpanded) {
+                                    kaomojiExpanded = false
+                                    restoreSoftInputMode()
+                                }
+                            },
                         singleLine = true,
                         placeholder = {
                             Text(
@@ -1194,10 +1219,10 @@ fun CreateThreadDialog(
                         textStyle = MaterialTheme.typography.bodyLarge,
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colorScheme.primary.copy(alpha = 0.7f),
-                            unfocusedBorderColor = colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            focusedContainerColor = glassField,
-                            unfocusedContainerColor = glassField
+                            focusedBorderColor = colorScheme.primary,
+                            unfocusedBorderColor = colorScheme.outlineVariant,
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
                         )
                     )
 
@@ -1220,8 +1245,11 @@ fun CreateThreadDialog(
                                 .fillMaxSize()
                                 .onFocusChanged { state ->
                                     if (state.isFocused) {
-                                        // 点正文时收起颜文字，让键盘顶上来
-                                        kaomojiExpanded = false
+                                        // 点正文：收起颜文字，允许系统键盘
+                                        if (kaomojiExpanded) {
+                                            kaomojiExpanded = false
+                                            restoreSoftInputMode()
+                                        }
                                     }
                                 },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(

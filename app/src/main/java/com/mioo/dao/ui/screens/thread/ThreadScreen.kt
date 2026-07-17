@@ -1123,9 +1123,24 @@ fun ReplyInputArea(
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     var wasReplying by remember { mutableStateOf(false) }
+
+    fun hideSystemIme() {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+            as? android.view.inputmethod.InputMethodManager
+        imm?.hideSoftInputFromWindow(view.windowToken, 0)
+        (context as? android.app.Activity)?.currentFocus?.let { focused ->
+            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
+        }
+        (context as? android.app.Activity)?.window?.decorView?.windowToken?.let { token ->
+            imm?.hideSoftInputFromWindow(token, 0)
+        }
+    }
 
     var textFieldValue by remember {
         mutableStateOf(
@@ -1325,13 +1340,11 @@ fun ReplyInputArea(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Smiley face (Face)
-                IconButton(onClick = { 
-                    kaomojiMenuExpanded = !kaomojiMenuExpanded 
-                    if (kaomojiMenuExpanded) {
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                    }
+                // Smiley face — 展开时强制收起系统键盘
+                IconButton(onClick = {
+                    val open = !kaomojiMenuExpanded
+                    kaomojiMenuExpanded = open
+                    if (open) hideSystemIme()
                 }) {
                     Icon(
                         imageVector = Icons.Default.Face,
