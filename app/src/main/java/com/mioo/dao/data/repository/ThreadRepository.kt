@@ -20,6 +20,7 @@ import com.mioo.dao.data.model.LocalSearchSource
 import com.mioo.dao.data.model.Reply
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
+import com.mioo.dao.data.model.effectiveTitle
 import com.squareup.moshi.Types
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,14 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** One bookmarked thread that has unread new replies after a poll. */
+data class BookmarkNewReply(
+    val threadId: String,
+    val title: String?,
+    val newReplyDelta: Int,
+    val totalReplies: Int
+)
 
 interface ThreadRepository {
     fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>>
@@ -76,6 +85,12 @@ interface ThreadRepository {
     suspend fun insertBookmarks(threads: List<Thread>)
     suspend fun markBookmarkRead(threadId: String, replyCount: Int)
     suspend fun refreshBookmarkReplyCounts(limit: Int = 20)
+
+    /**
+     * Poll X-island subscription sources for new replies (background notification).
+     * Sources: local bookmarks + cloud feed folders (official feed/uuid API).
+     */
+    suspend fun pollSubscriptionUpdatesForNotification(limit: Int = 30): List<BookmarkNewReply>
 
     // Reading progress
     suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int)
@@ -124,9 +139,11 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         val cacheKey = "showf_$fid"
         var emittedCache = false
+        var cachedJson: String? = null
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
+                cachedJson = cached.jsonResponse
                 val cachedList = runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull()
                 if (cachedList != null) {
                     emit(XdResponse.Success(cachedList))
@@ -134,8 +151,12 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             }
             val response = apiService.showf(fid, page)
-            cacheDao.insertCache(CacheEntity(cacheKey, page, threadListAdapter.toJson(response)))
-            emit(XdResponse.Success(response))
+            val networkJson = threadListAdapter.toJson(response)
+            // SWR: skip identical network payload so UI does not rebuild twice
+            if (!(emittedCache && cachedJson == networkJson)) {
+                cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
+                emit(XdResponse.Success(response))
+            }
         } catch (e: Exception) {
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
@@ -151,9 +172,11 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getTimeline(id: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         val cacheKey = "timeline_$id"
         var emittedCache = false
+        var cachedJson: String? = null
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
+                cachedJson = cached.jsonResponse
                 val cachedList = runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull()
                 if (cachedList != null) {
                     emit(XdResponse.Success(cachedList))
@@ -161,8 +184,11 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             }
             val response = apiService.timeline(id, page)
-            cacheDao.insertCache(CacheEntity(cacheKey, page, threadListAdapter.toJson(response)))
-            emit(XdResponse.Success(response))
+            val networkJson = threadListAdapter.toJson(response)
+            if (!(emittedCache && cachedJson == networkJson)) {
+                cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
+                emit(XdResponse.Success(response))
+            }
         } catch (e: Exception) {
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
@@ -178,9 +204,11 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>> = flow {
         val cacheKey = "thread_$tid"
         var emittedCache = false
+        var cachedJson: String? = null
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
+                cachedJson = cached.jsonResponse
                 val cachedThread = runCatching { threadAdapter.fromJson(cached.jsonResponse) }.getOrNull()
                 if (cachedThread != null) {
                     emit(XdResponse.Success(cachedThread))
@@ -192,8 +220,11 @@ class ThreadRepositoryImpl @Inject constructor(
             if (page <= 1) {
                 saveToHistory(response)
             }
-            cacheDao.insertCache(CacheEntity(cacheKey, page, threadAdapter.toJson(response)))
-            emit(XdResponse.Success(response))
+            val networkJson = threadAdapter.toJson(response)
+            if (!(emittedCache && cachedJson == networkJson)) {
+                cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
+                emit(XdResponse.Success(response))
+            }
         } catch (e: Exception) {
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
@@ -209,9 +240,11 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getPoDetail(tid: String, page: Int): Flow<XdResponse<Thread>> = flow {
         val cacheKey = "po_$tid"
         var emittedCache = false
+        var cachedJson: String? = null
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
+                cachedJson = cached.jsonResponse
                 val cachedThread = runCatching { threadAdapter.fromJson(cached.jsonResponse) }.getOrNull()
                 if (cachedThread != null) {
                     emit(XdResponse.Success(cachedThread))
@@ -219,8 +252,11 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             }
             val response = apiService.po(tid, page)
-            cacheDao.insertCache(CacheEntity(cacheKey, page, threadAdapter.toJson(response)))
-            emit(XdResponse.Success(response))
+            val networkJson = threadAdapter.toJson(response)
+            if (!(emittedCache && cachedJson == networkJson)) {
+                cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
+                emit(XdResponse.Success(response))
+            }
         } catch (e: Exception) {
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
@@ -412,6 +448,82 @@ class ThreadRepositoryImpl @Inject constructor(
             } catch (_: Exception) {
             }
         }
+    }
+
+    override suspend fun pollSubscriptionUpdatesForNotification(limit: Int): List<BookmarkNewReply> {
+        val updates = LinkedHashMap<String, BookmarkNewReply>()
+        val snapshot = settingsDataStore.getNotifiedReplySnapshot().toMutableMap()
+
+        // 1) Local bookmarks (app-side favorites)
+        val bookmarks = historyDao.getAllBookmarks().first().take(limit)
+        for (bookmark in bookmarks) {
+            try {
+                val thread = apiService.thread(bookmark.id, 1)
+                val count = thread.replyCount ?: 0
+                historyDao.updateKnownReplyCount(bookmark.id, count)
+                historyDao.insertBookmark(
+                    bookmark.copy(
+                        content = thread.content,
+                        title = thread.title,
+                        now = thread.now,
+                        lastKnownReplyCount = count
+                    )
+                )
+                val baseline = snapshot[bookmark.id]
+                    ?: bookmark.lastReadReplyCount.coerceAtLeast(bookmark.lastKnownReplyCount)
+                if (count > baseline) {
+                    val delta = (count - baseline).coerceAtLeast(1)
+                    updates[bookmark.id] = BookmarkNewReply(
+                        threadId = bookmark.id,
+                        title = thread.title.effectiveTitle()
+                            ?: bookmark.title.effectiveTitle()
+                            ?: "No.${bookmark.id}",
+                        newReplyDelta = delta,
+                        totalReplies = count
+                    )
+                    snapshot[bookmark.id] = count
+                } else if (!snapshot.containsKey(bookmark.id)) {
+                    snapshot[bookmark.id] = count
+                }
+                delay(150)
+            } catch (_: Exception) {
+            }
+        }
+
+        // 2) Official X-island cloud subscriptions (feed?uuid=) — same source as 蓝岛订阅
+        val folders = try {
+            settingsDataStore.feedFoldersFlow.first()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        for (folder in folders.take(5)) {
+            try {
+                val feedThreads = apiService.feed(folder.uuid, 1)
+                for (thread in feedThreads.take(limit)) {
+                    val id = thread.idStr
+                    val count = thread.replyCount ?: 0
+                    val baseline = snapshot[id]
+                    if (baseline == null) {
+                        // First sighting: record baseline without notifying
+                        snapshot[id] = count
+                    } else if (count > baseline) {
+                        val delta = (count - baseline).coerceAtLeast(1)
+                        updates[id] = BookmarkNewReply(
+                            threadId = id,
+                            title = thread.title.effectiveTitle() ?: "No.$id",
+                            newReplyDelta = delta,
+                            totalReplies = count
+                        )
+                        snapshot[id] = count
+                    }
+                }
+                delay(200)
+            } catch (_: Exception) {
+            }
+        }
+
+        settingsDataStore.saveNotifiedReplySnapshot(snapshot)
+        return updates.values.toList()
     }
 
     override suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int) {

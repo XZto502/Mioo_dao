@@ -13,8 +13,8 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -96,5 +96,10 @@ dependencies {
 
     // ZXing Embedded QR Scanner
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    // Background subscription poll (蓝岛-style local notifications)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.hilt:hilt-work:1.1.0")
+    ksp("androidx.hilt:hilt-compiler:1.1.0")
 
 }

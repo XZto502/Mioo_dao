@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.data.model.LocalSearchHit
 import com.mioo.dao.data.model.XdWebSearch
+import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.theme.DaoTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -343,10 +344,10 @@ private fun SearchHitRow(
                     )
                 }
             }
-            if (!hit.title.isNullOrBlank()) {
+            hit.title.effectiveTitle()?.let { title ->
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = hit.title,
+                    text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,

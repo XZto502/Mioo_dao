@@ -3,21 +3,27 @@ package com.mioo.dao
 import android.app.Application
 import android.os.Looper
 import androidx.compose.ui.graphics.Color
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.mioo.dao.notification.SubscriptionScheduler
+import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.ui.components.HtmlParseCache
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import javax.inject.Inject
 
 @HiltAndroidApp
-class MiooDaoApp : Application(), ImageLoaderFactory {
+class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
     @Inject
     lateinit var okHttpClient: OkHttpClient
@@ -25,7 +31,21 @@ class MiooDaoApp : Application(), ImageLoaderFactory {
     @Inject
     lateinit var database: com.mioo.dao.data.local.AppDatabase
 
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var subscriptionScheduler: SubscriptionScheduler
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     override fun onCreate() {
         super.onCreate()
@@ -34,7 +54,20 @@ class MiooDaoApp : Application(), ImageLoaderFactory {
         // so injection fields are ready without blocking first frame.
         Looper.myQueue().addIdleHandler {
             warmCriticalPaths()
+            syncSubscriptionSchedule()
             false
+        }
+    }
+
+    private fun syncSubscriptionSchedule() {
+        appScope.launch {
+            if (!::subscriptionScheduler.isInitialized || !::settingsRepository.isInitialized) return@launch
+            settingsRepository.settings
+                .map { it.subscriptionNotificationsEnabled to it.notificationIntervalMinutes }
+                .distinctUntilChanged()
+                .collect { (enabled, interval) ->
+                    subscriptionScheduler.apply(enabled, interval)
+                }
         }
     }
 

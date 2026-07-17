@@ -1,13 +1,18 @@
 package com.mioo.dao.ui.screens.settings
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.model.UserSettings
 import com.mioo.dao.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +23,22 @@ import javax.inject.Inject
 import com.mioo.dao.data.local.HistoryEntity
 import com.mioo.dao.data.repository.ThreadRepository
 import kotlinx.coroutines.launch
+
+/** Minimal slice for ThreadScreen — avoids recomposing on theme/font/etc. changes. */
+@Immutable
+data class ThreadScreenSettings(
+    val cookiesList: List<String> = emptyList(),
+    val selectedCookieIndex: Int = 0,
+    val blockedThreads: List<String> = emptyList()
+)
+
+/** Minimal slice for ForumScreen — pins + compose cookies only. */
+@Immutable
+data class ForumScreenSettings(
+    val cookiesList: List<String> = emptyList(),
+    val selectedCookieIndex: Int = 0,
+    val pinnedForums: List<String> = emptyList()
+)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -31,6 +52,41 @@ class SettingsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = UserSettings()
         )
+
+    val threadScreenSettings: StateFlow<ThreadScreenSettings> = settingsRepository.settings
+        .map {
+            ThreadScreenSettings(
+                cookiesList = it.cookiesList,
+                selectedCookieIndex = it.selectedCookieIndex,
+                blockedThreads = it.blockedThreads
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ThreadScreenSettings()
+        )
+
+    val forumScreenSettings: StateFlow<ForumScreenSettings> = settingsRepository.settings
+        .map {
+            ForumScreenSettings(
+                cookiesList = it.cookiesList,
+                selectedCookieIndex = it.selectedCookieIndex,
+                pinnedForums = it.pinnedForums
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ForumScreenSettings()
+        )
+
+    private var newThreadDraftJob: Job? = null
+    private companion object {
+        const val NEW_THREAD_DRAFT_DEBOUNCE_MS = 400L
+    }
 
     val historyState: StateFlow<List<HistoryEntity>> = threadRepository.getHistory()
         .stateIn(
@@ -127,8 +183,21 @@ class SettingsViewModel @Inject constructor(
         return settingsRepository.getNewThreadDraft()
     }
 
-    suspend fun saveNewThreadDraft(draft: String) {
-        settingsRepository.saveNewThreadDraft(draft)
+    /** Debounced draft write — safe to call every keystroke. */
+    fun saveNewThreadDraft(draft: String) {
+        newThreadDraftJob?.cancel()
+        newThreadDraftJob = viewModelScope.launch {
+            delay(NEW_THREAD_DRAFT_DEBOUNCE_MS)
+            settingsRepository.saveNewThreadDraft(draft)
+        }
+    }
+
+    /** Immediate clear/flush (submit success or explicit discard). */
+    fun clearNewThreadDraft() {
+        newThreadDraftJob?.cancel()
+        viewModelScope.launch {
+            settingsRepository.saveNewThreadDraft("")
+        }
     }
 
     private val _cacheSizeState = MutableStateFlow("0.0 KB")
@@ -198,6 +267,14 @@ class SettingsViewModel @Inject constructor(
 
     fun updatePreloadCount(count: Int) {
         settingsRepository.updatePreloadCount(count)
+    }
+
+    fun updateSubscriptionNotifications(enabled: Boolean) {
+        settingsRepository.updateSubscriptionNotifications(enabled)
+    }
+
+    fun updateNotificationIntervalMinutes(minutes: Int) {
+        settingsRepository.updateNotificationIntervalMinutes(minutes)
     }
 
     fun checkUpdate(onResult: (XdResponse<GithubRelease>) -> Unit) {

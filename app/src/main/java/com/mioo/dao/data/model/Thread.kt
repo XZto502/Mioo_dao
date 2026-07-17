@@ -42,3 +42,11 @@ data class Thread(
     val isSage: Boolean
         get() = sage == 1
 }
+
+/**
+ * X岛在未填写标题时 API 常返回「无标题」。展示时当作无标题（返回 null）。
+ */
+fun String?.effectiveTitle(): String? {
+    val t = this?.trim().orEmpty()
+    return t.takeIf { it.isNotEmpty() && it != "无标题" }
+}

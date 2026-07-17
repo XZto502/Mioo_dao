@@ -3,6 +3,7 @@ package com.mioo.dao.ui.components
 import androidx.compose.runtime.Immutable
 import com.mioo.dao.data.local.BookmarkEntity
 import com.mioo.dao.data.model.Thread
+import com.mioo.dao.data.model.effectiveTitle
 
 /**
  * Pre-built board/timeline list row. Built off the main thread.
@@ -70,7 +71,7 @@ fun List<BookmarkEntity>.toBookmarkListItems(): List<BookmarkListItem> {
             id = entity.id,
             postData = PostData(
                 id = entity.id,
-                title = entity.title ?: "",
+                title = entity.title.effectiveTitle(),
                 userName = entity.name ?: "Anonymous",
                 userId = entity.userid,
                 createdAt = entity.now,

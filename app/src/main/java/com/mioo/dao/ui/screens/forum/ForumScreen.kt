@@ -1,14 +1,30 @@
 package com.mioo.dao.ui.screens.forum
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,31 +32,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Cookie
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.border
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
-import android.net.Uri
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextRange
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import coil.compose.rememberAsyncImagePainter
-import com.mioo.dao.ui.components.toFile
-import com.mioo.dao.ui.components.KAOMOJI_LIST
-import com.mioo.dao.ui.components.FreeCopyDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,27 +56,27 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.rememberDrawerState
-import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -77,30 +85,42 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.shape.RoundedCornerShape
-import com.mioo.dao.ui.components.ThreadCard
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.rememberAsyncImagePainter
+import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
+import com.mioo.dao.ui.components.KAOMOJI_LIST
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
+import com.mioo.dao.ui.components.ThreadCard
+import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.hilt.navigation.compose.hiltViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -111,7 +131,8 @@ fun ForumScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val settingsState by settingsViewModel.settingsState.collectAsState()
+    // Pins + cookies only — theme/font changes must not recompose the board list
+    val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
     val context = LocalContext.current
     // Fresh LazyListState per board so scroll position & keys don't thrash across switches
     val currentForumId = viewModel.forumId
@@ -128,9 +149,9 @@ fun ForumScreen(
     // True for a short window after board switch — pause prefetch/prewarm during swap
     var boardSwitchQuiet by remember { mutableStateOf(false) }
 
-    val flatForumIds = remember(uiState.forumGroups, settingsState.pinnedForums) {
+    val flatForumIds = remember(uiState.forumGroups, forumSettings.pinnedForums) {
         val pinned = uiState.forumGroups.flatMap { it.forums }
-            .filter { settingsState.pinnedForums.contains(it.id) }
+            .filter { forumSettings.pinnedForums.contains(it.id) }
             .distinctBy { it.id }
             .map { it.id }
         val rest = uiState.forumGroups.flatMap { group -> group.forums.map { it.id } }
@@ -243,9 +264,9 @@ fun ForumScreen(
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                val pinnedForumsList = remember(uiState.forumGroups, settingsState.pinnedForums) {
+                val pinnedForumsList = remember(uiState.forumGroups, forumSettings.pinnedForums) {
                     uiState.forumGroups.flatMap { it.forums }
-                        .filter { settingsState.pinnedForums.contains(it.id) }
+                        .filter { forumSettings.pinnedForums.contains(it.id) }
                         .distinctBy { it.id }
                 }
                 LazyColumn(
@@ -272,7 +293,7 @@ fun ForumScreen(
                                 starTint = MaterialTheme.colorScheme.primary,
                                 onClick = { selectBoard(forum.id, forum.name) },
                                 onLongClick = {
-                                    val wasPinned = settingsState.pinnedForums.contains(forum.id)
+                                    val wasPinned = forumSettings.pinnedForums.contains(forum.id)
                                     settingsViewModel.togglePinForum(forum.id)
                                     Toast.makeText(
                                         context,
@@ -302,7 +323,7 @@ fun ForumScreen(
                             )
                         }
                         items(group.forums, key = { "g${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
-                            val isPinned = settingsState.pinnedForums.contains(forum.id)
+                            val isPinned = forumSettings.pinnedForums.contains(forum.id)
                             ForumDrawerItem(
                                 name = forum.name,
                                 isSelected = forum.id == viewModel.forumId,
@@ -452,24 +473,21 @@ fun ForumScreen(
     }
 
     if (showCreateDialog) {
-        val context = androidx.compose.ui.platform.LocalContext.current
         CreateThreadDialog(
-            cookies = settingsState.cookiesList,
-            selectedCookieIndex = settingsState.selectedCookieIndex,
+            cookies = forumSettings.cookiesList,
+            selectedCookieIndex = forumSettings.selectedCookieIndex,
+            boardName = uiState.currentForumName,
             initialContent = newThreadDraftText,
             onContentChange = { draft ->
-                scope.launch {
-                    settingsViewModel.saveNewThreadDraft(draft)
-                }
+                // Debounced inside ViewModel — no per-keystroke coroutine spam
+                settingsViewModel.saveNewThreadDraft(draft)
             },
             onCookieSelect = { settingsViewModel.selectCookie(it) },
             onDismiss = { showCreateDialog = false },
             onSubmit = { title, author, content, imageUri ->
                 val imageFile = imageUri?.toFile(context)
                 viewModel.createThread(title, author, content, imageFile)
-                scope.launch {
-                    settingsViewModel.saveNewThreadDraft("")
-                }
+                settingsViewModel.clearNewThreadDraft()
                 showCreateDialog = false
             }
         )
@@ -734,6 +752,7 @@ private fun ForumThreadListPane(
 fun CreateThreadDialog(
     cookies: List<String>,
     selectedCookieIndex: Int,
+    boardName: String = "",
     initialContent: String = "",
     onContentChange: (String) -> Unit = {},
     onCookieSelect: (Int) -> Unit,
@@ -751,7 +770,12 @@ fun CreateThreadDialog(
         )
     }
     var cookieMenuExpanded by remember { mutableStateOf(false) }
+    var kaomojiExpanded by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val colorScheme = MaterialTheme.colorScheme
 
     LaunchedEffect(initialContent) {
         if (contentValue.text != initialContent) {
@@ -768,114 +792,276 @@ fun CreateThreadDialog(
         attachedImageUri = uri
     }
 
-    AlertDialog(
+    val canSubmit = contentValue.text.isNotBlank() || attachedImageUri != null
+
+    fun submit() {
+        if (!canSubmit) return
+        val finalAuthor = if (author.isBlank()) "无名氏" else author
+        onSubmit(title, finalAuthor, contentValue.text, attachedImageUri)
+    }
+
+    fun insertKaomoji(kaomoji: String) {
+        val text = contentValue.text
+        val selection = contentValue.selection
+        val start = selection.start.coerceIn(0, text.length)
+        val end = selection.end.coerceIn(0, text.length)
+        val newText = text.substring(0, start) + kaomoji + text.substring(end)
+        val newCursor = start + kaomoji.length
+        contentValue = TextFieldValue(
+            text = newText,
+            selection = TextRange(newCursor)
+        )
+        onContentChange(newText)
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("发表新串") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
-                if (cookies.isNotEmpty()) {
-                    Box {
-                        OutlinedButton(
-                            onClick = { cookieMenuExpanded = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Cookie, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
-                            val displayName = parseCookieName(currentCookie)
-                            Text(if (displayName.length > 8) displayName.take(8) + "..." else displayName)
-                        }
-                        DropdownMenu(
-                            expanded = cookieMenuExpanded,
-                            onDismissRequest = { cookieMenuExpanded = false }
-                        ) {
-                            cookies.forEachIndexed { index, cookie ->
-                                val isSelected = index == selectedCookieIndex
-                                val displayName = parseCookieName(cookie)
-                                DropdownMenuItem(
-                                    text = { 
-                                        Text(
-                                            text = if (displayName.length > 8) displayName.take(8) + "..." else displayName,
-                                            fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        ) 
-                                    },
-                                    onClick = {
-                                        onCookieSelect(index)
-                                        cookieMenuExpanded = false
-                                    }
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = colorScheme.surface
+        ) {
+            Scaffold(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding(),
+                containerColor = colorScheme.surface,
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text(
+                                    text = "发表新串",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (boardName.isNotBlank()) {
+                                    Text(
+                                        text = boardName,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "关闭"
                                 )
                             }
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("标题") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = author,
-                    onValueChange = { author = it },
-                    label = { Text("作者（选填）") },
-                    placeholder = { Text("无名氏") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                 OutlinedTextField(
-                    value = contentValue,
-                    onValueChange = { newValue ->
-                        contentValue = newValue
-                        onContentChange(newValue.text)
-                    },
-                    label = { Text("内容") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
-                    maxLines = 5
-                )
+                        },
+                        actions = {
+                            FilledTonalButton(
+                                onClick = { submit() },
+                                enabled = canSubmit,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("发送")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = colorScheme.surface,
+                            titleContentColor = colorScheme.onSurface,
+                            navigationIconContentColor = colorScheme.onSurface,
+                            actionIconContentColor = colorScheme.primary
+                        )
+                    )
+                },
+                bottomBar = {
+                    Surface(
+                        color = colorScheme.surfaceContainer,
+                        tonalElevation = 2.dp,
+                        shadowElevation = 4.dp
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                        ) {
+                            HorizontalDivider(
+                                color = colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
 
-                // Quick Kaomoji Selection
-                var kaomojiMenuExpanded by remember { mutableStateOf(false) }
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { kaomojiMenuExpanded = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Face, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("插入颜文字")
-                    }
-                    DropdownMenu(
-                        expanded = kaomojiMenuExpanded,
-                        onDismissRequest = { kaomojiMenuExpanded = false }
-                    ) {
-                        val rows = KAOMOJI_LIST.chunked(3)
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            rows.forEach { row ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    row.forEach { kaomoji ->
-                                        TextButton(
-                                            onClick = {
-                                                val text = contentValue.text
-                                                val selection = contentValue.selection
-                                                val start = selection.start
-                                                val end = selection.end
-                                                val newText = text.substring(0, start) + kaomoji + text.substring(end)
-                                                val newCursorPos = start + kaomoji.length
-                                                
-                                                contentValue = TextFieldValue(
-                                                    text = newText,
-                                                    selection = TextRange(newCursorPos)
-                                                )
-                                                onContentChange(newText)
-                                                kaomojiMenuExpanded = false
-                                            }
+                            // 工具栏：饼干 / 颜文字 / 图片
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (cookies.isNotEmpty()) {
+                                    Box {
+                                        OutlinedButton(
+                                            onClick = { cookieMenuExpanded = true },
+                                            contentPadding = PaddingValues(
+                                                horizontal = 12.dp,
+                                                vertical = 6.dp
+                                            ),
+                                            shape = RoundedCornerShape(20.dp)
                                         ) {
-                                            Text(kaomoji, style = MaterialTheme.typography.bodyMedium)
+                                            Icon(
+                                                imageVector = Icons.Default.Cookie,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            val currentCookie =
+                                                cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
+                                            val displayName = parseCookieName(currentCookie)
+                                            Text(
+                                                text = if (displayName.length > 8) {
+                                                    displayName.take(8) + "…"
+                                                } else {
+                                                    displayName
+                                                },
+                                                style = MaterialTheme.typography.labelLarge,
+                                                maxLines = 1
+                                            )
+                                        }
+                                        DropdownMenu(
+                                            expanded = cookieMenuExpanded,
+                                            onDismissRequest = { cookieMenuExpanded = false }
+                                        ) {
+                                            cookies.forEachIndexed { index, cookie ->
+                                                val isSelected = index == selectedCookieIndex
+                                                val displayName = parseCookieName(cookie)
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            text = if (displayName.length > 8) {
+                                                                displayName.take(8) + "…"
+                                                            } else {
+                                                                displayName
+                                                            },
+                                                            fontWeight = if (isSelected) {
+                                                                FontWeight.Bold
+                                                            } else {
+                                                                FontWeight.Normal
+                                                            },
+                                                            color = if (isSelected) {
+                                                                colorScheme.primary
+                                                            } else {
+                                                                colorScheme.onSurface
+                                                            }
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        onCookieSelect(index)
+                                                        cookieMenuExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.weight(1f))
+
+                                IconButton(
+                                    onClick = {
+                                        kaomojiExpanded = !kaomojiExpanded
+                                        if (kaomojiExpanded) {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Face,
+                                        contentDescription = "颜文字",
+                                        tint = if (kaomojiExpanded) {
+                                            colorScheme.primary
+                                        } else {
+                                            colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        kaomojiExpanded = false
+                                        imagePickerLauncher.launch("image/*")
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddPhotoAlternate,
+                                        contentDescription = "添加图片",
+                                        tint = if (attachedImageUri != null) {
+                                            colorScheme.primary
+                                        } else {
+                                            colorScheme.onSurfaceVariant
+                                        }
+                                    )
+                                }
+                            }
+
+                            // 颜文字面板
+                            AnimatedVisibility(visible = kaomojiExpanded) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp)
+                                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                                        .verticalScroll(rememberScrollState())
+                                ) {
+                                    val rows = KAOMOJI_LIST.chunked(3)
+                                    rows.forEach { row ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceEvenly
+                                        ) {
+                                            row.forEach { kaomoji ->
+                                                val isMultiline = kaomoji.contains('\n')
+                                                val preview = if (isMultiline) {
+                                                    kaomoji.lineSequence()
+                                                        .firstOrNull { it.isNotBlank() }
+                                                        ?.trim()
+                                                        ?.take(12)
+                                                        ?.let { "$it…" }
+                                                        ?: "多行颜文字"
+                                                } else {
+                                                    kaomoji
+                                                }
+                                                TextButton(
+                                                    onClick = { insertKaomoji(kaomoji) },
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Text(
+                                                        text = preview,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = colorScheme.primary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                            if (row.size < 3) {
+                                                repeat(3 - row.size) {
+                                                    Spacer(modifier = Modifier.weight(1f))
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -883,75 +1069,155 @@ fun CreateThreadDialog(
                         }
                     }
                 }
+            ) { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(horizontal = 16.dp)
+                ) {
+                    // 标题 / 作者：紧凑 MD3 输入
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                "标题（选填）",
+                                color = colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        },
+                        textStyle = MaterialTheme.typography.titleMedium,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colorScheme.primary,
+                            unfocusedBorderColor = colorScheme.outlineVariant,
+                            focusedContainerColor = colorScheme.surfaceContainerLowest,
+                            unfocusedContainerColor = colorScheme.surfaceContainerLowest
+                        )
+                    )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                // Image Attachment
-                Text(
-                    text = "附加图片",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (attachedImageUri != null) {
+                    OutlinedTextField(
+                        value = author,
+                        onValueChange = { author = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                "名称（选填，默认无名氏）",
+                                color = colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        },
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colorScheme.primary,
+                            unfocusedBorderColor = colorScheme.outlineVariant,
+                            focusedContainerColor = colorScheme.surfaceContainerLowest,
+                            unfocusedContainerColor = colorScheme.surfaceContainerLowest
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = colorScheme.outlineVariant.copy(alpha = 0.45f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 正文：全屏自由输入区（蓝岛式大编辑区）
                     Box(
                         modifier = Modifier
-                            .size(100.dp)
-                            .clip(MaterialTheme.shapes.medium)
-                            .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
+                            .weight(1f)
+                            .fillMaxWidth()
                     ) {
-                        Image(
-                            painter = rememberAsyncImagePainter(attachedImageUri),
-                            contentDescription = "Preview",
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        IconButton(
-                            onClick = { attachedImageUri = null },
+                        BasicTextField(
+                            value = contentValue,
+                            onValueChange = { newValue ->
+                                contentValue = newValue
+                                onContentChange(newValue.text)
+                            },
                             modifier = Modifier
-                                .size(24.dp)
-                                .align(Alignment.TopEnd)
-                                .background(Color.Black.copy(alpha = 0.6f), shape = androidx.compose.foundation.shape.CircleShape)
+                                .fillMaxSize()
+                                .onFocusChanged { state ->
+                                    if (state.isFocused) {
+                                        kaomojiExpanded = false
+                                    }
+                                },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = colorScheme.onSurface
+                            ),
+                            cursorBrush = SolidColor(colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    if (contentValue.text.isEmpty()) {
+                                        Text(
+                                            text = "正文内容…\n可附带图片，支持插入颜文字",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                        )
+                    }
+
+                    // 图片预览
+                    AnimatedVisibility(visible = attachedImageUri != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp, bottom = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Cancel,
-                                contentDescription = "Remove",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(
+                                        1.dp,
+                                        colorScheme.outlineVariant,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                            ) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(attachedImageUri),
+                                    contentDescription = "图片预览",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                IconButton(
+                                    onClick = { attachedImageUri = null },
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .background(
+                                            Color.Black.copy(alpha = 0.55f),
+                                            CircleShape
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cancel,
+                                        contentDescription = "移除图片",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "已附加图片",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                } else {
-                    OutlinedButton(
-                        onClick = { imagePickerLauncher.launch("image/*") },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("选择图片")
-                    }
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val finalAuthor = if (author.isBlank()) "无名氏" else author
-                    val contentText = contentValue.text
-                    if (contentText.isNotBlank() || attachedImageUri != null) {
-                        onSubmit(title, finalAuthor, contentText, attachedImageUri)
-                    }
-                },
-                enabled = contentValue.text.isNotBlank() || attachedImageUri != null
-            ) {
-                Text("发表")
-            }
-        },
-        dismissButton = {
-            Button(onClick = onDismiss) {
-                Text("取消")
-            }
         }
-    )
+    }
 }
 
 private fun parseCookieName(cookie: String): String {

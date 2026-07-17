@@ -42,6 +42,10 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
         val KEY_SMART_PRELOAD_MODE = stringPreferencesKey("smart_preload_mode")
         val KEY_PRELOAD_COUNT = intPreferencesKey("preload_count")
+        val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
+        val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
+        /** last-notified replyCount snapshot for X-island feed/bookmark poll: "tid:count,tid:count" */
+        val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data
@@ -364,6 +368,30 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_PRELOAD_COUNT] ?: 10
         }
 
+    val subscriptionNotificationsFlow: Flow<Boolean> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_SUBSCRIPTION_NOTIFICATIONS] ?: false
+        }
+
+    val notificationIntervalMinutesFlow: Flow<Int> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            (preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] ?: 30).coerceIn(15, 180)
+        }
+
     suspend fun saveUserHash(userHash: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_USER_HASH] = userHash
@@ -385,6 +413,43 @@ class SettingsDataStore(private val context: Context) {
     suspend fun savePreloadCount(count: Int) {
         context.dataStore.edit { preferences ->
             preferences[KEY_PRELOAD_COUNT] = count
+        }
+    }
+
+    suspend fun saveSubscriptionNotifications(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SUBSCRIPTION_NOTIFICATIONS] = enabled
+        }
+    }
+
+    suspend fun saveNotificationIntervalMinutes(minutes: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] = minutes.coerceIn(15, 180)
+        }
+    }
+
+    suspend fun getNotifiedReplySnapshot(): Map<String, Int> {
+        val raw = context.dataStore.data.first()[KEY_NOTIFIED_REPLY_SNAPSHOT].orEmpty()
+        if (raw.isBlank()) return emptyMap()
+        return raw.split(',')
+            .mapNotNull { part ->
+                val i = part.indexOf(':')
+                if (i <= 0) return@mapNotNull null
+                val id = part.substring(0, i)
+                val count = part.substring(i + 1).toIntOrNull() ?: return@mapNotNull null
+                id to count
+            }
+            .toMap()
+    }
+
+    suspend fun saveNotifiedReplySnapshot(map: Map<String, Int>) {
+        // Cap size so preference string stays reasonable
+        val trimmed = map.entries
+            .sortedByDescending { it.value }
+            .take(200)
+            .joinToString(",") { "${it.key}:${it.value}" }
+        context.dataStore.edit { preferences ->
+            preferences[KEY_NOTIFIED_REPLY_SNAPSHOT] = trimmed
         }
     }
 

@@ -771,7 +771,92 @@ fun SettingsScreen(
             }
         }
 
-        // 5. Offline and Caching Settings (离线与缓存设置)
+        // 5. Subscription notifications (蓝岛-style local poll)
+        val notifPermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) {
+                viewModel.updateSubscriptionNotifications(true)
+                Toast.makeText(context, "已开启订阅通知", Toast.LENGTH_SHORT).show()
+            } else {
+                viewModel.updateSubscriptionNotifications(false)
+                Toast.makeText(context, "需要通知权限才能提醒新回复", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = "订阅通知")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "X岛订阅新回复通知",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "后台定期向 X岛 官方接口查询：云端订阅夹（feed UUID）与本地收藏串是否有新回复，有更新则发系统通知。\n" +
+                        "说明：岛方未对第三方开放实时推送通道，蓝岛等客户端也是本地轮询同一套订阅数据，并非互相收对方 App 的推送。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val enable = !settings.subscriptionNotificationsEnabled
+                            if (enable && android.os.Build.VERSION.SDK_INT >= 33) {
+                                notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                viewModel.updateSubscriptionNotifications(enable)
+                            }
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.subscriptionNotificationsEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.subscriptionNotificationsEnabled,
+                        onCheckedChange = { enable ->
+                            if (enable && android.os.Build.VERSION.SDK_INT >= 33) {
+                                notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                viewModel.updateSubscriptionNotifications(enable)
+                            }
+                        }
+                    )
+                }
+                if (settings.subscriptionNotificationsEnabled) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "检查间隔: ${settings.notificationIntervalMinutes} 分钟（最短 15 分钟）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(
+                        value = settings.notificationIntervalMinutes.toFloat(),
+                        onValueChange = {
+                            viewModel.updateNotificationIntervalMinutes(it.toInt())
+                        },
+                        valueRange = 15f..180f,
+                        steps = 10
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 6. Offline and Caching Settings (离线与缓存设置)
         val cacheSize by viewModel.cacheSizeState.collectAsState()
         val isPreloading by viewModel.isPreloadingState.collectAsState()
         val preloadProgress by viewModel.preloadProgressState.collectAsState()

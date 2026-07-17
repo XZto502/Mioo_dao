@@ -115,6 +115,7 @@ import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
+import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
 import kotlinx.coroutines.Dispatchers
@@ -134,7 +135,8 @@ fun ThreadScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val settingsState by settingsViewModel.settingsState.collectAsState()
+    // Slice only cookies + blocked — ignore theme/font/preload churn
+    val threadSettings by settingsViewModel.threadScreenSettings.collectAsState()
     // Recreate list state when thread content first appears so continue-reading can
     // open at the saved index (no paint-at-top then scrollToItem hitch).
     val hasThreadContent = uiState.thread != null
@@ -249,8 +251,8 @@ fun ThreadScreen(
             }
     }
 
-    LaunchedEffect(settingsState.blockedThreads) {
-        if (settingsState.blockedThreads.contains(viewModel.threadId)) {
+    LaunchedEffect(threadSettings.blockedThreads) {
+        if (threadSettings.blockedThreads.contains(viewModel.threadId)) {
             Toast.makeText(context, "该帖子已被屏蔽", Toast.LENGTH_SHORT).show()
             onBackClick()
         }
@@ -280,7 +282,7 @@ fun ThreadScreen(
                         )
                     } else {
                         Text(
-                            text = uiState.thread?.title ?: "详情",
+                            text = uiState.thread?.title.effectiveTitle() ?: "详情",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -314,7 +316,7 @@ fun ThreadScreen(
                         IconButton(onClick = {
                             val tid = viewModel.threadId
                             val link = XdWebSearch.threadUrl(tid)
-                            val title = uiState.thread?.title?.takeIf { it.isNotBlank() } ?: "No.$tid"
+                            val title = uiState.thread?.title.effectiveTitle() ?: "No.$tid"
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_SUBJECT, title)
@@ -479,8 +481,8 @@ fun ThreadScreen(
             // Isolated collector: typing only recomposes the input bar, not the reply list
             ReplyInputBar(
                 viewModel = viewModel,
-                cookies = settingsState.cookiesList,
-                selectedCookieIndex = settingsState.selectedCookieIndex,
+                cookies = threadSettings.cookiesList,
+                selectedCookieIndex = threadSettings.selectedCookieIndex,
                 onCookieSelect = { settingsViewModel.selectCookie(it) }
             )
         },
@@ -959,7 +961,7 @@ private fun ThreadReplyRow(
                 }
                 PostData(
                     id = quote.idStr,
-                    title = quote.title ?: "",
+                    title = quote.title.effectiveTitle(),
                     userName = quote.name ?: "无名氏",
                     userId = quote.userHash,
                     createdAt = quote.now,
@@ -1393,6 +1395,15 @@ fun ReplyInputArea(
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
                             row.forEach { kaomoji ->
+                                val isMultiline = kaomoji.contains('\n')
+                                val preview = if (isMultiline) {
+                                    kaomoji.lineSequence().firstOrNull { it.isNotBlank() }
+                                        ?.trim()
+                                        ?.take(12)
+                                        ?.let { "$it…" } ?: "多行颜文字"
+                                } else {
+                                    kaomoji
+                                }
                                 TextButton(
                                     onClick = {
                                         val text = textFieldValue.text
@@ -1411,9 +1422,11 @@ fun ReplyInputArea(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text(
-                                        text = kaomoji,
+                                        text = preview,
                                         style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }

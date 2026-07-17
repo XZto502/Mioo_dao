@@ -12,6 +12,7 @@ import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
+import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReplyDisplayItem
 import com.mioo.dao.ui.components.decodeHtmlEntities
@@ -901,7 +902,7 @@ class ThreadViewModel @Inject constructor(
         }
         return PostData(
             id = idStr,
-            title = title ?: "",
+            title = title.effectiveTitle(),
             userName = name ?: "无名氏",
             userId = userHash,
             createdAt = now,

@@ -36,7 +36,9 @@ class SettingsRepository @Inject constructor(
         settingsDataStore.pinnedForumsFlow,
         settingsDataStore.blockedKeywordsFlow,
         settingsDataStore.smartPreloadModeFlow,
-        settingsDataStore.preloadCountFlow
+        settingsDataStore.preloadCountFlow,
+        settingsDataStore.subscriptionNotificationsFlow,
+        settingsDataStore.notificationIntervalMinutesFlow
     ) { args ->
         val cookie = args[0] as? String
         val themeModeStr = args[1] as String
@@ -60,6 +62,8 @@ class SettingsRepository @Inject constructor(
         val blockedKeywords = args[12] as List<String>
         val smartPreloadMode = args[13] as String
         val preloadCount = args[14] as Int
+        val subscriptionNotifications = args[15] as Boolean
+        val notificationIntervalMinutes = args[16] as Int
 
         val themeMode = try {
             ThemeMode.valueOf(themeModeStr)
@@ -81,7 +85,9 @@ class SettingsRepository @Inject constructor(
             pinnedForums = pinnedForums,
             blockedKeywords = blockedKeywords,
             smartPreloadMode = smartPreloadMode,
-            preloadCount = preloadCount
+            preloadCount = preloadCount,
+            subscriptionNotificationsEnabled = subscriptionNotifications,
+            notificationIntervalMinutes = notificationIntervalMinutes
         )
     }.stateIn(
         scope = repositoryScope,
@@ -92,6 +98,18 @@ class SettingsRepository @Inject constructor(
     fun updateSmartPreloadMode(mode: String) {
         repositoryScope.launch {
             settingsDataStore.saveSmartPreloadMode(mode)
+        }
+    }
+
+    fun updateSubscriptionNotifications(enabled: Boolean) {
+        repositoryScope.launch {
+            settingsDataStore.saveSubscriptionNotifications(enabled)
+        }
+    }
+
+    fun updateNotificationIntervalMinutes(minutes: Int) {
+        repositoryScope.launch {
+            settingsDataStore.saveNotificationIntervalMinutes(minutes)
         }
     }
 

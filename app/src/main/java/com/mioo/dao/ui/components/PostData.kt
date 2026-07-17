@@ -3,6 +3,7 @@ package com.mioo.dao.ui.components
 import androidx.compose.runtime.Immutable
 import com.mioo.dao.data.model.Reply
 import com.mioo.dao.data.model.Thread
+import com.mioo.dao.data.model.effectiveTitle
 
 /**
  * Common data model representing a post (either a thread header or a reply).
@@ -42,7 +43,7 @@ data class ReplyDisplayItem(
 fun Thread.toPostData(cdnUrl: String = "https://image.nmb.best"): PostData {
     return PostData(
         id = this.idStr,
-        title = this.title ?: "",
+        title = this.title.effectiveTitle(),
         userName = this.name ?: "Anonymous",
         userId = this.userHash,
         createdAt = this.now,
@@ -61,7 +62,7 @@ fun Thread.toPostData(cdnUrl: String = "https://image.nmb.best"): PostData {
 fun Reply.toPostData(isPo: Boolean, cdnUrl: String = "https://image.nmb.best"): PostData {
     return PostData(
         id = this.idStr,
-        title = this.title ?: "",
+        title = this.title.effectiveTitle(),
         userName = this.name ?: "Anonymous",
         userId = this.userHash,
         createdAt = this.now,

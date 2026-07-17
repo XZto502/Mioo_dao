@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
         }
 
         super.onCreate(savedInstanceState)
-        pendingThreadIdState.value = ThreadLinkParser.parseThreadId(intent)
+        pendingThreadIdState.value = parsePendingThreadId(intent)
 
         // Re-check clipboard each time we are resumed and interactive.
         // Android only reliably allows clipboard reads while focused; a short delay helps.
@@ -222,7 +222,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingThreadIdState.value = ThreadLinkParser.parseThreadId(intent)
+        pendingThreadIdState.value = parsePendingThreadId(intent)
+    }
+
+    private fun parsePendingThreadId(intent: Intent?): String? {
+        if (intent == null) return null
+        // Notification tap (X-island subscription / favorite updates)
+        intent.getStringExtra(com.mioo.dao.notification.SubscriptionNotifier.EXTRA_THREAD_ID)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+        return ThreadLinkParser.parseThreadId(intent)
     }
 
     override fun onDestroy() {

@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.3",
-  "name": "v1.0.3",
-  "body": "v1.0.3 更新日志\n\n1. 剪贴板串号智能识别：回到 App 时自动检测剪贴板中的 8 位串号，弹出确认后一键打开对应串，无需手动输入。\n2. 引用体验优化：操作菜单「引用该帖子」改为「引用该串」；删除回复框中的 >>No.xxx 串号后，上方「正在引用」提示会同步消失。\n3. 剪贴板检测稳定性修复：修正分享 Intent 粘住导致永不检测、焦点未就绪时读剪贴板为空等问题，识别更可靠。",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.3",
+  "tag_name": "v1.0.4",
+  "name": "v1.0.4",
+  "body": "v1.0.4 更新日志\n\n1. 发新串全屏编辑：改为蓝岛风格全屏界面，遵循 Material Design 3，大正文区 + 底栏饼干/颜文字/附图，顶栏一键发送。\n2. 无标题隐藏：API 返回「无标题」或空白时，列表、详情、历史、搜索与通知不再展示无意义标题。\n3. 岛内颜文字扩充：补齐经典岛内颜文字与常用扩展/多行颜文字，点选插入完整内容。\n4. 订阅新回复通知：本地轮询云端订阅夹与本地收藏，有新回复时系统通知提醒（可设置间隔）。",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.4",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.3/app-debug.apk",
-      "size": 22671642
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.4/app-debug.apk",
+      "size": 22983777
     }
   ]
 }

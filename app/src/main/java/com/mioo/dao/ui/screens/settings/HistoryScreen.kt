@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.theme.DaoTheme
 import androidx.compose.ui.graphics.Color
 
@@ -135,7 +136,7 @@ fun HistoryScreen(
                         stripSimpleHtml(item.content)
                     }
                     val titleText = remember(item.title, item.id) {
-                        if (!item.title.isNullOrBlank()) item.title else "No.${item.id}"
+                        item.title.effectiveTitle() ?: "No.${item.id}"
                     }
                     Column(
                         modifier = Modifier
