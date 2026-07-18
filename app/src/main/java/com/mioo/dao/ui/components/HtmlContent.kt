@@ -39,18 +39,63 @@ private val HTML_PATTERN = Pattern.compile(
 
 fun String.decodeHtmlEntities(): String {
     // Fast path: skip scan when no entities present
-    if (indexOf('&') < 0) return this
-    return this
-        .replace("&gt;", ">")
-        .replace("&lt;", "<")
-        .replace("&amp;", "&")
-        .replace("&quot;", "\"")
-        .replace("&#039;", "'")
-        .replace("&nbsp;", " ")
-        .replace("&#62;", ">")
-        .replace("&#60;", "<")
-        .replace("&middot;", "·")
-        .replace("&bull;", "•")
+    val amp = indexOf('&')
+    if (amp < 0) return this
+
+    // Single-pass decode — avoid chained replace() intermediate String allocations
+    val out = StringBuilder(length)
+    var i = 0
+    val n = length
+    while (i < n) {
+        val c = this[i]
+        if (c != '&') {
+            out.append(c)
+            i++
+            continue
+        }
+        // Named / numeric entities used by X-Island HTML
+        val decoded = when {
+            startsWith("&gt;", i) || startsWith("&#62;", i) -> {
+                i += if (this[i + 1] == '#') 5 else 4
+                '>'
+            }
+            startsWith("&lt;", i) || startsWith("&#60;", i) -> {
+                i += if (this[i + 1] == '#') 5 else 4
+                '<'
+            }
+            startsWith("&amp;", i) -> {
+                i += 5
+                '&'
+            }
+            startsWith("&quot;", i) -> {
+                i += 6
+                '"'
+            }
+            startsWith("&#039;", i) -> {
+                i += 6
+                '\''
+            }
+            startsWith("&nbsp;", i) -> {
+                i += 6
+                ' '
+            }
+            startsWith("&middot;", i) -> {
+                i += 8
+                '·'
+            }
+            startsWith("&bull;", i) -> {
+                i += 6
+                '•'
+            }
+            else -> {
+                out.append(c)
+                i++
+                continue
+            }
+        }
+        out.append(decoded)
+    }
+    return out.toString()
 }
 
 /**
@@ -58,8 +103,16 @@ fun String.decodeHtmlEntities(): String {
  * This prevents any raw <xxx> tags from leaking into the displayed text.
  */
 fun String.stripRemainingHtmlTags(): String {
-    if (indexOf('<') < 0) return this
-    return this.replace(HTML_TAG_REGEX, "")
+    val lt = indexOf('<')
+    if (lt < 0) return this
+    // Fast path for short residual snippets without nested tags
+    val gt = indexOf('>', lt)
+    if (gt < 0) return this
+    if (indexOf('<', gt + 1) < 0) {
+        // Single tag only — avoid full regex
+        return removeRange(lt, gt + 1)
+    }
+    return replace(HTML_TAG_REGEX, "")
 }
 
 /**

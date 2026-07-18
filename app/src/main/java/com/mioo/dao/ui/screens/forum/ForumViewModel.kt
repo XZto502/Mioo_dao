@@ -15,6 +15,7 @@ import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.toFilteredThreadListItems
+import com.mioo.dao.utils.KeywordMatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -57,7 +58,7 @@ class ForumViewModel @Inject constructor(
     private var currentPage = 1
     private var blockedThreads: Set<String> = emptySet()
     private var blockedUsers: Set<String> = emptySet()
-    private var blockedKeywords: List<String> = emptyList()
+    private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
 
     init {
         viewModelScope.launch {
@@ -67,7 +68,7 @@ class ForumViewModel @Inject constructor(
                 .collect { (threads, users, keywords) ->
                     blockedThreads = threads.toHashSet()
                     blockedUsers = users.toHashSet()
-                    blockedKeywords = keywords
+                    keywordMatcher = KeywordMatcher.build(keywords)
                     rebuildDisplayItems()
                 }
         }
@@ -106,8 +107,9 @@ class ForumViewModel @Inject constructor(
                 _uiState.update { it.copy(displayItems = emptyList()) }
                 return@launch
             }
+            val matcher = keywordMatcher
             val items = withContext(Dispatchers.Default) {
-                threads.toFilteredThreadListItems(blockedThreads, blockedUsers, blockedKeywords)
+                threads.toFilteredThreadListItems(blockedThreads, blockedUsers, matcher)
             }
             _uiState.update { it.copy(displayItems = items) }
         }
@@ -156,7 +158,7 @@ class ForumViewModel @Inject constructor(
                         val combinedList = existing.filter { it.id !in newIds } + newThreads
                         val displayItems = withContext(Dispatchers.Default) {
                             combinedList.toFilteredThreadListItems(
-                                blockedThreads, blockedUsers, blockedKeywords
+                                blockedThreads, blockedUsers, keywordMatcher
                             )
                         }
                         _uiState.update { state ->
@@ -210,7 +212,7 @@ class ForumViewModel @Inject constructor(
                         val freshThreads = response.data
                         val displayItems = withContext(Dispatchers.Default) {
                             freshThreads.toFilteredThreadListItems(
-                                blockedThreads, blockedUsers, blockedKeywords
+                                blockedThreads, blockedUsers, keywordMatcher
                             )
                         }
                         _uiState.update { state ->

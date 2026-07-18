@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * 发串 / 回复底栏：骰娘 · 颜文字 · 图片 三连按钮（同一胶囊内）。
+ * 发串 / 回复底栏：骰子 · 颜文字 · 图片 三连按钮（同一胶囊内）。
  */
 @Composable
 fun ComposerToolButtons(
@@ -52,7 +52,7 @@ fun ComposerToolButtons(
             ) {
                 Icon(
                     imageVector = Icons.Default.Casino,
-                    contentDescription = "骰娘",
+                    contentDescription = "骰子",
                     tint = if (diceSelected) active else idle,
                     modifier = Modifier.size(22.dp)
                 )

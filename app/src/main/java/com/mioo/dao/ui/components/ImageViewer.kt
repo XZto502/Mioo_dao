@@ -26,9 +26,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +50,7 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.size.Precision
 import coil.size.Size
+import kotlin.math.abs
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -68,11 +71,12 @@ fun ImageViewer(
     }
 
     val pagerState = rememberPagerState(initialPage = initialPage) { imageUrls.size }
-    var currentScale by remember { mutableStateOf(1f) }
+    // Boolean only: continuous scale floats must not recompose the pager shell every frame
+    var isZoomed by remember { mutableStateOf(false) }
 
-    // Reset zoom scale when page changes
+    // Reset zoom lock when page changes
     LaunchedEffect(pagerState.currentPage) {
-        currentScale = 1f
+        isZoomed = false
     }
 
     Dialog(
@@ -90,17 +94,25 @@ fun ImageViewer(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = currentScale == 1f
+                userScrollEnabled = !isZoomed,
+                // Do not pre-compose far pages — only the settled page (+ swipe peer via layout)
+                beyondBoundsPageCount = 0
             ) { pageIndex ->
-                val imageUrl = imageUrls.getOrNull(pageIndex) ?: return@HorizontalPager
-                val isCurrentPage = pagerState.currentPage == pageIndex
-                
+                val pageUrl = imageUrls.getOrNull(pageIndex) ?: return@HorizontalPager
+                val currentPage = pagerState.currentPage
+                val isCurrentPage = currentPage == pageIndex
+                // Decode only current page; allow ±1 while finger is dragging for swipe preview
+                val distance = abs(pageIndex - currentPage)
+                val allowDecode = distance == 0 ||
+                    (pagerState.isScrollInProgress && distance <= 1)
+
                 ZoomableImageContainer(
-                    imageUrl = imageUrl,
+                    imageUrl = pageUrl,
                     isActive = isCurrentPage,
-                    onScaleChanged = { scale ->
+                    allowDecode = allowDecode,
+                    onZoomedChanged = { zoomed ->
                         if (isCurrentPage) {
-                            currentScale = scale
+                            isZoomed = zoomed
                         }
                     },
                     onTapDismiss = onDismiss
@@ -173,53 +185,95 @@ fun ImageViewer(
 private fun ZoomableImageContainer(
     imageUrl: String,
     isActive: Boolean,
-    onScaleChanged: (Float) -> Unit,
+    allowDecode: Boolean,
+    onZoomedChanged: (Boolean) -> Unit,
     onTapDismiss: () -> Unit
 ) {
-    var scale by remember(isActive) { mutableStateOf(1f) }
-    var offset by remember(isActive) { mutableStateOf(Offset.Zero) }
-    var isLoading by remember { mutableStateOf(true) }
+    // Float states read inside graphicsLayer { } only invalidate draw, not composition/layout
+    var scale by remember(imageUrl) { mutableFloatStateOf(1f) }
+    var offsetX by remember(imageUrl) { mutableFloatStateOf(0f) }
+    var offsetY by remember(imageUrl) { mutableFloatStateOf(0f) }
+    var isLoading by remember(imageUrl) { mutableStateOf(true) }
     val context = LocalContext.current
+    val onZoomedChangedState = rememberUpdatedState(onZoomedChanged)
+    val onTapDismissState = rememberUpdatedState(onTapDismiss)
 
-    // Notify parent scale changes
-    LaunchedEffect(scale) {
-        onScaleChanged(scale)
+    // Reset transform when this page becomes inactive (pager moved away)
+    LaunchedEffect(isActive, imageUrl) {
+        if (!isActive) {
+            scale = 1f
+            offsetX = 0f
+            offsetY = 0f
+            onZoomedChangedState.value(false)
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(isActive) {
+            .pointerInput(isActive, imageUrl) {
+                fun applyScale(newScale: Float, pan: Offset = Offset.Zero) {
+                    val clamped = newScale.coerceIn(1f, 5f)
+                    val wasZoomed = scale > 1.01f
+                    scale = clamped
+                    if (clamped > 1.01f) {
+                        offsetX += pan.x
+                        offsetY += pan.y
+                    } else {
+                        offsetX = 0f
+                        offsetY = 0f
+                    }
+                    val nowZoomed = clamped > 1.01f
+                    if (nowZoomed != wasZoomed) {
+                        onZoomedChangedState.value(nowZoomed)
+                    }
+                }
                 detectTapGestures(
-                    onDoubleTap = { tapOffset ->
-                        if (scale > 1f) {
-                            scale = 1f
-                            offset = Offset.Zero
+                    onDoubleTap = {
+                        if (scale > 1.01f) {
+                            applyScale(1f)
                         } else {
-                            scale = 3f
-                            offset = Offset.Zero
+                            applyScale(3f)
                         }
                     },
                     onTap = {
-                        onTapDismiss()
+                        onTapDismissState.value()
                     }
                 )
             }
-            .pointerInput(isActive) {
+            .pointerInput(isActive, imageUrl) {
                 detectZoomableTransformGestures(
                     onGesture = { pan, zoom ->
-                        scale = (scale * zoom).coerceIn(1f, 5f)
-                        if (scale > 1f) {
-                            offset += pan
+                        val clamped = (scale * zoom).coerceIn(1f, 5f)
+                        val wasZoomed = scale > 1.01f
+                        scale = clamped
+                        if (clamped > 1.01f) {
+                            offsetX += pan.x
+                            offsetY += pan.y
                         } else {
-                            offset = Offset.Zero
+                            offsetX = 0f
+                            offsetY = 0f
+                        }
+                        val nowZoomed = clamped > 1.01f
+                        if (nowZoomed != wasZoomed) {
+                            onZoomedChangedState.value(nowZoomed)
                         }
                     },
-                    canConsume = { scale > 1f }
+                    canConsume = { scale > 1.01f }
                 )
             },
         contentAlignment = Alignment.Center
     ) {
+        if (!allowDecode) {
+            // Off-screen: no Coil request / no bitmap decode
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
+            return@Box
+        }
+
         // Cap decode size to ~2x screen to keep zoom sharp without full-res OOM risk
         val configuration = LocalConfiguration.current
         val density = LocalDensity.current
@@ -249,12 +303,13 @@ private fun ZoomableImageContainer(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y
-                )
+                .graphicsLayer {
+                    // Snapshot reads here skip composition — only re-draw the layer
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offsetX
+                    translationY = offsetY
+                }
         )
 
         if (isLoading) {

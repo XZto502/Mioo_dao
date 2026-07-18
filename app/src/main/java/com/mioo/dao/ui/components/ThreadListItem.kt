@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import com.mioo.dao.data.local.BookmarkEntity
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.effectiveTitle
+import com.mioo.dao.utils.KeywordMatcher
 
 /**
  * Pre-built board/timeline list row. Built off the main thread.
@@ -37,17 +38,54 @@ fun List<Thread>.toFilteredThreadListItems(
     cdnUrl: String = "https://image.nmb.best"
 ): List<ThreadListItem> {
     if (isEmpty()) return emptyList()
+    val matcher = KeywordMatcher.build(blockedKeywords)
     val result = ArrayList<ThreadListItem>(size)
     for (thread in this) {
         if (thread.idStr in blockedThreads) continue
         if (thread.userHash in blockedUsers) continue
-        if (blockedKeywords.isNotEmpty() &&
-            blockedKeywords.any {
-                thread.title?.contains(it, ignoreCase = true) == true ||
-                    thread.content.contains(it, ignoreCase = true)
-            }
-        ) {
-            continue
+        if (!matcher.isEmpty) {
+            val haystack = buildString(thread.content.length + (thread.title?.length ?: 0) + 1) {
+                thread.title?.let { append(it); append('\n') }
+                append(thread.content)
+            }.lowercase()
+            if (matcher.containsMatch(haystack, textIsLowercase = true)) continue
+        }
+        result.add(
+            ThreadListItem(
+                id = thread.id,
+                idStr = thread.idStr,
+                userHash = thread.userHash,
+                replyCount = thread.replyCount ?: 0,
+                postData = thread.toPostData(cdnUrl),
+                rawContent = thread.content,
+                hasImage = !thread.img.isNullOrBlank()
+            )
+        )
+    }
+    return result
+}
+
+/**
+ * Prefer when the caller already holds a [KeywordMatcher] (e.g. ViewModel rebuild path)
+ * so the automaton is not rebuilt per filter pass.
+ */
+fun List<Thread>.toFilteredThreadListItems(
+    blockedThreads: Set<String>,
+    blockedUsers: Set<String>,
+    keywordMatcher: KeywordMatcher,
+    cdnUrl: String = "https://image.nmb.best"
+): List<ThreadListItem> {
+    if (isEmpty()) return emptyList()
+    val result = ArrayList<ThreadListItem>(size)
+    for (thread in this) {
+        if (thread.idStr in blockedThreads) continue
+        if (thread.userHash in blockedUsers) continue
+        if (!keywordMatcher.isEmpty) {
+            val haystack = buildString(thread.content.length + (thread.title?.length ?: 0) + 1) {
+                thread.title?.let { append(it); append('\n') }
+                append(thread.content)
+            }.lowercase()
+            if (keywordMatcher.containsMatch(haystack, textIsLowercase = true)) continue
         }
         result.add(
             ThreadListItem(

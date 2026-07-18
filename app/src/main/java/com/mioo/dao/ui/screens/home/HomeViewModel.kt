@@ -11,6 +11,7 @@ import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.toFilteredThreadListItems
+import com.mioo.dao.utils.KeywordMatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -46,7 +47,7 @@ class HomeViewModel @Inject constructor(
 
     private var blockedThreads: Set<String> = emptySet()
     private var blockedUsers: Set<String> = emptySet()
-    private var blockedKeywords: List<String> = emptyList()
+    private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
 
     init {
         viewModelScope.launch {
@@ -56,7 +57,7 @@ class HomeViewModel @Inject constructor(
                 .collect { (threads, users, keywords) ->
                     blockedThreads = threads.toHashSet()
                     blockedUsers = users.toHashSet()
-                    blockedKeywords = keywords
+                    keywordMatcher = KeywordMatcher.build(keywords)
                     rebuildDisplayItems()
                 }
         }
@@ -96,7 +97,7 @@ class HomeViewModel @Inject constructor(
                         val threads = timelineResponse.data
                         val items = withContext(Dispatchers.Default) {
                             threads.toFilteredThreadListItems(
-                                blockedThreads, blockedUsers, blockedKeywords
+                                blockedThreads, blockedUsers, keywordMatcher
                             )
                         }
                         _uiState.update {
@@ -138,7 +139,7 @@ class HomeViewModel @Inject constructor(
             val threads = _uiState.value.timelineThreads
             if (threads.isEmpty()) return@launch
             val items = withContext(Dispatchers.Default) {
-                threads.toFilteredThreadListItems(blockedThreads, blockedUsers, blockedKeywords)
+                threads.toFilteredThreadListItems(blockedThreads, blockedUsers, keywordMatcher)
             }
             _uiState.update { it.copy(displayItems = items) }
         }

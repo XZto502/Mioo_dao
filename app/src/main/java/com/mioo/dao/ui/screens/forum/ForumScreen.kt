@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -122,8 +123,7 @@ import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.DiceQuickPanel
 import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
-import com.mioo.dao.ui.components.KAOMOJI_LIST
-import com.mioo.dao.ui.components.KAOMOJI_PER_ROW
+import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
@@ -792,10 +792,13 @@ fun CreateThreadDialog(
     var kaomojiExpanded by remember { mutableStateOf(false) }
     var diceExpanded by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    /** 打开快捷面板后短时间内忽略 IME 可见（键盘下落动画） */
+    var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
 
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val colorScheme = MaterialTheme.colorScheme
+    val density = LocalDensity.current
 
     LaunchedEffect(initialContent) {
         if (contentValue.text != initialContent) {
@@ -825,7 +828,6 @@ fun CreateThreadDialog(
         val selection = contentValue.selection
         val start = selection.start.coerceIn(0, text.length)
         val end = selection.end.coerceIn(0, text.length)
-        // 前后补空格，避免粘成其它词
         val prefix = if (start > 0 && !text[start - 1].isWhitespace()) " " else ""
         val insert = prefix + snippet
         val newText = text.substring(0, start) + insert + text.substring(end)
@@ -835,6 +837,11 @@ fun CreateThreadDialog(
             selection = TextRange(newCursor)
         )
         onContentChange(newText)
+    }
+
+    fun closeToolPanels() {
+        if (kaomojiExpanded) kaomojiExpanded = false
+        if (diceExpanded) diceExpanded = false
     }
 
     BackHandler(onBack = onDismiss)
@@ -856,31 +863,32 @@ fun CreateThreadDialog(
         val dialogView = LocalView.current
         val context = LocalContext.current
 
-        fun hideSystemIme() {
-            focusManager.clearFocus(force = true)
-            keyboardController?.hide()
-            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            val window = (dialogView.parent as? DialogWindowProvider)?.window
-            val tokens = buildList {
-                dialogView.windowToken?.let { add(it) }
-                window?.decorView?.windowToken?.let { add(it) }
-                window?.currentFocus?.windowToken?.let { add(it) }
-                dialogView.rootView?.windowToken?.let { add(it) }
-            }
-            tokens.forEach { token ->
-                imm?.hideSoftInputFromWindow(token, InputMethodManager.HIDE_NOT_ALWAYS)
+        val hideSystemIme = remember(dialogView, context, keyboardController, focusManager) {
+            {
+                focusManager.clearFocus(force = true)
+                keyboardController?.hide()
+                val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                val window = (dialogView.parent as? DialogWindowProvider)?.window
+                val token = window?.currentFocus?.windowToken
+                    ?: dialogView.windowToken
+                    ?: window?.decorView?.windowToken
+                if (token != null) {
+                    imm?.hideSoftInputFromWindow(token, InputMethodManager.HIDE_NOT_ALWAYS)
+                }
             }
         }
 
         fun openKaomojiPanel() {
             diceExpanded = false
             kaomojiExpanded = true
+            ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
             hideSystemIme()
         }
 
         fun openDicePanel() {
             kaomojiExpanded = false
             diceExpanded = true
+            ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
             hideSystemIme()
         }
 
@@ -900,14 +908,24 @@ fun CreateThreadDialog(
             }
         }
 
-        // 颜文字 / 骰娘面板展开时压键盘
+        // 快捷面板展开时压一次键盘（避免多帧重复 hide 造成卡顿）
         LaunchedEffect(kaomojiExpanded, diceExpanded) {
             if (kaomojiExpanded || diceExpanded) {
                 hideSystemIme()
-                delay(32)
+                delay(48)
                 hideSystemIme()
-                delay(120)
-                hideSystemIme()
+            }
+        }
+
+        // 系统键盘再次抬起 → 关闭颜文字 / 骰娘面板
+        val imeBottomPx = WindowInsets.ime.getBottom(density)
+        val imeThresholdPx = with(density) { 48.dp.toPx() }
+        val imeVisible = imeBottomPx > imeThresholdPx
+        LaunchedEffect(imeVisible) {
+            if (!imeVisible) return@LaunchedEffect
+            if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
+            if (kaomojiExpanded || diceExpanded) {
+                closeToolPanels()
             }
         }
 
@@ -1105,7 +1123,8 @@ fun CreateThreadDialog(
                                 )
                             }
 
-                            AnimatedVisibility(visible = diceExpanded) {
+                            // 仅展开时组合面板，Lazy 网格降低滚动开销
+                            if (diceExpanded) {
                                 DiceQuickPanel(
                                     onInsert = { insertAtCursor(it) },
                                     modifier = Modifier
@@ -1113,59 +1132,12 @@ fun CreateThreadDialog(
                                         .height(220.dp)
                                 )
                             }
-
-                            // 颜文字：每行 4 个；展开时已收起键盘
-                            AnimatedVisibility(visible = kaomojiExpanded) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(220.dp)
-                                        .padding(horizontal = 2.dp, vertical = 4.dp)
-                                        .verticalScroll(rememberScrollState())
-                                ) {
-                                    val rows = KAOMOJI_LIST.chunked(KAOMOJI_PER_ROW)
-                                    rows.forEach { row ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceEvenly
-                                        ) {
-                                            row.forEach { kaomoji ->
-                                                val isMultiline = kaomoji.contains('\n')
-                                                val preview = if (isMultiline) {
-                                                    kaomoji.lineSequence()
-                                                        .firstOrNull { it.isNotBlank() }
-                                                        ?.trim()
-                                                        ?.take(10)
-                                                        ?.let { "$it…" }
-                                                        ?: "多行"
-                                                } else {
-                                                    kaomoji
-                                                }
-                                                TextButton(
-                                                    onClick = { insertAtCursor(kaomoji) },
-                                                    modifier = Modifier.weight(1f),
-                                                    contentPadding = PaddingValues(
-                                                        horizontal = 2.dp,
-                                                        vertical = 4.dp
-                                                    )
-                                                ) {
-                                                    Text(
-                                                        text = preview,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = colorScheme.primary,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            }
-                                            if (row.size < KAOMOJI_PER_ROW) {
-                                                repeat(KAOMOJI_PER_ROW - row.size) {
-                                                    Spacer(modifier = Modifier.weight(1f))
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                            if (kaomojiExpanded) {
+                                KaomojiQuickPanel(
+                                    onInsert = { insertAtCursor(it) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    heightDp = 220
+                                )
                             }
                         }
                     }
@@ -1183,10 +1155,7 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused) {
-                                    kaomojiExpanded = false
-                                    diceExpanded = false
-                                }
+                                if (state.isFocused) closeToolPanels()
                             },
                         singleLine = true,
                         placeholder = {
@@ -1213,10 +1182,7 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused) {
-                                    kaomojiExpanded = false
-                                    diceExpanded = false
-                                }
+                                if (state.isFocused) closeToolPanels()
                             },
                         singleLine = true,
                         placeholder = {
@@ -1253,11 +1219,7 @@ fun CreateThreadDialog(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .onFocusChanged { state ->
-                                    if (state.isFocused) {
-                                        // 点正文：收起快捷面板，系统键盘升起
-                                        kaomojiExpanded = false
-                                        diceExpanded = false
-                                    }
+                                    if (state.isFocused) closeToolPanels()
                                 },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = colorScheme.onSurface

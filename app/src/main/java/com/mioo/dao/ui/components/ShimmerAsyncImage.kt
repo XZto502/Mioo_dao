@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -125,14 +126,23 @@ private fun ShimmerPlaceholder(modifier: Modifier = Modifier) {
         ),
         label = "shimmer_translate"
     )
-    val brush = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFFE4E4E7),
-            Color(0xFFF4F4F5),
-            Color(0xFFE4E4E7)
-        ),
-        start = Offset.Zero,
-        end = Offset(x = translateAnim, y = translateAnim)
+    // drawWithCache rebuilds the gradient brush only when size/animation value requires it
+    Box(
+        modifier = modifier.drawWithCache {
+            val brush = Brush.linearGradient(
+                colors = shimmerColors,
+                start = Offset.Zero,
+                end = Offset(x = translateAnim, y = translateAnim)
+            )
+            onDrawBehind {
+                drawRect(brush)
+            }
+        }
     )
-    Box(modifier = modifier.background(brush))
 }
+
+private val shimmerColors = listOf(
+    Color(0xFFE4E4E7),
+    Color(0xFFF4F4F5),
+    Color(0xFFE4E4E7)
+)

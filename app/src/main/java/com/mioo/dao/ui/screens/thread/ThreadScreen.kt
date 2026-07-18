@@ -60,8 +60,9 @@ import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.DiceQuickPanel
-import com.mioo.dao.ui.components.KAOMOJI_LIST
-import com.mioo.dao.ui.components.KAOMOJI_PER_ROW
+import com.mioo.dao.ui.components.KaomojiQuickPanel
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -119,6 +120,7 @@ import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
+import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
@@ -138,22 +140,24 @@ fun ThreadScreen(
     onNavigateToThread: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    // List-only slice — bookmark / download / ref-popup use separate collectors below
+    val listUi by viewModel.listUiState.collectAsState()
     // Slice only cookies + blocked — ignore theme/font/preload churn
     val threadSettings by settingsViewModel.threadScreenSettings.collectAsState()
     // Recreate list state when thread content first appears so continue-reading can
     // open at the saved index (no paint-at-top then scrollToItem hitch).
-    val hasThreadContent = uiState.thread != null
+    val hasThreadContent = listUi.thread != null
     val listState = remember(viewModel.threadId, hasThreadContent) {
         LazyListState(
-            firstVisibleItemIndex = (uiState.pendingScrollIndex ?: 0).coerceAtLeast(0),
+            firstVisibleItemIndex = (listUi.pendingScrollIndex ?: 0).coerceAtLeast(0),
             firstVisibleItemScrollOffset = 0
         )
     }
     val quoteCache = viewModel.quoteCache
     // Must re-read startPage when it changes (e.g. prepend earlier pages after resume).
-    val listStartPage = uiState.startPage
+    val listStartPage = listUi.startPage
     val totalPages = viewModel.totalPages
+    // Kept for progress save only — do NOT read .value in this scope (would recompose whole screen on scroll).
     val currentScrollPage = remember(listStartPage, totalPages) {
         derivedStateOf {
             val firstVisibleIndex = listState.firstVisibleItemIndex
@@ -199,10 +203,10 @@ fun ThreadScreen(
     }
 
     // Consume seed after open; only scrollToItem for mid-session jumps (list state already alive).
-    LaunchedEffect(uiState.pendingScrollIndex, uiState.displayItems.size, uiState.isLoading, listState) {
-        val index = uiState.pendingScrollIndex ?: return@LaunchedEffect
-        if (uiState.isLoading) return@LaunchedEffect
-        if (uiState.thread == null) return@LaunchedEffect
+    LaunchedEffect(listUi.pendingScrollIndex, listUi.displayItems.size, listUi.isLoading, listState) {
+        val index = listUi.pendingScrollIndex ?: return@LaunchedEffect
+        if (listUi.isLoading) return@LaunchedEffect
+        if (listUi.thread == null) return@LaunchedEffect
 
         // If LazyListState was created with this index, we are already there — no jump.
         if (listState.firstVisibleItemIndex != index) {
@@ -223,10 +227,10 @@ fun ThreadScreen(
 
     // HTML prewarm: do NOT key on firstVisibleItemIndex (restarts every scroll frame).
     // Warm head once when content changes; settle-scroll for a light near-viewport pass.
-    LaunchedEffect(uiState.displayItems, uiState.mainPostData?.content, quoteLinkColor) {
-        if (uiState.displayItems.isEmpty()) return@LaunchedEffect
-        val bodies = uiState.displayItems.map { it.postData.content }
-        val head = listOfNotNull(uiState.mainPostData?.content) + bodies.take(8)
+    LaunchedEffect(listUi.displayItems, listUi.mainPostData?.content, quoteLinkColor) {
+        if (listUi.displayItems.isEmpty()) return@LaunchedEffect
+        val bodies = listUi.displayItems.map { it.postData.content }
+        val head = listOfNotNull(listUi.mainPostData?.content) + bodies.take(8)
         withContext(Dispatchers.Default) {
             HtmlParseCache.prewarm(head, quoteLinkColor)
         }
@@ -238,15 +242,15 @@ fun ThreadScreen(
     }
 
     // Settled-scroll near-viewport warm only (no mid-fling restart)
-    LaunchedEffect(listState, uiState.displayItems, quoteLinkColor) {
-        if (uiState.displayItems.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(listState, listUi.displayItems, quoteLinkColor) {
+        if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         snapshotFlow {
             listState.isScrollInProgress to listState.firstVisibleItemIndex
         }
             .distinctUntilChanged()
             .collect { (scrolling, focus) ->
                 if (scrolling) return@collect
-                val bodies = uiState.displayItems.map { it.postData.content }
+                val bodies = listUi.displayItems.map { it.postData.content }
                 val near = bodies.drop((focus - 1).coerceAtLeast(0)).take(10)
                 if (near.isEmpty()) return@collect
                 withContext(Dispatchers.Default) {
@@ -268,7 +272,7 @@ fun ThreadScreen(
                 title = {
                     if (isSearchMode) {
                         androidx.compose.material3.TextField(
-                            value = uiState.searchQuery,
+                            value = listUi.searchQuery,
                             onValueChange = { query ->
                                 viewModel.updateSearchQuery(query)
                             },
@@ -286,7 +290,7 @@ fun ThreadScreen(
                         )
                     } else {
                         Text(
-                            text = uiState.thread?.title.effectiveTitle() ?: "详情",
+                            text = listUi.thread?.title.effectiveTitle() ?: "详情",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -308,7 +312,7 @@ fun ThreadScreen(
                 },
                 actions = {
                     if (isSearchMode) {
-                        if (uiState.searchQuery.isNotEmpty()) {
+                        if (listUi.searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.updateSearchQuery("") }) {
                                 Icon(Icons.Default.Close, contentDescription = "清除搜索")
                             }
@@ -320,7 +324,7 @@ fun ThreadScreen(
                         IconButton(onClick = {
                             val tid = viewModel.threadId
                             val link = XdWebSearch.threadUrl(tid)
-                            val title = uiState.thread?.title.effectiveTitle() ?: "No.$tid"
+                            val title = listUi.thread?.title.effectiveTitle() ?: "No.$tid"
                             val send = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_SUBJECT, title)
@@ -330,150 +334,24 @@ fun ThreadScreen(
                         }) {
                             Icon(Icons.Default.Share, contentDescription = "分享")
                         }
-                        if (viewModel.totalPages > 1) {
-                            OutlinedButton(
-                                onClick = { showPageJumpDialog = true },
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                modifier = Modifier.padding(end = 4.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ),
-                                border = BorderStroke(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                )
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.MenuBook,
-                                        contentDescription = "跳转页码",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = "${currentScrollPage.value}/${viewModel.totalPages}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
+                        if (totalPages > 1) {
+                            ThreadPageIndicatorButton(
+                                listState = listState,
+                                listStartPage = listStartPage,
+                                totalPages = totalPages,
+                                onClick = { showPageJumpDialog = true }
+                            )
                         }
-                        Box {
-                            IconButton(onClick = {
-                                if (uiState.isSubscribed || uiState.feedFolders.isEmpty()) {
-                                    viewModel.toggleBookmark(null) { msg ->
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    showBookmarkMenu = true
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = if (uiState.isSubscribed) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                    contentDescription = if (uiState.isSubscribed) "取消收藏" else "收藏",
-                                    tint = if (uiState.isSubscribed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-
-                            androidx.compose.material3.DropdownMenu(
-                                expanded = showBookmarkMenu,
-                                onDismissRequest = { showBookmarkMenu = false }
-                            ) {
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("本地收藏") },
-                                    onClick = {
-                                        showBookmarkMenu = false
-                                        viewModel.toggleBookmark(null) { msg ->
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-                                uiState.feedFolders.forEach { folder ->
-                                    androidx.compose.material3.DropdownMenuItem(
-                                        text = { Text(folder.name) },
-                                        onClick = {
-                                            showBookmarkMenu = false
-                                            viewModel.toggleBookmark(folder.uuid) { msg ->
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
-                        Box {
-                            IconButton(onClick = { showOverflowMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
-                            }
-
-                            androidx.compose.material3.DropdownMenu(
-                                expanded = showOverflowMenu,
-                                onDismissRequest = { showOverflowMenu = false }
-                            ) {
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("只看楼主") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        viewModel.togglePoOnly()
-                                    },
-                                    leadingIcon = {
-                                        if (uiState.showPoOnly) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
-                                )
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("只看图片") },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        viewModel.toggleShowImagesOnly()
-                                    },
-                                    leadingIcon = {
-                                        if (uiState.showImagesOnly) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                    }
-                                )
-                                androidx.compose.material3.HorizontalDivider()
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = {
-                                        if (uiState.isDownloading) {
-                                            Text("正在下载...")
-                                        } else {
-                                            Text("离线下载本串")
-                                        }
-                                    },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        if (!uiState.isDownloading) {
-                                            Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
-                                            viewModel.downloadThread { msg ->
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Download,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    enabled = !uiState.isDownloading
-                                )
-                            }
-                        }
+                        // Chrome (bookmark / folders / download) collected inside — not listUi
+                        ThreadChromeActions(
+                            viewModel = viewModel,
+                            showPoOnly = listUi.showPoOnly,
+                            showImagesOnly = listUi.showImagesOnly,
+                            showBookmarkMenu = showBookmarkMenu,
+                            onShowBookmarkMenuChange = { showBookmarkMenu = it },
+                            showOverflowMenu = showOverflowMenu,
+                            onShowOverflowMenuChange = { showOverflowMenu = it }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -498,29 +376,29 @@ fun ThreadScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (uiState.isLoading && uiState.thread == null) {
+            if (listUi.isLoading && listUi.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
                 }
-            } else if (uiState.errorMessage != null && uiState.thread == null) {
+            } else if (listUi.errorMessage != null && listUi.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = uiState.errorMessage ?: "发生错误",
+                        text = listUi.errorMessage ?: "发生错误",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
             } else {
-                val displayItems = uiState.displayItems
-                val poUserHash = uiState.thread?.userHash
-                val mainThread = uiState.thread
-                val mainPostData = uiState.mainPostData
+                val displayItems = listUi.displayItems
+                val poUserHash = listUi.thread?.userHash
+                val mainThread = listUi.thread
+                val mainPostData = listUi.mainPostData
 
                 // Align image URL list with LazyColumn indices (optional main item at 0)
                 val prefetchUrls = remember(mainPostData, displayItems) {
@@ -546,19 +424,19 @@ fun ThreadScreen(
                 }
 
                 LaunchedEffect(shouldLoadMore.value) {
-                    if (shouldLoadMore.value && !uiState.isLoading && !uiState.isLastPage) {
+                    if (shouldLoadMore.value && !listUi.isLoading && !listUi.isLastPage) {
                         viewModel.loadNextPage()
                     }
                 }
 
                 // After mid-thread resume/jump, scrolling up loads earlier pages
                 // so the page indicator can decrease with content.
-                LaunchedEffect(listState, uiState.startPage, uiState.isLoading) {
+                LaunchedEffect(listState, listUi.startPage, listUi.isLoading) {
                     snapshotFlow {
                         Triple(
                             listState.firstVisibleItemIndex,
                             listState.isScrollInProgress,
-                            uiState.startPage
+                            listUi.startPage
                         )
                     }
                         .distinctUntilChanged()
@@ -568,7 +446,7 @@ fun ThreadScreen(
                             }
                             // Only request previous page while user is actively scrolling near top
                             if (scrolling &&
-                                !uiState.isLoading &&
+                                !listUi.isLoading &&
                                 startPage > 1 &&
                                 index <= 2
                             ) {
@@ -578,8 +456,8 @@ fun ThreadScreen(
                 }
 
                 // Keep viewport stable when older replies are prepended above
-                LaunchedEffect(uiState.prependAnchorCount) {
-                    val n = uiState.prependAnchorCount ?: return@LaunchedEffect
+                LaunchedEffect(listUi.prependAnchorCount) {
+                    val n = listUi.prependAnchorCount ?: return@LaunchedEffect
                     if (n > 0) {
                         val idx = listState.firstVisibleItemIndex
                         val offset = listState.firstVisibleItemScrollOffset
@@ -691,7 +569,7 @@ fun ThreadScreen(
                         )
                     }
 
-                    if (uiState.isLoading && displayItems.isNotEmpty()) {
+                    if (listUi.isLoading && displayItems.isNotEmpty()) {
                         item(key = "loading_footer", contentType = "loading") {
                             Box(
                                 modifier = Modifier
@@ -713,10 +591,10 @@ fun ThreadScreen(
                 )
             }
 
-            val imageUrls = remember(uiState.displayItems, uiState.mainPostData) {
+            val imageUrls = remember(listUi.displayItems, listUi.mainPostData) {
                 val list = mutableListOf<String>()
-                uiState.mainPostData?.imageUrl?.let { list.add(it) }
-                uiState.displayItems.forEach { item ->
+                listUi.mainPostData?.imageUrl?.let { list.add(it) }
+                listUi.displayItems.forEach { item ->
                     item.postData.imageUrl?.let { list.add(it) }
                 }
                 list.distinct()
@@ -731,23 +609,12 @@ fun ThreadScreen(
                 )
             }
 
-            // Ref Popup Dialog Overlay
-            uiState.refPostId?.let { refId ->
-                RefPopup(
-                    postId = refId,
-                    postData = uiState.refPostData,
-                    isLoading = uiState.isRefLoading,
-                    errorMessage = uiState.refError,
-                    onDismiss = remember { { viewModel.dismissRefPopup() } },
-                    onQuoteClick = remember { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } },
-                    onImageClick = remember { { url: String -> activeImageUrl = url } },
-                    onViewThreadClick = remember { { threadId: String ->
-                        viewModel.dismissRefPopup()
-                        onNavigateToThread(threadId)
-                    } },
-                    currentThreadId = viewModel.threadId
-                )
-            }
+            // Own collector: open/close ref never invalidates the LazyColumn parent
+            ThreadRefPopupHost(
+                viewModel = viewModel,
+                onImageClick = { activeImageUrl = it },
+                onNavigateToThread = onNavigateToThread
+            )
         }
     }
 
@@ -762,6 +629,225 @@ fun ThreadScreen(
                 showPageJumpDialog = false
             }
         )
+    }
+}
+
+/**
+ * Collects [ThreadViewModel.chromeUiState] so bookmark / download toggles do not
+ * recompose the list body (which only watches [ThreadViewModel.listUiState]).
+ */
+@Composable
+private fun ThreadChromeActions(
+    viewModel: ThreadViewModel,
+    showPoOnly: Boolean,
+    showImagesOnly: Boolean,
+    showBookmarkMenu: Boolean,
+    onShowBookmarkMenuChange: (Boolean) -> Unit,
+    showOverflowMenu: Boolean,
+    onShowOverflowMenuChange: (Boolean) -> Unit
+) {
+    val chrome by viewModel.chromeUiState.collectAsState()
+    val context = LocalContext.current
+
+    Box {
+        IconButton(onClick = {
+            if (chrome.isSubscribed || chrome.feedFolders.isEmpty()) {
+                viewModel.toggleBookmark(null) { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                onShowBookmarkMenuChange(true)
+            }
+        }) {
+            Icon(
+                imageVector = if (chrome.isSubscribed) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                contentDescription = if (chrome.isSubscribed) "取消收藏" else "收藏",
+                tint = if (chrome.isSubscribed) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+        }
+
+        DropdownMenu(
+            expanded = showBookmarkMenu,
+            onDismissRequest = { onShowBookmarkMenuChange(false) }
+        ) {
+            DropdownMenuItem(
+                text = { Text("本地收藏") },
+                onClick = {
+                    onShowBookmarkMenuChange(false)
+                    viewModel.toggleBookmark(null) { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+            chrome.feedFolders.forEach { folder ->
+                DropdownMenuItem(
+                    text = { Text(folder.name) },
+                    onClick = {
+                        onShowBookmarkMenuChange(false)
+                        viewModel.toggleBookmark(folder.uuid) { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    Box {
+        IconButton(onClick = { onShowOverflowMenuChange(true) }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
+        }
+
+        DropdownMenu(
+            expanded = showOverflowMenu,
+            onDismissRequest = { onShowOverflowMenuChange(false) }
+        ) {
+            DropdownMenuItem(
+                text = { Text("只看楼主") },
+                onClick = {
+                    onShowOverflowMenuChange(false)
+                    viewModel.togglePoOnly()
+                },
+                leadingIcon = {
+                    if (showPoOnly) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("只看图片") },
+                onClick = {
+                    onShowOverflowMenuChange(false)
+                    viewModel.toggleShowImagesOnly()
+                },
+                leadingIcon = {
+                    if (showImagesOnly) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            )
+            androidx.compose.material3.HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    if (chrome.isDownloading) {
+                        Text("正在下载...")
+                    } else {
+                        Text("离线下载本串")
+                    }
+                },
+                onClick = {
+                    onShowOverflowMenuChange(false)
+                    if (!chrome.isDownloading) {
+                        Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
+                        viewModel.downloadThread { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null
+                    )
+                },
+                enabled = !chrome.isDownloading
+            )
+        }
+    }
+}
+
+/**
+ * Isolated ref-popup collector — filling / dismissing never touches list composition.
+ */
+@Composable
+private fun ThreadRefPopupHost(
+    viewModel: ThreadViewModel,
+    onImageClick: (String) -> Unit,
+    onNavigateToThread: (String) -> Unit
+) {
+    val ref by viewModel.refPopupUiState.collectAsState()
+    val refId = ref.refPostId ?: return
+    RefPopup(
+        postId = refId,
+        postData = ref.refPostData,
+        isLoading = ref.isRefLoading,
+        errorMessage = ref.refError,
+        onDismiss = remember(viewModel) { { viewModel.dismissRefPopup() } },
+        onQuoteClick = remember(viewModel) { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } },
+        onImageClick = onImageClick,
+        onViewThreadClick = remember(viewModel, onNavigateToThread) {
+            { threadId: String ->
+                viewModel.dismissRefPopup()
+                onNavigateToThread(threadId)
+            }
+        },
+        currentThreadId = viewModel.threadId
+    )
+}
+
+/**
+ * Isolated page chip — reading [LazyListState.firstVisibleItemIndex] here only
+ * recomposes this button, not the thread LazyColumn / Scaffold body.
+ */
+@Composable
+private fun ThreadPageIndicatorButton(
+    listState: LazyListState,
+    listStartPage: Int,
+    totalPages: Int,
+    onClick: () -> Unit
+) {
+    val page by remember(listStartPage, totalPages) {
+        derivedStateOf {
+            val firstVisibleIndex = listState.firstVisibleItemIndex
+            val raw = if (firstVisibleIndex <= 0) {
+                listStartPage
+            } else {
+                val replyIndex = firstVisibleIndex - 1
+                listStartPage + (replyIndex / 19)
+            }
+            raw.coerceIn(1, totalPages.coerceAtLeast(1))
+        }
+    }
+    OutlinedButton(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+        modifier = Modifier.padding(end = 4.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = MaterialTheme.colorScheme.primary
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.MenuBook,
+                contentDescription = "跳转页码",
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "$page/$totalPages",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 
@@ -952,34 +1038,28 @@ private fun ThreadReplyRow(
             }
         }
     }
-    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, replyIds) {
-        StablePostList(
-            quotedReplies.map { quote ->
-                val isFollowUp = quote.resto != null && quote.resto > 0L
-                val isCurrentThreadReply = replyIds.contains(quote.idStr)
-                val targetResto = when {
-                    isFollowUp -> quote.resto.toString()
-                    isCurrentThreadReply -> currentThreadId
-                    quote.idStr == currentThreadId -> currentThreadId
-                    else -> quote.idStr
+    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, replyIds, currentThreadId) {
+        if (quotedReplies.isEmpty()) {
+            StablePostList(emptyList())
+        } else {
+            StablePostList(
+                quotedReplies.map { quote ->
+                    val base = quote.toPostData(
+                        isPo = quote.userHash == poUserHash,
+                        cdnUrl = "https://image.nmb.best"
+                    )
+                    val isFollowUp = quote.resto != null && quote.resto > 0L
+                    val isCurrentThreadReply = replyIds.contains(quote.idStr)
+                    val targetResto = when {
+                        isFollowUp -> quote.resto.toString()
+                        isCurrentThreadReply -> currentThreadId
+                        quote.idStr == currentThreadId -> currentThreadId
+                        else -> quote.idStr
+                    }
+                    base.copy(resto = targetResto)
                 }
-                PostData(
-                    id = quote.idStr,
-                    title = quote.title.effectiveTitle(),
-                    userName = quote.name ?: "无名氏",
-                    userId = quote.userHash,
-                    createdAt = quote.now,
-                    content = quote.content,
-                    imageUrl = if (quote.imageUrl != null) {
-                        "https://image.nmb.best/image/${quote.imageUrl}"
-                    } else null,
-                    isPo = quote.userHash == poUserHash,
-                    isAdmin = quote.isAdmin,
-                    isSage = quote.isSage,
-                    resto = targetResto
-                )
-            }
-        )
+            )
+        }
     }
 
     // Warm ContentBlockSplitter cache off the main thread before ReplyCard remembers blocks
@@ -1126,26 +1206,29 @@ fun ReplyInputArea(
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
     var diceMenuExpanded by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val view = androidx.compose.ui.platform.LocalView.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
     var wasReplying by remember { mutableStateOf(false) }
     var textFieldValue by remember {
         mutableStateOf(TextFieldValue(text = replyText, selection = TextRange(replyText.length)))
     }
 
-    fun hideSystemIme() {
-        focusManager.clearFocus(force = true)
-        keyboardController?.hide()
-        val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-            as? android.view.inputmethod.InputMethodManager
-        imm?.hideSoftInputFromWindow(view.windowToken, 0)
-        (context as? android.app.Activity)?.currentFocus?.let { focused ->
-            imm?.hideSoftInputFromWindow(focused.windowToken, 0)
-        }
-        (context as? android.app.Activity)?.window?.decorView?.windowToken?.let { token ->
-            imm?.hideSoftInputFromWindow(token, 0)
+    val hideSystemIme = remember(view, context, keyboardController, focusManager) {
+        {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                as? android.view.inputmethod.InputMethodManager
+            val token = (context as? android.app.Activity)?.currentFocus?.windowToken
+                ?: view.windowToken
+                ?: (context as? android.app.Activity)?.window?.decorView?.windowToken
+            if (token != null) {
+                imm?.hideSoftInputFromWindow(token, 0)
+            }
         }
     }
 
@@ -1163,6 +1246,22 @@ fun ReplyInputArea(
             selection = TextRange(newCursor)
         )
         onReplyTextChange(newText)
+    }
+
+    fun closeToolPanels() {
+        if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
+        if (diceMenuExpanded) diceMenuExpanded = false
+    }
+
+    // 系统键盘再次抬起 → 关闭快捷面板
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val imeVisible = imeBottomPx > with(density) { 48.dp.toPx() }
+    LaunchedEffect(imeVisible) {
+        if (!imeVisible) return@LaunchedEffect
+        if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
+        if (kaomojiMenuExpanded || diceMenuExpanded) {
+            closeToolPanels()
+        }
     }
 
     LaunchedEffect(replyText) {
@@ -1365,6 +1464,7 @@ fun ReplyInputArea(
                         diceMenuExpanded = open
                         if (open) {
                             kaomojiMenuExpanded = false
+                            ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
                             hideSystemIme()
                         }
                     },
@@ -1373,12 +1473,12 @@ fun ReplyInputArea(
                         kaomojiMenuExpanded = open
                         if (open) {
                             diceMenuExpanded = false
+                            ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
                             hideSystemIme()
                         }
                     },
                     onImageClick = {
-                        kaomojiMenuExpanded = false
-                        diceMenuExpanded = false
+                        closeToolPanels()
                         imagePickerLauncher.launch("image/*")
                     }
                 )
@@ -1412,7 +1512,7 @@ fun ReplyInputArea(
                 }
             }
 
-            AnimatedVisibility(visible = diceMenuExpanded) {
+            if (diceMenuExpanded) {
                 DiceQuickPanel(
                     onInsert = { insertAtCursor(it) },
                     modifier = Modifier
@@ -1421,54 +1521,14 @@ fun ReplyInputArea(
                         .height(200.dp)
                 )
             }
-
-            // 3. Kaomoji Panel Row
-            AnimatedVisibility(visible = kaomojiMenuExpanded) {
-                Column(
+            if (kaomojiMenuExpanded) {
+                KaomojiQuickPanel(
+                    onInsert = { insertAtCursor(it) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp)
-                        .height(180.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    val rows = KAOMOJI_LIST.chunked(KAOMOJI_PER_ROW)
-                    rows.forEach { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            row.forEach { kaomoji ->
-                                val isMultiline = kaomoji.contains('\n')
-                                val preview = if (isMultiline) {
-                                    kaomoji.lineSequence().firstOrNull { it.isNotBlank() }
-                                        ?.trim()
-                                        ?.take(10)
-                                        ?.let { "$it…" } ?: "多行"
-                                } else {
-                                    kaomoji
-                                }
-                                TextButton(
-                                    onClick = { insertAtCursor(kaomoji) },
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = preview,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            if (row.size < KAOMOJI_PER_ROW) {
-                                repeat(KAOMOJI_PER_ROW - row.size) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-                }
+                        .padding(top = 8.dp),
+                    heightDp = 180
+                )
             }
         }
     }
