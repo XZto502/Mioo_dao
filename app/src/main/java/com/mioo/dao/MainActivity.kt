@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -84,6 +85,11 @@ class MainActivity : ComponentActivity() {
         }
 
         super.onCreate(savedInstanceState)
+
+        // Edge-to-edge + Compose-owned IME insets (manifest: adjustNothing).
+        // Decor does not fit system windows so WindowInsets.ime animates smoothly into Compose.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         pendingThreadIdState.value = parsePendingThreadId(intent)
 
         // Re-check clipboard each time we are resumed and interactive.

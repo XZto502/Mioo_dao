@@ -28,15 +28,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -127,6 +122,7 @@ import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
+import com.mioo.dao.ui.components.imeLiftOverNavigationBars
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
@@ -1017,16 +1013,14 @@ fun CreateThreadDialog(
                     )
                 },
                 bottomBar = {
-                    // 键盘弹出时整体抬到 IME 上方；无键盘时贴合导航条/小白条
+                    // 导航条占布局高度；IME 用 graphicsLayer 上移，避免正文区随键盘逐帧 reflow
                     Surface(
                         color = glassBottom,
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .windowInsetsPadding(
-                                WindowInsets.ime.union(WindowInsets.navigationBars)
-                            )
+                            .imeLiftOverNavigationBars()
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth()

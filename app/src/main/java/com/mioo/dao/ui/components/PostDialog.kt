@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.theme.DaoTheme
+// imeLiftOverNavigationBars in same package
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,8 +92,8 @@ fun PostDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .imePadding()
+                // Nav in layout; IME as lift so sheet content isn't reflowed every frame
+                .imeLiftOverNavigationBars()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
         ) {

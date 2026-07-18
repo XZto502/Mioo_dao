@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -120,6 +118,7 @@ import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
+import com.mioo.dao.ui.components.imeLiftOverNavigationBars
 import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
@@ -360,7 +359,9 @@ fun ThreadScreen(
             )
         },
         bottomBar = {
-            // Isolated collector: typing only recomposes the input bar, not the reply list
+            // Isolated collector: typing only recomposes the input bar, not the reply list.
+            // IME lift is graphicsLayer-only (see imeLiftOverNavigationBars) so Scaffold /
+            // LazyColumn are not remeasured every keyboard animation frame.
             ReplyInputBar(
                 viewModel = viewModel,
                 cookies = threadSettings.cookiesList,
@@ -368,7 +369,8 @@ fun ThreadScreen(
                 onCookieSelect = { settingsViewModel.selectCookie(it) }
             )
         },
-        modifier = modifier.imePadding(),
+        // Do NOT imePadding the whole Scaffold — that reflows the list with the keyboard.
+        modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Color.Transparent
     ) { paddingValues ->
@@ -1298,11 +1300,12 @@ fun ReplyInputArea(
         tonalElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
+            // Nav bar in layout; IME as draw-time lift — smooth keyboard animation
+            .imeLiftOverNavigationBars()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             AnimatedVisibility(visible = quotedPostNo != null) {
