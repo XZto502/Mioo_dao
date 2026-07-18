@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -539,7 +540,51 @@ fun SettingsScreen(
             }
         }
 
-
+        // 5. Glass effect (毛玻璃特效)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.BlurOn,
+                        contentDescription = "毛玻璃特效"
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "毛玻璃特效",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateGlassEffectEnabled(!settings.glassEffectEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.glassEffectEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.glassEffectEnabled,
+                        onCheckedChange = { viewModel.updateGlassEffectEnabled(it) }
+                    )
+                }
+            }
+        }
 
         // 6. Font Size Configuration (字体大小)
         Card(

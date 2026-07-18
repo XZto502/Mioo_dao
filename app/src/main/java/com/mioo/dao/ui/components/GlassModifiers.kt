@@ -52,20 +52,32 @@ object GlassStyle {
 /**
  * Applies a glassmorphism background fill + subtle border to the [Modifier].
  *
+ * When [enabled] is false, uses solid surface colors without the frosted look.
+ *
  * @param isDark  Whether the current theme is dark mode.
  * @param shape   Shape to clip and border (default 16.dp rounded).
  * @param elevation Shadow elevation.
  * @param borderWidth Width of the highlight border.
  * @param type   The type of glass surface — [GlassType.SURFACE] for bars/navigation,
  *               [GlassType.CARD] for content cards with higher opacity.
+ * @param enabled Whether glass styling is active (respects user setting).
  */
 fun Modifier.glassSurface(
     isDark: Boolean,
     shape: Shape = RoundedCornerShape(16.dp),
     elevation: Dp = 4.dp,
     borderWidth: Dp = 0.5.dp,
-    type: GlassType = GlassType.SURFACE
+    type: GlassType = GlassType.SURFACE,
+    enabled: Boolean = true
 ): Modifier {
+    if (!enabled) {
+        val solid = if (isDark) Color(0xFF1D1B20) else Color(0xFFF4F5F7)
+        return this
+            .shadow(elevation, shape)
+            .clip(shape)
+            .background(solid)
+    }
+
     val fill = when (type) {
         GlassType.SURFACE -> if (isDark) GlassStyle.darkGlass else GlassStyle.lightGlass
         GlassType.CARD -> if (isDark) GlassStyle.darkGlassCard else GlassStyle.lightGlassCard

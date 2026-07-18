@@ -128,7 +128,18 @@ class ForumViewModel @Inject constructor(
     fun selectForum(id: String, name: String) {
         if (forumId == id) return
         forumId = id
-        _uiState.update { it.copy(currentForumName = name) }
+        // Clear previous board content so only the center spinner shows while loading.
+        _uiState.update {
+            it.copy(
+                currentForumName = name,
+                threads = emptyList(),
+                displayItems = emptyList(),
+                isLoading = true,
+                isRefreshing = false,
+                isLastPage = false,
+                errorMessage = null
+            )
+        }
         viewModelScope.launch {
             settingsDataStore.saveLastForum(id, name)
         }
@@ -190,12 +201,12 @@ class ForumViewModel @Inject constructor(
 
     fun refresh() {
         currentPage = 1
+        // Keep existing threads visible while refreshing so only the top pull indicator
+        // shows (not a second full-screen center spinner). Empty list still uses center.
         _uiState.update {
             it.copy(
                 isRefreshing = true,
-                isLastPage = false,
-                threads = emptyList(),
-                displayItems = emptyList()
+                isLastPage = false
             )
         }
 

@@ -107,11 +107,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeConfig by remember {
                 settingsRepository.settings
-                    .map { Triple(it.themeMode, it.themeColor, it.fontSizeScale) }
+                    .map {
+                        ThemeConfig(
+                            themeMode = it.themeMode,
+                            themeColor = it.themeColor,
+                            fontSizeScale = it.fontSizeScale,
+                            glassEffectEnabled = it.glassEffectEnabled
+                        )
+                    }
                     .distinctUntilChanged()
-            }.collectAsState(initial = Triple(ThemeMode.SYSTEM, "dynamic", 1.0f))
+            }.collectAsState(initial = ThemeConfig())
 
-            val (themeMode, themeColor, fontSizeScale) = themeConfig
+            val (themeMode, themeColor, fontSizeScale, glassEffectEnabled) = themeConfig
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
@@ -138,7 +145,8 @@ class MainActivity : ComponentActivity() {
             MiooDaoTheme(
                 darkTheme = darkTheme,
                 themeColor = themeColor,
-                fontSizeScale = fontSizeScale
+                fontSizeScale = fontSizeScale,
+                glassEffectEnabled = glassEffectEnabled
             ) {
                 MiooDaoNavGraph(
                     pendingThreadId = pendingThreadId,
@@ -284,6 +292,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private data class ThemeConfig(
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val themeColor: String = "dynamic",
+    val fontSizeScale: Float = 1.0f,
+    val glassEffectEnabled: Boolean = true
+)
 
 private fun getAppVersionName(): String {
     return com.mioo.dao.BuildConfig.VERSION_NAME

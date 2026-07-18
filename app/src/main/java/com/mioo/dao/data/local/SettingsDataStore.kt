@@ -44,6 +44,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_PRELOAD_COUNT = intPreferencesKey("preload_count")
         val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
         val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
+        val KEY_GLASS_EFFECT_ENABLED = booleanPreferencesKey("glass_effect_enabled")
         /** last-notified replyCount snapshot for X-island feed/bookmark poll: "tid:count,tid:count" */
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
     }
@@ -392,6 +393,18 @@ class SettingsDataStore(private val context: Context) {
             (preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] ?: 30).coerceIn(15, 180)
         }
 
+    val glassEffectEnabledFlow: Flow<Boolean> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_GLASS_EFFECT_ENABLED] ?: true
+        }
+
     suspend fun saveUserHash(userHash: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_USER_HASH] = userHash
@@ -425,6 +438,12 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveNotificationIntervalMinutes(minutes: Int) {
         context.dataStore.edit { preferences ->
             preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] = minutes.coerceIn(15, 180)
+        }
+    }
+
+    suspend fun saveGlassEffectEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_GLASS_EFFECT_ENABLED] = enabled
         }
     }
 

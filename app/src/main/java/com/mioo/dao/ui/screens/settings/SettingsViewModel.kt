@@ -277,6 +277,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateNotificationIntervalMinutes(minutes)
     }
 
+    fun updateGlassEffectEnabled(enabled: Boolean) {
+        settingsRepository.updateGlassEffectEnabled(enabled)
+    }
+
     fun checkUpdate(onResult: (XdResponse<GithubRelease>) -> Unit) {
         viewModelScope.launch {
             threadRepository.checkLatestRelease().collect { response ->

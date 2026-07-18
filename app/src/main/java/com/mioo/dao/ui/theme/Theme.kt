@@ -166,6 +166,7 @@ fun MiooDaoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     themeColor: String = "dynamic",
     fontSizeScale: Float = 1.0f,
+    glassEffectEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when (themeColor) {
@@ -194,19 +195,23 @@ fun MiooDaoTheme(
         }
     }
 
+    // Solid surface when glass is off so bars/cards fully cover the background.
+    val solidSurface = colorScheme.surface
+    val solidCard = colorScheme.surfaceContainerHigh
+
     val customColors = if (darkTheme) {
         DaoCustomColors(
             po = DarkPoColor,
             sage = DarkSageColor,
             admin = DarkAdminColor,
             quoteLink = DarkQuoteLinkColor,
-            threadCardBg = DarkThreadCardBg,
-            replyCardBg = DarkReplyCardBg,
+            threadCardBg = if (glassEffectEnabled) DarkThreadCardBg else solidCard,
+            replyCardBg = if (glassEffectEnabled) DarkReplyCardBg else solidCard,
             fabBg = DarkFabColor,
             fabContent = DarkOnFabColor,
             sageTag = DarkSageTagColor,
-            glassTopBar = DarkGlassTopBar,
-            glassNavBar = DarkGlassNavBar
+            glassTopBar = if (glassEffectEnabled) DarkGlassTopBar else solidSurface,
+            glassNavBar = if (glassEffectEnabled) DarkGlassNavBar else solidSurface
         )
     } else {
         DaoCustomColors(
@@ -214,13 +219,13 @@ fun MiooDaoTheme(
             sage = LightSageColor,
             admin = LightAdminColor,
             quoteLink = LightQuoteLinkColor,
-            threadCardBg = LightThreadCardBg,
-            replyCardBg = LightReplyCardBg,
+            threadCardBg = if (glassEffectEnabled) LightThreadCardBg else solidCard,
+            replyCardBg = if (glassEffectEnabled) LightReplyCardBg else solidCard,
             fabBg = LightFabColor,
             fabContent = LightOnFabColor,
             sageTag = LightSageTagColor,
-            glassTopBar = LightGlassTopBar,
-            glassNavBar = LightGlassNavBar
+            glassTopBar = if (glassEffectEnabled) LightGlassTopBar else solidSurface,
+            glassNavBar = if (glassEffectEnabled) LightGlassNavBar else solidSurface
         )
     }
 
@@ -240,7 +245,8 @@ fun MiooDaoTheme(
     }
 
     CompositionLocalProvider(
-        LocalDaoCustomColors provides customColors
+        LocalDaoCustomColors provides customColors,
+        LocalGlassEffectEnabled provides glassEffectEnabled
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
@@ -253,8 +259,8 @@ fun MiooDaoTheme(
             val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.16f) }
             val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.12f) }
 
-            Box(
-                modifier = Modifier
+            val rootModifier = if (glassEffectEnabled) {
+                Modifier
                     .fillMaxSize()
                     .background(colorScheme.background)
                     .drawWithCache {
@@ -285,7 +291,13 @@ fun MiooDaoTheme(
                             drawCircle(brush = brush3, radius = r3, center = c3)
                         }
                     }
-            ) {
+            } else {
+                Modifier
+                    .fillMaxSize()
+                    .background(colorScheme.background)
+            }
+
+            Box(modifier = rootModifier) {
                 content()
             }
         }
@@ -297,4 +309,8 @@ object DaoTheme {
     val colors: DaoCustomColors
         @Composable
         get() = LocalDaoCustomColors.current
+
+    val glassEffectEnabled: Boolean
+        @Composable
+        get() = LocalGlassEffectEnabled.current
 }

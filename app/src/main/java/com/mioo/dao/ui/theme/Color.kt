@@ -127,3 +127,6 @@ val LocalDaoCustomColors = staticCompositionLocalOf {
         glassNavBar = Color.Unspecified
     )
 }
+
+/** Whether frosted-glass / ambient-glow styling is enabled. */
+val LocalGlassEffectEnabled = staticCompositionLocalOf { true }

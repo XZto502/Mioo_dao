@@ -33,5 +33,7 @@ data class UserSettings(
     /** Local poll of bookmarked threads for new-reply system notifications (蓝岛-style). */
     val subscriptionNotificationsEnabled: Boolean = false,
     /** Minutes between background checks; clamped 15–180. */
-    val notificationIntervalMinutes: Int = 30
+    val notificationIntervalMinutes: Int = 30,
+    /** Semi-transparent glass surfaces + ambient glow background. */
+    val glassEffectEnabled: Boolean = true
 )

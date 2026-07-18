@@ -22,73 +22,78 @@ class SettingsRepository @Inject constructor(
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
 
     val settings: StateFlow<UserSettings> = combine(
-        settingsDataStore.userHashFlow,
-        settingsDataStore.themeModeFlow,
-        settingsDataStore.fontSizeScaleFlow,
-        settingsDataStore.themeColorFlow,
-        settingsDataStore.cookiesListFlow,
-        settingsDataStore.cookieNotesFlow,
-        settingsDataStore.selectedCookieIndexFlow,
-        settingsDataStore.authCookieFlow,
-        settingsDataStore.feedFoldersFlow,
-        settingsDataStore.blockedThreadsFlow,
-        settingsDataStore.blockedUsersFlow,
-        settingsDataStore.pinnedForumsFlow,
-        settingsDataStore.blockedKeywordsFlow,
-        settingsDataStore.smartPreloadModeFlow,
-        settingsDataStore.preloadCountFlow,
-        settingsDataStore.subscriptionNotificationsFlow,
-        settingsDataStore.notificationIntervalMinutesFlow
-    ) { args ->
-        val cookie = args[0] as? String
-        val themeModeStr = args[1] as String
-        val fontSizeScale = args[2] as Float
-        val themeColor = args[3] as String
-        @Suppress("UNCHECKED_CAST")
-        val cookiesList = args[4] as List<String>
-        @Suppress("UNCHECKED_CAST")
-        val cookieNotes = args[5] as Map<String, String>
-        val selectedIndex = args[6] as Int
-        val authCookie = args[7] as? String
-        @Suppress("UNCHECKED_CAST")
-        val feedFolders = args[8] as List<com.mioo.dao.data.model.FeedFolder>
-        @Suppress("UNCHECKED_CAST")
-        val blockedThreads = args[9] as List<String>
-        @Suppress("UNCHECKED_CAST")
-        val blockedUsers = args[10] as List<String>
-        @Suppress("UNCHECKED_CAST")
-        val pinnedForums = args[11] as List<String>
-        @Suppress("UNCHECKED_CAST")
-        val blockedKeywords = args[12] as List<String>
-        val smartPreloadMode = args[13] as String
-        val preloadCount = args[14] as Int
-        val subscriptionNotifications = args[15] as Boolean
-        val notificationIntervalMinutes = args[16] as Int
+        combine(
+            settingsDataStore.userHashFlow,
+            settingsDataStore.themeModeFlow,
+            settingsDataStore.fontSizeScaleFlow,
+            settingsDataStore.themeColorFlow,
+            settingsDataStore.cookiesListFlow,
+            settingsDataStore.cookieNotesFlow,
+            settingsDataStore.selectedCookieIndexFlow,
+            settingsDataStore.authCookieFlow,
+            settingsDataStore.feedFoldersFlow,
+            settingsDataStore.blockedThreadsFlow,
+            settingsDataStore.blockedUsersFlow,
+            settingsDataStore.pinnedForumsFlow,
+            settingsDataStore.blockedKeywordsFlow,
+            settingsDataStore.smartPreloadModeFlow,
+            settingsDataStore.preloadCountFlow,
+            settingsDataStore.subscriptionNotificationsFlow,
+            settingsDataStore.notificationIntervalMinutesFlow
+        ) { args ->
+            val cookie = args[0] as? String
+            val themeModeStr = args[1] as String
+            val fontSizeScale = args[2] as Float
+            val themeColor = args[3] as String
+            @Suppress("UNCHECKED_CAST")
+            val cookiesList = args[4] as List<String>
+            @Suppress("UNCHECKED_CAST")
+            val cookieNotes = args[5] as Map<String, String>
+            val selectedIndex = args[6] as Int
+            val authCookie = args[7] as? String
+            @Suppress("UNCHECKED_CAST")
+            val feedFolders = args[8] as List<com.mioo.dao.data.model.FeedFolder>
+            @Suppress("UNCHECKED_CAST")
+            val blockedThreads = args[9] as List<String>
+            @Suppress("UNCHECKED_CAST")
+            val blockedUsers = args[10] as List<String>
+            @Suppress("UNCHECKED_CAST")
+            val pinnedForums = args[11] as List<String>
+            @Suppress("UNCHECKED_CAST")
+            val blockedKeywords = args[12] as List<String>
+            val smartPreloadMode = args[13] as String
+            val preloadCount = args[14] as Int
+            val subscriptionNotifications = args[15] as Boolean
+            val notificationIntervalMinutes = args[16] as Int
 
-        val themeMode = try {
-            ThemeMode.valueOf(themeModeStr)
-        } catch (e: Exception) {
-            ThemeMode.SYSTEM
-        }
-        UserSettings(
-            cookie = cookie ?: "",
-            themeMode = themeMode,
-            fontSizeScale = fontSizeScale,
-            themeColor = themeColor,
-            cookiesList = cookiesList,
-            cookieNotes = cookieNotes,
-            selectedCookieIndex = selectedIndex,
-            authCookie = authCookie ?: "",
-            feedFolders = feedFolders,
-            blockedThreads = blockedThreads,
-            blockedUsers = blockedUsers,
-            pinnedForums = pinnedForums,
-            blockedKeywords = blockedKeywords,
-            smartPreloadMode = smartPreloadMode,
-            preloadCount = preloadCount,
-            subscriptionNotificationsEnabled = subscriptionNotifications,
-            notificationIntervalMinutes = notificationIntervalMinutes
-        )
+            val themeMode = try {
+                ThemeMode.valueOf(themeModeStr)
+            } catch (e: Exception) {
+                ThemeMode.SYSTEM
+            }
+            UserSettings(
+                cookie = cookie ?: "",
+                themeMode = themeMode,
+                fontSizeScale = fontSizeScale,
+                themeColor = themeColor,
+                cookiesList = cookiesList,
+                cookieNotes = cookieNotes,
+                selectedCookieIndex = selectedIndex,
+                authCookie = authCookie ?: "",
+                feedFolders = feedFolders,
+                blockedThreads = blockedThreads,
+                blockedUsers = blockedUsers,
+                pinnedForums = pinnedForums,
+                blockedKeywords = blockedKeywords,
+                smartPreloadMode = smartPreloadMode,
+                preloadCount = preloadCount,
+                subscriptionNotificationsEnabled = subscriptionNotifications,
+                notificationIntervalMinutes = notificationIntervalMinutes
+            )
+        },
+        settingsDataStore.glassEffectEnabledFlow
+    ) { base, glassEffectEnabled ->
+        base.copy(glassEffectEnabled = glassEffectEnabled)
     }.stateIn(
         scope = repositoryScope,
         started = SharingStarted.Eagerly,
@@ -110,6 +115,12 @@ class SettingsRepository @Inject constructor(
     fun updateNotificationIntervalMinutes(minutes: Int) {
         repositoryScope.launch {
             settingsDataStore.saveNotificationIntervalMinutes(minutes)
+        }
+    }
+
+    fun updateGlassEffectEnabled(enabled: Boolean) {
+        repositoryScope.launch {
+            settingsDataStore.saveGlassEffectEnabled(enabled)
         }
     }
 

@@ -178,15 +178,20 @@ fun ForumScreen(
             drawerState.targetValue != DrawerValue.Closed
 
     val pullToRefreshState = rememberPullToRefreshState()
-    if (pullToRefreshState.isRefreshing) {
-        LaunchedEffect(true) {
+    // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
+    val showTopLoading = uiState.isRefreshing ||
+        (uiState.isLoading && uiState.threads.isEmpty())
+    // User gesture: only call refresh if the ViewModel is not already loading.
+    LaunchedEffect(pullToRefreshState.isRefreshing) {
+        if (pullToRefreshState.isRefreshing && !showTopLoading) {
             viewModel.refresh()
         }
     }
-    LaunchedEffect(uiState.isRefreshing) {
-        if (uiState.isRefreshing) {
+    // Keep the top circle in sync with ViewModel loading state.
+    LaunchedEffect(showTopLoading) {
+        if (showTopLoading) {
             pullToRefreshState.startRefresh()
-        } else {
+        } else if (pullToRefreshState.isRefreshing) {
             pullToRefreshState.endRefresh()
         }
     }
@@ -463,6 +468,7 @@ fun ForumScreen(
                     }
                 }
 
+                // Unified loading indicator: only the top pull-to-refresh circle.
                 if (pullToRefreshState.isRefreshing || pullToRefreshState.progress > 0f) {
                     PullToRefreshContainer(
                         state = pullToRefreshState,
@@ -589,13 +595,8 @@ private fun ForumThreadListPane(
     userScrollEnabled: Boolean = true,
     warmEnabled: Boolean = true
 ) {
+    // Empty while loading/refreshing: no center spinner — top pull circle is the only indicator.
     if (uiState.threads.isEmpty() && (uiState.isLoading || uiState.isRefreshing)) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            CircularProgressIndicator()
-        }
         return
     }
 
