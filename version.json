@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.7",
-  "name": "v1.0.7",
-  "body": "- 键盘：adjustNothing + graphicsLayer 抬起输入栏，列表不再随 IME 逐帧 reflow\n- 串详情回复栏、发新串底栏、PostDialog 统一 imeLift 动画\n- 包含 v1.0.6：性能拆分状态、大图离屏不解码、屏蔽词 AC 匹配、骰子 [起,止]",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.7",
+  "tag_name": "v1.0.8",
+  "name": "v1.0.8",
+  "body": "- 设置：新增毛玻璃特效开关，可关闭半透明顶栏/卡片与背景流光\n- 板块列表：加载指示统一为顶部下拉刷新圆圈，去掉屏幕中央重复加载圈\n- 刷新时保留现有列表内容，减少清空闪白\n- 包含 v1.0.7：键盘 imeLift 动画与列表不随 IME reflow",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.8",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.7/app-debug.apk",
-      "size": 23034197
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.8/app-debug.apk",
+      "size": 23040717
     }
   ]
 }
