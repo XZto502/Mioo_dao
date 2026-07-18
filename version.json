@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.5",
-  "name": "v1.0.5",
-  "body": "- 发新串全屏毛玻璃，铺满状态栏和底部导航区\n- 颜文字每行 4 个\n- 打开颜文字时收起键盘",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.5",
+  "tag_name": "v1.0.6",
+  "name": "v1.0.6",
+  "body": "- 性能：串页状态拆分（列表/收藏下载/引用弹窗独立重组）\n- 性能：大图查看 beyondBounds=0、离屏不解码；缩放仅 draw 阶段更新\n- 性能：屏蔽词 Aho-Corasick 多模式匹配；HTML 解码与列表过滤优化\n- 修复：X岛骰子语法改为 [起,止]，仅保留自定义区间\n- 补全：提交 Kaomoji 快捷面板源文件",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.6",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.5/app-debug.apk",
-      "size": 23015593
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.6/app-debug.apk",
+      "size": 23031929
     }
   ]
 }
