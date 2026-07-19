@@ -1,9 +1,11 @@
 package com.mioo.dao.ui.components
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.graphicsPressScale
+import com.mioo.dao.ui.theme.rememberPressScale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,10 +58,18 @@ fun ThreadCard(
 ) {
     val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
     val border = remember(outline) { BorderStroke(0.5.dp, outline) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressScale = rememberPressScale(
+        interactionSource = interactionSource,
+        pressedScale = MiooMotion.ScaleCardPress
+    )
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .graphicsPressScale(pressScale)
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
                 onClick = onThreadClick,
                 onLongClick = onLongClick
             ),

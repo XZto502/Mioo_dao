@@ -127,6 +127,8 @@ import com.mioo.dao.ui.components.imeLiftOverNavigationBars
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1125,8 +1127,13 @@ fun CreateThreadDialog(
                                 )
                             }
 
-                            // 仅展开时组合面板，Lazy 网格降低滚动开销
-                            if (diceExpanded) {
+                            // Soft expand: ease-out, scale from 0.95, exit faster than enter
+                            val panelReducedMotion = isReducedMotionEnabled()
+                            AnimatedVisibility(
+                                visible = diceExpanded,
+                                enter = MiooMotion.softExpandEnter(panelReducedMotion),
+                                exit = MiooMotion.softExpandExit(panelReducedMotion)
+                            ) {
                                 DiceQuickPanel(
                                     onInsert = { insertAtCursor(it) },
                                     modifier = Modifier
@@ -1134,7 +1141,11 @@ fun CreateThreadDialog(
                                         .height(220.dp)
                                 )
                             }
-                            if (kaomojiExpanded) {
+                            AnimatedVisibility(
+                                visible = kaomojiExpanded,
+                                enter = MiooMotion.softExpandEnter(panelReducedMotion),
+                                exit = MiooMotion.softExpandExit(panelReducedMotion)
+                            ) {
                                 KaomojiQuickPanel(
                                     onInsert = { insertAtCursor(it) },
                                     modifier = Modifier.fillMaxWidth(),
@@ -1242,7 +1253,12 @@ fun CreateThreadDialog(
                         )
                     }
 
-                    AnimatedVisibility(visible = attachedImageUri != null) {
+                    val reducedMotion = isReducedMotionEnabled()
+                    AnimatedVisibility(
+                        visible = attachedImageUri != null,
+                        enter = MiooMotion.softExpandEnter(reducedMotion),
+                        exit = MiooMotion.softExpandExit(reducedMotion)
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

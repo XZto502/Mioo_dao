@@ -7,6 +7,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -116,12 +118,22 @@ fun ShimmerAsyncImage(
 
 @Composable
 private fun ShimmerPlaceholder(modifier: Modifier = Modifier) {
+    val reducedMotion = isReducedMotionEnabled()
+    // Continuous shimmer uses linear (correct for perpetual motion).
+    // Faster cycle (~900ms) makes loading feel snappier than a slow sweep.
+    if (reducedMotion) {
+        Box(modifier = modifier.background(Color(0xFFE4E4E7)))
+        return
+    }
     val transition = rememberInfiniteTransition(label = "shimmer")
     val translateAnim by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1000f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            animation = tween(
+                durationMillis = MiooMotion.DurationShimmer,
+                easing = LinearEasing
+            ),
             repeatMode = RepeatMode.Restart
         ),
         label = "shimmer_translate"

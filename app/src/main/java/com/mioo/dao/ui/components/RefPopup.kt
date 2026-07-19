@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +40,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 
 @Composable
 fun RefPopup(
@@ -51,6 +56,11 @@ fun RefPopup(
     modifier: Modifier = Modifier,
     currentThreadId: String? = null
 ) {
+    val reducedMotion = isReducedMotionEnabled()
+    // Modal: scale from 0.95 + fade (never scale 0); centered origin is correct for modals.
+    val visibleState = remember {
+        MutableTransitionState(false).apply { targetState = true }
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -59,6 +69,11 @@ fun RefPopup(
             dismissOnClickOutside = true
         )
     ) {
+        AnimatedVisibility(
+            visibleState = visibleState,
+            enter = MiooMotion.modalEnter(reducedMotion),
+            exit = MiooMotion.modalExit(reducedMotion)
+        ) {
         Card(
             modifier = modifier
                 .fillMaxWidth()
@@ -273,6 +288,7 @@ fun RefPopup(
                     }
                 }
             }
+        }
         }
     }
 }

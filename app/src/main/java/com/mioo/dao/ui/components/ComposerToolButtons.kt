@@ -1,6 +1,7 @@
 package com.mioo.dao.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,9 +14,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.graphicsPressScale
+import com.mioo.dao.ui.theme.rememberPressScale
 
 /**
  * 发串 / 回复底栏：骰子 · 颜文字 · 图片 三连按钮（同一胶囊内）。
@@ -46,10 +51,7 @@ fun ComposerToolButtons(
         shadowElevation = 0.dp
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                onClick = onDiceClick,
-                modifier = Modifier.size(40.dp)
-            ) {
+            PressIconButton(onClick = onDiceClick) {
                 Icon(
                     imageVector = Icons.Default.Casino,
                     contentDescription = "骰子",
@@ -57,10 +59,7 @@ fun ComposerToolButtons(
                     modifier = Modifier.size(22.dp)
                 )
             }
-            IconButton(
-                onClick = onKaomojiClick,
-                modifier = Modifier.size(40.dp)
-            ) {
+            PressIconButton(onClick = onKaomojiClick) {
                 Icon(
                     imageVector = Icons.Default.Face,
                     contentDescription = "颜文字",
@@ -68,10 +67,7 @@ fun ComposerToolButtons(
                     modifier = Modifier.size(22.dp)
                 )
             }
-            IconButton(
-                onClick = onImageClick,
-                modifier = Modifier.size(40.dp)
-            ) {
+            PressIconButton(onClick = onImageClick) {
                 Icon(
                     imageVector = Icons.Default.AddPhotoAlternate,
                     contentDescription = "添加图片",
@@ -80,5 +76,23 @@ fun ComposerToolButtons(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PressIconButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val scale = rememberPressScale(interactionSource, MiooMotion.ScalePress)
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .graphicsPressScale(scale),
+        interactionSource = interactionSource
+    ) {
+        content()
     }
 }

@@ -1,12 +1,8 @@
 package com.mioo.dao.ui.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.navigation.NavBackStackEntry
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -104,32 +102,27 @@ fun MiooDaoNavGraph(
         }
     }
 
-    // Motion budget: keep transitions short so heavy destinations (thread detail)
-    // don't jank mid-slide. Prefer fade-only for Thread; light fade for secondary screens.
+    // Motion: ease-out curves, exit faster than enter, no ease-in.
+    // Tab switches are high-frequency → short fade only. Thread stays fade+scale (no slide)
+    // so first-frame HTML/image work is not fighting a horizontal transition.
+    val reducedMotion = isReducedMotionEnabled()
     val fadeEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        fadeIn(animationSpec = tween(100))
+        MiooMotion.tabEnter(reducedMotion)
     }
-
     val fadeExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        fadeOut(animationSpec = tween(80))
+        MiooMotion.tabExit(reducedMotion)
     }
-
-    // Secondary screens (settings/history/search): short fade — no horizontal slide
     val secondaryEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        fadeIn(animationSpec = tween(120, easing = FastOutSlowInEasing))
+        MiooMotion.secondaryEnter(reducedMotion)
     }
-
     val secondaryExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        fadeOut(animationSpec = tween(90))
+        MiooMotion.secondaryExit(reducedMotion)
     }
-
-    // Thread open/close: fade only (120ms). Slide fought first-frame HTML/image work.
     val threadEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        fadeIn(animationSpec = tween(120, easing = FastOutSlowInEasing))
+        MiooMotion.threadEnter(reducedMotion)
     }
-
     val threadExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        fadeOut(animationSpec = tween(90))
+        MiooMotion.threadExit(reducedMotion)
     }
 
     val bottomBarItems = remember {

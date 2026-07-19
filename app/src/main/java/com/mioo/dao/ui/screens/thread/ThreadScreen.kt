@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1310,7 +1312,12 @@ fun ReplyInputArea(
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            AnimatedVisibility(visible = quotedPostNo != null) {
+            val reducedMotion = isReducedMotionEnabled()
+            AnimatedVisibility(
+                visible = quotedPostNo != null,
+                enter = MiooMotion.softExpandEnter(reducedMotion),
+                exit = MiooMotion.softExpandExit(reducedMotion)
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1342,7 +1349,11 @@ fun ReplyInputArea(
             }
 
             // Image Preview (if attached)
-            AnimatedVisibility(visible = attachedImageUri != null) {
+            AnimatedVisibility(
+                visible = attachedImageUri != null,
+                enter = MiooMotion.softExpandEnter(reducedMotion),
+                exit = MiooMotion.softExpandExit(reducedMotion)
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1517,7 +1528,11 @@ fun ReplyInputArea(
                 }
             }
 
-            if (diceMenuExpanded) {
+            AnimatedVisibility(
+                visible = diceMenuExpanded,
+                enter = MiooMotion.softExpandEnter(reducedMotion),
+                exit = MiooMotion.softExpandExit(reducedMotion)
+            ) {
                 DiceQuickPanel(
                     onInsert = { insertAtCursor(it) },
                     modifier = Modifier
@@ -1526,7 +1541,11 @@ fun ReplyInputArea(
                         .height(200.dp)
                 )
             }
-            if (kaomojiMenuExpanded) {
+            AnimatedVisibility(
+                visible = kaomojiMenuExpanded,
+                enter = MiooMotion.softExpandEnter(reducedMotion),
+                exit = MiooMotion.softExpandExit(reducedMotion)
+            ) {
                 KaomojiQuickPanel(
                     onInsert = { insertAtCursor(it) },
                     modifier = Modifier
