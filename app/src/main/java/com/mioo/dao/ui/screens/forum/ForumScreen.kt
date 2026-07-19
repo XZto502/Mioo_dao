@@ -152,9 +152,11 @@ fun ForumScreen(
     // Pins + cookies only — theme/font changes must not recompose the board list
     val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
     val context = LocalContext.current
-    // Fresh LazyListState per board so scroll position & keys don't thrash across switches
+    // Per-board scroll: rememberSaveable survives navigate→thread→back so position is restored.
     val currentForumId = viewModel.forumId
-    val listState = remember(currentForumId) { LazyListState() }
+    val listState = rememberSaveable(currentForumId, saver = LazyListState.Saver) {
+        LazyListState()
+    }
     val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
@@ -184,16 +186,19 @@ fun ForumScreen(
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
     val showTopLoading = uiState.isRefreshing ||
         (uiState.isLoading && uiState.threads.isEmpty())
-    // User gesture: only call refresh if the ViewModel is not already loading.
+
+    // User pull: fire refresh only when the VM is not already refreshing.
     LaunchedEffect(pullToRefreshState.isRefreshing) {
-        if (pullToRefreshState.isRefreshing && !showTopLoading) {
+        if (pullToRefreshState.isRefreshing && !uiState.isRefreshing) {
             viewModel.refresh()
         }
     }
-    // Keep the top circle in sync with ViewModel loading state.
+    // Drive the pull indicator from VM state (one-way after user or toolbar starts refresh).
     LaunchedEffect(showTopLoading) {
         if (showTopLoading) {
-            pullToRefreshState.startRefresh()
+            if (!pullToRefreshState.isRefreshing) {
+                pullToRefreshState.startRefresh()
+            }
         } else if (pullToRefreshState.isRefreshing) {
             pullToRefreshState.endRefresh()
         }
@@ -208,8 +213,12 @@ fun ForumScreen(
         }
     }
 
-    LaunchedEffect(shouldLoadMore.value, currentForumId) {
-        if (shouldLoadMore.value && !uiState.isLoading && !uiState.isLastPage) {
+    LaunchedEffect(shouldLoadMore.value, currentForumId, uiState.isLoading, uiState.isRefreshing, uiState.isLastPage) {
+        if (shouldLoadMore.value &&
+            !uiState.isLoading &&
+            !uiState.isRefreshing &&
+            !uiState.isLastPage
+        ) {
             viewModel.loadNextPage()
         }
     }
@@ -400,11 +409,18 @@ fun ForumScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            // Instant jump to top before refresh (no scroll animation)
-                            scope.launch { listState.scrollToItem(0) }
-                            viewModel.refresh()
-                        }) {
+                        IconButton(
+                            onClick = {
+                                // Scroll to top only if the list currently has items; never block refresh.
+                                if (listState.layoutInfo.totalItemsCount > 0) {
+                                    scope.launch {
+                                        runCatching { listState.scrollToItem(0) }
+                                    }
+                                }
+                                viewModel.refresh()
+                            },
+                            enabled = !uiState.isRefreshing
+                        ) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     },
@@ -598,23 +614,11 @@ private fun ForumThreadListPane(
     userScrollEnabled: Boolean = true,
     warmEnabled: Boolean = true
 ) {
-    // Empty while loading/refreshing: no center spinner — top pull circle is the only indicator.
-    if (uiState.threads.isEmpty() && (uiState.isLoading || uiState.isRefreshing)) {
-        return
-    }
-
-    if (uiState.threads.isEmpty() && !uiState.isLoading) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("该板块下暂无帖子。", style = MaterialTheme.typography.bodyMedium)
-        }
-        return
-    }
-
     val displayItems = uiState.displayItems
     val quoteLinkColor = MaterialTheme.colorScheme.primary
+    val isEmptyLoading = displayItems.isEmpty() && (uiState.isLoading || uiState.isRefreshing)
+    val isEmptyIdle = displayItems.isEmpty() && !uiState.isLoading && !uiState.isRefreshing
+
     LaunchedEffect(displayItems, quoteLinkColor, forumKey, warmEnabled) {
         if (!warmEnabled || displayItems.isEmpty()) return@LaunchedEffect
         val bodies = displayItems.map { it.postData.content }
@@ -642,9 +646,11 @@ private fun ForumThreadListPane(
         sizePx = ListThumbImage.SIZE_PX,
         ahead = 5,
         initialDelayMs = 600,
-        enabled = warmEnabled
+        enabled = warmEnabled && displayItems.isNotEmpty()
     )
 
+    // Always keep a LazyColumn so pull-to-refresh nested scroll has a scrollable child
+    // (empty early-return broke manual pull refresh).
     LazyColumn(
         state = listState,
         userScrollEnabled = userScrollEnabled,
@@ -657,6 +663,26 @@ private fun ForumThreadListPane(
             bottom = 100.dp
         )
     ) {
+        if (isEmptyLoading) {
+            // Spacer so nested-scroll pull can start; indicator is the top pull circle.
+            item(key = "empty_loading") {
+                Spacer(modifier = Modifier.height(1.dp))
+            }
+            return@LazyColumn
+        }
+        if (isEmptyIdle) {
+            item(key = "empty_idle") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 120.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("该板块下暂无帖子。", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            return@LazyColumn
+        }
         items(
             items = displayItems,
             key = { it.id },

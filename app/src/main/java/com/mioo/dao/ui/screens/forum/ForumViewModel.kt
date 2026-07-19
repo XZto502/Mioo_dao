@@ -18,6 +18,7 @@ import com.mioo.dao.ui.components.toFilteredThreadListItems
 import com.mioo.dao.utils.KeywordMatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,6 +57,7 @@ class ForumViewModel @Inject constructor(
     val uiState: StateFlow<ForumUiState> = _uiState.asStateFlow()
 
     private var currentPage = 1
+    private var listJob: Job? = null
     private var blockedThreads: Set<String> = emptySet()
     private var blockedUsers: Set<String> = emptySet()
     private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
@@ -148,107 +150,141 @@ class ForumViewModel @Inject constructor(
 
     fun loadNextPage() {
         val currentState = _uiState.value
-        if (currentState.isLoading || currentState.isLastPage) return
+        // Do not page while a full refresh is in flight (avoids racing page counter / list).
+        if (currentState.isLoading || currentState.isRefreshing || currentState.isLastPage) return
 
         _uiState.update { it.copy(isLoading = true) }
+        val pageToLoad = currentPage
+        val requestForumId = forumId
 
-        viewModelScope.launch {
-            val flow = if (forumId == "-1") {
-                threadRepository.getTimeline("1", currentPage)
+        listJob?.cancel()
+        listJob = viewModelScope.launch {
+            val flow = if (requestForumId == "-1") {
+                threadRepository.getTimeline("1", pageToLoad)
             } else {
-                threadRepository.getThreads(forumId, currentPage)
+                threadRepository.getThreads(requestForumId, pageToLoad)
             }
 
-            flow.collect { response ->
-                when (response) {
-                    is XdResponse.Success -> {
-                        val newThreads = response.data
-                        // Append with SWR: replace any ids from this page, keep prior pages
-                        val existing = _uiState.value.threads
-                        val newIds = newThreads.mapTo(HashSet(newThreads.size)) { it.id }
-                        val combinedList = existing.filter { it.id !in newIds } + newThreads
-                        val displayItems = withContext(Dispatchers.Default) {
-                            combinedList.toFilteredThreadListItems(
-                                blockedThreads, blockedUsers, keywordMatcher
-                            )
+            try {
+                var gotPage = false
+                flow.collect { response ->
+                    // Drop stale responses if user switched boards mid-flight.
+                    if (forumId != requestForumId) return@collect
+                    when (response) {
+                        is XdResponse.Success -> {
+                            val newThreads = response.data
+                            // Append with SWR: replace any ids from this page, keep prior pages
+                            val existing = _uiState.value.threads
+                            val newIds = newThreads.mapTo(HashSet(newThreads.size)) { it.id }
+                            val combinedList = existing.filter { it.id !in newIds } + newThreads
+                            val displayItems = withContext(Dispatchers.Default) {
+                                combinedList.toFilteredThreadListItems(
+                                    blockedThreads, blockedUsers, keywordMatcher
+                                )
+                            }
+                            // Only advance page once per load (SWR may emit cache + network).
+                            if (!gotPage && newThreads.isNotEmpty()) {
+                                gotPage = true
+                                currentPage = pageToLoad + 1
+                                scheduleSmartPreload(newThreads, delayMs = 800L)
+                            }
+                            _uiState.update { state ->
+                                state.copy(
+                                    threads = combinedList,
+                                    displayItems = displayItems,
+                                    isLoading = false,
+                                    isLastPage = newThreads.isEmpty() && !gotPage,
+                                    errorMessage = null
+                                )
+                            }
                         }
-                        _uiState.update { state ->
-                            state.copy(
-                                threads = combinedList,
-                                displayItems = displayItems,
-                                isLoading = false,
-                                isLastPage = newThreads.isEmpty(),
-                                errorMessage = null
-                            )
-                        }
-                        if (newThreads.isNotEmpty()) {
-                            currentPage++
-                            scheduleSmartPreload(newThreads, delayMs = 800L)
+                        is XdResponse.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    errorMessage = "Failed to load threads: ${response.message}"
+                                )
+                            }
                         }
                     }
-                    is XdResponse.Error -> {
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                errorMessage = "Failed to load threads: ${response.message}"
-                            )
-                        }
-                    }
+                }
+            } finally {
+                if (forumId == requestForumId) {
+                    _uiState.update { it.copy(isLoading = false) }
                 }
             }
         }
     }
 
     fun refresh() {
+        val requestForumId = forumId
         currentPage = 1
         // Keep existing threads visible while refreshing so only the top pull indicator
-        // shows (not a second full-screen center spinner). Empty list still uses center.
+        // shows (not a second full-screen center spinner).
         _uiState.update {
             it.copy(
                 isRefreshing = true,
-                isLastPage = false
+                isLastPage = false,
+                errorMessage = null
             )
         }
 
-        viewModelScope.launch {
-            val flow = if (forumId == "-1") {
-                threadRepository.getTimeline("1", currentPage)
+        // Cancel in-flight page/refresh so SWR double-emit cannot race page counter.
+        listJob?.cancel()
+        listJob = viewModelScope.launch {
+            val flow = if (requestForumId == "-1") {
+                threadRepository.getTimeline("1", 1)
             } else {
-                threadRepository.getThreads(forumId, currentPage)
+                threadRepository.getThreads(requestForumId, 1)
             }
 
-            flow.collect { response ->
-                when (response) {
-                    is XdResponse.Success -> {
-                        val freshThreads = response.data
-                        val displayItems = withContext(Dispatchers.Default) {
-                            freshThreads.toFilteredThreadListItems(
-                                blockedThreads, blockedUsers, keywordMatcher
-                            )
+            try {
+                var lastNonEmpty = false
+                flow.collect { response ->
+                    if (forumId != requestForumId) return@collect
+                    when (response) {
+                        is XdResponse.Success -> {
+                            val freshThreads = response.data
+                            lastNonEmpty = freshThreads.isNotEmpty()
+                            val displayItems = withContext(Dispatchers.Default) {
+                                freshThreads.toFilteredThreadListItems(
+                                    blockedThreads, blockedUsers, keywordMatcher
+                                )
+                            }
+                            // Update list immediately (cache then network) but keep
+                            // isRefreshing=true until the whole flow completes — avoids
+                            // ending the pull indicator on the first cache hit.
+                            _uiState.update { state ->
+                                state.copy(
+                                    threads = freshThreads,
+                                    displayItems = displayItems,
+                                    isLoading = false,
+                                    isLastPage = freshThreads.isEmpty(),
+                                    errorMessage = null
+                                )
+                            }
                         }
-                        _uiState.update { state ->
-                            state.copy(
-                                threads = freshThreads,
-                                displayItems = displayItems,
-                                isRefreshing = false,
-                                isLoading = false,
-                                isLastPage = freshThreads.isEmpty(),
-                                errorMessage = null
-                            )
-                        }
-                        if (freshThreads.isNotEmpty()) {
-                            currentPage++
-                            scheduleSmartPreload(freshThreads, delayMs = 1600L)
+                        is XdResponse.Error -> {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    errorMessage = "Failed to refresh: ${response.message}"
+                                )
+                            }
                         }
                     }
-                    is XdResponse.Error -> {
-                        _uiState.update {
-                            it.copy(
-                                isRefreshing = false,
-                                isLoading = false,
-                                errorMessage = "Failed to refresh: ${response.message}"
-                            )
-                        }
+                }
+                if (forumId == requestForumId) {
+                    // Next page to request after a full page-1 refresh.
+                    currentPage = if (lastNonEmpty) 2 else 1
+                    if (lastNonEmpty) {
+                        scheduleSmartPreload(_uiState.value.threads, delayMs = 1600L)
+                    }
+                }
+            } finally {
+                if (forumId == requestForumId) {
+                    _uiState.update {
+                        it.copy(isRefreshing = false, isLoading = false)
                     }
                 }
             }
