@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.10",
-  "name": "v1.0.10",
-  "body": "- 动效：统一 ease-out 曲线与时长（MiooMotion），进入/退出不对称\n- 导航：Tab 短淡入淡出；二级页/串详情 fade+轻微 scale，禁止 ease-in\n- 颜文字/骰子面板、引用条、附图预览：soft expand（scale 0.95，非 0）\n- 引用弹窗 modal 入场；卡片/工具按钮按压 scale 反馈\n- 尊重系统「关闭动画」；Shimmer 更快并在 reduced-motion 下静态\n- 包含 v1.0.9：沉浸式系统栏与手势小白条",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.10",
+  "tag_name": "v1.0.11",
+  "name": "v1.0.11",
+  "body": "- 修复：进入串详情再返回，板块列表保留原先滚动位置（rememberSaveable）\n- 修复：板块手动刷新/下拉刷新失效（SWR 提前结束指示器、空列表无 LazyColumn）\n- 修复：刷新与翻页协程互抢导致 currentPage 错乱\n- 包含 v1.0.10：统一动效系统 MiooMotion",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.11",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.10/app-debug.apk",
-      "size": 23059045
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.11/app-debug.apk",
+      "size": 23060245
     }
   ]
 }
