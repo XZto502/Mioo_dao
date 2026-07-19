@@ -18,6 +18,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import android.os.Build
+import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -68,21 +71,8 @@ class MainActivity : ComponentActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(
-                android.graphics.Color.TRANSPARENT,
-                android.graphics.Color.TRANSPARENT
-            ),
-            navigationBarStyle = SystemBarStyle.light(
-                android.graphics.Color.TRANSPARENT,
-                android.graphics.Color.TRANSPARENT
-            )
-        )
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            window.isStatusBarContrastEnforced = false
-            window.isNavigationBarContrastEnforced = false
-        }
+        // Transparent scrims so the gesture "小白条" / nav bar area shows app content.
+        applyImmersiveSystemBars(darkTheme = false)
 
         super.onCreate(savedInstanceState)
 
@@ -123,6 +113,11 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
+            }
+
+            // Keep system bars immersive when app theme changes (not only system UI mode).
+            SideEffect {
+                applyImmersiveSystemBars(darkTheme)
             }
 
             var showUpdateDialog by remember { mutableStateOf<GithubRelease?>(null) }
@@ -299,6 +294,42 @@ private data class ThemeConfig(
     val fontSizeScale: Float = 1.0f,
     val glassEffectEnabled: Boolean = true
 )
+
+/**
+ * Fully transparent status / navigation bars so content and glow draw under the
+ * gesture indicator (小白条) and 3-button nav area.
+ */
+private fun ComponentActivity.applyImmersiveSystemBars(darkTheme: Boolean) {
+    val transparent = android.graphics.Color.TRANSPARENT
+    enableEdgeToEdge(
+        statusBarStyle = if (darkTheme) {
+            SystemBarStyle.dark(transparent)
+        } else {
+            SystemBarStyle.light(transparent, transparent)
+        },
+        navigationBarStyle = if (darkTheme) {
+            // Transparent dark bar — no opaque scrim behind the gesture pill.
+            SystemBarStyle.dark(transparent)
+        } else {
+            SystemBarStyle.light(transparent, transparent)
+        }
+    )
+
+    window.statusBarColor = transparent
+    window.navigationBarColor = transparent
+    window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+    window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+    window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isStatusBarContrastEnforced = false
+        window.isNavigationBarContrastEnforced = false
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        window.navigationBarDividerColor = transparent
+    }
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+}
 
 private fun getAppVersionName(): String {
     return com.mioo.dao.BuildConfig.VERSION_NAME

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -1300,12 +1301,13 @@ fun ReplyInputArea(
         tonalElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
-            // Nav bar in layout; IME as draw-time lift — smooth keyboard animation
+            // Draw under gesture 小白条; IME lift is graphicsLayer-only
             .imeLiftOverNavigationBars()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             AnimatedVisibility(visible = quotedPostNo != null) {

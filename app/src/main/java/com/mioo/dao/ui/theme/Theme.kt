@@ -235,10 +235,20 @@ fun MiooDaoTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
+            val transparent = Color.Transparent.toArgb()
+            window.statusBarColor = transparent
+            window.navigationBarColor = transparent
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.navigationBarDividerColor = transparent
+            }
+            WindowCompat.setDecorFitsSystemWindows(window, false)
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !darkTheme
+                // Light icons on dark theme so the gesture pill stays visible on glow/content.
                 isAppearanceLightNavigationBars = !darkTheme
             }
         }

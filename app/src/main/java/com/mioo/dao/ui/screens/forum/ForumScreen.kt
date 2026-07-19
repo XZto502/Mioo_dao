@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -941,6 +942,9 @@ fun CreateThreadDialog(
                 window.isStatusBarContrastEnforced = false
                 window.isNavigationBarContrastEnforced = false
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
+            }
             WindowCompat.getInsetsController(window, dialogView).apply {
                 isAppearanceLightStatusBars = !isDark
                 isAppearanceLightNavigationBars = !isDark
@@ -1021,10 +1025,13 @@ fun CreateThreadDialog(
                         shadowElevation = 0.dp,
                         modifier = Modifier
                             .fillMaxWidth()
+                            // 底色延伸到手势小白条下方；控件再加 navigationBarsPadding
                             .imeLiftOverNavigationBars()
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
                         ) {
                             HorizontalDivider(
                                 color = colorScheme.outlineVariant.copy(alpha = 0.35f)

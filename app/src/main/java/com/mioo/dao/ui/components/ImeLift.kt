@@ -13,9 +13,11 @@ import androidx.compose.ui.platform.LocalDensity
 /**
  * Smooth keyboard lift for bottom bars / composers.
  *
- * Layout only reserves the **navigation bar** inset (stable). Extra IME height is applied as
- * [graphicsLayer] translation so parents (Scaffold / LazyColumn) are **not** remeasured on every
- * IME animation frame — avoids the janky "whole screen jumps with the keyboard" feel.
+ * The bar **draws under** the system navigation / gesture area (immersive 小白条).
+ * Put [navigationBarsPadding] on **inner content** so controls stay above the gesture pill.
+ *
+ * Extra IME height (above the nav inset) is applied as [graphicsLayer] translation so parents
+ * (Scaffold / LazyColumn) are **not** remeasured on every IME frame.
  *
  * Pair with activity `windowSoftInputMode="adjustNothing"` (or dialog SOFT_INPUT_ADJUST_NOTHING)
  * so the system does not also resize the window.
@@ -28,11 +30,10 @@ fun Modifier.imeLiftOverNavigationBars(): Modifier = composed {
     val extraLiftPx = (imeBottom - navBottom).coerceAtLeast(0)
     val translation = remember(extraLiftPx) { -extraLiftPx.toFloat() }
 
-    this
-        .navigationBarsPadding()
-        .graphicsLayer {
-            translationY = translation
-        }
+    this.graphicsLayer {
+        translationY = translation
+    }
 }
 
-
+/** Inner content padding so controls sit above the gesture / 3-button nav area. */
+fun Modifier.navBarContentPadding(): Modifier = this.navigationBarsPadding()

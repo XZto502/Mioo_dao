@@ -146,6 +146,8 @@ fun MiooDaoNavGraph(
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
+                // Outer box draws into the gesture nav area so the 小白条 is immersive;
+                // capsule itself stays above the system inset.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

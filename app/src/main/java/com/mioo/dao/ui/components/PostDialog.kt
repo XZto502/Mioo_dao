@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -92,8 +93,9 @@ fun PostDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Nav in layout; IME as lift so sheet content isn't reflowed every frame
+                // Draw under gesture bar; pad content + IME lift without reflowing sheet each frame
                 .imeLiftOverNavigationBars()
+                .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
         ) {
