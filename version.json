@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.8",
-  "name": "v1.0.8",
-  "body": "- 设置：新增毛玻璃特效开关，可关闭半透明顶栏/卡片与背景流光\n- 板块列表：加载指示统一为顶部下拉刷新圆圈，去掉屏幕中央重复加载圈\n- 刷新时保留现有列表内容，减少清空闪白\n- 包含 v1.0.7：键盘 imeLift 动画与列表不随 IME reflow",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.8",
+  "tag_name": "v1.0.9",
+  "name": "v1.0.9",
+  "body": "- 沉浸式系统栏：状态栏/导航栏全透明，内容与流光可延伸到手势小白条下方\n- 主题切换时同步更新系统栏样式，避免暗色下小白条区域不透明遮挡\n- 底栏/回复栏/发帖面板：底色延伸进手势区，控件用 navigationBarsPadding 抬高\n- 包含 v1.0.8：毛玻璃开关、列表顶部加载指示",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.9",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.8/app-debug.apk",
-      "size": 23040717
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.9/app-debug.apk",
+      "size": 23047401
     }
   ]
 }
