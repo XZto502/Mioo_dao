@@ -63,28 +63,18 @@ fun ListThumbAsyncImage(
     contentScale: ContentScale = ContentScale.Crop
 ) {
     val context = LocalContext.current
+    // Stable request; no per-frame onState recomposition (static placeholder under image)
     val request = remember(imageUrl) {
         ListThumbImage.request(context, imageUrl)
     }
-    var isLoading by remember(imageUrl) { mutableStateOf(true) }
 
     Box(modifier = modifier.background(Color(0xFFE8E8ED))) {
         AsyncImage(
             model = request,
             contentDescription = contentDescription,
             contentScale = contentScale,
-            modifier = Modifier.matchParentSize(),
-            onState = { state ->
-                isLoading = state is AsyncImagePainter.State.Loading
-            }
+            modifier = Modifier.matchParentSize()
         )
-        if (isLoading) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color(0xFFE4E4E7))
-            )
-        }
     }
 }
 

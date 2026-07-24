@@ -59,26 +59,41 @@ fun ThreadCard(
      * Dense lists: skip press-scale animation (indication only) to cut per-row
      * animateFloatAsState / graphicsLayer cost during fling.
      */
-    enablePressScale: Boolean = false
+    enablePressScale: Boolean = false,
+    /** When false, skip thumbnail (cold-start: defer decode until list settles). */
+    showImage: Boolean = true
 ) {
     val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
     val border = remember(outline) { BorderStroke(0.5.dp, outline) }
     val interactionSource = remember { MutableInteractionSource() }
-    val pressScale = rememberPressScale(
-        interactionSource = interactionSource,
-        pressedScale = MiooMotion.ScaleCardPress,
-        enabled = enablePressScale
-    )
-    Card(
-        modifier = modifier
+    // Dense list default: skip press animation subscriptions entirely (enablePressScale=false)
+    val cardModifier = if (enablePressScale) {
+        val pressScale = rememberPressScale(
+            interactionSource = interactionSource,
+            pressedScale = MiooMotion.ScaleCardPress,
+            enabled = true
+        )
+        modifier
             .fillMaxWidth()
-            .then(if (enablePressScale) Modifier.graphicsPressScale(pressScale) else Modifier)
+            .graphicsPressScale(pressScale)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onClick = onThreadClick,
                 onLongClick = onLongClick
-            ),
+            )
+    } else {
+        modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onThreadClick,
+                onLongClick = onLongClick
+            )
+    }
+    Card(
+        modifier = cardModifier,
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = DaoTheme.colors.threadCardBg
@@ -192,21 +207,23 @@ fun ThreadCard(
                 enableGestures = enableHtmlGestures
             )
 
-            // Attached Image Thumbnail
-            postData.imageUrl?.let { imageUrl ->
-                Spacer(modifier = Modifier.height(12.dp))
-                Box(
-                    modifier = Modifier
-                        .size(120.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable { onImageClick(imageUrl) }
-                ) {
-                    ListThumbAsyncImage(
-                        imageUrl = imageUrl,
-                        contentDescription = "Thread Image",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize()
-                    )
+            // Attached Image Thumbnail (optional — off during cold first frames)
+            if (showImage) {
+                postData.imageUrl?.let { imageUrl ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .clip(MaterialTheme.shapes.medium)
+                            .clickable { onImageClick(imageUrl) }
+                    ) {
+                        ListThumbAsyncImage(
+                            imageUrl = imageUrl,
+                            contentDescription = "Thread Image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.matchParentSize()
+                        )
+                    }
                 }
             }
 

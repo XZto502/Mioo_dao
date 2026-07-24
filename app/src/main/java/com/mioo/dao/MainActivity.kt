@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
 
         // Never stick on splash if list is empty/error/slow network
         lifecycleScope.launch {
-            delay(2200)
+            delay(2800)
             keepSplashOnScreen.set(false)
         }
 

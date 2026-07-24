@@ -256,20 +256,35 @@ class ForumViewModel @Inject constructor(
 
             try {
                 var lastNonEmpty = false
+                var emissionCount = 0
+                var lastIds: LongArray? = null
                 flow.collect { response ->
                     if (forumId != requestForumId) return@collect
                     when (response) {
                         is XdResponse.Success -> {
                             val freshThreads = response.data
                             lastNonEmpty = freshThreads.isNotEmpty()
+                            val ids = LongArray(freshThreads.size) { freshThreads[it].id }
+                            // Skip identical SWR second paint (same row set)
+                            val prev = lastIds
+                            if (prev != null && prev.contentEquals(ids)) {
+                                emissionCount++
+                                return@collect
+                            }
+                            lastIds = ids
+
                             val displayItems = withContext(Dispatchers.Default) {
                                 freshThreads.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
                                 )
                             }
-                            // Update list immediately (cache then network) but keep
-                            // isRefreshing=true until the whole flow completes — avoids
-                            // ending the pull indicator on the first cache hit.
+                            // Network after cache: yield so first cache paint isn't stomped mid-frame
+                            if (emissionCount > 0) {
+                                delay(180)
+                                if (forumId != requestForumId) return@collect
+                            }
+                            emissionCount++
+                            // Update list; keep isRefreshing until flow ends
                             _uiState.update { state ->
                                 state.copy(
                                     threads = freshThreads,

@@ -275,7 +275,8 @@ fun MiooDaoTheme(
                     showAmbientGlow = false
                     return@LaunchedEffect
                 }
-                delay(480)
+                // Wait until progressive list + images settle before extra GPU fill
+                delay(1400)
                 showAmbientGlow = true
             }
 

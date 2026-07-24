@@ -194,12 +194,12 @@ fun MiooDaoNavGraph(
             // We intentionally do NOT apply paddingValues here so the content can scroll behind the floating nav bar.
             // Inner screens handle bottom padding via their LazyColumn contentPadding.
         ) {
-            // Forum screen (Default start destination)
+            // Forum screen (Default start destination) — no enter anim (cold start must not fade)
             composable(
                 route = Screen.Forum.route,
-                enterTransition = fadeEnter,
+                enterTransition = { EnterTransition.None },
                 exitTransition = fadeExit,
-                popEnterTransition = fadeEnter,
+                popEnterTransition = { EnterTransition.None },
                 popExitTransition = fadeExit
             ) {
                 val viewModel: ForumViewModel = hiltViewModel()

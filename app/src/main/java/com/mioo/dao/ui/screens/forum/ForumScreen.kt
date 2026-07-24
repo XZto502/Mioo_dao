@@ -95,6 +95,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -123,6 +124,7 @@ import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
+import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.imeLiftOverNavigationBars
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
@@ -131,6 +133,7 @@ import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.os.Build
@@ -170,26 +173,32 @@ fun ForumScreen(
     // True for a short window after board switch — pause prefetch/prewarm during swap
     var boardSwitchQuiet by remember { mutableStateOf(false) }
 
-    // Dismiss system splash once list has rows (cache/network) or a settled error/empty idle.
+    // Splash: also release on empty/error so we never hang without content
     var coldStartNotified by remember { mutableStateOf(false) }
     LaunchedEffect(
-        uiState.displayItems.isNotEmpty(),
         uiState.errorMessage,
         uiState.isLoading,
-        uiState.isRefreshing
+        uiState.isRefreshing,
+        uiState.displayItems.isEmpty()
     ) {
         if (coldStartNotified) return@LaunchedEffect
-        val hasContent = uiState.displayItems.isNotEmpty()
         val settledEmpty =
             uiState.displayItems.isEmpty() &&
                 !uiState.isLoading &&
                 !uiState.isRefreshing
         val hasError = !uiState.errorMessage.isNullOrBlank()
-        if (hasContent || settledEmpty || hasError) {
-            // One frame for LazyColumn to lay out before splash removes
-            delay(32)
+        if (settledEmpty || hasError) {
+            delay(16)
             coldStartNotified = true
             onColdStartContentReady()
+        }
+    }
+    val notifyColdStartReady = remember(onColdStartContentReady) {
+        {
+            if (!coldStartNotified) {
+                coldStartNotified = true
+                onColdStartContentReady()
+            }
         }
     }
 
@@ -479,7 +488,8 @@ fun ForumScreen(
                         onBlockUser = { settingsViewModel.addBlockedUser(it) },
                         onFreeCopy = { freeCopyText = it },
                         userScrollEnabled = !drawerBlocksMainList,
-                        warmEnabled = allowBackgroundWarm
+                        warmEnabled = allowBackgroundWarm,
+                        onFirstScreenReady = notifyColdStartReady
                     )
                 }
 
@@ -625,46 +635,118 @@ private fun ForumThreadListPane(
     onBlockUser: (String) -> Unit,
     onFreeCopy: (String) -> Unit,
     userScrollEnabled: Boolean = true,
-    warmEnabled: Boolean = true
+    warmEnabled: Boolean = true,
+    onFirstScreenReady: () -> Unit = {}
 ) {
     val displayItems = uiState.displayItems
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     val isEmptyLoading = displayItems.isEmpty() && (uiState.isLoading || uiState.isRefreshing)
     val isEmptyIdle = displayItems.isEmpty() && !uiState.isLoading && !uiState.isRefreshing
 
-    LaunchedEffect(displayItems, quoteLinkColor, forumKey, warmEnabled) {
-        if (!warmEnabled || displayItems.isEmpty()) return@LaunchedEffect
-        val bodies = displayItems.map { it.postData.content }
-        withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                bodies.take(6),
-                quoteLinkColor
-            )
-        }
-        delay(800)
-        if (!warmEnabled) return@LaunchedEffect
-        withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                bodies.drop(6).take(20),
-                quoteLinkColor
-            )
-        }
+    /**
+     * High-refresh Xiaomi (120/144Hz): never mutate item count while user flings.
+     * Prewarm HTML for the whole page on a background thread, then hand LazyColumn
+     * the full list once (Lazy only composes the viewport).
+     */
+    var listReady by remember(forumKey) { mutableStateOf(false) }
+    var showImages by remember(forumKey) { mutableStateOf(false) }
+    var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
+    var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
+
+    val listSig = remember(displayItems) {
+        "${displayItems.size}:${displayItems.firstOrNull()?.id}:${displayItems.lastOrNull()?.id}"
     }
-    val prefetchUrls = remember(displayItems) {
-        displayItems.map { it.postData.imageUrl }
+
+    LaunchedEffect(forumKey, listSig, quoteLinkColor) {
+        if (displayItems.isEmpty()) {
+            listReady = false
+            return@LaunchedEffect
+        }
+        // Parse all page-1 HTML off the UI thread so fling never hits cache-miss parse.
+        withContext(Dispatchers.Default) {
+            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                displayItems.map { it.postData.content },
+                quoteLinkColor
+            )
+        }
+        listReady = true
+        if (!firstScreenNotified) {
+            firstScreenNotified = true
+            delay(16)
+            onFirstScreenReady()
+        }
+        // Thumbnails only after first idle window — never during active fling
+        delay(500)
+        snapshotFlow { listState.isScrollInProgress }
+            .first { scrolling -> !scrolling }
+        delay(250)
+        showImages = true
+    }
+
+    val prefetchUrls = remember(displayItems, showImages) {
+        if (!showImages) emptyList()
+        else displayItems.map { it.postData.imageUrl }
     }
     PrefetchListImages(
         imageUrls = prefetchUrls,
         listState = listState,
         sizePx = ListThumbImage.SIZE_PX,
-        ahead = 5,
-        // Longer delay so cold-start first fling isn't decoder-bound
-        initialDelayMs = 900,
-        enabled = warmEnabled && displayItems.isNotEmpty()
+        ahead = 3,
+        initialDelayMs = 800,
+        // Prefetch only when not flinging (see PrefetchListImages)
+        enabled = warmEnabled && showImages && listReady && displayItems.isNotEmpty()
     )
 
-    // Always keep a LazyColumn so pull-to-refresh nested scroll has a scrollable child
-    // (empty early-return broke manual pull refresh).
+    // Block dialog outside items — avoids per-row AlertDialog composition during scroll
+    blockTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { blockTarget = null },
+            title = { Text("内容操作") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            onBlockThread(target.idStr)
+                            blockTarget = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("屏蔽此串 (No.${target.idStr})")
+                    }
+                    TextButton(
+                        onClick = {
+                            onBlockUser(target.userHash)
+                            blockTarget = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("屏蔽发言饼干 (ID: ${target.userHash})")
+                    }
+                    TextButton(
+                        onClick = {
+                            onFreeCopy(target.rawContent)
+                            blockTarget = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("自由复制帖子内容")
+                    }
+                    TextButton(
+                        onClick = { blockTarget = null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("取消")
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    // Always keep a LazyColumn so pull-to-refresh nested scroll has a scrollable child.
     LazyColumn(
         state = listState,
         userScrollEnabled = userScrollEnabled,
@@ -677,15 +759,14 @@ private fun ForumThreadListPane(
             bottom = 100.dp
         )
     ) {
-        if (isEmptyLoading) {
-            // Spacer so nested-scroll pull can start; indicator is the top pull circle.
-            item(key = "empty_loading") {
+        if (isEmptyLoading || (displayItems.isNotEmpty() && !listReady)) {
+            item(key = "empty_loading", contentType = "loading") {
                 Spacer(modifier = Modifier.height(1.dp))
             }
             return@LazyColumn
         }
         if (isEmptyIdle) {
-            item(key = "empty_idle") {
+            item(key = "empty_idle", contentType = "empty") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -701,67 +782,17 @@ private fun ForumThreadListPane(
             items = displayItems,
             key = { it.id },
             contentType = { item ->
-                if (item.hasImage) "thread_image" else "thread_text"
+                if (item.hasImage && showImages) "thread_image" else "thread_text"
             }
         ) { item ->
-            var showBlockDialog by remember { mutableStateOf(false) }
-
-            if (showBlockDialog) {
-                AlertDialog(
-                    onDismissRequest = { showBlockDialog = false },
-                    title = { Text("内容操作") },
-                    text = {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    onBlockThread(item.idStr)
-                                    showBlockDialog = false
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("屏蔽此串 (No.${item.idStr})")
-                            }
-                            TextButton(
-                                onClick = {
-                                    onBlockUser(item.userHash)
-                                    showBlockDialog = false
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("屏蔽发言饼干 (ID: ${item.userHash})")
-                            }
-                            TextButton(
-                                onClick = {
-                                    onFreeCopy(item.rawContent)
-                                    showBlockDialog = false
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("自由复制帖子内容")
-                            }
-                            TextButton(
-                                onClick = { showBlockDialog = false },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("取消")
-                            }
-                        }
-                    },
-                    confirmButton = {}
-                )
-            }
-
             val onThreadClickRemembered = remember(item.idStr) {
                 { onNavigateToThread(item.idStr) }
             }
             val onImageClickRemembered = remember {
                 { imageUrl: String -> onImageClick(imageUrl) }
             }
-            val onLongClickRemembered = remember {
-                { showBlockDialog = true }
+            val onLongClickRemembered = remember(item.id) {
+                { blockTarget = item }
             }
 
             ThreadCard(
@@ -770,7 +801,10 @@ private fun ForumThreadListPane(
                 onThreadClick = onThreadClickRemembered,
                 onQuoteClick = emptyStringLambda,
                 onImageClick = onImageClickRemembered,
-                onLongClick = onLongClickRemembered
+                onLongClick = onLongClickRemembered,
+                // Shorter body = cheaper measure on high-refresh fling
+                contentMaxLines = 5,
+                showImage = showImages
             )
         }
 
