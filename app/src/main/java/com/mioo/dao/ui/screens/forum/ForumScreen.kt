@@ -146,6 +146,7 @@ fun ForumScreen(
     viewModel: ForumViewModel,
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     onNavigateToThread: (threadId: String) -> Unit,
+    onColdStartContentReady: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -168,6 +169,29 @@ fun ForumScreen(
     val previousForumId = rememberSaveable { mutableStateOf(currentForumId) }
     // True for a short window after board switch — pause prefetch/prewarm during swap
     var boardSwitchQuiet by remember { mutableStateOf(false) }
+
+    // Dismiss system splash once list has rows (cache/network) or a settled error/empty idle.
+    var coldStartNotified by remember { mutableStateOf(false) }
+    LaunchedEffect(
+        uiState.displayItems.isNotEmpty(),
+        uiState.errorMessage,
+        uiState.isLoading,
+        uiState.isRefreshing
+    ) {
+        if (coldStartNotified) return@LaunchedEffect
+        val hasContent = uiState.displayItems.isNotEmpty()
+        val settledEmpty =
+            uiState.displayItems.isEmpty() &&
+                !uiState.isLoading &&
+                !uiState.isRefreshing
+        val hasError = !uiState.errorMessage.isNullOrBlank()
+        if (hasContent || settledEmpty || hasError) {
+            // One frame for LazyColumn to lay out before splash removes
+            delay(32)
+            coldStartNotified = true
+            onColdStartContentReady()
+        }
+    }
 
     val drawerBlocksMainList =
         drawerState.currentValue != DrawerValue.Closed ||
@@ -227,6 +251,9 @@ fun ForumScreen(
     // Board switcher always opens at the top — no jump to current board / scroll memory
     LaunchedEffect(drawerState.currentValue) {
         if (drawerState.currentValue != DrawerValue.Open) return@LaunchedEffect
+        if (uiState.forumGroups.isEmpty()) {
+            viewModel.loadForumGroups()
+        }
         runCatching { drawerListState.scrollToItem(0) }
     }
 
@@ -269,6 +296,7 @@ fun ForumScreen(
                     )
                     IconButton(
                         onClick = {
+                            // Ensure groups load even if cold-start deferral skipped them
                             viewModel.loadForumGroups()
                             Toast.makeText(context, "正在刷新板块列表...", Toast.LENGTH_SHORT).show()
                         }
@@ -630,7 +658,8 @@ private fun ForumThreadListPane(
         listState = listState,
         sizePx = ListThumbImage.SIZE_PX,
         ahead = 5,
-        initialDelayMs = 600,
+        // Longer delay so cold-start first fling isn't decoder-bound
+        initialDelayMs = 900,
         enabled = warmEnabled && displayItems.isNotEmpty()
     )
 

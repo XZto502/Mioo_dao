@@ -74,7 +74,9 @@ sealed class Screen(val route: String) {
 fun MiooDaoNavGraph(
     modifier: Modifier = Modifier,
     pendingThreadId: String? = null,
-    onPendingThreadConsumed: () -> Unit = {}
+    onPendingThreadConsumed: () -> Unit = {},
+    /** First board list paint / error — dismiss system splash. */
+    onColdStartContentReady: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -203,7 +205,8 @@ fun MiooDaoNavGraph(
                 val viewModel: ForumViewModel = hiltViewModel()
                 ForumScreen(
                     viewModel = viewModel,
-                    onNavigateToThread = navigateToThread
+                    onNavigateToThread = navigateToThread,
+                    onColdStartContentReady = onColdStartContentReady
                 )
             }
 

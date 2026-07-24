@@ -63,6 +63,7 @@ class ForumViewModel @Inject constructor(
     private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
 
     init {
+        // Block lists can arrive after first page — only rebuild when we already have rows
         viewModelScope.launch {
             settingsRepository.settings
                 .map { Triple(it.blockedThreads, it.blockedUsers, it.blockedKeywords) }
@@ -71,18 +72,25 @@ class ForumViewModel @Inject constructor(
                     blockedThreads = threads.toHashSet()
                     blockedUsers = users.toHashSet()
                     keywordMatcher = KeywordMatcher.build(keywords)
-                    rebuildDisplayItems()
+                    if (_uiState.value.threads.isNotEmpty()) {
+                        rebuildDisplayItems()
+                    }
                 }
         }
 
+        // Cold start: restore last board → list ASAP; board drawer catalog after first paint.
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, isRefreshing = true) }
             val (savedId, savedName) = settingsDataStore.getLastForum()
             forumId = savedId
             _uiState.update { it.copy(currentForumName = savedName) }
-            // Board list in parallel — do not block first thread page
-            launch { loadForumGroupsSync() }
+            // First network slot = timeline/showf (SWR cache paints immediately)
             refresh()
+            // Defer forum group fetch so cold fling / decode aren't sharing bandwidth
+            delay(1400)
+            if (_uiState.value.forumGroups.isEmpty()) {
+                loadForumGroupsSync()
+            }
         }
     }
 

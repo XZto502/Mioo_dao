@@ -14,13 +14,13 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
-        android:theme="@style/Theme.MiooDao">
+        android:theme="@style/Theme.MiooDao.Splash">
         
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustNothing"
-            android:theme="@style/Theme.MiooDao"
+            android:theme="@style/Theme.MiooDao.Splash"
             android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

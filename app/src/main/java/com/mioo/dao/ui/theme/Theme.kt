@@ -21,13 +21,18 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import kotlinx.coroutines.delay
 
 
 private val LightColorScheme = lightColorScheme(
@@ -263,14 +268,24 @@ fun MiooDaoTheme(
             typography = scaledTypography,
             shapes = Shapes
         ) {
+            // Defer ambient glow until after first list frames — solid bg only on cold start.
+            var showAmbientGlow by remember { mutableStateOf(false) }
+            LaunchedEffect(glassEffectEnabled) {
+                if (!glassEffectEnabled) {
+                    showAmbientGlow = false
+                    return@LaunchedEffect
+                }
+                delay(480)
+                showAmbientGlow = true
+            }
+
             // Cache glow colors; drawWithCache rebuilds brushes only when size/colors change
             // (avoids radialGradient allocations during list scroll overdraw).
-            // Slightly softer ambient glow so glass bars/cards read more solid
             val primaryGlow = remember(colorScheme.primary) { colorScheme.primary.copy(alpha = 0.16f) }
             val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.12f) }
             val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.08f) }
 
-            val rootModifier = if (glassEffectEnabled) {
+            val rootModifier = if (glassEffectEnabled && showAmbientGlow) {
                 Modifier
                     .fillMaxSize()
                     .background(colorScheme.background)

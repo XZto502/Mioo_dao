@@ -725,7 +725,7 @@ private fun ThreadChromeActions(
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
             DropdownMenuItem(
-                text = { Text("只看楼主") },
+                text = { Text("只看PO") },
                 onClick = {
                     onShowOverflowMenuChange(false)
                     viewModel.togglePoOnly()

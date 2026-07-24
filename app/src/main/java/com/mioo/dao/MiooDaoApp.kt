@@ -73,18 +73,18 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
     private fun warmCriticalPaths() {
         appScope.launch {
-            // Room
+            // Stagger warm work so cold list network/decode wins first
             runCatching {
                 if (::database.isInitialized) {
                     database.openHelper.writableDatabase
                 }
             }
-            // Force ImageLoader construction + HTML parser JIT before first scroll
+            kotlinx.coroutines.delay(200)
             runCatching {
                 val loader = coil.Coil.imageLoader(this@MiooDaoApp)
-                // Touch memory cache
                 loader.memoryCache
             }
+            kotlinx.coroutines.delay(350)
             runCatching {
                 HtmlParseCache.prewarm(
                     listOf(

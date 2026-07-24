@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FF00796B</color>
+    <!-- Match Compose LightBackground / DarkBackground for seamless splash → UI -->
+    <color name="splash_background">#FFF4F5F7</color>
+    <color name="splash_background_dark">#FF141218</color>
 </resources>

@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import android.os.Build
 import android.view.WindowManager
@@ -46,6 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -70,7 +72,14 @@ class MainActivity : ComponentActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** Keep system splash until first board content paints (or timeout). */
+    private val keepSplashOnScreen = AtomicBoolean(true)
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Seamless launch: splash color matches Compose background; dismiss after first list frame.
+        val splashScreen = installSplashScreen()
+        splashScreen.setKeepOnScreenCondition { keepSplashOnScreen.get() }
+
         // Transparent scrims so the gesture "小白条" / nav bar area shows app content.
         applyImmersiveSystemBars(darkTheme = false)
 
@@ -82,14 +91,18 @@ class MainActivity : ComponentActivity() {
 
         pendingThreadIdState.value = parsePendingThreadId(intent)
 
-        // Re-check clipboard each time we are resumed and interactive.
-        // Android only reliably allows clipboard reads while focused; a short delay helps.
+        // Never stick on splash if list is empty/error/slow network
+        lifecycleScope.launch {
+            delay(2200)
+            keepSplashOnScreen.set(false)
+        }
+
+        // Re-check clipboard after first interactive frames — never compete with cold list paint.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                delay(250)
+                delay(1200)
                 checkClipboardForThreadId()
-                // Second pass: some OEMs populate the clip a bit later
-                delay(400)
+                delay(600)
                 checkClipboardForThreadId()
             }
         }
@@ -124,8 +137,9 @@ class MainActivity : ComponentActivity() {
             val pendingThreadId by pendingThreadIdState
             val clipboardThreadId by clipboardThreadCandidate
 
+            // Update check well after cold start settles
             LaunchedEffect(Unit) {
-                delay(5000)
+                delay(8000)
                 threadRepository.checkLatestRelease().collect { response ->
                     if (response is XdResponse.Success) {
                         val release = response.data
@@ -145,7 +159,10 @@ class MainActivity : ComponentActivity() {
             ) {
                 MiooDaoNavGraph(
                     pendingThreadId = pendingThreadId,
-                    onPendingThreadConsumed = { pendingThreadIdState.value = null }
+                    onPendingThreadConsumed = { pendingThreadIdState.value = null },
+                    onColdStartContentReady = {
+                        keepSplashOnScreen.set(false)
+                    }
                 )
 
                 clipboardThreadId?.let { threadId ->

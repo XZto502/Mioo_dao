@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Splash → main: same background as Compose light surface to avoid white flash -->
+<resources>
     <style name="Theme.MiooDao.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenBackground">@color/splash_background_dark</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
         <item name="postSplashScreenTheme">@style/Theme.MiooDao</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
@@ -11,16 +10,11 @@
     </style>
 
     <style name="Theme.MiooDao" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/splash_background</item>
-        <!-- Fully transparent system bars so content can draw edge-to-edge (immersive 小白条) -->
+        <item name="android:windowBackground">@color/splash_background_dark</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowTranslucentNavigation">false</item>
-        <item name="android:navigationBarDividerColor" tools:targetApi="p">@android:color/transparent</item>
-        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
-        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
-        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
     </style>
 </resources>
