@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.12",
-  "name": "v1.0.12",
-  "body": "- 性能：列表/Room 节流（历史写入、收藏已读、串内搜索防抖、板块分页增量过滤、图片预取、收藏角标延迟）\n- 动效：导航与面板过渡更顺、时长加长\n- 毛玻璃：顶栏/底栏/卡片不透明度提高\n- 交互：切换板块侧栏每次打开回到顶部\n- 含 v1.0.11：板块滚动恢复与刷新修复",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.12",
+  "tag_name": "v1.0.13",
+  "name": "v1.0.13",
+  "body": "- 冷启动：系统 SplashScreen 与主题背景对齐，列表首帧后再收起\n- 冷启动：优先拉时间线/缓存，板块目录、流光、预取图延后\n- 文案：「只看楼主」改为「只看PO」\n- 含 v1.0.12：性能节流、更顺动效、更实毛玻璃、切换板块侧栏回顶",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.13",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.12/app-debug.apk",
-      "size": 23063685
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.13/app-debug.apk",
+      "size": 23094389
     }
   ]
 }
