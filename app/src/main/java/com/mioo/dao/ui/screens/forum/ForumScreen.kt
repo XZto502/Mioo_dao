@@ -169,15 +169,6 @@ fun ForumScreen(
     // True for a short window after board switch — pause prefetch/prewarm during swap
     var boardSwitchQuiet by remember { mutableStateOf(false) }
 
-    val flatForumIds = remember(uiState.forumGroups, forumSettings.pinnedForums) {
-        val pinned = uiState.forumGroups.flatMap { it.forums }
-            .filter { forumSettings.pinnedForums.contains(it.id) }
-            .distinctBy { it.id }
-            .map { it.id }
-        val rest = uiState.forumGroups.flatMap { group -> group.forums.map { it.id } }
-        (pinned + rest).distinct()
-    }
-
     val drawerBlocksMainList =
         drawerState.currentValue != DrawerValue.Closed ||
             drawerState.targetValue != DrawerValue.Closed
@@ -233,16 +224,10 @@ fun ForumScreen(
         }
     }
 
-    // When drawer opens, jump (no animateScroll) so open gesture stays smooth
-    LaunchedEffect(drawerState.currentValue, currentForumId, flatForumIds) {
+    // Board switcher always opens at the top — no jump to current board / scroll memory
+    LaunchedEffect(drawerState.currentValue) {
         if (drawerState.currentValue != DrawerValue.Open) return@LaunchedEffect
-        val index = flatForumIds.indexOf(currentForumId)
-        if (index >= 0) {
-            val target = (index + 2).coerceAtMost(
-                (drawerListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-            )
-            runCatching { drawerListState.scrollToItem(target) }
-        }
+        runCatching { drawerListState.scrollToItem(0) }
     }
 
     val allowBackgroundWarm = !drawerBlocksMainList && !boardSwitchQuiet
