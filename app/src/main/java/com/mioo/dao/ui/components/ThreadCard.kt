@@ -54,19 +54,25 @@ fun ThreadCard(
     /** Truncate body in list for cheaper measure/layout on cold scroll. */
     contentMaxLines: Int = 8,
     /** List cards let the parent Card handle gestures — skip HtmlContent pointerInput. */
-    enableHtmlGestures: Boolean = false
+    enableHtmlGestures: Boolean = false,
+    /**
+     * Dense lists: skip press-scale animation (indication only) to cut per-row
+     * animateFloatAsState / graphicsLayer cost during fling.
+     */
+    enablePressScale: Boolean = false
 ) {
     val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
     val border = remember(outline) { BorderStroke(0.5.dp, outline) }
     val interactionSource = remember { MutableInteractionSource() }
     val pressScale = rememberPressScale(
         interactionSource = interactionSource,
-        pressedScale = MiooMotion.ScaleCardPress
+        pressedScale = MiooMotion.ScaleCardPress,
+        enabled = enablePressScale
     )
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .graphicsPressScale(pressScale)
+            .then(if (enablePressScale) Modifier.graphicsPressScale(pressScale) else Modifier)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,

@@ -25,39 +25,47 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 
 /**
- * Motion tokens and helpers aligned with Emil Kowalski's design-engineering rules:
+ * Motion tokens and helpers:
  * - ease-out for enter/exit UI (never ease-in)
- * - strong custom curves (built-in easings are too soft)
- * - UI under ~300ms; exit faster than enter
- * - never enter from scale(0) — start at ~0.95 + opacity
- * - press feedback ~100–160ms scale(0.97)
+ * - smooth custom curves (not the ultra-snappy "punch" defaults)
+ * - enter can sit near ~300–360ms; exit still a bit faster than enter
+ * - never enter from scale(0) — start near ~0.96–0.98 + opacity
+ * - press feedback ~140–180ms scale(0.97)
  * - respect reduced motion (opacity-only / snap)
  */
 object MiooMotion {
-    /** Strong ease-out for UI enter/exit — cubic-bezier(0.23, 1, 0.32, 1) */
-    val EaseOut: Easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+    /**
+     * Smooth ease-out — cubic-bezier(0.22, 1, 0.36, 1).
+     * Slightly gentler first-frame velocity than the old punch curve so longer
+     * durations actually read as motion instead of a flash.
+     */
+    val EaseOut: Easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 
-    /** Strong ease-in-out for on-screen morphing — cubic-bezier(0.77, 0, 0.175, 1) */
-    val EaseInOut: Easing = CubicBezierEasing(0.77f, 0f, 0.175f, 1f)
+    /** Soft ease-in-out for on-screen morphing — cubic-bezier(0.65, 0, 0.35, 1) */
+    val EaseInOut: Easing = CubicBezierEasing(0.65f, 0f, 0.35f, 1f)
 
     /** iOS-like drawer curve — cubic-bezier(0.32, 0.72, 0, 1) */
     val EaseDrawer: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
-    // Durations (ms) — UI should stay under 300ms
-    const val DurationPress = 130
-    const val DurationTooltip = 150
-    const val DurationSmall = 180
-    const val DurationMedium = 220
-    const val DurationModal = 260
-    const val DurationExitFast = 120
-    const val DurationTab = 90
-    const val DurationShimmer = 900
+    // Durations (ms) — tuned for fluid feel; exit stays shorter than matching enter
+    const val DurationPress = 160
+    const val DurationTooltip = 200
+    const val DurationSmall = 260
+    const val DurationMedium = 320
+    const val DurationModal = 360
+    const val DurationExitFast = 200
+    const val DurationTab = 180
+    const val DurationSecondaryExit = 240
+    const val DurationThreadExit = 240
+    const val DurationShimmer = 1100
 
-    /** Initial scale for enter — never 0. */
-    const val ScaleEnterFrom = 0.95f
-    const val ScaleExitTo = 0.97f
+    /** Initial scale for enter — never 0; keep delta subtle so motion feels calm. */
+    const val ScaleEnterFrom = 0.97f
+    const val ScaleExitTo = 0.98f
     const val ScalePress = 0.97f
     const val ScaleCardPress = 0.985f
+    const val ScaleSecondaryFrom = 0.985f
+    const val ScaleThreadFrom = 0.98f
 
     fun <T> tweenOut(durationMillis: Int = DurationSmall): TweenSpec<T> =
         tween(durationMillis = durationMillis, easing = EaseOut)
@@ -129,37 +137,37 @@ object MiooMotion {
             )
     }
 
-    /** Nav: tab switch — high frequency → short fade only. */
+    /** Nav: tab switch — still light, but long enough to read as a crossfade. */
     fun tabEnter(reducedMotion: Boolean = false): EnterTransition =
         fadeIn(if (reducedMotion) tween(0) else tweenOut(DurationTab))
 
     fun tabExit(reducedMotion: Boolean = false): ExitTransition =
-        fadeOut(if (reducedMotion) tween(0) else tweenExit(DurationTab.coerceAtMost(80)))
+        fadeOut(if (reducedMotion) tween(0) else tweenExit((DurationTab * 0.75f).toInt().coerceAtLeast(120)))
 
     /** Nav: secondary screens (settings, history, search). */
     fun secondaryEnter(reducedMotion: Boolean = false): EnterTransition {
         if (reducedMotion) return fadeIn(tween(0))
         return fadeIn(tweenOut(DurationMedium)) +
-            scaleIn(initialScale = 0.98f, animationSpec = tweenOut(DurationMedium))
+            scaleIn(initialScale = ScaleSecondaryFrom, animationSpec = tweenOut(DurationMedium))
     }
 
     fun secondaryExit(reducedMotion: Boolean = false): ExitTransition {
         if (reducedMotion) return fadeOut(tween(0))
-        return fadeOut(tweenExit(DurationExitFast)) +
-            scaleOut(targetScale = 0.98f, animationSpec = tweenExit(DurationExitFast))
+        return fadeOut(tweenExit(DurationSecondaryExit)) +
+            scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationSecondaryExit))
     }
 
     /** Nav: thread open — occasional; fade + slight scale (no slide; avoids jank with HTML). */
     fun threadEnter(reducedMotion: Boolean = false): EnterTransition {
         if (reducedMotion) return fadeIn(tween(0))
         return fadeIn(tweenOut(DurationMedium)) +
-            scaleIn(initialScale = 0.97f, animationSpec = tweenOut(DurationMedium))
+            scaleIn(initialScale = ScaleThreadFrom, animationSpec = tweenOut(DurationMedium))
     }
 
     fun threadExit(reducedMotion: Boolean = false): ExitTransition {
         if (reducedMotion) return fadeOut(tween(0))
-        return fadeOut(tweenExit(DurationExitFast)) +
-            scaleOut(targetScale = 0.98f, animationSpec = tweenExit(DurationExitFast))
+        return fadeOut(tweenExit(DurationThreadExit)) +
+            scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationThreadExit))
     }
 }
 

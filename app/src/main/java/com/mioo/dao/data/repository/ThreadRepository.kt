@@ -216,7 +216,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             }
             val response = apiService.thread(tid, page)
-            // Only write history on first page to avoid DB thrash during infinite scroll
+            // First page only; saveToHistory no-ops thrash when content/timestamp are fresh
             if (page <= 1) {
                 saveToHistory(response)
             }
@@ -363,6 +363,20 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getHistory(): Flow<List<HistoryEntity>> = historyDao.getAllHistory()
 
     override suspend fun saveToHistory(thread: Thread) {
+        val existing = historyDao.getHistoryById(thread.idStr)
+        if (existing != null) {
+            // Content unchanged: only bump timestamp if older than 2 minutes
+            val contentSame =
+                existing.content == thread.content &&
+                    existing.title == thread.title &&
+                    existing.userid == thread.userHash
+            if (contentSame) {
+                if (System.currentTimeMillis() - existing.timestamp > 120_000L) {
+                    historyDao.touchHistory(thread.idStr)
+                }
+                return
+            }
+        }
         historyDao.insertHistory(
             HistoryEntity(
                 id = thread.idStr,
@@ -434,16 +448,18 @@ class ThreadRepositoryImpl @Inject constructor(
             try {
                 val thread = apiService.thread(bookmark.id, 1)
                 val count = thread.replyCount ?: 0
-                historyDao.updateKnownReplyCount(bookmark.id, count)
-                // Keep local snapshot content mildly fresh
-                historyDao.insertBookmark(
-                    bookmark.copy(
-                        content = thread.content,
-                        title = thread.title,
-                        now = thread.now,
-                        lastKnownReplyCount = count
+                // Skip Room write when badge count unchanged
+                if (count != bookmark.lastKnownReplyCount) {
+                    historyDao.updateKnownReplyCount(bookmark.id, count)
+                    historyDao.insertBookmark(
+                        bookmark.copy(
+                            content = thread.content,
+                            title = thread.title,
+                            now = thread.now,
+                            lastKnownReplyCount = count
+                        )
                     )
-                )
+                }
                 delay(200)
             } catch (_: Exception) {
             }

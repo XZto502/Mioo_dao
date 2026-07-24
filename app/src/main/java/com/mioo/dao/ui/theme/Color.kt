@@ -75,11 +75,11 @@ val DarkAdminColor = Color(0xFFFF5252)     // Coral Red for Admin
 val LightQuoteLinkColor = Color(0xFFD81B60) // Magenta/pink for >>No.xxxx
 val DarkQuoteLinkColor = Color(0xFFFF4081)  // Neon Magenta/pink for >>No.xxxx
 
-val LightThreadCardBg = Color(0xEDF4F5F7)   // ~93% matching background
-val DarkThreadCardBg = Color(0xE61D1B20)    // ~90% matching dark surface
+val LightThreadCardBg = Color(0xF5F4F5F7)   // ~96% matching background
+val DarkThreadCardBg = Color(0xF01D1B20)    // ~94% matching dark surface
 
-val LightReplyCardBg = Color(0xEAF4F5F7)   // ~92% matching background
-val DarkReplyCardBg = Color(0xE31D1B20)     // ~89% matching dark surface
+val LightReplyCardBg = Color(0xF2F4F5F7)   // ~95% matching background
+val DarkReplyCardBg = Color(0xED1D1B20)     // ~93% matching dark surface
 
 // FAB colors — mint/teal accent inspired by reference screenshot
 val LightFabColor = Color(0xFFB2DFDB)      // Soft mint green for FAB background
@@ -87,11 +87,11 @@ val LightOnFabColor = Color(0xFF004D40)    // Dark teal for FAB text/icon
 val DarkFabColor = Color(0xFF00897B)       // Teal 600 for dark FAB
 val DarkOnFabColor = Color(0xFFE0F2F1)    // Light mint for dark FAB text/icon
 
-// Glass surface colors for bars
-val LightGlassTopBar = Color(0xDDF4F5F7)    // ~87% matching background
-val DarkGlassTopBar = Color(0xDD1D1B20)     // ~87% matching dark surface
-val LightGlassNavBar = Color(0xDDF4F5F7)    // ~87% matching background
-val DarkGlassNavBar = Color(0xDD1D1B20)     // ~87% matching dark surface
+// Glass surface colors for bars — higher opacity so content behind is less distracting
+val LightGlassTopBar = Color(0xF2F4F5F7)    // ~95% matching background
+val DarkGlassTopBar = Color(0xF01D1B20)     // ~94% matching dark surface
+val LightGlassNavBar = Color(0xF2F4F5F7)    // ~95% matching background
+val DarkGlassNavBar = Color(0xF01D1B20)     // ~94% matching dark surface
 
 // Sage tag badge colors
 val LightSageTagColor = Color(0xFFD32F2F)  // Red for "已SAGE" badge

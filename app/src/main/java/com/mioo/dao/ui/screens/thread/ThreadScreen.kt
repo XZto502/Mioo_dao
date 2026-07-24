@@ -178,6 +178,8 @@ fun ThreadScreen(
     var freeCopyText by remember { mutableStateOf<String?>(null) }
     var showPageJumpDialog by remember { mutableStateOf(false) }
     var isSearchMode by remember { mutableStateOf(false) }
+    // Local text field value — do not write listUi on every keystroke
+    var searchFieldText by remember { mutableStateOf("") }
     var showOverflowMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -268,15 +270,22 @@ fun ThreadScreen(
         }
     }
 
+    // Debounce filter into VM — keystrokes only recompose the top bar TextField
+    LaunchedEffect(searchFieldText, isSearchMode) {
+        if (!isSearchMode) return@LaunchedEffect
+        delay(220)
+        viewModel.updateSearchQuery(searchFieldText)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     if (isSearchMode) {
                         androidx.compose.material3.TextField(
-                            value = listUi.searchQuery,
+                            value = searchFieldText,
                             onValueChange = { query ->
-                                viewModel.updateSearchQuery(query)
+                                searchFieldText = query
                             },
                             placeholder = { Text("搜索文本或ID...", style = MaterialTheme.typography.bodyMedium) },
                             modifier = Modifier.fillMaxWidth(),
@@ -302,6 +311,7 @@ fun ThreadScreen(
                     if (isSearchMode) {
                         IconButton(onClick = {
                             isSearchMode = false
+                            searchFieldText = ""
                             viewModel.updateSearchQuery("")
                         }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -314,13 +324,19 @@ fun ThreadScreen(
                 },
                 actions = {
                     if (isSearchMode) {
-                        if (listUi.searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.updateSearchQuery("") }) {
+                        if (searchFieldText.isNotEmpty()) {
+                            IconButton(onClick = {
+                                searchFieldText = ""
+                                viewModel.updateSearchQuery("")
+                            }) {
                                 Icon(Icons.Default.Close, contentDescription = "清除搜索")
                             }
                         }
                     } else {
-                        IconButton(onClick = { isSearchMode = true }) {
+                        IconButton(onClick = {
+                            isSearchMode = true
+                            searchFieldText = listUi.searchQuery
+                        }) {
                             Icon(Icons.Default.Search, contentDescription = "串内搜索")
                         }
                         IconButton(onClick = {
@@ -485,8 +501,6 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
-                val replyIds = remember(displayItems) { displayItems.map { it.idStr }.toSet() }
-
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -569,8 +583,7 @@ fun ThreadScreen(
                             onBlockUser = {
                                 settingsViewModel.addBlockedUser(item.userHash)
                             },
-                            onFreeCopy = { freeCopyText = item.rawContent },
-                            replyIds = replyIds
+                            onFreeCopy = { freeCopyText = item.rawContent }
                         )
                     }
 
@@ -1026,8 +1039,7 @@ private fun ThreadReplyRow(
     onRequestQuote: () -> Unit,
     onBlockThread: () -> Unit,
     onBlockUser: () -> Unit,
-    onFreeCopy: () -> Unit,
-    replyIds: Set<String>
+    onFreeCopy: () -> Unit
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
     val quotedReplies = if (item.quoteIds.isEmpty()) {
@@ -1043,7 +1055,8 @@ private fun ThreadReplyRow(
             }
         }
     }
-    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, replyIds, currentThreadId) {
+    // Resolve resto via API fields only — avoids rebuilding a reply-id Set on every page append
+    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, currentThreadId) {
         if (quotedReplies.isEmpty()) {
             StablePostList(emptyList())
         } else {
@@ -1053,11 +1066,8 @@ private fun ThreadReplyRow(
                         isPo = quote.userHash == poUserHash,
                         cdnUrl = "https://image.nmb.best"
                     )
-                    val isFollowUp = quote.resto != null && quote.resto > 0L
-                    val isCurrentThreadReply = replyIds.contains(quote.idStr)
                     val targetResto = when {
-                        isFollowUp -> quote.resto.toString()
-                        isCurrentThreadReply -> currentThreadId
+                        quote.resto != null && quote.resto > 0L -> quote.resto.toString()
                         quote.idStr == currentThreadId -> currentThreadId
                         else -> quote.idStr
                     }

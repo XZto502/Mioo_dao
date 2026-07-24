@@ -133,6 +133,8 @@ class ThreadViewModel @Inject constructor(
     private var draftSaveJob: Job? = null
     private var rebuildJob: Job? = null
     private var progressChecked = false
+    /** Last replyCount written via markBookmarkRead — skip SWR double Room updates. */
+    private var lastMarkedReadCount: Int = -1
     /** Bumps on every new load so stale SWR/network emissions cannot overwrite a newer page. */
     private var loadGeneration: Int = 0
     /**
@@ -208,6 +210,7 @@ class ThreadViewModel @Inject constructor(
         progressChecked = true
         stickyResumeIndex = null
         resumeScrollSeeded = false
+        lastMarkedReadCount = -1
 
         // Stay on spinner until the target page is ready (no empty list / top flash)
         _listState.update {
@@ -406,12 +409,15 @@ class ThreadViewModel @Inject constructor(
                             )
                         }
 
-                        // Mark bookmark as read with latest reply count (low priority)
-                        viewModelScope.launch {
-                            threadRepository.markBookmarkRead(
-                                threadId,
-                                threadData.replyCount ?: 0
-                            )
+                        // Bookmark read: only when subscribed, once per distinct replyCount
+                        if (_chromeState.value.isSubscribed &&
+                            mode != LoadMode.PREPEND &&
+                            lastMarkedReadCount != replyCount
+                        ) {
+                            lastMarkedReadCount = replyCount
+                            viewModelScope.launch {
+                                threadRepository.markBookmarkRead(threadId, replyCount)
+                            }
                         }
 
                         // Defer quote work until after first resume frame to reduce hitch
@@ -693,10 +699,14 @@ class ThreadViewModel @Inject constructor(
         scheduleRebuildDisplayItems()
     }
 
+    /**
+     * Apply in-thread filter. Prefer calling from UI after local TextField debounce so
+     * keystrokes do not rewrite [listUiState] and recompose the LazyColumn parent.
+     */
     fun updateSearchQuery(query: String) {
+        if (_listState.value.searchQuery == query) return
         _listState.update { it.copy(searchQuery = query) }
-        // Debounce: typing must not rebuild the full filtered list every keystroke
-        scheduleRebuildDisplayItems(debounceMs = 220L)
+        scheduleRebuildDisplayItems(debounceMs = 0L)
     }
 
     fun toggleBookmark(folderUuid: String? = null, onComplete: ((String) -> Unit)? = null) {

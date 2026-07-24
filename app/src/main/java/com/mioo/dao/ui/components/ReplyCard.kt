@@ -59,17 +59,20 @@ fun ReplyCard(
     modifier: Modifier = Modifier,
     quotedPosts: StablePostList = StablePostList(emptyList()),
     onViewThreadClick: (String) -> Unit = {},
-    currentThreadId: String? = null
+    currentThreadId: String? = null,
+    /** Dense reply lists skip press-scale to cut animateFloatAsState work. */
+    enablePressScale: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressScale = rememberPressScale(
         interactionSource = interactionSource,
-        pressedScale = MiooMotion.ScaleCardPress
+        pressedScale = MiooMotion.ScaleCardPress,
+        enabled = enablePressScale
     )
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .graphicsPressScale(pressScale)
+            .then(if (enablePressScale) Modifier.graphicsPressScale(pressScale) else Modifier)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,

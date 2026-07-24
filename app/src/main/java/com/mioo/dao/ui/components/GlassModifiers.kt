@@ -24,26 +24,26 @@ import androidx.compose.ui.unit.dp
  * a consistent frosted-glass aesthetic across all surfaces.
  */
 object GlassStyle {
-    // Semi-transparent fill colors
-    val lightGlass = Color(0xB3FFFFFF)        // White ~70% opaque
-    val darkGlass = Color(0x802B2930)         // Dark surface ~50% opaque
-    val lightGlassCard = Color(0xCCFFFFFF)    // White ~80% opaque (cards need more readability)
-    val darkGlassCard = Color(0x99282530)     // Dark ~60% opaque
+    // Semi-transparent fill colors (kept frosted, but less see-through)
+    val lightGlass = Color(0xE6FFFFFF)        // White ~90% opaque
+    val darkGlass = Color(0xD92B2930)         // Dark surface ~85% opaque
+    val lightGlassCard = Color(0xF2FFFFFF)    // White ~95% opaque (cards need readability)
+    val darkGlassCard = Color(0xEB282530)     // Dark ~92% opaque
 
     // Border / highlight tint
-    val lightBorder = Color(0x40FFFFFF)        // Subtle white edge highlight
-    val darkBorder = Color(0x33FFFFFF)         // Very subtle edge in dark
+    val lightBorder = Color(0x33FFFFFF)        // Subtle white edge highlight
+    val darkBorder = Color(0x28FFFFFF)         // Very subtle edge in dark
 
-    // Gradient overlays for extra depth
+    // Gradient overlays for extra depth (softer so fill opacity dominates)
     val lightGradient = Brush.verticalGradient(
         listOf(
-            Color(0x33FFFFFF),
-            Color(0x0DFFFFFF)
+            Color(0x22FFFFFF),
+            Color(0x08FFFFFF)
         )
     )
     val darkGradient = Brush.verticalGradient(
         listOf(
-            Color(0x1AFFFFFF),
+            Color(0x14FFFFFF),
             Color(0x05FFFFFF)
         )
     )

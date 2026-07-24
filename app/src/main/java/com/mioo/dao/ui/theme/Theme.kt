@@ -265,9 +265,10 @@ fun MiooDaoTheme(
         ) {
             // Cache glow colors; drawWithCache rebuilds brushes only when size/colors change
             // (avoids radialGradient allocations during list scroll overdraw).
-            val primaryGlow = remember(colorScheme.primary) { colorScheme.primary.copy(alpha = 0.22f) }
-            val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.16f) }
-            val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.12f) }
+            // Slightly softer ambient glow so glass bars/cards read more solid
+            val primaryGlow = remember(colorScheme.primary) { colorScheme.primary.copy(alpha = 0.16f) }
+            val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.12f) }
+            val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.08f) }
 
             val rootModifier = if (glassEffectEnabled) {
                 Modifier

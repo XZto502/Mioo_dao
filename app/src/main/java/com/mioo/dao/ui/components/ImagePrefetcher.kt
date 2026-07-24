@@ -6,7 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import coil.imageLoader
-import coil.request.ImageRequest
+import coil.memory.MemoryCache
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -39,6 +39,8 @@ fun PrefetchListImages(
         delay(initialDelayMs)
         if (!enabled) return@LaunchedEffect
 
+        val memoryCache = imageLoader.memoryCache
+
         snapshotFlow {
             if (!enabled) return@snapshotFlow null
             val info = listState.layoutInfo
@@ -69,6 +71,8 @@ fun PrefetchListImages(
                     if (!enabled) return@collectLatest
                     val url = imageUrls.getOrNull(index) ?: continue
                     if (url.isBlank()) continue
+                    // Skip already-resident thumbs (same key as ListThumbImage.request)
+                    if (memoryCache?.get(MemoryCache.Key(url)) != null) continue
                     imageLoader.enqueue(ListThumbImage.request(context, url))
                     n++
                     if (n % 3 == 0) delay(1)
@@ -84,9 +88,11 @@ fun prefetchImageUrls(
     limit: Int = 8
 ) {
     val loader = context.imageLoader
+    val memoryCache = loader.memoryCache
     var count = 0
     for (url in urls) {
         if (url.isNullOrBlank()) continue
+        if (memoryCache?.get(MemoryCache.Key(url)) != null) continue
         loader.enqueue(ListThumbImage.request(context, url))
         count++
         if (count >= limit) break

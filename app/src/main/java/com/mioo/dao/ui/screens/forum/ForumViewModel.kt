@@ -177,10 +177,18 @@ class ForumViewModel @Inject constructor(
                             val existing = _uiState.value.threads
                             val newIds = newThreads.mapTo(HashSet(newThreads.size)) { it.id }
                             val combinedList = existing.filter { it.id !in newIds } + newThreads
-                            val displayItems = withContext(Dispatchers.Default) {
-                                combinedList.toFilteredThreadListItems(
+                            // Filter only the new page, then merge — avoid re-filtering 1..N on every emit
+                            val newDisplay = withContext(Dispatchers.Default) {
+                                newThreads.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
                                 )
+                            }
+                            val existingDisplay = _uiState.value.displayItems
+                            val displayItems = if (existingDisplay.isEmpty()) {
+                                newDisplay
+                            } else {
+                                val keep = existingDisplay.filter { it.id !in newIds }
+                                keep + newDisplay
                             }
                             // Only advance page once per load (SWR may emit cache + network).
                             if (!gotPage && newThreads.isNotEmpty()) {

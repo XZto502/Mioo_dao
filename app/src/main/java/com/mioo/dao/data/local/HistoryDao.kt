@@ -41,6 +41,13 @@ interface HistoryDao {
     @Query("SELECT EXISTS(SELECT 1 FROM history WHERE id = :id LIMIT 1)")
     fun isInHistory(id: String): Flow<Boolean>
 
+    @Query("SELECT * FROM history WHERE id = :id LIMIT 1")
+    suspend fun getHistoryById(id: String): HistoryEntity?
+
+    /** Bump recency without rewriting content (avoids REPLACE thrash). */
+    @Query("UPDATE history SET timestamp = :timestamp WHERE id = :id")
+    suspend fun touchHistory(id: String, timestamp: Long = System.currentTimeMillis())
+
     // --- Bookmark operations ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

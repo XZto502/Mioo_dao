@@ -15,6 +15,7 @@ import com.mioo.dao.ui.components.toBookmarkListItems
 import com.mioo.dao.ui.components.toFilteredThreadListItems
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -73,9 +74,10 @@ class FeedViewModel @Inject constructor(
                 }
         }
 
-        // Refresh known reply counts for badge (+N 新)
+        // Defer badge poll so first paint / fling are not contending for network + Room
         viewModelScope.launch {
-            threadRepository.refreshBookmarkReplyCounts(limit = 25)
+            delay(1800)
+            threadRepository.refreshBookmarkReplyCounts(limit = 15)
         }
     }
 

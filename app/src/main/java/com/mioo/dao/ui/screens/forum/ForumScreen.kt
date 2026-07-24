@@ -746,7 +746,7 @@ private fun ForumThreadListPane(
         }
 
         if (uiState.isLoading && displayItems.isNotEmpty()) {
-            item(key = "loading_footer") {
+            item(key = "loading_footer", contentType = "loading") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -759,7 +759,7 @@ private fun ForumThreadListPane(
         }
 
         if (uiState.isLastPage) {
-            item(key = "end_footer") {
+            item(key = "end_footer", contentType = "end") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -968,7 +968,7 @@ fun CreateThreadDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(colorScheme.background.copy(alpha = 0.78f))
+                .background(colorScheme.background.copy(alpha = 0.92f))
         ) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
