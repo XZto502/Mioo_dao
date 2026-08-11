@@ -25,8 +25,11 @@ object DatabaseModule {
             AppDatabase::class.java,
             "mioo_dao.db"
         )
-        .fallbackToDestructiveMigration()
-        .build()
+            .fallbackToDestructiveMigration()
+            // First open happens on IO during Application warm — keep main free for Compose.
+            .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
+            .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())
+            .build()
     }
 
     @Provides

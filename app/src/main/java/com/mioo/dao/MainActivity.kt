@@ -42,7 +42,11 @@ import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.navigation.MiooDaoNavGraph
 import com.mioo.dao.ui.theme.MiooDaoTheme
 import com.mioo.dao.utils.ThreadLinkParser
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -50,14 +54,21 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
+/** Lazy resolve of ThreadRepository so MainActivity cold create does not require it. */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface ThreadRepositoryEntryPoint {
+    fun threadRepository(): ThreadRepository
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
-    @Inject
-    lateinit var threadRepository: ThreadRepository
+    // ThreadRepository is NOT field-injected: avoids pulling the full network/Room graph
+    // into Activity creation. Update-check resolves it lazily after cold list settles.
 
     private var pendingThreadIdState = mutableStateOf<String?>(null)
 
@@ -91,18 +102,18 @@ class MainActivity : ComponentActivity() {
 
         pendingThreadIdState.value = parsePendingThreadId(intent)
 
-        // Never stick on splash if list is empty/error/slow network
+        // Never stick on splash if list is empty/error/slow network (prefer first-content callback)
         lifecycleScope.launch {
-            delay(2800)
+            delay(1200)
             keepSplashOnScreen.set(false)
         }
 
-        // Re-check clipboard after first interactive frames — never compete with cold list paint.
+        // Clipboard after cold list is interactive — never compete with first paint.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                delay(1200)
+                delay(2500)
                 checkClipboardForThreadId()
-                delay(600)
+                delay(1000)
                 checkClipboardForThreadId()
             }
         }
@@ -137,10 +148,16 @@ class MainActivity : ComponentActivity() {
             val pendingThreadId by pendingThreadIdState
             val clipboardThreadId by clipboardThreadCandidate
 
-            // Update check well after cold start settles
+            // Update check well after cold start settles (lazy EntryPoint — no Activity field inject)
             LaunchedEffect(Unit) {
-                delay(8000)
-                threadRepository.checkLatestRelease().collect { response ->
+                delay(10000)
+                val threadRepo = runCatching {
+                    EntryPointAccessors.fromApplication(
+                        applicationContext,
+                        ThreadRepositoryEntryPoint::class.java
+                    ).threadRepository()
+                }.getOrNull() ?: return@LaunchedEffect
+                threadRepo.checkLatestRelease().collect { response ->
                     if (response is XdResponse.Success) {
                         val release = response.data
                         val currentVersion = getAppVersionName()

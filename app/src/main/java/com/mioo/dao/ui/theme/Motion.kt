@@ -56,7 +56,6 @@ object MiooMotion {
     const val DurationExitFast = 200
     const val DurationTab = 180
     const val DurationSecondaryExit = 240
-    const val DurationThreadExit = 240
     const val DurationShimmer = 1100
 
     /** Initial scale for enter — never 0; keep delta subtle so motion feels calm. */
@@ -157,17 +156,22 @@ object MiooMotion {
             scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationSecondaryExit))
     }
 
-    /** Nav: thread open — occasional; fade + slight scale (no slide; avoids jank with HTML). */
+    /**
+     * Nav: thread open — frequent in this app (list → detail many times/session).
+     * Keep short fade+scale only (no slide; HTML/images must not fight a long transition).
+     * Emil: tens+/day → drastically reduce duration; only transform+opacity.
+     */
     fun threadEnter(reducedMotion: Boolean = false): EnterTransition {
         if (reducedMotion) return fadeIn(tween(0))
-        return fadeIn(tweenOut(DurationMedium)) +
-            scaleIn(initialScale = ScaleThreadFrom, animationSpec = tweenOut(DurationMedium))
+        return fadeIn(tweenOut(DurationSmall)) +
+            scaleIn(initialScale = ScaleThreadFrom, animationSpec = tweenOut(DurationSmall))
     }
 
     fun threadExit(reducedMotion: Boolean = false): ExitTransition {
         if (reducedMotion) return fadeOut(tween(0))
-        return fadeOut(tweenExit(DurationThreadExit)) +
-            scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationThreadExit))
+        // Exit faster than enter — asymmetric timing feels snappier on back
+        return fadeOut(tweenExit(DurationExitFast)) +
+            scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationExitFast))
     }
 }
 

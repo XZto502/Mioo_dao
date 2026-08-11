@@ -87,7 +87,6 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -133,6 +132,7 @@ import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -228,31 +228,31 @@ fun ForumScreen(
         }
     }
 
-    // Scroll to end detection for paging support
-    val shouldLoadMore = remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-                ?: return@derivedStateOf false
-            lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 2
+    // Paging via snapshotFlow — does not recompose the whole screen on every scroll frame
+    // (derivedStateOf + LaunchedEffect(.value) used to restart the effect on flag churn).
+    LaunchedEffect(listState, currentForumId) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false
+            last >= info.totalItemsCount - 2
         }
+            .distinctUntilChanged()
+            .collect { nearEnd ->
+                if (!nearEnd) return@collect
+                val s = viewModel.uiState.value
+                if (!s.isLoading && !s.isRefreshing && !s.isLastPage) {
+                    viewModel.loadNextPage()
+                }
+            }
     }
 
-    LaunchedEffect(shouldLoadMore.value, currentForumId, uiState.isLoading, uiState.isRefreshing, uiState.isLastPage) {
-        if (shouldLoadMore.value &&
-            !uiState.isLoading &&
-            !uiState.isRefreshing &&
-            !uiState.isLastPage
-        ) {
-            viewModel.loadNextPage()
-        }
-    }
-
-    // Board change: quiet heavy work briefly (no overlapping list transition)
+    // Board change: quiet heavy work briefly (no overlapping list transition).
+    // Keep short — high-frequency board switches should not feel delayed (Emil: tens/day → reduce).
     LaunchedEffect(currentForumId) {
         if (currentForumId != previousForumId.value) {
             boardSwitchQuiet = true
             previousForumId.value = currentForumId
-            delay(280)
+            delay(160)
             boardSwitchQuiet = false
         }
     }
@@ -475,11 +475,15 @@ fun ForumScreen(
                     .padding(paddingValues)
                     .nestedScroll(pullToRefreshState.nestedScrollConnection)
             ) {
-                // Single list instance — no enter/exit overlap of two LazyColumns
+                // Single list instance — pass only list fields so chrome/drawer flags
+                // do not force every row to recompose.
                 key(currentForumId) {
                     ForumThreadListPane(
                         forumKey = currentForumId,
-                        uiState = uiState,
+                        displayItems = uiState.displayItems,
+                        isLoading = uiState.isLoading,
+                        isRefreshing = uiState.isRefreshing,
+                        isLastPage = uiState.isLastPage,
                         listState = listState,
                         emptyStringLambda = emptyStringLambda,
                         onNavigateToThread = onNavigateToThread,
@@ -626,7 +630,10 @@ private fun ForumDrawerItem(
 @Composable
 private fun ForumThreadListPane(
     forumKey: String,
-    uiState: ForumUiState,
+    displayItems: List<ThreadListItem>,
+    isLoading: Boolean,
+    isRefreshing: Boolean,
+    isLastPage: Boolean,
     listState: LazyListState,
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
@@ -638,48 +645,77 @@ private fun ForumThreadListPane(
     warmEnabled: Boolean = true,
     onFirstScreenReady: () -> Unit = {}
 ) {
-    val displayItems = uiState.displayItems
     val quoteLinkColor = MaterialTheme.colorScheme.primary
-    val isEmptyLoading = displayItems.isEmpty() && (uiState.isLoading || uiState.isRefreshing)
-    val isEmptyIdle = displayItems.isEmpty() && !uiState.isLoading && !uiState.isRefreshing
+    val isEmptyLoading = displayItems.isEmpty() && (isLoading || isRefreshing)
+    val isEmptyIdle = displayItems.isEmpty() && !isLoading && !isRefreshing
 
     /**
-     * High-refresh Xiaomi (120/144Hz): never mutate item count while user flings.
-     * Prewarm HTML for the whole page on a background thread, then hand LazyColumn
-     * the full list once (Lazy only composes the viewport).
+     * listReady / showImages gate *images & prefetch only* — never the row set.
+     * Hiding real items behind a 1-row placeholder clamped LazyListState to 0 on back.
+     *
+     * Split prewarm vs image-enable effects: paging appends used to restart a combined
+     * LaunchedEffect and re-delay image enable + re-scan the whole HTML list.
+     *
+     * showImages uses rememberSaveable so thread detail → back does not flash empty thumbs.
      */
-    var listReady by remember(forumKey) { mutableStateOf(false) }
-    var showImages by remember(forumKey) { mutableStateOf(false) }
+    val listReady = displayItems.isNotEmpty()
+    var showImages by rememberSaveable(forumKey) { mutableStateOf(false) }
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
 
-    val listSig = remember(displayItems) {
-        "${displayItems.size}:${displayItems.firstOrNull()?.id}:${displayItems.lastOrNull()?.id}"
+    LaunchedEffect(forumKey, listReady) {
+        if (!listReady || firstScreenNotified) return@LaunchedEffect
+        firstScreenNotified = true
+        // Drop splash on next frame — no artificial 16ms wait
+        onFirstScreenReady()
     }
 
-    LaunchedEffect(forumKey, listSig, quoteLinkColor) {
-        if (displayItems.isEmpty()) {
-            listReady = false
-            return@LaunchedEffect
-        }
-        // Parse all page-1 HTML off the UI thread so fling never hits cache-miss parse.
+    // Cold head prewarm: only first viewport (4) so first paint wins CPU over Default parse.
+    LaunchedEffect(forumKey, listReady, quoteLinkColor) {
+        if (!listReady || displayItems.isEmpty()) return@LaunchedEffect
+        val head = displayItems.take(4).map { it.postData.content }
         withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                displayItems.map { it.postData.content },
-                quoteLinkColor
-            )
+            com.mioo.dao.ui.components.HtmlParseCache.prewarm(head, quoteLinkColor)
         }
-        listReady = true
-        if (!firstScreenNotified) {
-            firstScreenNotified = true
-            delay(16)
-            onFirstScreenReady()
+        // Remainder of first page after first composition window
+        delay(120)
+        if (displayItems.size > 4) {
+            val rest = displayItems.drop(4).take(8).map { it.postData.content }
+            withContext(Dispatchers.Default) {
+                com.mioo.dao.ui.components.HtmlParseCache.prewarm(rest, quoteLinkColor)
+            }
         }
-        // Thumbnails only after first idle window — never during active fling
-        delay(500)
+    }
+    LaunchedEffect(forumKey, listState, quoteLinkColor, warmEnabled) {
+        if (!warmEnabled) return@LaunchedEffect
+        snapshotFlow {
+            if (listState.isScrollInProgress) return@snapshotFlow null
+            val info = listState.layoutInfo
+            val first = info.visibleItemsInfo.firstOrNull()?.index ?: listState.firstVisibleItemIndex
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: first
+            first to last
+        }
+            .distinctUntilChanged()
+            .collect { range ->
+                if (range == null || displayItems.isEmpty()) return@collect
+                val (first, last) = range
+                val start = first.coerceAtLeast(0)
+                val end = (last + 5).coerceAtMost(displayItems.size)
+                if (start >= end) return@collect
+                val slice = displayItems.subList(start, end).map { it.postData.content }
+                withContext(Dispatchers.Default) {
+                    com.mioo.dao.ui.components.HtmlParseCache.prewarm(slice, quoteLinkColor)
+                }
+            }
+    }
+
+    // Thumbnails after first paint settles — cold path keeps decode off the critical frame.
+    LaunchedEffect(forumKey, listReady, warmEnabled) {
+        if (!listReady || !warmEnabled || showImages) return@LaunchedEffect
+        delay(450)
         snapshotFlow { listState.isScrollInProgress }
             .first { scrolling -> !scrolling }
-        delay(250)
+        delay(200)
         showImages = true
     }
 
@@ -691,10 +727,10 @@ private fun ForumThreadListPane(
         imageUrls = prefetchUrls,
         listState = listState,
         sizePx = ListThumbImage.SIZE_PX,
-        ahead = 3,
-        initialDelayMs = 800,
+        ahead = 2,
+        initialDelayMs = 500,
         // Prefetch only when not flinging (see PrefetchListImages)
-        enabled = warmEnabled && showImages && listReady && displayItems.isNotEmpty()
+        enabled = warmEnabled && showImages && listReady
     )
 
     // Block dialog outside items — avoids per-row AlertDialog composition during scroll
@@ -759,7 +795,10 @@ private fun ForumThreadListPane(
             bottom = 100.dp
         )
     ) {
-        if (isEmptyLoading || (displayItems.isNotEmpty() && !listReady)) {
+        // Only show the empty/loading placeholder when there is truly no data.
+        // Never swap a full item list for a 1-row spacer — that clamps scroll to top
+        // (especially on navigate → thread → popBackStack recomposition).
+        if (isEmptyLoading) {
             item(key = "empty_loading", contentType = "loading") {
                 Spacer(modifier = Modifier.height(1.dp))
             }
@@ -781,34 +820,20 @@ private fun ForumThreadListPane(
         items(
             items = displayItems,
             key = { it.id },
-            contentType = { item ->
-                if (item.hasImage && showImages) "thread_image" else "thread_text"
-            }
+            // contentType must not depend on showImages — flipping it thrashs the item pool mid-scroll
+            contentType = { item -> if (item.hasImage) "thread_image" else "thread_text" }
         ) { item ->
-            val onThreadClickRemembered = remember(item.idStr) {
-                { onNavigateToThread(item.idStr) }
-            }
-            val onImageClickRemembered = remember {
-                { imageUrl: String -> onImageClick(imageUrl) }
-            }
-            val onLongClickRemembered = remember(item.id) {
-                { blockTarget = item }
-            }
-
-            ThreadCard(
-                postData = item.postData,
-                replyCount = item.replyCount,
-                onThreadClick = onThreadClickRemembered,
-                onQuoteClick = emptyStringLambda,
-                onImageClick = onImageClickRemembered,
-                onLongClick = onLongClickRemembered,
-                // Shorter body = cheaper measure on high-refresh fling
-                contentMaxLines = 5,
-                showImage = showImages
+            ForumThreadRow(
+                item = item,
+                showImage = showImages,
+                emptyStringLambda = emptyStringLambda,
+                onNavigateToThread = onNavigateToThread,
+                onImageClick = onImageClick,
+                onLongClick = { blockTarget = item }
             )
         }
 
-        if (uiState.isLoading && displayItems.isNotEmpty()) {
+        if (isLoading && displayItems.isNotEmpty()) {
             item(key = "loading_footer", contentType = "loading") {
                 Box(
                     modifier = Modifier
@@ -821,7 +846,7 @@ private fun ForumThreadListPane(
             }
         }
 
-        if (uiState.isLastPage) {
+        if (isLastPage) {
             item(key = "end_footer", contentType = "end") {
                 Box(
                     modifier = Modifier
@@ -838,6 +863,38 @@ private fun ForumThreadListPane(
             }
         }
     }
+}
+
+/**
+ * Isolated list row so parent list chrome / image-gate toggles only recompose rows
+ * whose inputs actually change ([ThreadListItem] is @Immutable).
+ */
+@Composable
+private fun ForumThreadRow(
+    item: ThreadListItem,
+    showImage: Boolean,
+    emptyStringLambda: (String) -> Unit,
+    onNavigateToThread: (String) -> Unit,
+    onImageClick: (String) -> Unit,
+    onLongClick: () -> Unit
+) {
+    val onThreadClick = remember(item.idStr, onNavigateToThread) {
+        { onNavigateToThread(item.idStr) }
+    }
+    val onImageClickRemembered = remember(onImageClick) {
+        { url: String -> onImageClick(url) }
+    }
+    ThreadCard(
+        postData = item.postData,
+        replyCount = item.replyCount,
+        onThreadClick = onThreadClick,
+        onQuoteClick = emptyStringLambda,
+        onImageClick = onImageClickRemembered,
+        onLongClick = onLongClick,
+        // Shorter body = cheaper measure on high-refresh fling
+        contentMaxLines = 5,
+        showImage = showImage && item.hasImage
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

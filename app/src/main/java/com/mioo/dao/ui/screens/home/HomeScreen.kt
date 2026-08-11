@@ -161,9 +161,14 @@ fun TimelineList(
     val quoteLinkColor = MaterialTheme.colorScheme.primary
 
     LaunchedEffect(items, quoteLinkColor) {
-        if (items.isNotEmpty()) {
+        if (items.isEmpty()) return@LaunchedEffect
+        // Match forum progressive prewarm: viewport first, rest after paint path continues
+        withContext(Dispatchers.Default) {
+            HtmlParseCache.prewarm(items.take(8).map { it.postData.content }, quoteLinkColor)
+        }
+        if (items.size > 8) {
             withContext(Dispatchers.Default) {
-                HtmlParseCache.prewarm(items.map { it.postData.content }, quoteLinkColor)
+                HtmlParseCache.prewarm(items.drop(8).map { it.postData.content }, quoteLinkColor)
             }
         }
     }
@@ -173,7 +178,8 @@ fun TimelineList(
         imageUrls = prefetchUrls,
         listState = listState,
         sizePx = com.mioo.dao.ui.components.ListThumbImage.SIZE_PX,
-        ahead = 10
+        ahead = 6,
+        initialDelayMs = 600
     )
 
     if (items.isEmpty()) {

@@ -64,29 +64,44 @@ fun ReplyCard(
     enablePressScale: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val pressScale = rememberPressScale(
-        interactionSource = interactionSource,
-        pressedScale = MiooMotion.ScaleCardPress,
-        enabled = enablePressScale
-    )
-    Card(
-        modifier = modifier
+    // Do not call rememberPressScale when disabled — it still subscribes to press + animateFloat.
+    val cardModifier = if (enablePressScale) {
+        val pressScale = rememberPressScale(
+            interactionSource = interactionSource,
+            pressedScale = MiooMotion.ScaleCardPress,
+            enabled = true
+        )
+        modifier
             .fillMaxWidth()
-            .then(if (enablePressScale) Modifier.graphicsPressScale(pressScale) else Modifier)
+            .graphicsPressScale(pressScale)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onClick = onCardClick,
                 onLongClick = onCardLongClick
-            ),
+            )
+    } else {
+        modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onCardClick,
+                onLongClick = onCardLongClick
+            )
+    }
+    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+    val border = remember(outline) {
+        androidx.compose.foundation.BorderStroke(0.5.dp, outline)
+    }
+    Card(
+        modifier = cardModifier,
         shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(
             containerColor = DaoTheme.colors.replyCardBg
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
-        )
+        border = border
     ) {
         Column(
             modifier = Modifier

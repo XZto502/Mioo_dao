@@ -53,10 +53,10 @@ object NetworkModule {
         val cacheDir = File(appContext.cacheDir, "okhttp_cache")
         builder.cache(Cache(cacheDir, 50L * 1024 * 1024))
 
-        // Only log request/response bodies in debug builds
+        // Debug: BASIC only — BODY logging serializes every JSON payload and tanks cold start.
         if (BuildConfig.DEBUG) {
             val loggingInterceptor = okhttp3.logging.HttpLoggingInterceptor().apply {
-                level = okhttp3.logging.HttpLoggingInterceptor.Level.BODY
+                level = okhttp3.logging.HttpLoggingInterceptor.Level.BASIC
             }
             builder.addInterceptor(loggingInterceptor)
         }

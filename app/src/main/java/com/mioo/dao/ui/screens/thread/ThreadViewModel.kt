@@ -123,7 +123,10 @@ class ThreadViewModel @Inject constructor(
     companion object {
         private const val PAGE_SIZE = 19
         private const val DRAFT_DEBOUNCE_MS = 400L
-        private const val MAX_PARALLEL_QUOTE_FETCHES = 6
+        /** Keep quote network low so open-thread first paint keeps bandwidth/CPU. */
+        private const val MAX_PARALLEL_QUOTE_FETCHES = 3
+        /** Cap network quote resolves per page load (local/seeded quotes unlimited). */
+        private const val MAX_NETWORK_QUOTES_PER_PAGE = 10
         private val QUOTE_ID_PATTERN: Pattern = Pattern.compile(">>(?:No\\.)?(\\d+)")
         private const val IMAGE_CDN = "https://image.nmb.best"
     }
@@ -420,27 +423,19 @@ class ThreadViewModel @Inject constructor(
                             }
                         }
 
-                        // Defer quote work until after first resume frame to reduce hitch
+                        // Defer quote network until after first paint; local seeds are free.
                         viewModelScope.launch {
                             if (stickyResumeIndex != null) {
-                                delay(320)
+                                delay(280)
+                            } else {
+                                delay(120)
                             }
                             if (gen != loadGeneration) return@launch
                             seedLocalQuotes(newPosts, threadData)
-                            if (mode != LoadMode.PREPEND) {
-                                if (newPosts.isNotEmpty() && !isLast) {
-                                    if (!quotesScheduled) {
-                                        quotesScheduled = true
-                                        fetchQuotesForReplies(newPosts)
-                                    }
-                                } else if (newPosts.isNotEmpty() && !quotesScheduled) {
-                                    quotesScheduled = true
-                                    fetchQuotesForReplies(newPosts)
-                                }
-                            } else if (newPosts.isNotEmpty() && !quotesScheduled) {
-                                quotesScheduled = true
-                                fetchQuotesForReplies(newPosts)
-                            }
+                            if (newPosts.isEmpty() || quotesScheduled) return@launch
+                            quotesScheduled = true
+                            // Only resolve quotes for the head of the page over the network
+                            fetchQuotesForReplies(newPosts.take(14))
                         }
 
                         // Advance bottom cursor only for replace/append, not prepend
@@ -625,10 +620,11 @@ class ThreadViewModel @Inject constructor(
 
             if (networkIds.isEmpty()) return@launch
 
-            // Stream results onto main as each finishes so UI fills progressively
+            // Cap concurrent + total network quote fetches (rest resolve on demand via popup)
+            val toFetch = networkIds.take(MAX_NETWORK_QUOTES_PER_PAGE)
             val semaphore = Semaphore(MAX_PARALLEL_QUOTE_FETCHES)
             coroutineScope {
-                networkIds.map { id ->
+                toFetch.map { id ->
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
                             val reply = resolveQuoteFromNetwork(id)

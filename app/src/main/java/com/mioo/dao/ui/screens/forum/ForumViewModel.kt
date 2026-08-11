@@ -58,13 +58,32 @@ class ForumViewModel @Inject constructor(
 
     private var currentPage = 1
     private var listJob: Job? = null
+    /** Cancel previous smart-preload when board/refresh changes so stale GETs don't hog bandwidth. */
+    private var preloadJob: Job? = null
     private var blockedThreads: Set<String> = emptySet()
     private var blockedUsers: Set<String> = emptySet()
     private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
 
     init {
-        // Block lists can arrive after first page — only rebuild when we already have rows
+        // Cold start critical path only:
+        // 1) one DataStore snapshot (board + blocks)
+        // 2) timeline/showf (Room cache → network)
+        // Everything else (live blocklist watch, drawer catalog, smart preload) is deferred.
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, isRefreshing = true) }
+            val snap = settingsDataStore.getColdStartSnapshot()
+            blockedThreads = snap.blockedThreads.toHashSet()
+            blockedUsers = snap.blockedUsers.toHashSet()
+            keywordMatcher = KeywordMatcher.build(snap.blockedKeywords)
+            forumId = snap.lastForumId
+            _uiState.update { it.copy(currentForumName = snap.lastForumName) }
+            // First network/disk slot = timeline/showf (SWR cache paints immediately)
+            refresh()
+        }
+
+        // Live blocklist updates after first paint — must not race the first list fetch.
+        viewModelScope.launch {
+            delay(900)
             settingsRepository.settings
                 .map { Triple(it.blockedThreads, it.blockedUsers, it.blockedKeywords) }
                 .distinctUntilChanged()
@@ -78,16 +97,9 @@ class ForumViewModel @Inject constructor(
                 }
         }
 
-        // Cold start: restore last board → list ASAP; board drawer catalog after first paint.
+        // Board drawer catalog after list fling window — never share bandwidth with cold list.
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, isRefreshing = true) }
-            val (savedId, savedName) = settingsDataStore.getLastForum()
-            forumId = savedId
-            _uiState.update { it.copy(currentForumName = savedName) }
-            // First network slot = timeline/showf (SWR cache paints immediately)
-            refresh()
-            // Defer forum group fetch so cold fling / decode aren't sharing bandwidth
-            delay(1400)
+            delay(2000)
             if (_uiState.value.forumGroups.isEmpty()) {
                 loadForumGroupsSync()
             }
@@ -102,11 +114,18 @@ class ForumViewModel @Inject constructor(
         }
     }
 
-    /** Defer network preload so cold-start first fling isn't bandwidth/decoder contended. */
-    private fun scheduleSmartPreload(threads: List<Thread>, delayMs: Long = 1600L) {
-        viewModelScope.launch {
+    /**
+     * Defer detail-page network preload until list paint settles.
+     * Only the first few rows of the *current page-1 snapshot* — never every paged chunk
+     * (that flooded the network mid-scroll in emulator traces).
+     */
+    private fun scheduleSmartPreload(threads: List<Thread>, delayMs: Long = 2200L) {
+        preloadJob?.cancel()
+        if (threads.isEmpty()) return
+        preloadJob = viewModelScope.launch {
             delay(delayMs)
-            threadRepository.smartPreloadThreads(threads)
+            // Cap here too so settings preloadCount cannot stampede
+            threadRepository.smartPreloadThreads(threads.take(6))
         }
     }
 
@@ -138,6 +157,7 @@ class ForumViewModel @Inject constructor(
     fun selectForum(id: String, name: String) {
         if (forumId == id) return
         forumId = id
+        preloadJob?.cancel()
         // Clear previous board content so only the center spinner shows while loading.
         _uiState.update {
             it.copy(
@@ -199,10 +219,10 @@ class ForumViewModel @Inject constructor(
                                 keep + newDisplay
                             }
                             // Only advance page once per load (SWR may emit cache + network).
+                            // Do NOT smart-preload every paged chunk — competes with fling + images.
                             if (!gotPage && newThreads.isNotEmpty()) {
                                 gotPage = true
                                 currentPage = pageToLoad + 1
-                                scheduleSmartPreload(newThreads, delayMs = 800L)
                             }
                             _uiState.update { state ->
                                 state.copy(
@@ -245,8 +265,9 @@ class ForumViewModel @Inject constructor(
             )
         }
 
-        // Cancel in-flight page/refresh so SWR double-emit cannot race page counter.
+        // Cancel in-flight page/refresh + detail preload so SWR double-emit cannot race.
         listJob?.cancel()
+        preloadJob?.cancel()
         listJob = viewModelScope.launch {
             val flow = if (requestForumId == "-1") {
                 threadRepository.getTimeline("1", 1)
@@ -265,22 +286,31 @@ class ForumViewModel @Inject constructor(
                             val freshThreads = response.data
                             lastNonEmpty = freshThreads.isNotEmpty()
                             val ids = LongArray(freshThreads.size) { freshThreads[it].id }
-                            // Skip identical SWR second paint (same row set)
-                            val prev = lastIds
-                            if (prev != null && prev.contentEquals(ids)) {
-                                emissionCount++
-                                return@collect
-                            }
-                            lastIds = ids
-
                             val displayItems = withContext(Dispatchers.Default) {
                                 freshThreads.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
                                 )
                             }
-                            // Network after cache: yield so first cache paint isn't stomped mid-frame
+                            // Skip identical SWR second paint, but still repaint when reply
+                            // badges change (same id order, different replyCount).
+                            val prev = lastIds
+                            if (prev != null && prev.contentEquals(ids)) {
+                                val prevItems = _uiState.value.displayItems
+                                val replyChanged = prevItems.size == displayItems.size &&
+                                    prevItems.indices.any {
+                                        prevItems[it].replyCount != displayItems[it].replyCount
+                                    }
+                                if (!replyChanged) {
+                                    emissionCount++
+                                    return@collect
+                                }
+                            }
+                            lastIds = ids
+
+                            // Network after cache: yield so first cache paint + splash dismiss land first.
+                            // Slightly longer than 1 frame so cold-start measure isn't double-stomped.
                             if (emissionCount > 0) {
-                                delay(180)
+                                delay(64)
                                 if (forumId != requestForumId) return@collect
                             }
                             emissionCount++
@@ -309,7 +339,8 @@ class ForumViewModel @Inject constructor(
                     // Next page to request after a full page-1 refresh.
                     currentPage = if (lastNonEmpty) 2 else 1
                     if (lastNonEmpty) {
-                        scheduleSmartPreload(_uiState.value.threads, delayMs = 1600L)
+                        // Well after cold list + first fling
+                        scheduleSmartPreload(_uiState.value.threads, delayMs = 3200L)
                     }
                 }
             } finally {

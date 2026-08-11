@@ -214,21 +214,29 @@ private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int)
 
 /**
  * Shared HTML → AnnotatedString cache. Safe for background pre-warm and UI lookup.
+ * Synchronized put/get — prewarm runs on Default while composition reads on main.
  */
 object HtmlParseCache {
-    private val cache = android.util.LruCache<HtmlCacheKey, AnnotatedString>(500)
+    private val cache = android.util.LruCache<HtmlCacheKey, AnnotatedString>(600)
+    private val lock = Any()
 
     fun getOrParse(html: String, quoteLinkColor: Color): AnnotatedString {
-        val key = HtmlCacheKey(html, quoteLinkColor.toArgb())
-        cache.get(key)?.let { return it }
+        val colorArgb = quoteLinkColor.toArgb()
+        val key = HtmlCacheKey(html, colorArgb)
+        synchronized(lock) {
+            cache.get(key)?.let { return it }
+        }
         val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor)
-        cache.put(key, parsed)
+        synchronized(lock) {
+            cache.put(key, parsed)
+        }
         return parsed
     }
 
     /**
      * Pre-parse HTML blobs on a background thread so first scroll frames hit the cache.
      * Call from [Dispatchers.Default] / [Dispatchers.IO].
+     * Skips blanks and already-cached keys; no-op when list empty.
      */
     fun prewarm(htmlList: Collection<String>, quoteLinkColor: Color) {
         if (htmlList.isEmpty()) return
@@ -236,12 +244,18 @@ object HtmlParseCache {
         for (html in htmlList) {
             if (html.isBlank()) continue
             val key = HtmlCacheKey(html, colorArgb)
-            if (cache.get(key) == null) {
-                cache.put(key, parseHtmlToAnnotatedString(html, quoteLinkColor))
+            val hit = synchronized(lock) { cache.get(key) != null }
+            if (hit) continue
+            val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor)
+            synchronized(lock) {
+                cache.put(key, parsed)
             }
         }
     }
 }
+
+/** Stable no-op — avoids allocating a new lambda every list-row composition. */
+private val NoOpOnTextLayout: (TextLayoutResult) -> Unit = {}
 
 @Composable
 fun HtmlContent(
@@ -266,7 +280,10 @@ fun HtmlContent(
         HtmlParseCache.getOrParse(html, quoteLinkColor)
     }
     val context = LocalContext.current
-    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    // Only allocate layout state when gestures need hit-testing (thread detail / reply).
+    var layoutResult by remember(enableGestures) {
+        mutableStateOf<TextLayoutResult?>(null)
+    }
 
     val surfaceColor = MaterialTheme.colorScheme.onSurface
     val mergedStyle = remember(style, surfaceColor) { style.copy(color = surfaceColor) }
@@ -321,10 +338,11 @@ fun HtmlContent(
         style = mergedStyle,
         maxLines = maxLines,
         overflow = overflow,
+        // List mode: stable no-op (no layoutResult write → no per-measure recomposition).
         onTextLayout = if (enableGestures) {
             { layoutResult = it }
         } else {
-            {}
+            NoOpOnTextLayout
         }
     )
 }

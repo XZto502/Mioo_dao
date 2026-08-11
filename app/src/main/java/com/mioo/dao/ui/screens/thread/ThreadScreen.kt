@@ -229,19 +229,29 @@ fun ThreadScreen(
         viewModel.consumePendingScrollIndex()
     }
 
-    // HTML prewarm: do NOT key on firstVisibleItemIndex (restarts every scroll frame).
-    // Warm head once when content changes; settle-scroll for a light near-viewport pass.
-    LaunchedEffect(listUi.displayItems, listUi.mainPostData?.content, quoteLinkColor) {
+    // HTML prewarm: key on content signature, not the list instance (avoids restart on
+    // every StateFlow emission that rebuilds an equal list). Head first, then bulk.
+    val threadPrewarmSig = remember(
+        listUi.displayItems.size,
+        listUi.displayItems.firstOrNull()?.id,
+        listUi.displayItems.lastOrNull()?.id,
+        listUi.mainPostData?.content
+    ) {
+        "${listUi.displayItems.size}:${listUi.displayItems.firstOrNull()?.id}:" +
+            "${listUi.displayItems.lastOrNull()?.id}:${listUi.mainPostData?.content?.length ?: 0}"
+    }
+    LaunchedEffect(threadPrewarmSig, quoteLinkColor) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         val bodies = listUi.displayItems.map { it.postData.content }
-        val head = listOfNotNull(listUi.mainPostData?.content) + bodies.take(8)
+        // Head only on open — bulk of the page is warmed by settle-scroll effect below
+        val head = listOfNotNull(listUi.mainPostData?.content) + bodies.take(10)
         withContext(Dispatchers.Default) {
             HtmlParseCache.prewarm(head, quoteLinkColor)
         }
-        // Let enter-transition / first frame finish before bulk prewarm
-        delay(500)
+        delay(350)
+        // Cap bulk warm so long threads don't burn Default while user is already scrolling
         withContext(Dispatchers.Default) {
-            HtmlParseCache.prewarm(bodies.take(40), quoteLinkColor)
+            HtmlParseCache.prewarm(bodies.take(20), quoteLinkColor)
         }
     }
 
@@ -1047,15 +1057,9 @@ private fun ThreadReplyRow(
     } else {
         item.quoteIds.mapNotNull { id -> quoteCache[id] }
     }
-    val quoteLinkColor = MaterialTheme.colorScheme.primary
-    LaunchedEffect(quotedReplies, quoteLinkColor) {
-        if (quotedReplies.isNotEmpty()) {
-            withContext(Dispatchers.Default) {
-                HtmlParseCache.prewarm(quotedReplies.map { it.content }, quoteLinkColor)
-            }
-        }
-    }
-    // Resolve resto via API fields only — avoids rebuilding a reply-id Set on every page append
+    // Resolve resto via API fields only — avoids rebuilding a reply-id Set on every page append.
+    // No per-row LaunchedEffect prewarm: HtmlParseCache.getOrParse + ContentBlockSplitter
+    // fill on first bind; row-level effects caused Default thrash during fling.
     val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, currentThreadId) {
         if (quotedReplies.isEmpty()) {
             StablePostList(emptyList())
@@ -1073,17 +1077,6 @@ private fun ThreadReplyRow(
                     }
                     base.copy(resto = targetResto)
                 }
-            )
-        }
-    }
-
-    // Warm ContentBlockSplitter cache off the main thread before ReplyCard remembers blocks
-    LaunchedEffect(item.rawContent, quotedPostsData) {
-        if (quotedPostsData.list.isEmpty()) return@LaunchedEffect
-        withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.ContentBlockSplitter.split(
-                item.rawContent,
-                quotedPostsData.list
             )
         }
     }

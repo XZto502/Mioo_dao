@@ -36,7 +36,11 @@ import coil.size.Size
  * so Coil memory hits instead of re-decoding.
  */
 object ListThumbImage {
-    const val SIZE_PX: Int = 360
+    /**
+     * Decode size for list thumbs (UI is 120.dp ≈ 360px @3x).
+     * Use 288 so decode/upload is cheaper while still sharp on xxhdpi; Coil INEXACT keeps cache hits stable.
+     */
+    const val SIZE_PX: Int = 288
 
     fun request(context: Context, imageUrl: String): ImageRequest {
         return ImageRequest.Builder(context)

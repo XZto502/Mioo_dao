@@ -58,13 +58,21 @@ fun ThreadCard(
     /**
      * Dense lists: skip press-scale animation (indication only) to cut per-row
      * animateFloatAsState / graphicsLayer cost during fling.
+     * (Emil: high-frequency list press — indication only, no scale animation.)
      */
     enablePressScale: Boolean = false,
     /** When false, skip thumbnail (cold-start: defer decode until list settles). */
     showImage: Boolean = true
 ) {
-    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    val colorScheme = MaterialTheme.colorScheme
+    val daoColors = DaoTheme.colors
+    val outline = colorScheme.outlineVariant.copy(alpha = 0.3f)
     val border = remember(outline) { BorderStroke(0.5.dp, outline) }
+    // CardDefaults.* are @Composable — call at composition level, not inside remember {}
+    val cardColors = CardDefaults.cardColors(containerColor = daoColors.threadCardBg)
+    val cardElevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    val cardShape = MaterialTheme.shapes.medium
+    val bodyStyle = MaterialTheme.typography.bodyMedium
     val interactionSource = remember { MutableInteractionSource() }
     // Dense list default: skip press animation subscriptions entirely (enablePressScale=false)
     val cardModifier = if (enablePressScale) {
@@ -94,11 +102,9 @@ fun ThreadCard(
     }
     Card(
         modifier = cardModifier,
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = DaoTheme.colors.threadCardBg
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = cardShape,
+        colors = cardColors,
+        elevation = cardElevation,
         border = border
     ) {
         Column(
@@ -111,18 +117,21 @@ fun ThreadCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // User ID tag
-                val idBgColor = when {
-                    postData.isAdmin -> DaoTheme.colors.admin.copy(alpha = 0.15f)
-                    postData.isPo -> DaoTheme.colors.po.copy(alpha = 0.15f)
-                    else -> MaterialTheme.colorScheme.surfaceVariant
+                // User ID tag — remember colors per role so list fling doesn't re-alloc
+                val idBgColor = remember(postData.isAdmin, postData.isPo, colorScheme.surfaceVariant, daoColors.admin, daoColors.po) {
+                    when {
+                        postData.isAdmin -> daoColors.admin.copy(alpha = 0.15f)
+                        postData.isPo -> daoColors.po.copy(alpha = 0.15f)
+                        else -> colorScheme.surfaceVariant
+                    }
                 }
-                val idTextColor = when {
-                    postData.isAdmin -> DaoTheme.colors.admin
-                    postData.isPo -> DaoTheme.colors.po
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                val idTextColor = remember(postData.isAdmin, postData.isPo, colorScheme.onSurfaceVariant, daoColors.admin, daoColors.po) {
+                    when {
+                        postData.isAdmin -> daoColors.admin
+                        postData.isPo -> daoColors.po
+                        else -> colorScheme.onSurfaceVariant
+                    }
                 }
-
                 Text(
                     text = postData.userId,
                     style = MaterialTheme.typography.labelMedium.copy(
@@ -198,7 +207,7 @@ fun ThreadCard(
             HtmlContent(
                 html = postData.content,
                 onQuoteClick = onQuoteClick,
-                style = MaterialTheme.typography.bodyMedium,
+                style = bodyStyle,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = contentMaxLines,
                 overflow = TextOverflow.Ellipsis,

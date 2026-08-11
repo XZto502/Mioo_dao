@@ -23,10 +23,13 @@ import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.model.effectiveTitle
 import com.squareup.moshi.Types
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -130,11 +133,71 @@ class ThreadRepositoryImpl @Inject constructor(
         private val HTML_OR_NEWLINE = Regex("<.*?>|\\n")
     }
 
+    /** X-island business error (auth / deleted / rate limit) — not a transport failure. */
+    private class ApiBusinessException(message: String) : Exception(message)
+
     private val threadListType = Types.newParameterizedType(List::class.java, Thread::class.java)
     private val threadListAdapter = moshi.adapter<List<Thread>>(threadListType)
     private val threadAdapter = moshi.adapter(Thread::class.java)
     private val replyAdapter = moshi.adapter(Reply::class.java)
     private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Parse raw `thread`/`po` body. Rejects `{success:false,error:...}` before Moshi
+     * so we don't thrash on "Required value 'id' missing" and never cache error JSON.
+     */
+    private fun parseThreadBody(raw: String): Thread {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) throw ApiBusinessException("空响应")
+        if (trimmed.startsWith("{")) {
+            try {
+                val o = org.json.JSONObject(trimmed)
+                val hasId = o.has("id")
+                val successFalse = o.has("success") && !o.optBoolean("success", true)
+                val errorOnly = o.has("error") && !hasId
+                if (successFalse || errorOnly) {
+                    val msg = sequenceOf("error", "msg", "message")
+                        .map { o.optString(it) }
+                        .firstOrNull { it.isNotBlank() }
+                    throw ApiBusinessException(msg ?: "访问被拒绝，请先在设置中添加饼干")
+                }
+            } catch (e: ApiBusinessException) {
+                throw e
+            } catch (_: Exception) {
+                // fall through to Moshi
+            }
+        }
+        return threadAdapter.fromJson(raw)
+            ?: throw ApiBusinessException("解析串失败")
+    }
+
+    private fun mapThreadException(e: Exception): String = when (e) {
+        is ApiBusinessException -> e.message ?: "请求失败"
+        is com.squareup.moshi.JsonDataException -> when {
+            e.message?.contains("Expected BEGIN_") == true -> "该串不存在或已被删除"
+            e.message?.contains("id", ignoreCase = true) == true ->
+                "需要登录饼干后才能查看串详情"
+            else -> e.localizedMessage ?: "解析失败"
+        }
+        else -> e.localizedMessage ?: "Network error"
+    }
+
+    private suspend fun fetchThread(tid: String, page: Int): Thread {
+        val raw = apiService.thread(tid, page).string()
+        return parseThreadBody(raw)
+    }
+
+    private suspend fun fetchPo(tid: String, page: Int): Thread {
+        val raw = apiService.po(tid, page).string()
+        return parseThreadBody(raw)
+    }
+
+    private suspend fun hasUserCookie(): Boolean {
+        val list = runCatching { settingsDataStore.cookiesListFlow.first() }.getOrNull()
+        if (list != null && list.any { it.isNotBlank() }) return true
+        val hash = runCatching { settingsDataStore.userHashFlow.first() }.getOrNull()
+        return !hash.isNullOrBlank()
+    }
 
     override fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         val cacheKey = "showf_$fid"
@@ -208,14 +271,15 @@ class ThreadRepositoryImpl @Inject constructor(
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
-                cachedJson = cached.jsonResponse
-                val cachedThread = runCatching { threadAdapter.fromJson(cached.jsonResponse) }.getOrNull()
+                // Never surface a cached error envelope as a thread
+                val cachedThread = runCatching { parseThreadBody(cached.jsonResponse) }.getOrNull()
                 if (cachedThread != null) {
+                    cachedJson = cached.jsonResponse
                     emit(XdResponse.Success(cachedThread))
                     emittedCache = true
                 }
             }
-            val response = apiService.thread(tid, page)
+            val response = fetchThread(tid, page)
             // First page only; saveToHistory no-ops thrash when content/timestamp are fresh
             if (page <= 1) {
                 saveToHistory(response)
@@ -227,12 +291,7 @@ class ThreadRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             if (!emittedCache) {
-                val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
-                    "该串不存在或已被删除"
-                } else {
-                    e.localizedMessage ?: "Network error"
-                }
-                emit(XdResponse.Error(message = msg, throwable = e))
+                emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -244,14 +303,14 @@ class ThreadRepositoryImpl @Inject constructor(
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
-                cachedJson = cached.jsonResponse
-                val cachedThread = runCatching { threadAdapter.fromJson(cached.jsonResponse) }.getOrNull()
+                val cachedThread = runCatching { parseThreadBody(cached.jsonResponse) }.getOrNull()
                 if (cachedThread != null) {
+                    cachedJson = cached.jsonResponse
                     emit(XdResponse.Success(cachedThread))
                     emittedCache = true
                 }
             }
-            val response = apiService.po(tid, page)
+            val response = fetchPo(tid, page)
             val networkJson = threadAdapter.toJson(response)
             if (!(emittedCache && cachedJson == networkJson)) {
                 cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
@@ -259,12 +318,7 @@ class ThreadRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             if (!emittedCache) {
-                val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
-                    "该串不存在或已被删除"
-                } else {
-                    e.localizedMessage ?: "Network error"
-                }
-                emit(XdResponse.Error(message = msg, throwable = e))
+                emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -446,7 +500,7 @@ class ThreadRepositoryImpl @Inject constructor(
         val bookmarks = historyDao.getAllBookmarks().first().take(limit)
         for (bookmark in bookmarks) {
             try {
-                val thread = apiService.thread(bookmark.id, 1)
+                val thread = fetchThread(bookmark.id, 1)
                 val count = thread.replyCount ?: 0
                 // Skip Room write when badge count unchanged
                 if (count != bookmark.lastKnownReplyCount) {
@@ -474,7 +528,7 @@ class ThreadRepositoryImpl @Inject constructor(
         val bookmarks = historyDao.getAllBookmarks().first().take(limit)
         for (bookmark in bookmarks) {
             try {
-                val thread = apiService.thread(bookmark.id, 1)
+                val thread = fetchThread(bookmark.id, 1)
                 val count = thread.replyCount ?: 0
                 historyDao.updateKnownReplyCount(bookmark.id, count)
                 historyDao.insertBookmark(
@@ -691,10 +745,10 @@ class ThreadRepositoryImpl @Inject constructor(
             for (bookmark in bookmarks) {
                 val tid = bookmark.id
                 try {
-                    val response = apiService.thread(tid, 1)
+                    val response = fetchThread(tid, 1)
                     val json = threadAdapter.toJson(response)
                     cacheDao.insertCache(CacheEntity("thread_$tid", 1, json))
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                 }
                 current++
                 onProgress(current, total)
@@ -705,11 +759,20 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    /** Single in-flight smart-preload job — newer schedule cancels older. */
+    @Volatile
+    private var smartPreloadJob: Job? = null
+
     override fun smartPreloadThreads(threads: List<Thread>) {
-        preloadScope.launch {
+        smartPreloadJob?.cancel()
+        if (threads.isEmpty()) return
+        smartPreloadJob = preloadScope.launch {
             try {
                 val mode = settingsDataStore.smartPreloadModeFlow.first()
                 if (mode == "DISABLED") return@launch
+
+                // Without cookie, thread API returns error envelope — skip entirely
+                if (!hasUserCookie()) return@launch
 
                 if (mode == "WIFI_ONLY") {
                     val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -719,24 +782,32 @@ class ThreadRepositoryImpl @Inject constructor(
                     if (!isWifi) return@launch
                 }
 
-                val preloadCount = settingsDataStore.preloadCountFlow.first()
+                // Hard cap: settings preloadCount can be large; more than ~6 thrash mid-scroll.
+                val preloadCount = settingsDataStore.preloadCountFlow.first().coerceIn(1, 6)
                 val threadsToPreload = threads.take(preloadCount)
 
                 for (thread in threadsToPreload) {
+                    ensureActive()
                     val tid = thread.idStr
+                    if (tid.isBlank()) continue
                     val cached = cacheDao.getCache("thread_$tid", 1)
-                    val isRecentlyCached = cached != null && (System.currentTimeMillis() - cached.cachedAt < 10 * 60 * 1000)
+                    val isRecentlyCached = cached != null &&
+                        (System.currentTimeMillis() - cached.cachedAt < 15 * 60 * 1000)
                     if (isRecentlyCached) continue
 
                     try {
-                        val response = apiService.thread(tid, 1)
+                        val response = fetchThread(tid, 1)
                         val json = threadAdapter.toJson(response)
                         cacheDao.insertCache(CacheEntity("thread_$tid", 1, json))
-                        delay(500)
+                        // Longer gap so list fling / image decode keep the network slot
+                        delay(750)
                     } catch (e: Exception) {
+                        // Auth / deleted: stop the whole preload wave (no point hammering)
+                        if (e is ApiBusinessException) return@launch
                     }
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 android.util.Log.e("ThreadRepo", "Error preloading threads", e)
             }
         }
@@ -744,33 +815,33 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override fun downloadFullThread(tid: String): Flow<XdResponse<Unit>> = flow {
         try {
-            val page1 = apiService.thread(tid, 1)
+            val page1 = fetchThread(tid, 1)
             saveToHistory(page1)
             addBookmark(page1)
-            
+
             val json1 = threadAdapter.toJson(page1)
             cacheDao.insertCache(CacheEntity("thread_$tid", 1, json1))
-            
+
             val totalReplies = page1.replyCount ?: 0
             val repliesPage1Size = page1.replies?.size ?: 0
-            
+
             if (totalReplies > repliesPage1Size && repliesPage1Size > 0) {
                 val pageSize = repliesPage1Size
                 val totalPages = (totalReplies + pageSize - 1) / pageSize
-                
+
                 for (page in 2..totalPages) {
                     try {
-                        val threadPage = apiService.thread(tid, page)
+                        val threadPage = fetchThread(tid, page)
                         val jsonPage = threadAdapter.toJson(threadPage)
                         cacheDao.insertCache(CacheEntity("thread_$tid", page, jsonPage))
                         delay(300)
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                     }
                 }
             }
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
-            emit(XdResponse.Error(message = e.localizedMessage ?: "Download failed", throwable = e))
+            emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
         }
     }.flowOn(Dispatchers.IO)
 

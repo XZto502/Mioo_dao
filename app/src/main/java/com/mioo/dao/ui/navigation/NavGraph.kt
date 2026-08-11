@@ -27,8 +27,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
@@ -82,15 +80,11 @@ fun MiooDaoNavGraph(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val coroutineScope = rememberCoroutineScope()
-    val navigateToThread: (String) -> Unit = remember(navController, coroutineScope) {
+    // Instant navigate — high-frequency list action (Emil: 100+/day → no artificial delay).
+    // Ripple still plays on the source card while the destination enters.
+    val navigateToThread: (String) -> Unit = remember(navController) {
         { id: String ->
-            coroutineScope.launch {
-                // Short delay lets the click ripple start without blocking navigation
-                kotlinx.coroutines.delay(32)
-                navController.navigate(Screen.Thread.createRoute(id))
-            }
-            Unit
+            navController.navigate(Screen.Thread.createRoute(id))
         }
     }
 

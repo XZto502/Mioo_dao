@@ -653,4 +653,43 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
+    /**
+     * One DataStore read for cold start: last board + block lists.
+     * Avoids N parallel preference flows racing the first timeline fetch.
+     */
+    suspend fun getColdStartSnapshot(): ColdStartSnapshot =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val preferences = context.dataStore.data.first()
+                ColdStartSnapshot(
+                    lastForumId = preferences[KEY_LAST_FORUM_ID] ?: "-1",
+                    lastForumName = preferences[KEY_LAST_FORUM_NAME] ?: "时间线",
+                    blockedThreads = parseStringList(preferences[KEY_BLOCKED_THREADS]),
+                    blockedUsers = parseStringList(preferences[KEY_BLOCKED_USERS]),
+                    blockedKeywords = parseStringList(preferences[KEY_BLOCKED_KEYWORDS])
+                )
+            } catch (_: Exception) {
+                ColdStartSnapshot()
+            }
+        }
+
+    private fun parseStringList(jsonStr: String?): List<String> {
+        if (jsonStr.isNullOrEmpty()) return emptyList()
+        return try {
+            val jsonArray = org.json.JSONArray(jsonStr)
+            List(jsonArray.length()) { i -> jsonArray.getString(i) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
 }
+
+/** Prefs needed before the first board list request (single DataStore read). */
+data class ColdStartSnapshot(
+    val lastForumId: String = "-1",
+    val lastForumName: String = "时间线",
+    val blockedThreads: List<String> = emptyList(),
+    val blockedUsers: List<String> = emptyList(),
+    val blockedKeywords: List<String> = emptyList()
+)

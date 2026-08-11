@@ -37,17 +37,21 @@ interface XdApiService {
         @Query("page") page: Int
     ): List<Thread>
 
+    /**
+     * Raw body: API may return a Thread object **or** an error envelope
+     * `{ "success": false, "error": "..." }` (e.g. no cookie). Parsed in repository.
+     */
     @GET("thread")
     suspend fun thread(
         @Query("id") id: String,
         @Query("page") page: Int
-    ): Thread
+    ): ResponseBody
 
     @GET("po")
     suspend fun po(
         @Query("id") id: String,
         @Query("page") page: Int
-    ): Thread
+    ): ResponseBody
 
     @GET("feed")
     suspend fun feed(
