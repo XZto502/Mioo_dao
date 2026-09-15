@@ -40,7 +40,7 @@ cd Mioo_dao
 
 APK 输出在 `app/build/outputs/apk/debug/`。
 
-发布版见 [Releases](https://github.com/XZto502/Mioo_dao/releases)。
+发行版见 [Releases](https://github.com/XZto502/Mioo_dao/releases)。
 
 ## 协议
 
