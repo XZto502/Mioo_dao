@@ -318,7 +318,11 @@ fun MoreScreen(
         val release = manualReleaseFound!!
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { manualReleaseFound = null },
-            title = { Text("发现新版本 (${release.tagName})") },
+            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
+            title = {
+                com.mioo.dao.ui.theme.ImmersiveDialogEffect()
+                Text("发现新版本 (${release.tagName})")
+            },
             text = {
                 Column {
                     if (!release.name.isNullOrBlank()) {

@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -144,12 +146,14 @@ fun SettingsScreen(
             )
         },
         modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -1086,7 +1090,11 @@ fun SettingsScreen(
     if (showAddFolderDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showAddFolderDialog = false },
-            title = { Text("添加云端收藏夹") },
+            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
+            title = {
+                com.mioo.dao.ui.theme.ImmersiveDialogEffect()
+                Text("添加云端收藏夹")
+            },
             text = {
                 Column {
                     OutlinedTextField(

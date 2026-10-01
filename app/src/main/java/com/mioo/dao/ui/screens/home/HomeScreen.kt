@@ -203,7 +203,11 @@ fun TimelineList(
                 if (showBlockDialog) {
                     AlertDialog(
                         onDismissRequest = { showBlockDialog = false },
-                        title = { Text("内容操作") },
+                        properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
+                        title = {
+                            com.mioo.dao.ui.theme.ImmersiveDialogEffect()
+                            Text("内容操作")
+                        },
                         text = {
                             Column(
                                 modifier = Modifier.fillMaxWidth(),

@@ -45,7 +45,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.size.Precision
@@ -81,11 +82,13 @@ fun ImageViewer(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
+        properties = immersiveDialogProperties(
             usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
+            dismissOnClickOutside = true
         )
     ) {
+        // Black viewer: light (white) system icons, no opaque nav strip.
+        ImmersiveDialogEffect(lightAppearance = false)
         Box(
             modifier = modifier
                 .fillMaxSize()

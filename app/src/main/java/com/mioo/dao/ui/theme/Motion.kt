@@ -5,66 +5,83 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import android.content.Context
 
 /**
- * Motion tokens and helpers:
- * - ease-out for enter/exit UI (never ease-in)
- * - smooth custom curves (not the ultra-snappy "punch" defaults)
- * - enter can sit near ~300–360ms; exit still a bit faster than enter
- * - never enter from scale(0) — start near ~0.96–0.98 + opacity
- * - press feedback ~140–180ms scale(0.97)
- * - respect reduced motion (opacity-only / snap)
+ * Motion tokens.
+ *
+ * Page navigation matches the platform activity transition: the top page
+ * slides the full width (open from the right, close back to the right) on a
+ * short [FastOutSlowInEasing] tween. The covered page stays still — a second
+ * full-screen spring was what dropped frames on cold start.
  */
 object MiooMotion {
     /**
-     * Smooth ease-out — cubic-bezier(0.22, 1, 0.36, 1).
-     * Slightly gentler first-frame velocity than the old punch curve so longer
-     * durations actually read as motion instead of a flash.
+     * Soft ease-out for opacity/scale — cubic-bezier(0.16, 1, 0.3, 1).
+     * Long settle, almost no “hit”; pairs with short chrome motion.
      */
-    val EaseOut: Easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+    val EaseOut: Easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 
-    /** Soft ease-in-out for on-screen morphing — cubic-bezier(0.65, 0, 0.35, 1) */
-    val EaseInOut: Easing = CubicBezierEasing(0.65f, 0f, 0.35f, 1f)
+    /** Balanced morph for on-screen changes. */
+    val EaseInOut: Easing = CubicBezierEasing(0.45f, 0f, 0.55f, 1f)
 
-    /** iOS-like drawer curve — cubic-bezier(0.32, 0.72, 0, 1) */
+    /** Drawer family (kept for call sites). */
     val EaseDrawer: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
-    // Durations (ms) — tuned for fluid feel; exit stays shorter than matching enter
+    // Durations for tween-based chrome (press, chips, modals, tabs)
     const val DurationPress = 160
-    const val DurationTooltip = 200
-    const val DurationSmall = 260
-    const val DurationMedium = 320
+    const val DurationTooltip = 220
+    const val DurationSmall = 300
+    const val DurationMedium = 340
     const val DurationModal = 360
-    const val DurationExitFast = 200
-    const val DurationTab = 180
-    const val DurationSecondaryExit = 240
+    const val DurationExitFast = 260
     const val DurationShimmer = 1100
 
-    /** Initial scale for enter — never 0; keep delta subtle so motion feels calm. */
-    const val ScaleEnterFrom = 0.97f
-    const val ScaleExitTo = 0.98f
+    /** Near-1 scale so enter never “pops”; silkier than aggressive 0.95. */
+    const val ScaleEnterFrom = 0.98f
+    const val ScaleExitTo = 0.99f
     const val ScalePress = 0.97f
     const val ScaleCardPress = 0.985f
-    const val ScaleSecondaryFrom = 0.985f
-    const val ScaleThreadFrom = 0.98f
+
+    /**
+     * Platform-like activity transition length.
+     * Short enough that cold-start list composition can wait until it ends.
+     */
+    const val PageDurationMillis = 250
+
+    /** Fixed tween. Springs kept both heavy pages invalidating for 400ms+. */
+    fun <T> pageTween(): TweenSpec<T> = tween(
+        durationMillis = PageDurationMillis,
+        easing = FastOutSlowInEasing
+    )
+
+    /** Slightly snappier spring for small chrome (still no bounce). */
+    fun <T> softSpring(): SpringSpec<T> = spring(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = 380f
+    )
 
     fun <T> tweenOut(durationMillis: Int = DurationSmall): TweenSpec<T> =
         tween(durationMillis = durationMillis, easing = EaseOut)
@@ -72,15 +89,14 @@ object MiooMotion {
     fun <T> tweenExit(durationMillis: Int = DurationExitFast): TweenSpec<T> =
         tween(durationMillis = durationMillis, easing = EaseOut)
 
-    // --- Shared enter / exit recipes (GPU-friendly: opacity + scale; height only when needed) ---
+    // --- Small chrome ---
 
-    /** Small chrome: quote chip, image thumb, tool panels. */
     fun softEnter(reducedMotion: Boolean = false): EnterTransition {
         if (reducedMotion) return fadeIn(tween(0))
         return fadeIn(tweenOut(DurationSmall)) +
             scaleIn(
                 initialScale = ScaleEnterFrom,
-                animationSpec = tweenOut(DurationSmall)
+                animationSpec = softSpring()
             )
     }
 
@@ -89,41 +105,22 @@ object MiooMotion {
         return fadeOut(tweenExit(DurationExitFast)) +
             scaleOut(
                 targetScale = ScaleExitTo,
-                animationSpec = tweenExit(DurationExitFast)
+                animationSpec = softSpring()
             )
     }
 
-    /**
-     * Soft enter that also expands vertical space (composer chips).
-     * Height animation is a deliberate layout tradeoff so content doesn't jump.
-     */
-    fun softExpandEnter(reducedMotion: Boolean = false): EnterTransition {
-        if (reducedMotion) return fadeIn(tween(0)) + expandVertically(tween(0), expandFrom = Alignment.Top)
-        return fadeIn(tweenOut(DurationSmall)) +
-            scaleIn(initialScale = ScaleEnterFrom, animationSpec = tweenOut(DurationSmall)) +
-            expandVertically(
-                animationSpec = tweenOut(DurationSmall),
-                expandFrom = Alignment.Top
-            )
-    }
+    fun softExpandEnter(reducedMotion: Boolean = false): EnterTransition =
+        softEnter(reducedMotion)
 
-    fun softExpandExit(reducedMotion: Boolean = false): ExitTransition {
-        if (reducedMotion) return fadeOut(tween(0)) + shrinkVertically(tween(0), shrinkTowards = Alignment.Top)
-        return fadeOut(tweenExit(DurationExitFast)) +
-            scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationExitFast)) +
-            shrinkVertically(
-                animationSpec = tweenExit(DurationExitFast),
-                shrinkTowards = Alignment.Top
-            )
-    }
+    fun softExpandExit(reducedMotion: Boolean = false): ExitTransition =
+        softExit(reducedMotion)
 
-    /** Modal / popover: centered scale — modals stay origin-center by design. */
     fun modalEnter(reducedMotion: Boolean = false): EnterTransition {
         if (reducedMotion) return fadeIn(tween(0))
         return fadeIn(tweenOut(DurationModal)) +
             scaleIn(
                 initialScale = ScaleEnterFrom,
-                animationSpec = tweenOut(DurationModal)
+                animationSpec = softSpring()
             )
     }
 
@@ -132,54 +129,76 @@ object MiooMotion {
         return fadeOut(tweenExit(DurationExitFast)) +
             scaleOut(
                 targetScale = ScaleExitTo,
-                animationSpec = tweenExit(DurationExitFast)
+                animationSpec = softSpring()
             )
     }
 
-    /** Nav: tab switch — still light, but long enough to read as a crossfade. */
-    fun tabEnter(reducedMotion: Boolean = false): EnterTransition =
-        fadeIn(if (reducedMotion) tween(0) else tweenOut(DurationTab))
-
-    fun tabExit(reducedMotion: Boolean = false): ExitTransition =
-        fadeOut(if (reducedMotion) tween(0) else tweenExit((DurationTab * 0.75f).toInt().coerceAtLeast(120)))
-
-    /** Nav: secondary screens (settings, history, search). */
-    fun secondaryEnter(reducedMotion: Boolean = false): EnterTransition {
-        if (reducedMotion) return fadeIn(tween(0))
-        return fadeIn(tweenOut(DurationMedium)) +
-            scaleIn(initialScale = ScaleSecondaryFrom, animationSpec = tweenOut(DurationMedium))
-    }
-
-    fun secondaryExit(reducedMotion: Boolean = false): ExitTransition {
-        if (reducedMotion) return fadeOut(tween(0))
-        return fadeOut(tweenExit(DurationSecondaryExit)) +
-            scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationSecondaryExit))
+    /**
+     * Forward: new page enters from the right, moving left. No fade.
+     * Set targetContentZIndex to 1 so this page draws above the one it covers.
+     */
+    fun pageEnter(reducedMotion: Boolean = false): EnterTransition {
+        if (reducedMotion) return EnterTransition.None
+        return slideInHorizontally(
+            animationSpec = pageTween(),
+            initialOffsetX = { full -> full }
+        )
     }
 
     /**
-     * Nav: thread open — frequent in this app (list → detail many times/session).
-     * Keep short fade+scale only (no slide; HTML/images must not fight a long transition).
-     * Emil: tens+/day → drastically reduce duration; only transform+opacity.
+     * Back: top page leaves to the right. Same path and duration as [pageEnter].
      */
-    fun threadEnter(reducedMotion: Boolean = false): EnterTransition {
-        if (reducedMotion) return fadeIn(tween(0))
-        return fadeIn(tweenOut(DurationSmall)) +
-            scaleIn(initialScale = ScaleThreadFrom, animationSpec = tweenOut(DurationSmall))
+    fun pagePopExit(reducedMotion: Boolean = false): ExitTransition {
+        if (reducedMotion) return ExitTransition.None
+        return slideOutHorizontally(
+            animationSpec = pageTween(),
+            targetOffsetX = { full -> full }
+        )
     }
 
-    fun threadExit(reducedMotion: Boolean = false): ExitTransition {
-        if (reducedMotion) return fadeOut(tween(0))
-        // Exit faster than enter — asymmetric timing feels snappier on back
-        return fadeOut(tweenExit(DurationExitFast)) +
-            scaleOut(targetScale = ScaleExitTo, animationSpec = tweenExit(DurationExitFast))
+    /**
+     * Covered page stays fully opaque and is not translated.
+     * [ExitTransition.None] removes it on the first frame and leaves a hole.
+     * Alpha stays at 1 until the slide ends, so the forum list is not moved
+     * every frame (that parallax layer was the cold-start hitch).
+     */
+    fun pageHoldExit(reducedMotion: Boolean = false): ExitTransition {
+        if (reducedMotion) return ExitTransition.None
+        return fadeOut(animationSpec = snap(delayMillis = PageDurationMillis))
     }
+
+    /** Page revealed by a pop. Already underneath; no fade layer. */
+    fun pageRevealEnter(reducedMotion: Boolean = false): EnterTransition {
+        return if (reducedMotion) EnterTransition.None else EnterTransition.None
+    }
+
+    fun tabEnter(reducedMotion: Boolean = false): EnterTransition = pageEnter(reducedMotion)
+
+    fun tabExit(reducedMotion: Boolean = false): ExitTransition = pageHoldExit(reducedMotion)
+
+    fun pushEnter(reducedMotion: Boolean = false): EnterTransition = pageEnter(reducedMotion)
+
+    fun pushPopExit(reducedMotion: Boolean = false): ExitTransition = pagePopExit(reducedMotion)
+
+    fun pushSourceExit(reducedMotion: Boolean = false): ExitTransition = pageHoldExit(reducedMotion)
+
+    fun pushSourcePopEnter(reducedMotion: Boolean = false): EnterTransition =
+        pageRevealEnter(reducedMotion)
+
+    fun secondaryEnter(reducedMotion: Boolean = false): EnterTransition =
+        pushEnter(reducedMotion)
+
+    fun secondaryExit(reducedMotion: Boolean = false): ExitTransition =
+        pushPopExit(reducedMotion)
+
+    fun threadEnter(reducedMotion: Boolean = false): EnterTransition =
+        pushEnter(reducedMotion)
+
+    fun threadExit(reducedMotion: Boolean = false): ExitTransition =
+        pushPopExit(reducedMotion)
 }
 
-/** True when system animator duration scale is 0 (accessibility reduced motion). */
-@Composable
-@ReadOnlyComposable
-fun isReducedMotionEnabled(): Boolean {
-    val context = LocalContext.current
+fun isReducedMotionEnabled(context: Context): Boolean {
     return try {
         Settings.Global.getFloat(
             context.contentResolver,
@@ -191,10 +210,10 @@ fun isReducedMotionEnabled(): Boolean {
     }
 }
 
-/**
- * Press scale feedback for clickable surfaces.
- * Pair with [interactionSource] passed into clickable/combinedClickable.
- */
+@Composable
+@ReadOnlyComposable
+fun isReducedMotionEnabled(): Boolean = isReducedMotionEnabled(LocalContext.current)
+
 @Composable
 fun rememberPressScale(
     interactionSource: MutableInteractionSource,
@@ -206,7 +225,15 @@ fun rememberPressScale(
     val target = if (enabled && pressed && !reduced) pressedScale else 1f
     val scale by animateFloatAsState(
         targetValue = target,
-        animationSpec = if (reduced) tween(0) else MiooMotion.tweenOut(MiooMotion.DurationPress),
+        // Spring press feels silkier under quick taps (retargets mid-flight)
+        animationSpec = if (reduced) {
+            tween(0)
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMedium
+            )
+        },
         label = "pressScale"
     )
     return scale

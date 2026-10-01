@@ -1,7 +1,9 @@
 package com.mioo.dao.ui.components
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -22,8 +24,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import androidx.compose.ui.graphics.Color
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,8 +37,9 @@ fun FreeCopyDialog(
 ) {
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = immersiveDialogProperties(usePlatformDefaultWidth = false)
     ) {
+        ImmersiveDialogEffect()
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -50,12 +54,14 @@ fun FreeCopyDialog(
                     )
                 )
             },
-            containerColor = MaterialTheme.colorScheme.background
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { paddingValues ->
             SelectionContainer(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .navigationBarsPadding()
                     .padding(16.dp)
             ) {
                 Column(

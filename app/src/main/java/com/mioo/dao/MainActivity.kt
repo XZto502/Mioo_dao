@@ -40,7 +40,11 @@ import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.navigation.MiooDaoNavGraph
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooDaoTheme
+import com.mioo.dao.ui.theme.immersiveDialogProperties
+import com.mioo.dao.ui.theme.installImmersiveBarGuard
+import com.mioo.dao.ui.theme.removeImmersiveBarGuard
 import com.mioo.dao.utils.ThreadLinkParser
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -86,6 +90,9 @@ class MainActivity : ComponentActivity() {
     /** Keep system splash until first board content paints (or timeout). */
     private val keepSplashOnScreen = AtomicBoolean(true)
 
+    /** Re-clears a white navigation scrim after IME / OEM layout passes. */
+    private var immersiveBarGuard: android.view.ViewTreeObserver.OnGlobalLayoutListener? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Seamless launch: splash color matches Compose background; dismiss after first list frame.
         val splashScreen = installSplashScreen()
@@ -95,6 +102,7 @@ class MainActivity : ComponentActivity() {
         applyImmersiveSystemBars(darkTheme = false)
 
         super.onCreate(savedInstanceState)
+        immersiveBarGuard = installImmersiveBarGuard()
 
         // Edge-to-edge + Compose-owned IME insets (manifest: adjustNothing).
         // Decor does not fit system windows so WindowInsets.ime animates smoothly into Compose.
@@ -187,7 +195,11 @@ class MainActivity : ComponentActivity() {
                         onDismissRequest = {
                             markClipboardPromptHandled()
                         },
-                        title = { Text("打开串？") },
+                        properties = immersiveDialogProperties(),
+                        title = {
+                            ImmersiveDialogEffect()
+                            Text("打开串？")
+                        },
                         text = {
                             Text("剪贴板中检测到串号 No.$threadId，是否跳转打开？")
                         },
@@ -212,7 +224,11 @@ class MainActivity : ComponentActivity() {
                 showUpdateDialog?.let { release ->
                     AlertDialog(
                         onDismissRequest = { showUpdateDialog = null },
-                        title = { Text("发现新版本 (${release.tagName})") },
+                        properties = immersiveDialogProperties(),
+                        title = {
+                            ImmersiveDialogEffect()
+                            Text("发现新版本 (${release.tagName})")
+                        },
                         text = {
                             Column {
                                 if (!release.name.isNullOrBlank()) {
@@ -278,6 +294,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        removeImmersiveBarGuard(immersiveBarGuard)
+        immersiveBarGuard = null
         mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -331,7 +349,8 @@ private data class ThemeConfig(
 
 /**
  * Fully transparent status / navigation bars so content and glow draw under the
- * gesture indicator (小白条) and 3-button nav area.
+ * gesture indicator (dark
+ * ) and 3-button nav area.
  */
 private fun ComponentActivity.applyImmersiveSystemBars(darkTheme: Boolean) {
     val transparent = android.graphics.Color.TRANSPARENT

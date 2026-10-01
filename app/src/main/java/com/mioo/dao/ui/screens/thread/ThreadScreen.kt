@@ -126,6 +126,8 @@ import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -185,6 +187,17 @@ fun ThreadScreen(
     val scope = rememberCoroutineScope()
     val emptyLambda = remember { {} }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
+    // Keep the opening frame to chrome + spinner. The reply list is what stalls
+    // the first frames of the slide on a cold process.
+    val reducedMotion = isReducedMotionEnabled()
+    var allowHeavyList by remember { mutableStateOf(reducedMotion) }
+    LaunchedEffect(reducedMotion) {
+        if (!reducedMotion) {
+            // A frame past the slide, so list measure does not land on the last animation frame.
+            delay(MiooMotion.PageDurationMillis.toLong() + 32L)
+        }
+        allowHeavyList = true
+    }
 
     // Persist reading progress while scrolling / on leave
     LaunchedEffect(listState, viewModel.threadId) {
@@ -407,7 +420,7 @@ fun ThreadScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (listUi.isLoading && listUi.thread == null) {
+            if (!allowHeavyList || (listUi.isLoading && listUi.thread == null)) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -941,7 +954,11 @@ fun PageJumpDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("跳转页码") },
+        properties = immersiveDialogProperties(),
+        title = {
+            ImmersiveDialogEffect()
+            Text("跳转页码")
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Quick buttons
@@ -1128,7 +1145,11 @@ private fun PostActionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        properties = immersiveDialogProperties(),
+        title = {
+            ImmersiveDialogEffect()
+            Text(title)
+        },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),

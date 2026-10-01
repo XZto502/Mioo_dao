@@ -37,10 +37,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 
 @Composable
@@ -63,12 +64,13 @@ fun RefPopup(
     }
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
+        properties = immersiveDialogProperties(
             usePlatformDefaultWidth = true,
             dismissOnBackPress = true,
             dismissOnClickOutside = true
         )
     ) {
+        ImmersiveDialogEffect()
         AnimatedVisibility(
             visibleState = visibleState,
             enter = MiooMotion.modalEnter(reducedMotion),

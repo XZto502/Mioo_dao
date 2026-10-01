@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.LazyColumn
@@ -128,7 +129,10 @@ import com.mioo.dao.ui.components.imeLiftOverNavigationBars
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.applyImmersiveSystemBars
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -136,12 +140,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -288,9 +290,12 @@ fun ForumScreen(
                     .width(300.dp)
                     .fillMaxSize(),
                 drawerShape = RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp),
-                drawerContainerColor = MaterialTheme.colorScheme.surface
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                // Sheet color runs under the gesture pill; content is padded inside.
+                windowInsets = WindowInsets(0, 0, 0, 0)
             ) {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.statusBarsPadding())
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -325,7 +330,9 @@ fun ForumScreen(
                 }
                 LazyColumn(
                     state = drawerListState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .navigationBarsPadding(),
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -737,7 +744,11 @@ private fun ForumThreadListPane(
     blockTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { blockTarget = null },
-            title = { Text("内容操作") },
+            properties = immersiveDialogProperties(),
+            title = {
+                ImmersiveDialogEffect()
+                Text("内容操作")
+            },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -1062,26 +1073,13 @@ fun CreateThreadDialog(
 
         SideEffect {
             val window = (dialogView.parent as? DialogWindowProvider)?.window ?: return@SideEffect
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            window.applyImmersiveSystemBars(lightAppearance = !isDark)
             // 不遮罩、透明窗体：透出主界面主题光晕
             window.setDimAmount(0f)
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             // ADJUST_NOTHING：由 Compose WindowInsets.ime 抬起底栏，避免系统缩放与 insets 冲突
             @Suppress("DEPRECATION")
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isStatusBarContrastEnforced = false
-                window.isNavigationBarContrastEnforced = false
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                window.navigationBarDividerColor = android.graphics.Color.TRANSPARENT
-            }
-            WindowCompat.getInsetsController(window, dialogView).apply {
-                isAppearanceLightStatusBars = !isDark
-                isAppearanceLightNavigationBars = !isDark
-            }
         }
 
         // 半透明背景叠在主题流光上；顶/底栏用与其它界面相同的 glass 色

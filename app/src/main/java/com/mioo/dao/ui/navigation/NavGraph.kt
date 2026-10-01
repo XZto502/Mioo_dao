@@ -6,8 +6,6 @@ import androidx.compose.animation.ExitTransition
 import androidx.navigation.NavBackStackEntry
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,16 +16,15 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
@@ -68,6 +65,12 @@ sealed class Screen(val route: String) {
     }
 }
 
+private val TabRoutes = setOf(
+    Screen.Forum.route,
+    Screen.Feed.route,
+    Screen.Settings.route
+)
+
 @Composable
 fun MiooDaoNavGraph(
     modifier: Modifier = Modifier,
@@ -80,8 +83,7 @@ fun MiooDaoNavGraph(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Instant navigate — high-frequency list action (Emil: 100+/day → no artificial delay).
-    // Ripple still plays on the source card while the destination enters.
+    // Instant navigate — high-frequency list action (no artificial delay).
     val navigateToThread: (String) -> Unit = remember(navController) {
         { id: String ->
             navController.navigate(Screen.Thread.createRoute(id))
@@ -98,27 +100,22 @@ fun MiooDaoNavGraph(
         }
     }
 
-    // Motion: ease-out curves, exit faster than enter, no ease-in.
-    // Tab switches are high-frequency → short fade only. Thread stays fade+scale (no slide)
-    // so first-frame HTML/image work is not fighting a horizontal transition.
-    val reducedMotion = isReducedMotionEnabled()
-    val fadeEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        MiooMotion.tabEnter(reducedMotion)
+    // Read once per activity. Querying animator scale on every navigation janks the first frame.
+    val context = LocalContext.current
+    val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
+
+    // Every route uses the same activity-style slide. The covered page does not move.
+    val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        MiooMotion.pageEnter(reducedMotion)
     }
-    val fadeExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        MiooMotion.tabExit(reducedMotion)
+    val pageHoldExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        MiooMotion.pageHoldExit(reducedMotion)
     }
-    val secondaryEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        MiooMotion.secondaryEnter(reducedMotion)
+    val pageRevealEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        MiooMotion.pageRevealEnter(reducedMotion)
     }
-    val secondaryExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        MiooMotion.secondaryExit(reducedMotion)
-    }
-    val threadEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        MiooMotion.threadEnter(reducedMotion)
-    }
-    val threadExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        MiooMotion.threadExit(reducedMotion)
+    val pagePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        MiooMotion.pagePopExit(reducedMotion)
     }
 
     val bottomBarItems = remember {
@@ -129,8 +126,7 @@ fun MiooDaoNavGraph(
         )
     }
 
-    // Show bottom bar only on parent tab screens
-    val showBottomBar = currentRoute in listOf(Screen.Forum.route, Screen.Feed.route, Screen.Settings.route)
+    val showBottomBar = currentRoute in TabRoutes
 
     Scaffold(
         bottomBar = {
@@ -181,20 +177,20 @@ fun MiooDaoNavGraph(
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Color.Transparent
-    ) { paddingValues ->
+    ) { _ ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Forum.route
-            // We intentionally do NOT apply paddingValues here so the content can scroll behind the floating nav bar.
-            // Inner screens handle bottom padding via their LazyColumn contentPadding.
+            startDestination = Screen.Forum.route,
+            // Intentionally no paddingValues: content scrolls behind the floating nav bar.
+            enterTransition = pageEnter,
+            exitTransition = pageHoldExit,
+            popEnterTransition = pageRevealEnter,
+            popExitTransition = pagePopExit
         ) {
-            // Forum screen (Default start destination) — no enter anim (cold start must not fade)
+            // Cold start stays put. Later visits use the NavHost pop/enter slides.
             composable(
                 route = Screen.Forum.route,
-                enterTransition = { EnterTransition.None },
-                exitTransition = fadeExit,
-                popEnterTransition = { EnterTransition.None },
-                popExitTransition = fadeExit
+                enterTransition = { EnterTransition.None }
             ) {
                 val viewModel: ForumViewModel = hiltViewModel()
                 ForumScreen(
@@ -204,13 +200,7 @@ fun MiooDaoNavGraph(
                 )
             }
 
-            composable(
-                route = Screen.Search.route,
-                enterTransition = secondaryEnter,
-                exitTransition = secondaryExit,
-                popEnterTransition = secondaryEnter,
-                popExitTransition = secondaryExit
-            ) {
+            composable(route = Screen.Search.route) {
                 val viewModel: SearchViewModel = hiltViewModel()
                 SearchScreen(
                     viewModel = viewModel,
@@ -219,14 +209,7 @@ fun MiooDaoNavGraph(
                 )
             }
 
-            // Feed screen
-            composable(
-                route = Screen.Feed.route,
-                enterTransition = fadeEnter,
-                exitTransition = fadeExit,
-                popEnterTransition = fadeEnter,
-                popExitTransition = fadeExit
-            ) {
+            composable(route = Screen.Feed.route) {
                 val viewModel: FeedViewModel = hiltViewModel()
                 FeedScreen(
                     viewModel = viewModel,
@@ -234,14 +217,7 @@ fun MiooDaoNavGraph(
                 )
             }
 
-            // More (Settings Root) screen
-            composable(
-                route = Screen.Settings.route,
-                enterTransition = fadeEnter,
-                exitTransition = fadeExit,
-                popEnterTransition = fadeEnter,
-                popExitTransition = fadeExit
-            ) {
+            composable(route = Screen.Settings.route) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 MoreScreen(
                     viewModel = viewModel,
@@ -257,14 +233,7 @@ fun MiooDaoNavGraph(
                 )
             }
 
-            // Settings Detail screen
-            composable(
-                route = Screen.SettingsDetail.route,
-                enterTransition = secondaryEnter,
-                exitTransition = secondaryExit,
-                popEnterTransition = secondaryEnter,
-                popExitTransition = secondaryExit
-            ) {
+            composable(route = Screen.SettingsDetail.route) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 SettingsScreen(
                     viewModel = viewModel,
@@ -274,14 +243,7 @@ fun MiooDaoNavGraph(
                 )
             }
 
-            // Browsing History screen
-            composable(
-                route = Screen.BrowsingHistory.route,
-                enterTransition = secondaryEnter,
-                exitTransition = secondaryExit,
-                popEnterTransition = secondaryEnter,
-                popExitTransition = secondaryExit
-            ) {
+            composable(route = Screen.BrowsingHistory.route) {
                 val viewModel: SettingsViewModel = hiltViewModel()
                 HistoryScreen(
                     viewModel = viewModel,
@@ -292,16 +254,11 @@ fun MiooDaoNavGraph(
                 )
             }
 
-            // Thread screen
             composable(
                 route = Screen.Thread.route,
                 arguments = listOf(
                     navArgument("threadId") { type = NavType.StringType }
                 ),
-                enterTransition = threadEnter,
-                exitTransition = threadExit,
-                popEnterTransition = threadEnter,
-                popExitTransition = threadExit
             ) {
                 val viewModel: ThreadViewModel = hiltViewModel()
                 ThreadScreen(
