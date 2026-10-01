@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.15",
-  "name": "v1.0.15",
-  "body": "- 冷启动：Application/Activity 延迟 Hilt 注入（EntryPoint），Room 在 IO 上抢先打开，订阅与非关键预热后置\n- 冷启动：一次 DataStore 快照取板块/屏蔽词，首屏只拉时间线 SWR；板块目录、实时屏蔽、智能预取延后\n- 预取：无 Cookie 跳过串预取；单波上限 6；间隔拉长，避免抢列表滑动与解码\n- 串详情：原始 body 解析并拒绝错误信封入库；缓存命中不再把失败响应当帖文\n- 列表 HTML：AnnotatedString LRU 缓存；列表态跳过 layout 回调重组\n- 含 v1.0.14：高刷滑动与缩略图停滑加载等优化",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.15",
+  "tag_name": "v1.0.16",
+  "name": "v1.0.16",
+  "body": "- 手势条：状态栏和导航栏透明，页面、对话框、底部弹层和扫码页铺到屏幕边缘\n- 页面切换改为从右往左滑入、返回时向右滑出（250ms），论坛页本身不再做进入动画\n- 进串时列表延后到滑动结束再挂上，减轻冷启动进串卡顿\n- 含 v1.0.15：冷启动图裁剪与串缓存校验",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.16",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.15/app-debug.apk",
-      "size": 23111797
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.16/app-debug.apk",
+      "size": 23127421
     }
   ]
 }
