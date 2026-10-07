@@ -103,6 +103,7 @@ fun MiooDaoNavGraph(
     // Read once per activity. Querying animator scale on every navigation janks the first frame.
     val context = LocalContext.current
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
+    val glassState = rememberPageTransitionGlass(navController, reducedMotion)
 
     // Every route uses the same activity-style slide. The covered page does not move.
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
@@ -191,67 +192,79 @@ fun MiooDaoNavGraph(
             composable(
                 route = Screen.Forum.route,
                 enterTransition = { EnterTransition.None }
-            ) {
-                val viewModel: ForumViewModel = hiltViewModel()
-                ForumScreen(
-                    viewModel = viewModel,
-                    onNavigateToThread = navigateToThread,
-                    onColdStartContentReady = onColdStartContentReady
-                )
+            ) { entry ->
+                TransitionGlassPage(entry.id, glassState) {
+                    val viewModel: ForumViewModel = hiltViewModel()
+                    ForumScreen(
+                        viewModel = viewModel,
+                        onNavigateToThread = navigateToThread,
+                        onColdStartContentReady = onColdStartContentReady
+                    )
+                }
             }
 
-            composable(route = Screen.Search.route) {
-                val viewModel: SearchViewModel = hiltViewModel()
-                SearchScreen(
-                    viewModel = viewModel,
-                    onBackClick = { navController.popBackStack() },
-                    onNavigateToThread = navigateToThread
-                )
+            composable(route = Screen.Search.route) { entry ->
+                TransitionGlassPage(entry.id, glassState) {
+                    val viewModel: SearchViewModel = hiltViewModel()
+                    SearchScreen(
+                        viewModel = viewModel,
+                        onBackClick = { navController.popBackStack() },
+                        onNavigateToThread = navigateToThread
+                    )
+                }
             }
 
-            composable(route = Screen.Feed.route) {
-                val viewModel: FeedViewModel = hiltViewModel()
-                FeedScreen(
-                    viewModel = viewModel,
-                    onNavigateToThread = navigateToThread
-                )
+            composable(route = Screen.Feed.route) { entry ->
+                TransitionGlassPage(entry.id, glassState) {
+                    val viewModel: FeedViewModel = hiltViewModel()
+                    FeedScreen(
+                        viewModel = viewModel,
+                        onNavigateToThread = navigateToThread
+                    )
+                }
             }
 
-            composable(route = Screen.Settings.route) {
-                val viewModel: SettingsViewModel = hiltViewModel()
-                MoreScreen(
-                    viewModel = viewModel,
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.SettingsDetail.route)
-                    },
-                    onNavigateToHistory = {
-                        navController.navigate(Screen.BrowsingHistory.route)
-                    },
-                    onNavigateToSearch = {
-                        navController.navigate(Screen.Search.route)
-                    }
-                )
+            composable(route = Screen.Settings.route) { entry ->
+                TransitionGlassPage(entry.id, glassState) {
+                    val viewModel: SettingsViewModel = hiltViewModel()
+                    MoreScreen(
+                        viewModel = viewModel,
+                        onNavigateToSettings = {
+                            navController.navigate(Screen.SettingsDetail.route)
+                        },
+                        onNavigateToHistory = {
+                            navController.navigate(Screen.BrowsingHistory.route)
+                        },
+                        onNavigateToSearch = {
+                            navController.navigate(Screen.Search.route)
+                        }
+                    )
+                }
             }
 
-            composable(route = Screen.SettingsDetail.route) {
-                val viewModel: SettingsViewModel = hiltViewModel()
-                SettingsScreen(
-                    viewModel = viewModel,
-                    onBackClick = {
-                        navController.popBackStack()
-                    }
-                )
+            composable(route = Screen.SettingsDetail.route) { entry ->
+                TransitionGlassPage(entry.id, glassState) {
+                    val viewModel: SettingsViewModel = hiltViewModel()
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        onBackClick = {
+                            navController.popBackStack()
+                        }
+                    )
+                }
             }
 
-            composable(route = Screen.BrowsingHistory.route) {
-                val viewModel: SettingsViewModel = hiltViewModel()
-                HistoryScreen(
-                    viewModel = viewModel,
-                    onBackClick = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToThread = navigateToThread
-                )
+            composable(route = Screen.BrowsingHistory.route) { entry ->
+                TransitionGlassPage(entry.id, glassState) {
+                    val viewModel: SettingsViewModel = hiltViewModel()
+                    HistoryScreen(
+                        viewModel = viewModel,
+                        onBackClick = {
+                            navController.popBackStack()
+                        },
+                        onNavigateToThread = navigateToThread
+                    )
+                }
             }
 
             composable(
@@ -259,13 +272,15 @@ fun MiooDaoNavGraph(
                 arguments = listOf(
                     navArgument("threadId") { type = NavType.StringType }
                 ),
-            ) {
-                val viewModel: ThreadViewModel = hiltViewModel()
-                ThreadScreen(
-                    viewModel = viewModel,
-                    onBackClick = { navController.popBackStack() },
-                    onNavigateToThread = navigateToThread
-                )
+            ) { entry ->
+                TransitionGlassPage(entry.id, glassState) {
+                    val viewModel: ThreadViewModel = hiltViewModel()
+                    ThreadScreen(
+                        viewModel = viewModel,
+                        onBackClick = { navController.popBackStack() },
+                        onNavigateToThread = navigateToThread
+                    )
+                }
             }
         }
     }
