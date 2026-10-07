@@ -20,8 +20,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
-import com.mioo.dao.data.model.GithubRelease
 import com.mioo.dao.data.model.XdResponse
+import com.mioo.dao.utils.UpdatePromptController
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -49,7 +49,6 @@ fun MoreScreen(
 ) {
     val context = LocalContext.current
     var isCheckingUpdate by remember { mutableStateOf(false) }
-    var manualReleaseFound by remember { mutableStateOf<GithubRelease?>(null) }
 
     Column(
         modifier = modifier
@@ -258,7 +257,10 @@ fun MoreScreen(
                                             }
                                             
                                             if (isNewer) {
-                                                manualReleaseFound = release
+                                                val shown = UpdatePromptController.offerManual(release)
+                                                if (!shown) {
+                                                    android.widget.Toast.makeText(context, "更新已在下载", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
                                             } else {
                                                 android.widget.Toast.makeText(context, "已经是最新版本", android.widget.Toast.LENGTH_SHORT).show()
                                             }
@@ -312,52 +314,5 @@ fun MoreScreen(
                 )
             }
         }
-    }
-
-    if (manualReleaseFound != null) {
-        val release = manualReleaseFound!!
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { manualReleaseFound = null },
-            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
-            title = {
-                com.mioo.dao.ui.theme.ImmersiveDialogEffect()
-                Text("发现新版本 (${release.tagName})")
-            },
-            text = {
-                Column {
-                    if (!release.name.isNullOrBlank()) {
-                        Text(
-                            text = release.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                    if (!release.body.isNullOrBlank()) {
-                        Text(
-                            text = release.body,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    } else {
-                        Text("没有提供更新说明。")
-                    }
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        com.mioo.dao.utils.UpdateDownloader.downloadAndInstall(context, release)
-                        manualReleaseFound = null
-                    }
-                ) {
-                    Text("立即更新")
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { manualReleaseFound = null }) {
-                    Text("以后再说")
-                }
-            }
-        )
     }
 }

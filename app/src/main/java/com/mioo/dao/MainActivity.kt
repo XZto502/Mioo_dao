@@ -23,7 +23,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,7 +33,6 @@ import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.mioo.dao.data.model.GithubRelease
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.SettingsRepository
@@ -46,6 +44,7 @@ import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.installImmersiveBarGuard
 import com.mioo.dao.ui.theme.removeImmersiveBarGuard
 import com.mioo.dao.utils.ThreadLinkParser
+import com.mioo.dao.utils.UpdatePromptController
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
@@ -152,7 +151,6 @@ class MainActivity : ComponentActivity() {
                 applyImmersiveSystemBars(darkTheme)
             }
 
-            var showUpdateDialog by remember { mutableStateOf<GithubRelease?>(null) }
             val pendingThreadId by pendingThreadIdState
             val clipboardThreadId by clipboardThreadCandidate
 
@@ -170,7 +168,7 @@ class MainActivity : ComponentActivity() {
                         val release = response.data
                         val currentVersion = getAppVersionName()
                         if (isNewerVersion(currentVersion, release.tagName)) {
-                            showUpdateDialog = release
+                            UpdatePromptController.offerAutomatic(release)
                         }
                     }
                 }
@@ -221,9 +219,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                showUpdateDialog?.let { release ->
+                UpdatePromptController.release?.let { release ->
                     AlertDialog(
-                        onDismissRequest = { showUpdateDialog = null },
+                        onDismissRequest = { UpdatePromptController.dismiss() },
                         properties = immersiveDialogProperties(),
                         title = {
                             ImmersiveDialogEffect()
@@ -253,14 +251,14 @@ class MainActivity : ComponentActivity() {
                             TextButton(
                                 onClick = {
                                     com.mioo.dao.utils.UpdateDownloader.downloadAndInstall(this@MainActivity, release)
-                                    showUpdateDialog = null
+                                    UpdatePromptController.startDownload()
                                 }
                             ) {
                                 Text("立即更新")
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showUpdateDialog = null }) {
+                            TextButton(onClick = { UpdatePromptController.dismiss() }) {
                                 Text("以后再说")
                             }
                         }

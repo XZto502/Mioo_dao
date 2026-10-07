@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.16",
-  "name": "v1.0.16",
-  "body": "- 手势条：状态栏和导航栏透明，页面、对话框、底部弹层和扫码页铺到屏幕边缘\n- 页面切换改为从右往左滑入、返回时向右滑出（250ms），论坛页本身不再做进入动画\n- 进串时列表延后到滑动结束再挂上，减轻冷启动进串卡顿\n- 含 v1.0.15：冷启动图裁剪与串缓存校验",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.16",
+  "tag_name": "v1.0.17",
+  "name": "v1.0.17",
+  "body": "- 页面滑动时背景改为毛玻璃：底下的页面在动画期间模糊，滑过去的页面不再透出上一页\n- 检查更新和启动检查共用一个「发现新版本」窗口，点更新后不会再叠出一个\n- 含 v1.0.16：沉浸手势条与从右往左的页面切换",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.17",
   "assets": [
     {
       "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.16/app-debug.apk",
-      "size": 23127421
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.17/app-debug.apk",
+      "size": 23137393
     }
   ]
 }
