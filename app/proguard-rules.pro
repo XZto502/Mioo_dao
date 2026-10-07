@@ -17,6 +17,10 @@
 -keepclasseswithmembers class * {
     @retrofit2.http.* <methods>;
 }
+# R8 full mode erases Continuation<T> to a raw Continuation. Retrofit casts that
+# parameter to ParameterizedType while parsing a suspend method, which crashes
+# the first call whose signature was stripped (thread detail).
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
 
 # ── OkHttp / Okio ──
 -dontwarn okhttp3.internal.platform.**

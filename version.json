@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.0.17",
-  "name": "v1.0.17",
-  "body": "- 页面滑动时背景改为毛玻璃：底下的页面在动画期间模糊，滑过去的页面不再透出上一页\n- 检查更新和启动检查共用一个「发现新版本」窗口，点更新后不会再叠出一个\n- 含 v1.0.16：沉浸手势条与从右往左的页面切换",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.17",
+  "tag_name": "v1.0.18",
+  "name": "v1.0.18",
+  "body": "- 安装包改为不可调试的 R8 正式包，证书和以前相同，可以直接覆盖更新\n- 翻页时底下的页面只截一次再模糊，动画过程中不再逐帧重画列表\n- 含 v1.0.17：滑动毛玻璃，以及检查更新只弹出一个窗口",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.0.18",
   "assets": [
     {
-      "name": "app-debug.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.17/app-debug.apk",
-      "size": 23137393
+      "name": "app-release.apk",
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.0.18/app-release.apk",
+      "size": 4965197
     }
   ]
 }

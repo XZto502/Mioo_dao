@@ -13,8 +13,8 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.0.17"
+        versionCode = 19
+        versionName = "1.0.18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -23,6 +23,10 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            isDebuggable = false
+            // Same cert as the debug APKs already shipped, so this build updates in place.
+            // A new upload key would force every install to uninstall first.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
