@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
@@ -83,10 +84,25 @@ fun MiooDaoNavGraph(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Instant navigate — high-frequency list action (no artificial delay).
+    // A second tap can land while the detail page is still sliding over the list.
+    // The list stays hit-testable until the cover finishes, so ignore that repeat.
     val navigateToThread: (String) -> Unit = remember(navController) {
+        var lastThreadAt = 0L
         { id: String ->
-            navController.navigate(Screen.Thread.createRoute(id))
+            if (id.isNotBlank()) {
+                val now = android.os.SystemClock.uptimeMillis()
+                val top = navController.currentBackStackEntry
+                val topIsThread = top?.destination?.route == Screen.Thread.route
+                val topId = top?.arguments?.getString("threadId")
+                val repeatWhileCovered = !topIsThread && now - lastThreadAt < 400L
+                val alreadyOpen = topIsThread && topId == id
+                if (!repeatWhileCovered && !alreadyOpen) {
+                    lastThreadAt = now
+                    navController.navigate(Screen.Thread.createRoute(id)) {
+                        launchSingleTop = true
+                    }
+                }
+            }
         }
     }
 
@@ -103,9 +119,9 @@ fun MiooDaoNavGraph(
     // Read once per activity. Querying animator scale on every navigation janks the first frame.
     val context = LocalContext.current
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
-    val glassState = rememberPageTransitionGlass(navController, reducedMotion)
 
-    // Every route uses the same activity-style slide. The covered page does not move.
+    // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
+    // 板块 / 收藏 / 更多: adjacent pairs spring-slide; 板块 ↔ 更多 crossfades in [tabEnter] / [tabExit].
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         MiooMotion.pageEnter(reducedMotion)
     }
@@ -118,6 +134,8 @@ fun MiooDaoNavGraph(
     val pagePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
         MiooMotion.pagePopExit(reducedMotion)
     }
+    val density = LocalDensity.current
+    val tabRisePx = with(density) { 12.dp.roundToPx() }
 
     val bottomBarItems = remember {
         listOf(
@@ -188,12 +206,15 @@ fun MiooDaoNavGraph(
             popEnterTransition = pageRevealEnter,
             popExitTransition = pagePopExit
         ) {
-            // Cold start stays put. Later visits use the NavHost pop/enter slides.
+            // Cold start stays put: [tabEnter] is none until another tab is involved.
             composable(
                 route = Screen.Forum.route,
-                enterTransition = { EnterTransition.None }
-            ) { entry ->
-                TransitionGlassPage(entry.id, glassState) {
+                enterTransition = { tabEnter(reducedMotion, tabRisePx) },
+                exitTransition = { tabExit(reducedMotion, tabRisePx, popping = false) },
+                popEnterTransition = { tabEnter(reducedMotion, tabRisePx) },
+                popExitTransition = { tabExit(reducedMotion, tabRisePx, popping = true) }
+            ) { _ ->
+                PageBackdrop {
                     val viewModel: ForumViewModel = hiltViewModel()
                     ForumScreen(
                         viewModel = viewModel,
@@ -203,8 +224,8 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.Search.route) { entry ->
-                TransitionGlassPage(entry.id, glassState) {
+            composable(route = Screen.Search.route) { _ ->
+                PageBackdrop {
                     val viewModel: SearchViewModel = hiltViewModel()
                     SearchScreen(
                         viewModel = viewModel,
@@ -214,8 +235,14 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.Feed.route) { entry ->
-                TransitionGlassPage(entry.id, glassState) {
+            composable(
+                route = Screen.Feed.route,
+                enterTransition = { tabEnter(reducedMotion, tabRisePx) },
+                exitTransition = { tabExit(reducedMotion, tabRisePx, popping = false) },
+                popEnterTransition = { tabEnter(reducedMotion, tabRisePx) },
+                popExitTransition = { tabExit(reducedMotion, tabRisePx, popping = true) }
+            ) { _ ->
+                PageBackdrop {
                     val viewModel: FeedViewModel = hiltViewModel()
                     FeedScreen(
                         viewModel = viewModel,
@@ -224,8 +251,14 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.Settings.route) { entry ->
-                TransitionGlassPage(entry.id, glassState) {
+            composable(
+                route = Screen.Settings.route,
+                enterTransition = { tabEnter(reducedMotion, tabRisePx) },
+                exitTransition = { tabExit(reducedMotion, tabRisePx, popping = false) },
+                popEnterTransition = { tabEnter(reducedMotion, tabRisePx) },
+                popExitTransition = { tabExit(reducedMotion, tabRisePx, popping = true) }
+            ) { _ ->
+                PageBackdrop {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     MoreScreen(
                         viewModel = viewModel,
@@ -242,8 +275,8 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.SettingsDetail.route) { entry ->
-                TransitionGlassPage(entry.id, glassState) {
+            composable(route = Screen.SettingsDetail.route) { _ ->
+                PageBackdrop {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     SettingsScreen(
                         viewModel = viewModel,
@@ -254,8 +287,8 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.BrowsingHistory.route) { entry ->
-                TransitionGlassPage(entry.id, glassState) {
+            composable(route = Screen.BrowsingHistory.route) { _ ->
+                PageBackdrop {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     HistoryScreen(
                         viewModel = viewModel,
@@ -272,8 +305,8 @@ fun MiooDaoNavGraph(
                 arguments = listOf(
                     navArgument("threadId") { type = NavType.StringType }
                 ),
-            ) { entry ->
-                TransitionGlassPage(entry.id, glassState) {
+            ) { _ ->
+                PageBackdrop {
                     val viewModel: ThreadViewModel = hiltViewModel()
                     ThreadScreen(
                         viewModel = viewModel,
@@ -284,4 +317,62 @@ fun MiooDaoNavGraph(
             }
         }
     }
+}
+
+private fun tabIndex(route: String?): Int = when (route) {
+    Screen.Forum.route -> 0
+    Screen.Feed.route -> 1
+    Screen.Settings.route -> 2
+    else -> -1
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.tabEnter(
+    reducedMotion: Boolean,
+    risePx: Int
+): EnterTransition {
+    val from = tabIndex(initialState.destination.route)
+    val to = tabIndex(targetState.destination.route)
+    if (from < 0 || to < 0 || from == to) return EnterTransition.None
+    // Skip 收藏. A horizontal slide here would carry the middle tab across.
+    if (kotlin.math.abs(to - from) > 1) {
+        return MiooMotion.tabCrossEnter(
+            openingSkip = to > from,
+            risePx = risePx,
+            reducedMotion = reducedMotion
+        )
+    }
+    return MiooMotion.tabSlideEnter(
+        towardEnd = to > from,
+        // Returning to 板块 is a pop, so the page underneath is not the top layer.
+        incomingOnTop = targetState.destination.route != Screen.Forum.route,
+        reducedMotion = reducedMotion
+    )
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.tabExit(
+    reducedMotion: Boolean,
+    risePx: Int,
+    popping: Boolean
+): ExitTransition {
+    val from = tabIndex(initialState.destination.route)
+    val to = tabIndex(targetState.destination.route)
+    if (from < 0 || to < 0 || from == to) {
+        return if (popping) {
+            MiooMotion.pagePopExit(reducedMotion)
+        } else {
+            MiooMotion.pageHoldExit(reducedMotion)
+        }
+    }
+    if (kotlin.math.abs(to - from) > 1) {
+        return MiooMotion.tabCrossExit(
+            openingSkip = to > from,
+            risePx = risePx,
+            reducedMotion = reducedMotion
+        )
+    }
+    return MiooMotion.tabSlideExit(
+        towardEnd = to > from,
+        incomingOnTop = targetState.destination.route != Screen.Forum.route,
+        reducedMotion = reducedMotion
+    )
 }

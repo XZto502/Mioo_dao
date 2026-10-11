@@ -18,7 +18,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
@@ -170,6 +173,108 @@ object MiooMotion {
     /** Page revealed by a pop. Already underneath; no fade layer. */
     fun pageRevealEnter(reducedMotion: Boolean = false): EnterTransition {
         return if (reducedMotion) EnterTransition.None else EnterTransition.None
+    }
+
+    /**
+     * Share of the width the covered tab still moves during an adjacent bottom-bar slide.
+     * The page on top travels the full width.
+     */
+    const val TabOutgoingTravel = 0.28f
+
+    /**
+     * 板块 ↔ 更多. One tab is skipped, so this must not be a horizontal slide
+     * (that would drag 收藏 across). 200ms fade, with a 12dp rise on the far page.
+     */
+    const val TabCrossDurationMillis = 200
+
+    /** Far page scale while it fades across a skipped tab. */
+    const val TabCrossScale = 0.96f
+
+    /** Same spring as a one-page pager step: stiffness 322.2, damping 0.9. */
+    private fun tabSlideSpec(): SpringSpec<IntOffset> = spring(
+        dampingRatio = 0.9f,
+        stiffness = 322.2f,
+        visibilityThreshold = IntOffset(1, 1)
+    )
+
+    private fun <T> tabCrossTween(): TweenSpec<T> = tween(
+        durationMillis = TabCrossDurationMillis,
+        easing = FastOutSlowInEasing
+    )
+
+    /**
+     * Adjacent tabs (板块 ↔ 收藏, 收藏 ↔ 更多).
+     *
+     * [incomingOnTop] is false only when returning to 板块: that pop keeps the
+     * leaving page above, so the leaving page has to travel the full width.
+     * [towardEnd] follows the bar, left to right.
+     */
+    fun tabSlideEnter(
+        towardEnd: Boolean,
+        incomingOnTop: Boolean,
+        reducedMotion: Boolean = false
+    ): EnterTransition {
+        if (reducedMotion) return EnterTransition.None
+        val travel = if (incomingOnTop) 1f else TabOutgoingTravel
+        val sign = if (towardEnd) 1 else -1
+        return slideInHorizontally(tabSlideSpec()) { full ->
+            (sign * travel * full).toInt()
+        }
+    }
+
+    fun tabSlideExit(
+        towardEnd: Boolean,
+        incomingOnTop: Boolean,
+        reducedMotion: Boolean = false
+    ): ExitTransition {
+        if (reducedMotion) return ExitTransition.None
+        val travel = if (incomingOnTop) TabOutgoingTravel else 1f
+        val sign = if (towardEnd) -1 else 1
+        return slideOutHorizontally(tabSlideSpec()) { full ->
+            (sign * travel * full).toInt()
+        }
+    }
+
+    /**
+     * 板块 → 更多: the far page fades in from 0.96 and 12dp below.
+     * Back to 板块: 板块 fades in from 0.98, with no vertical move.
+     */
+    fun tabCrossEnter(
+        openingSkip: Boolean,
+        risePx: Int,
+        reducedMotion: Boolean = false
+    ): EnterTransition {
+        if (reducedMotion) return EnterTransition.None
+        val spec = tabCrossTween<Float>()
+        return if (openingSkip) {
+            fadeIn(spec) +
+                scaleIn(initialScale = TabCrossScale, animationSpec = spec) +
+                slideInVertically(tabCrossTween()) { risePx }
+        } else {
+            fadeIn(spec) +
+                scaleIn(initialScale = ScaleEnterFrom, animationSpec = spec)
+        }
+    }
+
+    /**
+     * 板块 → 更多: 板块 fades out and settles to 0.98, staying put vertically.
+     * Back to 板块: 更多 sinks 12dp, scales to 0.96, and fades.
+     */
+    fun tabCrossExit(
+        openingSkip: Boolean,
+        risePx: Int,
+        reducedMotion: Boolean = false
+    ): ExitTransition {
+        if (reducedMotion) return ExitTransition.None
+        val spec = tabCrossTween<Float>()
+        return if (openingSkip) {
+            fadeOut(spec) +
+                scaleOut(targetScale = ScaleEnterFrom, animationSpec = spec)
+        } else {
+            fadeOut(spec) +
+                scaleOut(targetScale = TabCrossScale, animationSpec = spec) +
+                slideOutVertically(tabCrossTween()) { risePx }
+        }
     }
 
     fun tabEnter(reducedMotion: Boolean = false): EnterTransition = pageEnter(reducedMotion)
