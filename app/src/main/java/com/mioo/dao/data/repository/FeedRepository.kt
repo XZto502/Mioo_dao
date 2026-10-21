@@ -1,6 +1,8 @@
 package com.mioo.dao.data.repository
 
 import com.mioo.dao.data.api.XdApiService
+import com.mioo.dao.data.api.extractQuotedJsonString
+import com.mioo.dao.data.api.isXdBusinessPlainString
 import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
@@ -28,6 +30,16 @@ class FeedRepositoryImpl @Inject constructor(
         return settingsDataStore.userHashFlow.first()
     }
 
+    private fun interpretPlainFeedWrite(raw: String): XdResponse<String> {
+        val quoted = extractQuotedJsonString(raw.trim())
+        val text = (quoted ?: raw.trim().trim('"')).ifBlank { raw }
+        return if (quoted != null && isXdBusinessPlainString(quoted)) {
+            XdResponse.Error(message = quoted)
+        } else {
+            XdResponse.Success(text)
+        }
+    }
+
     override fun getFeeds(page: Int): Flow<XdResponse<List<Thread>>> = flow {
         try {
             val uuid = getUserHash()
@@ -42,7 +54,7 @@ class FeedRepositoryImpl @Inject constructor(
         try {
             val uuid = getUserHash()
             val response = apiService.addFeed(uuid, tid)
-            emit(XdResponse.Success(response.string()))
+            emit(interpretPlainFeedWrite(response.string()))
         } catch (e: Exception) {
             emit(XdResponse.Error(message = e.localizedMessage ?: "Failed to add feed", throwable = e))
         }
@@ -52,7 +64,7 @@ class FeedRepositoryImpl @Inject constructor(
         try {
             val uuid = getUserHash()
             val response = apiService.delFeed(uuid, tid)
-            emit(XdResponse.Success(response.string()))
+            emit(interpretPlainFeedWrite(response.string()))
         } catch (e: Exception) {
             emit(XdResponse.Error(message = e.localizedMessage ?: "Failed to delete feed", throwable = e))
         }

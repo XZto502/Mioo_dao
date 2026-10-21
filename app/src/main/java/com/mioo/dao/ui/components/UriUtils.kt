@@ -7,14 +7,35 @@ import java.io.File
 fun Uri.toFile(context: Context): File? {
     return try {
         val inputStream = context.contentResolver.openInputStream(this) ?: return null
-        val tempFile = File(context.cacheDir, "temp_upload_${System.currentTimeMillis()}.jpg")
+        val ext = imageExtension(context)
+        val tempFile = File(context.cacheDir, "temp_upload_${System.currentTimeMillis()}.$ext")
         tempFile.outputStream().use { outputStream ->
             inputStream.use { it.copyTo(outputStream) }
         }
         tempFile
-    } catch (e: Exception) {
-        e.printStackTrace()
+    } catch (_: Exception) {
         null
+    }
+}
+
+private fun Uri.imageExtension(context: Context): String {
+    val mime = context.contentResolver.getType(this)?.lowercase()
+    val fromMime = when (mime) {
+        "image/png" -> "png"
+        "image/gif" -> "gif"
+        "image/webp" -> "webp"
+        "image/jpeg", "image/jpg" -> "jpg"
+        else -> null
+    }
+    if (fromMime != null) return fromMime
+    val fromName = lastPathSegment
+        ?.substringAfterLast('.', "")
+        ?.lowercase()
+        ?.substringBefore('?')
+    return when (fromName) {
+        "png", "gif", "webp", "jpg" -> fromName
+        "jpeg" -> "jpg"
+        else -> "jpg"
     }
 }
 

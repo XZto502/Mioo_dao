@@ -74,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mioo.dao.data.model.ImageCacheLimit
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.ui.theme.DaoTheme
 import androidx.compose.ui.graphics.Color
@@ -98,19 +99,14 @@ fun SettingsScreen(
     val scanLauncher = rememberLauncherForActivityResult(
         contract = ScanContract()
     ) { result ->
-        if (result.contents != null) {
-            var cookieToAdd = result.contents
-            try {
-                val json = org.json.JSONObject(result.contents)
-                if (json.has("cookie") || json.has("userhash")) {
-                    cookieToAdd = result.contents
-                }
-            } catch (e: Exception) {
-                // Not valid JSON, use raw text
-            }
-            viewModel.addCookie(cookieToAdd)
-            Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
+        if (result.contents == null) return@rememberLauncherForActivityResult
+        val cookieToAdd = parseImportedCookie(result.contents)
+        if (cookieToAdd == null) {
+            Toast.makeText(context, "无效的饼干二维码", Toast.LENGTH_SHORT).show()
+            return@rememberLauncherForActivityResult
         }
+        viewModel.addCookie(cookieToAdd)
+        Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -118,12 +114,17 @@ fun SettingsScreen(
     ) { uri ->
         if (uri != null) {
             scanQrFromUri(context, uri) { decodedText ->
-                if (decodedText != null) {
-                    viewModel.addCookie(decodedText)
-                    Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
-                } else {
+                if (decodedText == null) {
                     Toast.makeText(context, "未在图片中检测到二维码", Toast.LENGTH_LONG).show()
+                    return@scanQrFromUri
                 }
+                val cookieToAdd = parseImportedCookie(decodedText)
+                if (cookieToAdd == null) {
+                    Toast.makeText(context, "无效的饼干二维码", Toast.LENGTH_SHORT).show()
+                    return@scanQrFromUri
+                }
+                viewModel.addCookie(cookieToAdd)
+                Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -564,7 +565,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。",
+                    text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。完整模糊效果需 Android 12+，更低版本会自动使用约 95% 不透明底色。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -905,6 +906,51 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        val cdnBase by viewModel.cdnBase.collectAsState()
+        val cdnRefreshing by viewModel.cdnRefreshing.collectAsState()
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Image, contentDescription = "图片 CDN")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "图片 CDN",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = cdnBase,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "启动后会请求 getCDNPath 并记住结果。列表先试 /thumb/，失败再试 /image/ 和备用域名。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        viewModel.refreshCdn { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = !cdnRefreshing,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(if (cdnRefreshing) "获取中" else "重新获取")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // 6. Offline and Caching Settings (离线与缓存设置)
         val cacheSize by viewModel.cacheSizeState.collectAsState()
         val isPreloading by viewModel.isPreloadingState.collectAsState()
@@ -963,7 +1009,12 @@ fun SettingsScreen(
                 // Image Cache Size & Clear
                 val imageCacheSize by viewModel.imageCacheSizeState.collectAsState()
                 val context = LocalContext.current
-                LaunchedEffect(Unit) {
+                var cacheLimitDraft by remember(settings.cacheLimitMb) {
+                    mutableStateOf(settings.cacheLimitMb.toFloat())
+                }
+                LaunchedEffect(settings.cacheLimitMb) {
+                    viewModel.updateImageCacheSize(context)
+                    kotlinx.coroutines.delay(700)
                     viewModel.updateImageCacheSize(context)
                 }
 
@@ -974,12 +1025,12 @@ fun SettingsScreen(
                 ) {
                     Column {
                         Text(
-                            text = "图片与网络临时缓存",
+                            text = "图片缓存",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                         )
                         Text(
-                            text = imageCacheSize,
+                            text = "$imageCacheSize / ${cacheLimitDraft.toInt()} MB",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -990,6 +1041,41 @@ fun SettingsScreen(
                     ) {
                         Text("清理图片")
                     }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "图片缓存上限: ${cacheLimitDraft.toInt()} MB",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "只限制图片磁盘缓存，默认 1024 MB。超出后自动删掉最久没看的图片，松手后立即生效。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Slider(
+                    value = cacheLimitDraft,
+                    onValueChange = { cacheLimitDraft = it },
+                    onValueChangeFinished = { viewModel.updateCacheLimitMb(cacheLimitDraft.toInt()) },
+                    valueRange = ImageCacheLimit.MIN_MB.toFloat()..ImageCacheLimit.MAX_MB.toFloat(),
+                    steps = ImageCacheLimit.SLIDER_STEPS
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "${ImageCacheLimit.MIN_MB} MB",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${ImageCacheLimit.MAX_MB} MB",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1137,29 +1223,71 @@ fun SettingsScreen(
     }
 }
 
+/**
+ * Accept a cookie QR. JSON must contain a non-blank cookie or userhash.
+ * A raw userhash is stored only when it looks like a cookie, not a URL or sentence.
+ * Returns the same string the app already saves (full JSON, or the raw hash).
+ */
+private fun parseImportedCookie(raw: String?): String? {
+    val text = raw?.trim().orEmpty()
+    if (text.isEmpty()) return null
+    if (text.startsWith("{")) {
+        return runCatching {
+            val json = org.json.JSONObject(text)
+            val value = json.optString("cookie").ifBlank { json.optString("userhash") }
+            if (value.isNotBlank()) text else null
+        }.getOrNull()
+    }
+    if (text.length !in 8..512) return null
+    if (text.any { it.isWhitespace() }) return null
+    if (text.startsWith("http://", ignoreCase = true) || text.startsWith("https://", ignoreCase = true)) {
+        return null
+    }
+    return text
+}
+
 private fun scanQrFromUri(context: Context, uri: Uri, onResult: (String?) -> Unit) {
-    try {
-        val inputStream = context.contentResolver.openInputStream(uri)
-        val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-        inputStream?.close()
-
-        if (bitmap == null) {
-            onResult(null)
-            return
+    Thread {
+        val text = try {
+            decodeQrFromUri(context, uri)
+        } catch (_: OutOfMemoryError) {
+            null
+        } catch (_: Exception) {
+            null
         }
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            onResult(text)
+        }
+    }.start()
+}
 
-        val width = bitmap.width
-        val height = bitmap.height
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        bitmap.recycle()
-
-        val source = com.google.zxing.RGBLuminanceSource(width, height, pixels)
+private fun decodeQrFromUri(context: Context, uri: Uri): String? {
+    val resolver = context.contentResolver
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { stream ->
+        android.graphics.BitmapFactory.decodeStream(stream, null, bounds)
+    }
+    val width = bounds.outWidth
+    val height = bounds.outHeight
+    if (width <= 0 || height <= 0) return null
+    var sample = 1
+    while (width / sample > 1024 || height / sample > 1024) {
+        sample *= 2
+    }
+    val opts = android.graphics.BitmapFactory.Options().apply {
+        inSampleSize = sample
+        inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+    }
+    val bitmap = resolver.openInputStream(uri)?.use { stream ->
+        android.graphics.BitmapFactory.decodeStream(stream, null, opts)
+    } ?: return null
+    return try {
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, pixels)
         val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
-        val reader = com.google.zxing.qrcode.QRCodeReader()
-        val result = reader.decode(binaryBitmap)
-        onResult(result.text)
-    } catch (e: Exception) {
-        onResult(null)
+        com.google.zxing.qrcode.QRCodeReader().decode(binaryBitmap).text
+    } finally {
+        bitmap.recycle()
     }
 }

@@ -13,6 +13,7 @@ import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.data.model.effectiveTitle
+import com.mioo.dao.ui.components.ImageCdnState
 import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReplyDisplayItem
 import com.mioo.dao.ui.components.decodeHtmlEntities
@@ -63,7 +64,8 @@ data class ThreadListUiState(
      */
     val prependAnchorCount: Int? = null,
     val showImagesOnly: Boolean = false,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    val filterHint: String? = null
 )
 
 /** Top-bar chrome only — bookmark / folders / offline download. */
@@ -80,7 +82,8 @@ data class ThreadRefPopupUiState(
     val refPostId: String? = null,
     val refPostData: PostData? = null,
     val isRefLoading: Boolean = false,
-    val refError: String? = null
+    val refError: String? = null,
+    val canGoBack: Boolean = false
 )
 
 /** Reply composer state — isolated so typing does not recompose the LazyColumn. */
@@ -128,11 +131,13 @@ class ThreadViewModel @Inject constructor(
         /** Cap network quote resolves per page load (local/seeded quotes unlimited). */
         private const val MAX_NETWORK_QUOTES_PER_PAGE = 10
         private val QUOTE_ID_PATTERN: Pattern = Pattern.compile(">>(?:No\\.)?(\\d+)")
-        private const val IMAGE_CDN = "https://image.nmb.best"
+        private const val MAX_FILTERED_SKIPS = 4
     }
 
     private var currentPage = 1
     private var isLastPage = false
+    /** Extra pages requested because a raw page added no visible replies. */
+    private var filteredSkips = 0
     private var draftSaveJob: Job? = null
     private var rebuildJob: Job? = null
     private var progressChecked = false
@@ -252,9 +257,14 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    fun loadNextPage() {
+    fun loadNextPage(resetFilterSkip: Boolean = false) {
+        if (resetFilterSkip) filteredSkips = 0
         if (_listState.value.isLoading || isLastPage) return
-        loadPage(page = currentPage, mode = LoadMode.APPEND)
+        loadPage(
+            page = currentPage,
+            mode = LoadMode.APPEND,
+            fromFilterSkip = !resetFilterSkip && filteredSkips > 0
+        )
     }
 
     /** Load the page before [ThreadListUiState.startPage] so scrolling up can decrease the page number. */
@@ -300,7 +310,11 @@ class ThreadViewModel @Inject constructor(
      * @param mode REPLACE: cache-then-network replace; APPEND: infinite scroll down;
      *             PREPEND: load earlier page when user scrolls up after a mid-thread jump.
      */
-    private fun loadPage(page: Int, mode: LoadMode) {
+    private fun loadPage(page: Int, mode: LoadMode, fromFilterSkip: Boolean = false) {
+        if (!fromFilterSkip) {
+            filteredSkips = 0
+            _listState.update { it.copy(filterHint = null) }
+        }
         val gen = ++loadGeneration
         _listState.update { it.copy(isLoading = true) }
 
@@ -313,6 +327,10 @@ class ThreadViewModel @Inject constructor(
 
             // Avoid re-fetching quotes for the same page when SWR emits cache then network
             var quotesScheduled = false
+            var sawSuccess = false
+            var lastRawCount = 0
+            var lastAddedVisible = 0
+            var lastIsLast = true
 
             flow.collect { response ->
                 // A newer loadPage/jumpToPage has started — drop this emission
@@ -348,7 +366,7 @@ class ThreadViewModel @Inject constructor(
                         if (gen != loadGeneration) return@collect
                         rawPosts = combinedPosts
 
-                        val mainPostData = threadData.toPostData(IMAGE_CDN)
+                        val mainPostData = threadData.toPostData(ImageCdnState.baseUrl)
                         val matcher = keywordMatcher
                         val showImagesOnly = _listState.value.showImagesOnly
                         val searchQuery = _listState.value.searchQuery
@@ -440,6 +458,14 @@ class ThreadViewModel @Inject constructor(
 
                         // Advance bottom cursor only for replace/append, not prepend
                         if (mode != LoadMode.PREPEND) {
+                            lastRawCount = newPosts.size
+                            lastAddedVisible = when (mode) {
+                                LoadMode.REPLACE -> displayItems.size
+                                LoadMode.APPEND -> (displayItems.size - prevDisplaySize).coerceAtLeast(0)
+                                LoadMode.PREPEND -> 1
+                            }
+                            lastIsLast = isLast
+                            sawSuccess = true
                             if (newPosts.isNotEmpty() && !isLast) {
                                 currentPage = page + 1
                                 isLastPage = false
@@ -461,6 +487,23 @@ class ThreadViewModel @Inject constructor(
                         }
                     }
                 }
+            }
+            if (gen != loadGeneration || mode == LoadMode.PREPEND) return@launch
+            val blockedPage = sawSuccess && lastRawCount > 0 && lastAddedVisible <= 0
+            val canChain = blockedPage && !lastIsLast && filteredSkips < MAX_FILTERED_SKIPS
+            if (canChain) {
+                filteredSkips++
+                loadPage(page = currentPage, mode = LoadMode.APPEND, fromFilterSkip = true)
+            } else if (blockedPage) {
+                val msg = if (filteredSkips >= MAX_FILTERED_SKIPS) {
+                    "连续多页回复都被屏蔽规则挡住了"
+                } else {
+                    "这些回复都被屏蔽规则挡住了"
+                }
+                _listState.update { it.copy(filterHint = msg) }
+            } else if (lastAddedVisible > 0) {
+                filteredSkips = 0
+                _listState.update { it.copy(filterHint = null) }
             }
         }
     }
@@ -534,7 +577,7 @@ class ThreadViewModel @Inject constructor(
                     id = reply.id,
                     idStr = reply.idStr,
                     userHash = reply.userHash,
-                    postData = reply.toPostData(isPo, IMAGE_CDN),
+                    postData = reply.toPostData(isPo, ImageCdnState.baseUrl),
                     quoteIds = extractQuoteIdsFromContent(reply.content),
                     hasImage = !reply.img.isNullOrBlank(),
                     rawContent = reply.content
@@ -645,13 +688,22 @@ class ThreadViewModel @Inject constructor(
         threadRepository.getRefPost(id).collect { response ->
             result = when (response) {
                 is XdResponse.Success -> response.data
-                is XdResponse.Error -> missingQuotePlaceholder(id)
+                is XdResponse.Error -> missingQuotePlaceholder(id, response.message)
             }
         }
-        return result ?: missingQuotePlaceholder(id)
+        return result ?: missingQuotePlaceholder(id, null)
     }
 
-    private fun missingQuotePlaceholder(id: String): Reply = Reply(
+    private fun quoteErrorText(message: String?): String {
+        val text = message?.trim().orEmpty()
+        if (text.isEmpty()) return "该引用不存在或已被删除"
+        if (text.contains("Expected BEGIN_") || text.contains("JsonDataException")) {
+            return "该引用不存在或已被删除"
+        }
+        return text.take(80)
+    }
+
+    private fun missingQuotePlaceholder(id: String, message: String?): Reply = Reply(
         id = id.toLongOrNull() ?: 0L,
         fid = null,
         now = "",
@@ -659,7 +711,7 @@ class ThreadViewModel @Inject constructor(
         name = null,
         email = null,
         title = null,
-        content = "该引用不存在或已被删除",
+        content = quoteErrorText(message),
         img = null,
         ext = null,
         sage = 0,
@@ -833,14 +885,41 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    private val refBackStack = ArrayDeque<String>()
+
     fun showRefPopup(postId: String) {
+        openRef(postId, recordHistory = true)
+    }
+
+    fun popRefPopup() {
+        val prev = refBackStack.removeLastOrNull()
+        if (prev == null) {
+            dismissRefPopup()
+        } else {
+            openRef(prev, recordHistory = false)
+        }
+    }
+
+    fun dismissRefPopup() {
+        refBackStack.clear()
+        _refPopupState.value = ThreadRefPopupUiState()
+    }
+
+    private fun openRef(postId: String, recordHistory: Boolean) {
+        val current = _refPopupState.value.refPostId
+        if (recordHistory && current != null && current != postId) {
+            refBackStack.addLast(current)
+            while (refBackStack.size > 12) refBackStack.removeFirst()
+        }
+        val canGoBack = refBackStack.isNotEmpty()
         val cached = quoteCache[postId]
         if (cached != null) {
             _refPopupState.value = ThreadRefPopupUiState(
                 refPostId = postId,
                 isRefLoading = false,
                 refPostData = cached.toPostDataForRef(_listState.value.thread?.userHash),
-                refError = null
+                refError = null,
+                canGoBack = canGoBack
             )
             return
         }
@@ -849,11 +928,11 @@ class ThreadViewModel @Inject constructor(
             refPostId = postId,
             isRefLoading = true,
             refPostData = null,
-            refError = null
+            refError = null,
+            canGoBack = canGoBack
         )
         viewModelScope.launch {
             threadRepository.getRefPost(postId).collect { response ->
-                // Ignore stale responses if user dismissed or opened another ref
                 if (_refPopupState.value.refPostId != postId) return@collect
                 when (response) {
                     is XdResponse.Success -> {
@@ -862,22 +941,24 @@ class ThreadViewModel @Inject constructor(
                         _refPopupState.update {
                             it.copy(
                                 isRefLoading = false,
-                                refPostData = reply.toPostDataForRef(_listState.value.thread?.userHash)
+                                refPostData = reply.toPostDataForRef(_listState.value.thread?.userHash),
+                                refError = null,
+                                canGoBack = refBackStack.isNotEmpty()
                             )
                         }
                     }
                     is XdResponse.Error -> {
                         _refPopupState.update {
-                            it.copy(isRefLoading = false, refError = response.message)
+                            it.copy(
+                                isRefLoading = false,
+                                refError = response.message,
+                                canGoBack = refBackStack.isNotEmpty()
+                            )
                         }
                     }
                 }
             }
         }
-    }
-
-    fun dismissRefPopup() {
-        _refPopupState.value = ThreadRefPopupUiState()
     }
 
     fun downloadThread(onResult: (String) -> Unit) {
@@ -964,7 +1045,7 @@ class ThreadViewModel @Inject constructor(
             userId = userHash,
             createdAt = now,
             content = content,
-            imageUrl = if (imageUrl != null) "$IMAGE_CDN/image/$imageUrl" else null,
+            imageUrl = ImageCdnState.imageUrl(imageUrl),
             isPo = poUserHash != null && userHash == poUserHash,
             isAdmin = isAdmin,
             isSage = isSage,

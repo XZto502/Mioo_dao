@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -63,6 +63,9 @@ import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.DiceQuickPanel
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -121,7 +124,9 @@ import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
-import com.mioo.dao.ui.components.imeLiftOverNavigationBars
+import android.content.ClipData
+import android.content.ClipboardManager
+import com.mioo.dao.ui.components.ImageCdnState
 import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
@@ -238,6 +243,9 @@ fun ThreadScreen(
             if (listState.firstVisibleItemIndex != target) {
                 listState.scrollToItem(target)
             }
+        }
+        if (index > 0) {
+            Toast.makeText(context, "已回到上次阅读位置", Toast.LENGTH_SHORT).show()
         }
         viewModel.consumePendingScrollIndex()
     }
@@ -401,9 +409,7 @@ fun ThreadScreen(
             )
         },
         bottomBar = {
-            // Isolated collector: typing only recomposes the input bar, not the reply list.
-            // IME lift is graphicsLayer-only (see imeLiftOverNavigationBars) so Scaffold /
-            // LazyColumn are not remeasured every keyboard animation frame.
+            // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
             ReplyInputBar(
                 viewModel = viewModel,
                 cookies = threadSettings.cookiesList,
@@ -411,7 +417,6 @@ fun ThreadScreen(
                 onCookieSelect = { settingsViewModel.selectCookie(it) }
             )
         },
-        // Do NOT imePadding the whole Scaffold — that reflows the list with the keyboard.
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Color.Transparent
@@ -518,7 +523,7 @@ fun ThreadScreen(
                     { quoteNo: String -> viewModel.showRefPopup(quoteNo) }
                 }
                 val onImageClick = remember {
-                    { url: String -> activeImageUrl = url }
+                    { url: String -> activeImageUrl = ImageCdnState.fullSize(url) }
                 }
                 val onViewThreadClick = remember(onNavigateToThread) {
                     { tid: String -> onNavigateToThread(tid) }
@@ -557,7 +562,8 @@ fun ThreadScreen(
                                         freeCopyText = mainThread.content
                                     },
                                     blockThreadLabel = "屏蔽此串 (No.${mainThread.idStr})",
-                                    blockUserLabel = "屏蔽该发言饼干 (ID: ${mainThread.userHash})",
+                                    blockUserLabel = "屏蔽该饼干 (ID: ${mainThread.userHash})",
+                                    onReport = { copyThreadReportLink(context, mainThread.idStr) },
                                     onShareCard = {
                                         scope.launch {
                                             com.mioo.dao.utils.ShareCardUtil.sharePostCard(context, mainPostData)
@@ -608,6 +614,29 @@ fun ThreadScreen(
                             },
                             onFreeCopy = { freeCopyText = item.rawContent }
                         )
+                    }
+
+                    val filterHint = listUi.filterHint
+                    if (!filterHint.isNullOrBlank() && !listUi.isLoading) {
+                        item(key = "filter_hint", contentType = "hint") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = filterHint,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (!listUi.isLastPage) {
+                                    TextButton(onClick = { viewModel.loadNextPage(resetFilterSkip = true) }) {
+                                        Text("继续加载下一页")
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     if (listUi.isLoading && displayItems.isNotEmpty()) {
@@ -748,7 +777,7 @@ private fun ThreadChromeActions(
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
             DropdownMenuItem(
-                text = { Text("只看PO") },
+                text = { Text("只看 PO") },
                 onClick = {
                     onShowOverflowMenuChange(false)
                     viewModel.togglePoOnly()
@@ -826,6 +855,8 @@ private fun ThreadRefPopupHost(
         isLoading = ref.isRefLoading,
         errorMessage = ref.refError,
         onDismiss = remember(viewModel) { { viewModel.dismissRefPopup() } },
+        canGoBack = ref.canGoBack,
+        onBack = remember(viewModel) { { viewModel.popRefPopup() } },
         onQuoteClick = remember(viewModel) { { quoteNo: String -> viewModel.showRefPopup(quoteNo) } },
         onImageClick = onImageClick,
         onViewThreadClick = remember(viewModel, onNavigateToThread) {
@@ -1077,7 +1108,8 @@ private fun ThreadReplyRow(
     // Resolve resto via API fields only — avoids rebuilding a reply-id Set on every page append.
     // No per-row LaunchedEffect prewarm: HtmlParseCache.getOrParse + ContentBlockSplitter
     // fill on first bind; row-level effects caused Default thrash during fling.
-    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, currentThreadId) {
+    val cdn = ImageCdnState.baseUrl
+    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, currentThreadId, cdn) {
         if (quotedReplies.isEmpty()) {
             StablePostList(emptyList())
         } else {
@@ -1085,7 +1117,7 @@ private fun ThreadReplyRow(
                 quotedReplies.map { quote ->
                     val base = quote.toPostData(
                         isPo = quote.userHash == poUserHash,
-                        cdnUrl = "https://image.nmb.best"
+                        cdnUrl = cdn
                     )
                     val targetResto = when {
                         quote.resto != null && quote.resto > 0L -> quote.resto.toString()
@@ -1110,7 +1142,8 @@ private fun ThreadReplyRow(
             onBlockUser = onBlockUser,
             onCopy = onFreeCopy,
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
-            blockUserLabel = "屏蔽该发言饼干 (ID: ${item.userHash})",
+            blockUserLabel = "屏蔽该饼干 (ID: ${item.userHash})",
+            onReport = { copyThreadReportLink(rowContext, currentThreadId) },
             onShareCard = {
                 rowScope.launch {
                     com.mioo.dao.utils.ShareCardUtil.sharePostCard(rowContext, item.postData)
@@ -1139,6 +1172,7 @@ private fun PostActionDialog(
     onBlockThread: () -> Unit,
     onBlockUser: () -> Unit,
     onCopy: () -> Unit,
+    onReport: () -> Unit,
     blockThreadLabel: String,
     blockUserLabel: String,
     onShareCard: (() -> Unit)? = null
@@ -1158,7 +1192,7 @@ private fun PostActionDialog(
                 TextButton(
                     onClick = { onQuote(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("引用该串") }
+                ) { Text("引用回复") }
                 if (onShareCard != null) {
                     TextButton(
                         onClick = { onShareCard(); onDismiss() },
@@ -1176,7 +1210,11 @@ private fun PostActionDialog(
                 TextButton(
                     onClick = { onCopy(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("自由复制内容") }
+                ) { Text("复制文本") }
+                TextButton(
+                    onClick = { onReport(); onDismiss() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("举报") }
                 TextButton(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth()
@@ -1282,9 +1320,17 @@ fun ReplyInputArea(
         if (diceMenuExpanded) diceMenuExpanded = false
     }
 
+    val toolPanelOpen = kaomojiMenuExpanded || diceMenuExpanded
+    BackHandler(enabled = toolPanelOpen) {
+        closeToolPanels()
+    }
+
     // 系统键盘再次抬起 → 关闭快捷面板
     val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
     val imeVisible = imeBottomPx > with(density) { 48.dp.toPx() }
+    // 键盘盖住小白条时只抬整条回复栏；否则毛玻璃铺到屏幕底，控件留在导航条上方。
+    val imeCoversNav = imeBottomPx > navBottomPx
     LaunchedEffect(imeVisible) {
         if (!imeVisible) return@LaunchedEffect
         if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
@@ -1327,13 +1373,12 @@ fun ReplyInputArea(
         tonalElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
-            // Draw under gesture 小白条; IME lift is graphicsLayer-only
-            .imeLiftOverNavigationBars()
+            .then(if (imeCoversNav) Modifier.imePadding() else Modifier)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
+                .then(if (imeCoversNav) Modifier else Modifier.navigationBarsPadding())
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             val reducedMotion = isReducedMotionEnabled()
@@ -1530,8 +1575,12 @@ fun ReplyInputArea(
                 val sendIconColor = if (isSendActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                 
                 IconButton(
-                    onClick = { 
+                    onClick = {
                         val file = attachedImageUri?.toFile(context)
+                        if (attachedImageUri != null && file == null) {
+                            android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
+                            return@IconButton
+                        }
                         onSend(file)
                     },
                     enabled = isSendActive
@@ -1580,4 +1629,11 @@ fun ReplyInputArea(
             }
         }
     }
+}
+
+private fun copyThreadReportLink(context: android.content.Context, threadId: String) {
+    val url = "https://www.nmbxd.com/t/$threadId"
+    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("mioodao-report", url))
+    Toast.makeText(context, "已复制串链接，可到网页版举报该串", Toast.LENGTH_LONG).show()
 }

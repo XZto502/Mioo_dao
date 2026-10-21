@@ -1,9 +1,24 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
 }
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
+fun secret(name: String): String? =
+    System.getenv(name)?.takeIf { it.isNotBlank() }
+        ?: localProperties.getProperty(name)?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.mioo.dao"
@@ -13,10 +28,39 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.0.19"
+        versionCode = 21
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    val releaseStorePath = secret("RELEASE_STORE_FILE")
+    val releaseStore = releaseStorePath?.let { path ->
+        val candidate = File(path)
+        if (candidate.isAbsolute) candidate else rootProject.file(path)
+    }
+    val releaseStorePassword = secret("RELEASE_STORE_PASSWORD")
+    val releaseKeyAlias = secret("RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = secret("RELEASE_KEY_PASSWORD")
+    val hasReleaseKeystore = releaseStore != null &&
+        releaseStore.exists() &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
+
+    if (hasReleaseKeystore && releaseStore != null) {
+        val store = releaseStore
+        val storePass = releaseStorePassword.orEmpty()
+        val alias = releaseKeyAlias.orEmpty()
+        val keyPass = releaseKeyPassword.orEmpty()
+        signingConfigs {
+            create("release") {
+                storeFile = store
+                storePassword = storePass
+                keyAlias = alias
+                keyPassword = keyPass
+            }
+        }
     }
 
     buildTypes {
@@ -24,9 +68,13 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
-            // Same cert as the debug APKs already shipped, so this build updates in place.
-            // A new upload key would force every install to uninstall first.
-            signingConfig = signingConfigs.getByName("debug")
+            // A configured RELEASE_* keystore is used when present.
+            // Otherwise keep the debug cert already shipped, so updates install in place.
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -41,9 +89,10 @@ android {
         compose = true
         buildConfig = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.0"
-    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -86,12 +135,13 @@ dependencies {
     ksp("com.squareup.moshi:moshi-kotlin-codegen:$moshiVersion")
 
     // Hilt
-    val hiltVersion = "2.48"
+    val hiltVersion = "2.51.1"
     implementation("com.google.dagger:hilt-android:$hiltVersion")
     ksp("com.google.dagger:hilt-compiler:$hiltVersion")
 
     // Coil (Image Loading)
     implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("io.coil-kt:coil-gif:2.5.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")

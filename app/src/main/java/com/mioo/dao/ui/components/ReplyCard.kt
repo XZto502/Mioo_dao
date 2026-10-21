@@ -41,8 +41,6 @@ import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.graphicsPressScale
 import com.mioo.dao.ui.theme.rememberPressScale
 
-private val EMPTY_QUOTE_CLICK: (String) -> Unit = {}
-
 sealed interface PostContentBlock {
     data class Text(val html: String) : PostContentBlock
     data class Quote(val quote: PostData) : PostContentBlock
@@ -237,6 +235,7 @@ fun ReplyCard(
                                 onQuoteClick = onQuoteClick,
                                 onImageClick = onImageClick,
                                 onViewThreadClick = onViewThreadClick,
+                                onLongClick = onCardLongClick,
                                 currentThreadId = currentThreadId
                             )
                         }
@@ -265,6 +264,7 @@ fun ReplyCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QuotedPostBox(
     quote: PostData,
@@ -272,6 +272,7 @@ fun QuotedPostBox(
     onQuoteClick: (String) -> Unit,
     onImageClick: (String) -> Unit,
     onViewThreadClick: (String) -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     currentThreadId: String? = null
 ) {
@@ -284,7 +285,10 @@ fun QuotedPostBox(
                 .fillMaxWidth()
                 .border(1.dp, quoteColor, RoundedCornerShape(4.dp))
                 .clip(RoundedCornerShape(4.dp))
-                .clickable { /* Consume click to prevent parent card navigation, but do not open RefPopup */ }
+                .combinedClickable(
+                    onClick = { },
+                    onLongClick = onLongClick
+                )
                 .padding(12.dp)
         ) {
             Spacer(modifier = Modifier.height(2.dp)) // space for the overlapping label
@@ -326,10 +330,10 @@ fun QuotedPostBox(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Quoted Content — do NOT pass onQuoteClick so clicking text inside the box won't open RefPopup
             HtmlContent(
                 html = quote.content,
-                onQuoteClick = EMPTY_QUOTE_CLICK,
+                onQuoteClick = onQuoteClick,
+                onLongClick = onLongClick,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -366,7 +370,7 @@ fun QuotedPostBox(
                     horizontalArrangement = Arrangement.End
                 ) {
                     Text(
-                        text = "查看原串",
+                        text = "跳转原串",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     )

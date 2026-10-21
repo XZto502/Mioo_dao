@@ -35,7 +35,7 @@ fun List<Thread>.toFilteredThreadListItems(
     blockedThreads: Set<String>,
     blockedUsers: Set<String>,
     blockedKeywords: List<String>,
-    cdnUrl: String = "https://image.nmb.best"
+    cdnUrl: String = ImageCdnState.baseUrl
 ): List<ThreadListItem> {
     if (isEmpty()) return emptyList()
     val matcher = KeywordMatcher.build(blockedKeywords)
@@ -73,7 +73,7 @@ fun List<Thread>.toFilteredThreadListItems(
     blockedThreads: Set<String>,
     blockedUsers: Set<String>,
     keywordMatcher: KeywordMatcher,
-    cdnUrl: String = "https://image.nmb.best"
+    cdnUrl: String = ImageCdnState.baseUrl
 ): List<ThreadListItem> {
     if (isEmpty()) return emptyList()
     val result = ArrayList<ThreadListItem>(size)

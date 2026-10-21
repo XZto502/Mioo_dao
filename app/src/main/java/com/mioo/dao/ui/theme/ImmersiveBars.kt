@@ -2,11 +2,12 @@ package com.mioo.dao.ui.theme
 
 import android.app.Activity
 import android.os.Build
+import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
@@ -28,6 +29,20 @@ fun immersiveDialogProperties(
 )
 
 /**
+ * Compose hosts dialog content on the [DialogWindowProvider] itself, so
+ * [LocalView]'s parent is the decor view and a single parent cast misses the window.
+ * Walk up until the provider is found.
+ */
+fun View.findDialogWindow(): Window? {
+    var current: View? = this
+    while (current != null) {
+        if (current is DialogWindowProvider) return current.window
+        current = current.parent as? View
+    }
+    return null
+}
+
+/**
  * Call from inside a [androidx.compose.ui.window.Dialog] or AlertDialog slot
  * (title / text / content) so [LocalView] is the dialog window, not the activity.
  *
@@ -36,9 +51,24 @@ fun immersiveDialogProperties(
 @Composable
 fun ImmersiveDialogEffect(lightAppearance: Boolean = !isSystemInDarkTheme()) {
     val view = LocalView.current
-    SideEffect {
-        val window = (view.parent as? DialogWindowProvider)?.window ?: return@SideEffect
-        window.applyImmersiveSystemBars(lightAppearance)
+    DisposableEffect(view, lightAppearance) {
+        val window = view.findDialogWindow()
+        if (window == null) {
+            onDispose { }
+        } else {
+            window.applyImmersiveSystemBars(lightAppearance)
+            // Dialog theme and IME repaint an opaque nav bar on the next layout.
+            val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                val current = view.findDialogWindow() ?: return@OnGlobalLayoutListener
+                current.reassertTransparentBars()
+            }
+            val decor = window.decorView
+            decor.viewTreeObserver.addOnGlobalLayoutListener(listener)
+            onDispose {
+                val observer = decor.viewTreeObserver
+                if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
+            }
+        }
     }
 }
 
@@ -67,21 +97,25 @@ fun Window.applyImmersiveSystemBars(lightAppearance: Boolean) {
  * IME and some OEM skins repaint an opaque navigation bar on the next layout.
  * Re-assert transparent bars without touching inset dispatch (Compose owns that).
  */
+private fun Window.reassertTransparentBars() {
+    val transparent = android.graphics.Color.TRANSPARENT
+    if (statusBarColor != transparent) statusBarColor = transparent
+    if (navigationBarColor != transparent) navigationBarColor = transparent
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (isStatusBarContrastEnforced) isStatusBarContrastEnforced = false
+        if (isNavigationBarContrastEnforced) isNavigationBarContrastEnforced = false
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+        navigationBarDividerColor != transparent
+    ) {
+        navigationBarDividerColor = transparent
+    }
+}
+
 fun Activity.installImmersiveBarGuard(): android.view.ViewTreeObserver.OnGlobalLayoutListener {
     val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
         val window = window ?: return@OnGlobalLayoutListener
-        val transparent = android.graphics.Color.TRANSPARENT
-        if (window.statusBarColor != transparent) window.statusBarColor = transparent
-        if (window.navigationBarColor != transparent) window.navigationBarColor = transparent
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (window.isStatusBarContrastEnforced) window.isStatusBarContrastEnforced = false
-            if (window.isNavigationBarContrastEnforced) window.isNavigationBarContrastEnforced = false
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
-            window.navigationBarDividerColor != transparent
-        ) {
-            window.navigationBarDividerColor = transparent
-        }
+        window.reassertTransparentBars()
     }
     window.decorView.viewTreeObserver.addOnGlobalLayoutListener(listener)
     return listener

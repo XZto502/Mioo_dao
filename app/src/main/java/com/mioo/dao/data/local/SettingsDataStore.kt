@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.mioo.dao.data.model.ImageCacheLimit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -45,6 +46,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
         val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
         val KEY_GLASS_EFFECT_ENABLED = booleanPreferencesKey("glass_effect_enabled")
+        val KEY_CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
         /** last-notified replyCount snapshot for X-island feed/bookmark poll: "tid:count,tid:count" */
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
     }
@@ -242,8 +244,7 @@ class SettingsDataStore(private val context: Context) {
                             list.add(com.mioo.dao.data.model.FeedFolder(name, uuid))
                         }
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
                 }
             }
             list
@@ -266,8 +267,7 @@ class SettingsDataStore(private val context: Context) {
                     for (i in 0 until jsonArray.length()) {
                         list.add(jsonArray.getString(i))
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
                 }
             }
             list
@@ -290,8 +290,7 @@ class SettingsDataStore(private val context: Context) {
                     for (i in 0 until jsonArray.length()) {
                         list.add(jsonArray.getString(i))
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
                 }
             }
             list
@@ -314,8 +313,7 @@ class SettingsDataStore(private val context: Context) {
                     for (i in 0 until jsonArray.length()) {
                         list.add(jsonArray.getString(i))
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
                 }
             }
             list
@@ -338,8 +336,7 @@ class SettingsDataStore(private val context: Context) {
                     for (i in 0 until jsonArray.length()) {
                         list.add(jsonArray.getString(i))
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
                 }
             }
             list
@@ -405,6 +402,20 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_GLASS_EFFECT_ENABLED] ?: true
         }
 
+    val cacheLimitMbFlow: Flow<Int> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            ImageCacheLimit.coerce(
+                preferences[KEY_CACHE_LIMIT_MB] ?: ImageCacheLimit.DEFAULT_MB
+            )
+        }
+
     suspend fun saveUserHash(userHash: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_USER_HASH] = userHash
@@ -444,6 +455,12 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveGlassEffectEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_GLASS_EFFECT_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveCacheLimitMb(mb: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_CACHE_LIMIT_MB] = ImageCacheLimit.coerce(mb)
         }
     }
 
@@ -594,8 +611,7 @@ class SettingsDataStore(private val context: Context) {
             try {
                 val jsonObject = org.json.JSONObject(jsonStr)
                 return@withContext jsonObject.optString(threadId, "")
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (_: Exception) {
             }
         }
         ""

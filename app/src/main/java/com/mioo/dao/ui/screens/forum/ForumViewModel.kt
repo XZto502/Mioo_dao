@@ -39,7 +39,8 @@ data class ForumUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isLastPage: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val emptyHint: String? = null
 )
 
 @HiltViewModel
@@ -63,6 +64,12 @@ class ForumViewModel @Inject constructor(
     private var blockedThreads: Set<String> = emptySet()
     private var blockedUsers: Set<String> = emptySet()
     private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
+    /** Pages skipped because every row was hidden by block rules. Caps auto-follow. */
+    private var blockedPageSkips = 0
+
+    companion object {
+        private const val MAX_BLOCKED_PAGE_SKIPS = 6
+    }
 
     init {
         // Cold start critical path only:
@@ -133,7 +140,7 @@ class ForumViewModel @Inject constructor(
         viewModelScope.launch {
             val threads = _uiState.value.threads
             if (threads.isEmpty()) {
-                _uiState.update { it.copy(displayItems = emptyList()) }
+                _uiState.update { it.copy(displayItems = emptyList(), emptyHint = null) }
                 return@launch
             }
             val matcher = keywordMatcher
@@ -141,6 +148,15 @@ class ForumViewModel @Inject constructor(
                 threads.toFilteredThreadListItems(blockedThreads, blockedUsers, matcher)
             }
             _uiState.update { it.copy(displayItems = items) }
+            val state = _uiState.value
+            if (items.isEmpty() && !state.isLastPage && !state.isLoading && !state.isRefreshing) {
+                blockedPageSkips = 0
+                loadNextPage(fromAutoSkip = true)
+            } else if (items.isEmpty()) {
+                _uiState.update { it.copy(emptyHint = "这些串都被屏蔽规则挡住了") }
+            } else {
+                _uiState.update { it.copy(emptyHint = null) }
+            }
         }
     }
 
@@ -158,6 +174,7 @@ class ForumViewModel @Inject constructor(
         if (forumId == id) return
         forumId = id
         preloadJob?.cancel()
+        blockedPageSkips = 0
         // Clear previous board content so only the center spinner shows while loading.
         _uiState.update {
             it.copy(
@@ -167,7 +184,8 @@ class ForumViewModel @Inject constructor(
                 isLoading = true,
                 isRefreshing = false,
                 isLastPage = false,
-                errorMessage = null
+                errorMessage = null,
+                emptyHint = null
             )
         }
         viewModelScope.launch {
@@ -176,10 +194,18 @@ class ForumViewModel @Inject constructor(
         refresh()
     }
 
-    fun loadNextPage() {
+    fun loadNextPage(fromAutoSkip: Boolean = false) {
         val currentState = _uiState.value
+        if (currentState.isLastPage) return
         // Do not page while a full refresh is in flight (avoids racing page counter / list).
-        if (currentState.isLoading || currentState.isRefreshing || currentState.isLastPage) return
+        if (!fromAutoSkip && (currentState.isLoading || currentState.isRefreshing)) return
+        if (fromAutoSkip && currentState.isRefreshing) return
+        if (fromAutoSkip && blockedPageSkips >= MAX_BLOCKED_PAGE_SKIPS) {
+            _uiState.update {
+                it.copy(isLoading = false, emptyHint = "连续多页都被屏蔽规则挡住了")
+            }
+            return
+        }
 
         _uiState.update { it.copy(isLoading = true) }
         val pageToLoad = currentPage
@@ -193,6 +219,9 @@ class ForumViewModel @Inject constructor(
                 threadRepository.getThreads(requestForumId, pageToLoad)
             }
 
+            var rawNonEmpty = false
+            var addedVisible = false
+            var failed = false
             try {
                 var gotPage = false
                 flow.collect { response ->
@@ -224,21 +253,26 @@ class ForumViewModel @Inject constructor(
                                 gotPage = true
                                 currentPage = pageToLoad + 1
                             }
+                            if (newThreads.isNotEmpty()) rawNonEmpty = true
+                            if (newDisplay.isNotEmpty()) addedVisible = true
+                            val keepLoading = newThreads.isNotEmpty() && newDisplay.isEmpty()
                             _uiState.update { state ->
                                 state.copy(
                                     threads = combinedList,
                                     displayItems = displayItems,
-                                    isLoading = false,
+                                    isLoading = keepLoading,
                                     isLastPage = newThreads.isEmpty() && !gotPage,
-                                    errorMessage = null
+                                    errorMessage = null,
+                                    emptyHint = null
                                 )
                             }
                         }
                         is XdResponse.Error -> {
+                            failed = true
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,
-                                    errorMessage = "Failed to load threads: ${response.message}"
+                                    errorMessage = "加载串列表失败: ${response.message}"
                                 )
                             }
                         }
@@ -246,22 +280,50 @@ class ForumViewModel @Inject constructor(
                 }
             } finally {
                 if (forumId == requestForumId) {
-                    _uiState.update { it.copy(isLoading = false) }
+                    val canChain = !failed && rawNonEmpty && !addedVisible &&
+                        !_uiState.value.isLastPage &&
+                        blockedPageSkips < MAX_BLOCKED_PAGE_SKIPS
+                    if (canChain) {
+                        blockedPageSkips++
+                        _uiState.update { it.copy(isLoading = true, emptyHint = null) }
+                        loadNextPage(fromAutoSkip = true)
+                    } else {
+                        if (addedVisible) blockedPageSkips = 0
+                        val hint = when {
+                            _uiState.value.displayItems.isNotEmpty() -> null
+                            _uiState.value.threads.isNotEmpty() &&
+                                blockedPageSkips >= MAX_BLOCKED_PAGE_SKIPS ->
+                                "连续多页都被屏蔽规则挡住了"
+                            _uiState.value.threads.isNotEmpty() -> "这些串都被屏蔽规则挡住了"
+                            else -> null
+                        }
+                        _uiState.update { it.copy(isLoading = false, emptyHint = hint) }
+                    }
                 }
             }
         }
     }
 
+    fun continuePastBlockedPages() {
+        val state = _uiState.value
+        if (state.isLoading || state.isRefreshing || state.isLastPage) return
+        blockedPageSkips = 0
+        _uiState.update { it.copy(emptyHint = null) }
+        loadNextPage()
+    }
+
     fun refresh() {
         val requestForumId = forumId
         currentPage = 1
+        blockedPageSkips = 0
         // Keep existing threads visible while refreshing so only the top pull indicator
         // shows (not a second full-screen center spinner).
         _uiState.update {
             it.copy(
                 isRefreshing = true,
                 isLastPage = false,
-                errorMessage = null
+                errorMessage = null,
+                emptyHint = null
             )
         }
 
@@ -275,6 +337,7 @@ class ForumViewModel @Inject constructor(
                 threadRepository.getThreads(requestForumId, 1)
             }
 
+            var handoffBlocked = false
             try {
                 var lastNonEmpty = false
                 var emissionCount = 0
@@ -329,7 +392,7 @@ class ForumViewModel @Inject constructor(
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,
-                                    errorMessage = "Failed to refresh: ${response.message}"
+                                    errorMessage = "刷新失败: ${response.message}"
                                 )
                             }
                         }
@@ -338,34 +401,63 @@ class ForumViewModel @Inject constructor(
                 if (forumId == requestForumId) {
                     // Next page to request after a full page-1 refresh.
                     currentPage = if (lastNonEmpty) 2 else 1
-                    if (lastNonEmpty) {
+                    val visible = _uiState.value.displayItems.isNotEmpty()
+                    if (lastNonEmpty && visible) {
                         // Well after cold list + first fling
                         scheduleSmartPreload(_uiState.value.threads, delayMs = 3200L)
+                    }
+                    handoffBlocked = lastNonEmpty && !visible && !_uiState.value.isLastPage
+                    if (lastNonEmpty && !visible && _uiState.value.isLastPage) {
+                        _uiState.update { it.copy(emptyHint = "这些串都被屏蔽规则挡住了") }
                     }
                 }
             } finally {
                 if (forumId == requestForumId) {
-                    _uiState.update {
-                        it.copy(isRefreshing = false, isLoading = false)
+                    if (handoffBlocked) {
+                        blockedPageSkips = 1
+                        _uiState.update {
+                            it.copy(isRefreshing = false, isLoading = true, emptyHint = null)
+                        }
+                        loadNextPage(fromAutoSkip = true)
+                    } else {
+                        _uiState.update {
+                            it.copy(isRefreshing = false, isLoading = false)
+                        }
                     }
                 }
             }
         }
     }
 
-    fun createThread(title: String, author: String, content: String, imageFile: java.io.File? = null) {
+    fun createThread(
+        title: String,
+        author: String,
+        content: String,
+        imageFile: java.io.File? = null,
+        onResult: (success: Boolean, message: String) -> Unit
+    ) {
         viewModelScope.launch {
-            threadRepository.doPostThread(
-                fid = forumId,
-                title = if (title.isBlank()) null else title,
-                name = if (author.isBlank()) null else author,
-                email = null,
-                content = content,
-                imageFile = imageFile
-            ).collect { response ->
-                if (response is XdResponse.Success) {
-                    refresh()
+            try {
+                threadRepository.doPostThread(
+                    fid = forumId,
+                    title = if (title.isBlank()) null else title,
+                    name = if (author.isBlank()) null else author,
+                    email = null,
+                    content = content,
+                    imageFile = imageFile
+                ).collect { response ->
+                    when (response) {
+                        is XdResponse.Success -> {
+                            onResult(true, "发串成功")
+                            refresh()
+                        }
+                        is XdResponse.Error -> {
+                            onResult(false, response.message.ifBlank { "发串失败" })
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage ?: "发串失败")
             }
         }
     }

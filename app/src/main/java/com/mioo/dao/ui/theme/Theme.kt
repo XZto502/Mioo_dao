@@ -203,6 +203,14 @@ fun MiooDaoTheme(
     // Solid surface when glass is off so bars/cards fully cover the background.
     val solidSurface = colorScheme.surface
     val solidCard = colorScheme.surfaceContainerHigh
+    // Modifier.blur cannot frost the list behind a bar, and it does nothing below API 31.
+    // On Android 8–11, keep glass fills at least 95% opaque so text stays readable.
+    val legacyNoBlur = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+    fun glassFill(enabledColor: Color, solid: Color): Color {
+        if (!glassEffectEnabled) return solid
+        if (!legacyNoBlur) return enabledColor
+        return enabledColor.copy(alpha = maxOf(enabledColor.alpha, 0.95f))
+    }
 
     val customColors = if (darkTheme) {
         DaoCustomColors(
@@ -210,13 +218,13 @@ fun MiooDaoTheme(
             sage = DarkSageColor,
             admin = DarkAdminColor,
             quoteLink = DarkQuoteLinkColor,
-            threadCardBg = if (glassEffectEnabled) DarkThreadCardBg else solidCard,
-            replyCardBg = if (glassEffectEnabled) DarkReplyCardBg else solidCard,
+            threadCardBg = glassFill(DarkThreadCardBg, solidCard),
+            replyCardBg = glassFill(DarkReplyCardBg, solidCard),
             fabBg = DarkFabColor,
             fabContent = DarkOnFabColor,
             sageTag = DarkSageTagColor,
-            glassTopBar = if (glassEffectEnabled) DarkGlassTopBar else solidSurface,
-            glassNavBar = if (glassEffectEnabled) DarkGlassNavBar else solidSurface
+            glassTopBar = glassFill(DarkGlassTopBar, solidSurface),
+            glassNavBar = glassFill(DarkGlassNavBar, solidSurface)
         )
     } else {
         DaoCustomColors(
@@ -224,13 +232,13 @@ fun MiooDaoTheme(
             sage = LightSageColor,
             admin = LightAdminColor,
             quoteLink = LightQuoteLinkColor,
-            threadCardBg = if (glassEffectEnabled) LightThreadCardBg else solidCard,
-            replyCardBg = if (glassEffectEnabled) LightReplyCardBg else solidCard,
+            threadCardBg = glassFill(LightThreadCardBg, solidCard),
+            replyCardBg = glassFill(LightReplyCardBg, solidCard),
             fabBg = LightFabColor,
             fabContent = LightOnFabColor,
             sageTag = LightSageTagColor,
-            glassTopBar = if (glassEffectEnabled) LightGlassTopBar else solidSurface,
-            glassNavBar = if (glassEffectEnabled) LightGlassNavBar else solidSurface
+            glassTopBar = glassFill(LightGlassTopBar, solidSurface),
+            glassNavBar = glassFill(LightGlassNavBar, solidSurface)
         )
     }
 

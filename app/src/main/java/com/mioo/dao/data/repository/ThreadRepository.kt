@@ -5,6 +5,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.mioo.dao.data.api.XdApiService
 import com.mioo.dao.data.api.GithubApiService
+import com.mioo.dao.data.api.extractQuotedJsonString
+import com.mioo.dao.data.api.isXdBusinessPlainString
 import com.mioo.dao.data.model.GithubRelease
 import com.mioo.dao.data.local.BookmarkEntity
 import com.mioo.dao.data.local.CacheDao
@@ -131,10 +133,41 @@ class ThreadRepositoryImpl @Inject constructor(
 
     companion object {
         private val HTML_OR_NEWLINE = Regex("<.*?>|\\n")
+        private val RELEASE_MANIFEST_URLS = listOf(
+            "https://ghproxy.net/https://raw.githubusercontent.com/XZto502/Mioo_dao/main/version.json",
+            "https://ghfast.top/https://raw.githubusercontent.com/XZto502/Mioo_dao/main/version.json",
+            "https://cdn.jsdelivr.net/gh/XZto502/Mioo_dao@main/version.json",
+            "https://raw.githubusercontent.com/XZto502/Mioo_dao/main/version.json",
+            "https://api.github.com/repos/XZto502/Mioo_dao/releases/latest"
+        )
     }
 
     /** X-island business error (auth / deleted / rate limit) — not a transport failure. */
     private class ApiBusinessException(message: String) : Exception(message)
+
+    private fun interpretPlainFeedWrite(raw: String): XdResponse<String> {
+        val quoted = extractQuotedJsonString(raw.trim())
+        val text = (quoted ?: raw.trim().trim('"')).ifBlank { raw }
+        return if (quoted != null && isXdBusinessPlainString(quoted)) {
+            XdResponse.Error(message = quoted)
+        } else {
+            XdResponse.Success(text)
+        }
+    }
+
+    private fun File.asImagePart(): MultipartBody.Part {
+        val mime = when (extension.lowercase()) {
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            else -> "image/jpeg"
+        }
+        return MultipartBody.Part.createFormData(
+            "image",
+            name,
+            asRequestBody(mime.toMediaTypeOrNull())
+        )
+    }
 
     private val threadListType = Types.newParameterizedType(List::class.java, Thread::class.java)
     private val threadListAdapter = moshi.adapter<List<Thread>>(threadListType)
@@ -149,6 +182,9 @@ class ThreadRepositoryImpl @Inject constructor(
     private fun parseThreadBody(raw: String): Thread {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) throw ApiBusinessException("空响应")
+        extractQuotedJsonString(trimmed)?.let { msg ->
+            throw ApiBusinessException(msg.ifBlank { "该串不存在或已被删除" })
+        }
         if (trimmed.startsWith("{")) {
             try {
                 val o = org.json.JSONObject(trimmed)
@@ -326,6 +362,10 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getRefPost(id: String): Flow<XdResponse<Reply>> = flow {
         try {
             val responseString = apiService.ref(id).string()
+            extractQuotedJsonString(responseString)?.let { msg ->
+                emit(XdResponse.Error(message = msg.ifBlank { "该引用不存在或已被删除" }))
+                return@flow
+            }
             try {
                 val reply = replyAdapter.fromJson(responseString)
                 if (reply != null) {
@@ -362,15 +402,15 @@ class ThreadRepositoryImpl @Inject constructor(
             val emailBody = email?.toRequestBody("text/plain".toMediaTypeOrNull())
             val contentBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
 
-            val imagePart = imageFile?.let {
-                val requestFile = it.asRequestBody("image/*".toMediaTypeOrNull())
-                MultipartBody.Part.createFormData("image", it.name, requestFile)
-            }
+            val imagePart = imageFile?.asImagePart()
 
             val response = apiService.doPostThread(fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
-            emit(XdResponse.Success(response.string()))
+            emit(interpretForumWriteResponse(response.string()))
         } catch (e: Exception) {
-            emit(XdResponse.Error(message = e.localizedMessage ?: "Posting thread failed", throwable = e))
+            if (e is CancellationException) throw e
+            emit(XdResponse.Error(message = e.localizedMessage ?: "发串失败", throwable = e))
+        } finally {
+            imageFile?.delete()
         }
     }.flowOn(Dispatchers.IO)
 
@@ -390,8 +430,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 val emailBody = email?.toRequestBody("text/plain".toMediaTypeOrNull())
                 val contentBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
                 val parentBody = parent.toRequestBody("text/plain".toMediaTypeOrNull())
-                val requestFile = imageFile.asRequestBody("image/*".toMediaTypeOrNull())
-                val imagePart = MultipartBody.Part.createFormData("image", imageFile.name, requestFile)
+                val imagePart = imageFile.asImagePart()
                 apiService.doReplyThread(null, titleBody, nameBody, emailBody, contentBody, parentBody, imagePart)
             } else {
                 // Use FormUrlEncoded for text-only replies (more reliable)
@@ -403,12 +442,15 @@ class ThreadRepositoryImpl @Inject constructor(
                     email = email
                 )
             }
-            val responseStr = response.string()
-            android.util.Log.d("ThreadRepo", "Reply response: $responseStr")
-            emit(XdResponse.Success(responseStr))
+            emit(interpretForumWriteResponse(response.string()))
         } catch (e: Exception) {
-            android.util.Log.e("ThreadRepo", "Reply failed", e)
-            emit(XdResponse.Error(message = e.localizedMessage ?: "Replying thread failed", throwable = e))
+            if (e is CancellationException) throw e
+            if (com.mioo.dao.BuildConfig.DEBUG) {
+                android.util.Log.e("ThreadRepo", "Reply failed", e)
+            }
+            emit(XdResponse.Error(message = e.localizedMessage ?: "回复失败", throwable = e))
+        } finally {
+            imageFile?.delete()
         }
     }.flowOn(Dispatchers.IO)
 
@@ -697,7 +739,7 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun addFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
         try {
             val response = apiService.addFeed(uuid, tid)
-            emit(XdResponse.Success(response.string()))
+            emit(interpretPlainFeedWrite(response.string()))
         } catch (e: Exception) {
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
@@ -707,7 +749,7 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
         try {
             val response = apiService.delFeed(uuid, tid)
-            emit(XdResponse.Success(response.string()))
+            emit(interpretPlainFeedWrite(response.string()))
         } catch (e: Exception) {
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
@@ -808,7 +850,9 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                android.util.Log.e("ThreadRepo", "Error preloading threads", e)
+                if (com.mioo.dao.BuildConfig.DEBUG) {
+                    android.util.Log.e("ThreadRepo", "Error preloading threads", e)
+                }
             }
         }
     }
@@ -846,11 +890,24 @@ class ThreadRepositoryImpl @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     override fun checkLatestRelease(): Flow<XdResponse<GithubRelease>> = flow {
-        try {
-            val release = githubApiService.getLatestRelease()
-            emit(XdResponse.Success(release))
-        } catch (e: Exception) {
-            emit(XdResponse.Error(message = e.localizedMessage ?: "Failed to check update", throwable = e))
+        var lastError: Exception? = null
+        for (url in RELEASE_MANIFEST_URLS) {
+            try {
+                val release = githubApiService.getLatestRelease(url)
+                if (release.tagName.isNotBlank()) {
+                    emit(XdResponse.Success(release))
+                    return@flow
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                lastError = e
+            }
         }
+        emit(
+            XdResponse.Error(
+                message = lastError?.localizedMessage ?: "检查更新失败",
+                throwable = lastError
+            )
+        )
     }.flowOn(Dispatchers.IO)
 }

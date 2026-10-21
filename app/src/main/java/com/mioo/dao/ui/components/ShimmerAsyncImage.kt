@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,9 +68,12 @@ fun ListThumbAsyncImage(
     contentScale: ContentScale = ContentScale.Crop
 ) {
     val context = LocalContext.current
-    // Stable request; no per-frame onState recomposition (static placeholder under image)
-    val request = remember(imageUrl) {
-        ListThumbImage.request(context, imageUrl)
+    val cdn = ImageCdnState.baseUrl
+    val candidates = remember(imageUrl, cdn) { ImageCdnState.thumbCandidates(imageUrl) }
+    var attempt by remember(imageUrl, cdn) { mutableIntStateOf(0) }
+    val currentUrl = candidates[attempt.coerceIn(0, candidates.lastIndex)]
+    val request = remember(currentUrl) {
+        ListThumbImage.request(context, currentUrl)
     }
 
     Box(modifier = modifier.background(Color(0xFFE8E8ED))) {
@@ -77,7 +81,10 @@ fun ListThumbAsyncImage(
             model = request,
             contentDescription = contentDescription,
             contentScale = contentScale,
-            modifier = Modifier.matchParentSize()
+            modifier = Modifier.matchParentSize(),
+            onError = {
+                if (attempt < candidates.lastIndex) attempt += 1
+            }
         )
     }
 }

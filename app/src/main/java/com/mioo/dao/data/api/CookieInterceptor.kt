@@ -17,8 +17,12 @@ class CookieInterceptor @Inject constructor(
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        val settings = settingsRepository.settings.value
         val originalRequest = chain.request()
+        // 图床不需要、也不该收到发言饼干
+        if (!shouldAttachCookie(originalRequest.url.host)) {
+            return chain.proceed(originalRequest)
+        }
+        val settings = settingsRepository.settings.value
 
         var activeCookie = settings.cookiesList.getOrNull(settings.selectedCookieIndex)
             ?: settings.cookie.takeIf { it.isNotBlank() }
@@ -41,6 +45,14 @@ class CookieInterceptor @Inject constructor(
         }
 
         return chain.proceed(requestBuilder.build())
+    }
+
+    private fun shouldAttachCookie(host: String): Boolean {
+        val normalized = host.lowercase()
+        return normalized != "image.nmb.best" &&
+            normalized != "nmbimg.fastmirror.org" &&
+            !normalized.startsWith("image.") &&
+            !normalized.startsWith("img.")
     }
 
     private fun extractHash(raw: String?): String? {

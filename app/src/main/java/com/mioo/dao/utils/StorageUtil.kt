@@ -13,6 +13,11 @@ object StorageUtil {
         formatSize(cacheSize)
     }
 
+    /** Coil image disk cache only. This is the folder the user-set cap trims. */
+    suspend fun getImageDiskCacheSizeFormatted(context: Context): String = withContext(Dispatchers.IO) {
+        formatSize(getFolderSize(File(context.cacheDir, "image_cache")))
+    }
+
     suspend fun getDatabaseSizeFormatted(context: Context): String = withContext(Dispatchers.IO) {
         var dbSize = 0L
         val dbFile = context.getDatabasePath("mioo_dao.db")

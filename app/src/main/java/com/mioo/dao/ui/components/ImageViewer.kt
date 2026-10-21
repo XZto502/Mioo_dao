@@ -65,17 +65,29 @@ fun ImageViewer(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Find initial page index
-    val initialPage = remember(initialImageUrl, imageUrls) {
-        val idx = imageUrls.indexOf(initialImageUrl)
+    // Freeze the page list for the life of this dialog. Thread pagination keeps
+    // rebuilding imageUrls behind the viewer; a pageCount change mid-fling throws
+    // inside PagerState.
+    val pages = remember {
+        val raw = if (imageUrls.isNotEmpty()) imageUrls else listOf(initialImageUrl)
+        raw.filter { it.isNotBlank() }.distinct()
+    }
+    if (pages.isEmpty()) {
+        LaunchedEffect(Unit) { onDismiss() }
+        return
+    }
+
+    val initialPage = remember(initialImageUrl) {
+        val idx = pages.indexOf(initialImageUrl)
         if (idx == -1) 0 else idx
     }
 
-    val pagerState = rememberPagerState(initialPage = initialPage) { imageUrls.size }
+    val pagerState = rememberPagerState(initialPage = initialPage) { pages.size }
     // Boolean only: continuous scale floats must not recompose the pager shell every frame
     var isZoomed by remember { mutableStateOf(false) }
 
-    // Reset zoom lock when page changes
+    // Reset zoom lock when page changes. Same value is a no-op, so a normal swipe
+    // does not restart the pager's scrollable.
     LaunchedEffect(pagerState.currentPage) {
         isZoomed = false
     }
@@ -98,28 +110,28 @@ fun ImageViewer(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
                 userScrollEnabled = !isZoomed,
-                // Do not pre-compose far pages — only the settled page (+ swipe peer via layout)
-                beyondBoundsPageCount = 0
+                // Neighbour is composed by the pager prefetcher while the finger moves.
+                // Do not also subscribe to scroll state here: currentPage flips at the
+                // halfway point of a drag and would restart pointerInput under the finger.
+                beyondBoundsPageCount = 0,
+                key = { pages.getOrNull(it) ?: it }
             ) { pageIndex ->
-                val pageUrl = imageUrls.getOrNull(pageIndex) ?: return@HorizontalPager
-                val currentPage = pagerState.currentPage
-                val isCurrentPage = currentPage == pageIndex
-                // Decode only current page; allow ±1 while finger is dragging for swipe preview
-                val distance = abs(pageIndex - currentPage)
-                val allowDecode = distance == 0 ||
-                    (pagerState.isScrollInProgress && distance <= 1)
-
-                ZoomableImageContainer(
-                    imageUrl = pageUrl,
-                    isActive = isCurrentPage,
-                    allowDecode = allowDecode,
-                    onZoomedChanged = { zoomed ->
-                        if (isCurrentPage) {
-                            isZoomed = zoomed
-                        }
-                    },
-                    onTapDismiss = onDismiss
-                )
+                val pageUrl = pages.getOrNull(pageIndex)
+                if (pageUrl == null) {
+                    Box(Modifier.fillMaxSize().background(Color.Black))
+                } else {
+                    ZoomableImageContainer(
+                        imageUrl = pageUrl,
+                        onZoomedChanged = { zoomed ->
+                            // Read at event time. A value captured when this page was
+                            // composed goes stale once the swipe crosses the snap point.
+                            if (pagerState.currentPage == pageIndex) {
+                                isZoomed = zoomed
+                            }
+                        },
+                        onTapDismiss = onDismiss
+                    )
+                }
             }
 
             // Close button overlay
@@ -139,7 +151,7 @@ fun ImageViewer(
             }
 
             // Download button overlay
-            val currentImageUrl = imageUrls.getOrNull(pagerState.currentPage)
+            val currentImageUrl = pages.getOrNull(pagerState.currentPage)
             if (currentImageUrl != null) {
                 IconButton(
                     onClick = {
@@ -164,7 +176,7 @@ fun ImageViewer(
             }
 
             // Page Indicator overlay (e.g., 2 / 10)
-            if (imageUrls.size > 1) {
+            if (pages.size > 1) {
                 Box(
                     modifier = Modifier
                         .statusBarsPadding()
@@ -174,7 +186,7 @@ fun ImageViewer(
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = "${pagerState.currentPage + 1} / ${imageUrls.size}",
+                        text = "${pagerState.currentPage + 1} / ${pages.size}",
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                         color = Color.White
                     )
@@ -187,8 +199,6 @@ fun ImageViewer(
 @Composable
 private fun ZoomableImageContainer(
     imageUrl: String,
-    isActive: Boolean,
-    allowDecode: Boolean,
     onZoomedChanged: (Boolean) -> Unit,
     onTapDismiss: () -> Unit
 ) {
@@ -197,32 +207,24 @@ private fun ZoomableImageContainer(
     var offsetX by remember(imageUrl) { mutableFloatStateOf(0f) }
     var offsetY by remember(imageUrl) { mutableFloatStateOf(0f) }
     var isLoading by remember(imageUrl) { mutableStateOf(true) }
+    var failed by remember(imageUrl) { mutableStateOf(false) }
     val context = LocalContext.current
     val onZoomedChangedState = rememberUpdatedState(onZoomedChanged)
     val onTapDismissState = rememberUpdatedState(onTapDismiss)
 
-    // Reset transform when this page becomes inactive (pager moved away)
-    LaunchedEffect(isActive, imageUrl) {
-        if (!isActive) {
-            scale = 1f
-            offsetX = 0f
-            offsetY = 0f
-            onZoomedChangedState.value(false)
-        }
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(isActive, imageUrl) {
-                fun applyScale(newScale: Float, pan: Offset = Offset.Zero) {
+            .background(Color.Black)
+            // Key is the url only. Keying on the settled page restarts this node when
+            // currentPage flips halfway through a drag, which crashes pointer dispatch.
+            .pointerInput(imageUrl) {
+                fun applyScale(newScale: Float) {
+                    if (!newScale.isFinite()) return
                     val clamped = newScale.coerceIn(1f, 5f)
                     val wasZoomed = scale > 1.01f
                     scale = clamped
-                    if (clamped > 1.01f) {
-                        offsetX += pan.x
-                        offsetY += pan.y
-                    } else {
+                    if (clamped <= 1.01f) {
                         offsetX = 0f
                         offsetY = 0f
                     }
@@ -244,47 +246,46 @@ private fun ZoomableImageContainer(
                     }
                 )
             }
-            .pointerInput(isActive, imageUrl) {
+            .pointerInput(imageUrl) {
                 detectZoomableTransformGestures(
                     onGesture = { pan, zoom ->
-                        val clamped = (scale * zoom).coerceIn(1f, 5f)
-                        val wasZoomed = scale > 1.01f
-                        scale = clamped
-                        if (clamped > 1.01f) {
-                            offsetX += pan.x
-                            offsetY += pan.y
-                        } else {
-                            offsetX = 0f
-                            offsetY = 0f
+                        if (zoom.isFinite() && zoom > 0f && pan.x.isFinite() && pan.y.isFinite()) {
+                            val clamped = (scale * zoom).coerceIn(1f, 5f)
+                            val wasZoomed = scale > 1.01f
+                            scale = clamped
+                            if (clamped > 1.01f) {
+                                val nextX = offsetX + pan.x
+                                val nextY = offsetY + pan.y
+                                offsetX = if (nextX.isFinite()) nextX else 0f
+                                offsetY = if (nextY.isFinite()) nextY else 0f
+                            } else {
+                                offsetX = 0f
+                                offsetY = 0f
+                            }
+                            if (clamped > 1.01f && !wasZoomed) {
+                                onZoomedChangedState.value(true)
+                            }
                         }
-                        val nowZoomed = clamped > 1.01f
-                        if (nowZoomed != wasZoomed) {
-                            onZoomedChangedState.value(nowZoomed)
-                        }
+                    },
+                    onGestureEnd = {
+                        // Unlock paging only after the fingers are up. Flipping
+                        // userScrollEnabled while the pager is dragging cancels the scroll.
+                        onZoomedChangedState.value(scale > 1.01f)
                     },
                     canConsume = { scale > 1.01f }
                 )
             },
         contentAlignment = Alignment.Center
     ) {
-        if (!allowDecode) {
-            // Off-screen: no Coil request / no bitmap decode
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-            )
-            return@Box
-        }
-
-        // Cap decode size to ~2x screen to keep zoom sharp without full-res OOM risk
+        // Cap at the long screen edge. Two software bitmaps at 4096² are enough to
+        // OOM a swipe; list thumbs stay on their own memory key so this decode
+        // cannot recycle the bitmap the feed is still drawing under the dialog.
         val configuration = LocalConfiguration.current
         val density = LocalDensity.current
         val maxPx = remember(configuration, density) {
             val w = with(density) { configuration.screenWidthDp.dp.roundToPx() }
             val h = with(density) { configuration.screenHeightDp.dp.roundToPx() }
-            // 2× screen for pinch zoom headroom, hard cap 4096
-            (maxOf(w, h) * 2).coerceIn(1080, 4096)
+            maxOf(w, h).coerceIn(720, 2048)
         }
         val imageRequest = remember(imageUrl, maxPx) {
             coil.request.ImageRequest.Builder(context)
@@ -292,8 +293,10 @@ private fun ZoomableImageContainer(
                 .size(Size(maxPx, maxPx))
                 .precision(Precision.INEXACT)
                 .crossfade(false)
-                .allowHardware(true)
-                .memoryCacheKey(imageUrl)
+                // Pager draws this through a graphics layer. Hardware bitmaps crash
+                // when that layer is recorded on the software path mid-swipe.
+                .allowHardware(false)
+                .memoryCacheKey("viewer:$maxPx:$imageUrl")
                 .diskCacheKey(imageUrl)
                 .build()
         }
@@ -303,15 +306,16 @@ private fun ZoomableImageContainer(
             contentScale = ContentScale.Fit,
             onState = { state ->
                 isLoading = state is AsyncImagePainter.State.Loading
+                failed = state is AsyncImagePainter.State.Error
             },
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    // Snapshot reads here skip composition — only re-draw the layer
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offsetX
-                    translationY = offsetY
+                    val safeScale = if (scale.isFinite()) scale.coerceIn(1f, 5f) else 1f
+                    scaleX = safeScale
+                    scaleY = safeScale
+                    translationX = if (offsetX.isFinite()) offsetX else 0f
+                    translationY = if (offsetY.isFinite()) offsetY else 0f
                 }
         )
 
@@ -319,57 +323,71 @@ private fun ZoomableImageContainer(
             CircularProgressIndicator(
                 color = Color.White
             )
+        } else if (failed) {
+            Text(
+                text = "图片加载失败",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
 
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectZoomableTransformGestures(
     onGesture: (pan: Offset, zoom: Float) -> Unit,
+    onGestureEnd: () -> Unit,
     canConsume: () -> Boolean
 ) {
     awaitEachGesture {
-        var zoom = 1f
-        var pan = Offset.Zero
-        var pastTouchSlop = false
-        val touchSlop = viewConfiguration.touchSlop
+        var consumedGesture = false
+        try {
+            val touchSlop = viewConfiguration.touchSlop
+            var pastTouchSlop = false
+            var zoom = 1f
+            var pan = Offset.Zero
+            awaitFirstDown(requireUnconsumed = false)
+            while (true) {
+                val event = awaitPointerEvent()
+                val pressedCount = event.changes.count { it.pressed }
+                if (pressedCount == 0) break
+                // One finger at rest scale belongs to the pager. Consuming it, or
+                // treating centroid noise as a pinch, disables userScroll mid-drag.
+                val zooming = canConsume() || pressedCount > 1
+                if (!zooming && event.changes.any { it.isConsumed }) break
 
-        awaitFirstDown(false)
-        do {
-            val event = awaitPointerEvent()
-            val pointerCount = event.changes.size
-            val isZoomingOrPanned = canConsume() || pointerCount > 1
-            val canceled = event.changes.any { it.isConsumed } && !isZoomingOrPanned
-
-            if (!canceled) {
                 val zoomChange = event.calculateZoom()
                 val panChange = event.calculatePan()
+                if (!zoomChange.isFinite() || zoomChange <= 0f ||
+                    !panChange.x.isFinite() || !panChange.y.isFinite()
+                ) {
+                    continue
+                }
 
                 if (!pastTouchSlop) {
                     zoom *= zoomChange
                     pan += panChange
-
                     val centroidSize = event.calculateCentroidSize(useCurrent = false)
-                    val zoomMotion = kotlin.math.abs(1 - zoom) * centroidSize
-                    val panMotion = pan.getDistance()
-
+                    val zoomMotion = abs(1 - zoom) * centroidSize
+                    val panMotion = if (pan.x.isFinite() && pan.y.isFinite()) pan.getDistance() else 0f
                     if (zoomMotion > touchSlop || panMotion > touchSlop) {
                         pastTouchSlop = true
                     }
                 }
 
-                if (pastTouchSlop) {
-                    if (zoomChange != 1f || panChange != Offset.Zero) {
-                        onGesture(panChange, zoomChange)
-                    }
-                    if (isZoomingOrPanned) {
-                        event.changes.forEach {
-                            if (it.position != it.previousPosition) {
-                                it.consume()
-                            }
-                        }
+                if (!zooming || !pastTouchSlop) continue
+
+                consumedGesture = true
+                if (zoomChange != 1f || panChange != Offset.Zero) {
+                    onGesture(panChange, zoomChange)
+                }
+                event.changes.forEach { change ->
+                    if (change.pressed && change.position != change.previousPosition) {
+                        change.consume()
                     }
                 }
             }
-        } while (!canceled && event.changes.any { it.pressed })
+        } finally {
+            if (consumedGesture) onGestureEnd()
+        }
     }
 }

@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -81,6 +80,9 @@ fun Modifier.glassSurface(
     val fill = when (type) {
         GlassType.SURFACE -> if (isDark) GlassStyle.darkGlass else GlassStyle.lightGlass
         GlassType.CARD -> if (isDark) GlassStyle.darkGlassCard else GlassStyle.lightGlassCard
+    }.let { color ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) color
+        else color.copy(alpha = maxOf(color.alpha, 0.95f))
     }
     val borderColor = if (isDark) GlassStyle.darkBorder else GlassStyle.lightBorder
     val gradient = if (isDark) GlassStyle.darkGradient else GlassStyle.lightGradient
@@ -103,7 +105,9 @@ enum class GlassType {
  */
 @Composable
 fun glassCardColor(isDark: Boolean = isSystemInDarkTheme()): Color {
-    return if (isDark) GlassStyle.darkGlassCard else GlassStyle.lightGlassCard
+    val color = if (isDark) GlassStyle.darkGlassCard else GlassStyle.lightGlassCard
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return color
+    return color.copy(alpha = maxOf(color.alpha, 0.95f))
 }
 
 /**
@@ -111,5 +115,7 @@ fun glassCardColor(isDark: Boolean = isSystemInDarkTheme()): Color {
  */
 @Composable
 fun glassSurfaceColor(isDark: Boolean = isSystemInDarkTheme()): Color {
-    return if (isDark) GlassStyle.darkGlass else GlassStyle.lightGlass
+    val color = if (isDark) GlassStyle.darkGlass else GlassStyle.lightGlass
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return color
+    return color.copy(alpha = maxOf(color.alpha, 0.95f))
 }

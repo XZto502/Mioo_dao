@@ -3,6 +3,7 @@
     <!-- Splash → main: same background as Compose light surface to avoid white flash -->
     <style name="Theme.MiooDao.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowBackground">@color/splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_round</item>
         <item name="postSplashScreenTheme">@style/Theme.MiooDao</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

@@ -1,14 +1,24 @@
 package com.mioo.dao.ui.navigation
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.navigation.NavBackStackEntry
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -21,9 +31,19 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
@@ -33,13 +53,13 @@ import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlinx.coroutines.launch
 import com.mioo.dao.ui.screens.feed.FeedScreen
 import com.mioo.dao.ui.screens.feed.FeedViewModel
 import com.mioo.dao.ui.screens.forum.ForumScreen
@@ -55,9 +75,7 @@ import com.mioo.dao.ui.screens.thread.ThreadViewModel
 
 
 sealed class Screen(val route: String) {
-    object Forum : Screen("forum")
-    object Feed : Screen("feed")
-    object Settings : Screen("settings")
+    object Home : Screen("home")
     object SettingsDetail : Screen("settings_detail")
     object BrowsingHistory : Screen("browsing_history")
     object Search : Screen("search")
@@ -66,12 +84,7 @@ sealed class Screen(val route: String) {
     }
 }
 
-private val TabRoutes = setOf(
-    Screen.Forum.route,
-    Screen.Feed.route,
-    Screen.Settings.route
-)
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MiooDaoNavGraph(
     modifier: Modifier = Modifier,
@@ -121,7 +134,7 @@ fun MiooDaoNavGraph(
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
 
     // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
-    // 板块 / 收藏 / 更多: adjacent pairs spring-slide; 板块 ↔ 更多 crossfades in [tabEnter] / [tabExit].
+    // 板块 / 收藏 / 更多 share one pager and spring across, including through the middle page.
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         MiooMotion.pageEnter(reducedMotion)
     }
@@ -135,25 +148,92 @@ fun MiooDaoNavGraph(
         MiooMotion.pagePopExit(reducedMotion)
     }
     val density = LocalDensity.current
-    val tabRisePx = with(density) { 12.dp.roundToPx() }
+    val tabScope = rememberCoroutineScope()
+    val tabPagerState = rememberPagerState(initialPage = 0) { 3 }
 
     val bottomBarItems = remember {
         listOf(
-            Triple(Screen.Forum.route, Icons.Default.Home, "板块"),
-            Triple(Screen.Feed.route, Icons.Default.Bookmark, "收藏"),
-            Triple(Screen.Settings.route, Icons.Default.Settings, "更多")
+            Triple(0, Icons.Default.Home, "板块"),
+            Triple(1, Icons.Default.Bookmark, "收藏"),
+            Triple(2, Icons.Default.Settings, "更多")
         )
     }
 
-    val showBottomBar = currentRoute in TabRoutes
+    val showBottomBar = currentRoute == Screen.Home.route
+    // Scroll the feed downward (finger up) and the tab capsule slides off the bottom.
+    // A short reverse drag, or hitting the top, brings it back.
+    var bottomBarVisible by remember { mutableStateOf(true) }
+    var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    val bottomBarSlide = remember { Animatable(0f) }
+    val hideAfterPx = with(density) { 36.dp.toPx() }
+    val showAfterPx = with(density) { 16.dp.toPx() }
+    val bottomBarScroll = remember(hideAfterPx, showAfterPx) {
+        var away = 0f
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                // Compose 1.6 only reports Drag and Fling. Both should move the bar.
+                if (source != NestedScrollSource.Drag && source != NestedScrollSource.Fling) {
+                    return Offset.Zero
+                }
+                // Overscroll at the top: the list did not consume a downward drag.
+                if (available.y > 0f && consumed.y == 0f) {
+                    away = 0f
+                    bottomBarVisible = true
+                    return Offset.Zero
+                }
+                val dy = consumed.y
+                if (dy < 0f) {
+                    if (away < 0f) away = 0f
+                    away += -dy
+                    if (away >= hideAfterPx) {
+                        away = 0f
+                        bottomBarVisible = false
+                    }
+                } else if (dy > 0f) {
+                    if (away > 0f) away = 0f
+                    away -= dy
+                    if (-away >= showAfterPx) {
+                        away = 0f
+                        bottomBarVisible = true
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(currentRoute, tabPagerState.targetPage) {
+        bottomBarVisible = true
+    }
+    // 260ms EaseOut dumped the travel into the first frames. 560ms felt slow.
+    // 340ms FastOutSlowIn keeps the slide visible without dragging.
+    val bottomBarSlideSpec = remember {
+        tween<Float>(durationMillis = 340, easing = FastOutSlowInEasing)
+    }
+    LaunchedEffect(bottomBarVisible, reducedMotion) {
+        val target = if (bottomBarVisible) 0f else 1f
+        if (reducedMotion) {
+            bottomBarSlide.snapTo(target)
+        } else {
+            bottomBarSlide.animateTo(target, bottomBarSlideSpec)
+        }
+    }
 
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
                 // Outer box draws into the gesture nav area so the 小白条 is immersive;
                 // capsule itself stays above the system inset.
+                // offset (not graphicsLayer) moves the touch target with the slide.
+                val slideFraction = bottomBarSlide.value
+                val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
                 Box(
                     modifier = Modifier
+                        .onSizeChanged { bottomBarHeightPx = it.height }
+                        .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -171,19 +251,21 @@ fun MiooDaoNavGraph(
                                 shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
                             )
                     ) {
-                        bottomBarItems.forEach { (route, icon, label) ->
+                        bottomBarItems.forEach { (index, icon, label) ->
                             NavigationBarItem(
                                 icon = { Icon(icon, contentDescription = label) },
                                 label = { Text(label) },
-                                selected = currentRoute == route,
+                                selected = tabPagerState.targetPage == index,
                                 onClick = {
-                                    if (currentRoute != route) {
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
+                                    if (tabPagerState.targetPage == index) return@NavigationBarItem
+                                    tabScope.launch {
+                                        if (reducedMotion) {
+                                            tabPagerState.scrollToPage(index)
+                                        } else {
+                                            tabPagerState.animateScrollToPage(
+                                                page = index,
+                                                animationSpec = MiooMotion.tabPagerSpring()
+                                            )
                                         }
                                     }
                                 }
@@ -199,29 +281,34 @@ fun MiooDaoNavGraph(
     ) { _ ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Forum.route,
+            startDestination = Screen.Home.route,
+            modifier = Modifier.nestedScroll(bottomBarScroll),
             // Intentionally no paddingValues: content scrolls behind the floating nav bar.
             enterTransition = pageEnter,
             exitTransition = pageHoldExit,
             popEnterTransition = pageRevealEnter,
             popExitTransition = pagePopExit
         ) {
-            // Cold start stays put: [tabEnter] is none until another tab is involved.
+            // Cold start stays put. Tab changes are the pager, not a NavHost transition.
             composable(
-                route = Screen.Forum.route,
-                enterTransition = { tabEnter(reducedMotion, tabRisePx) },
-                exitTransition = { tabExit(reducedMotion, tabRisePx, popping = false) },
-                popEnterTransition = { tabEnter(reducedMotion, tabRisePx) },
-                popExitTransition = { tabExit(reducedMotion, tabRisePx, popping = true) }
+                route = Screen.Home.route,
+                enterTransition = { EnterTransition.None },
+                popEnterTransition = { EnterTransition.None }
             ) { _ ->
-                PageBackdrop {
-                    val viewModel: ForumViewModel = hiltViewModel()
-                    ForumScreen(
-                        viewModel = viewModel,
-                        onNavigateToThread = navigateToThread,
-                        onColdStartContentReady = onColdStartContentReady
-                    )
-                }
+                MainTabs(
+                    pagerState = tabPagerState,
+                    onNavigateToThread = navigateToThread,
+                    onColdStartContentReady = onColdStartContentReady,
+                    onNavigateToSettings = {
+                        navController.navigate(Screen.SettingsDetail.route)
+                    },
+                    onNavigateToHistory = {
+                        navController.navigate(Screen.BrowsingHistory.route)
+                    },
+                    onNavigateToSearch = {
+                        navController.navigate(Screen.Search.route)
+                    }
+                )
             }
 
             composable(route = Screen.Search.route) { _ ->
@@ -231,46 +318,6 @@ fun MiooDaoNavGraph(
                         viewModel = viewModel,
                         onBackClick = { navController.popBackStack() },
                         onNavigateToThread = navigateToThread
-                    )
-                }
-            }
-
-            composable(
-                route = Screen.Feed.route,
-                enterTransition = { tabEnter(reducedMotion, tabRisePx) },
-                exitTransition = { tabExit(reducedMotion, tabRisePx, popping = false) },
-                popEnterTransition = { tabEnter(reducedMotion, tabRisePx) },
-                popExitTransition = { tabExit(reducedMotion, tabRisePx, popping = true) }
-            ) { _ ->
-                PageBackdrop {
-                    val viewModel: FeedViewModel = hiltViewModel()
-                    FeedScreen(
-                        viewModel = viewModel,
-                        onNavigateToThread = navigateToThread
-                    )
-                }
-            }
-
-            composable(
-                route = Screen.Settings.route,
-                enterTransition = { tabEnter(reducedMotion, tabRisePx) },
-                exitTransition = { tabExit(reducedMotion, tabRisePx, popping = false) },
-                popEnterTransition = { tabEnter(reducedMotion, tabRisePx) },
-                popExitTransition = { tabExit(reducedMotion, tabRisePx, popping = true) }
-            ) { _ ->
-                PageBackdrop {
-                    val viewModel: SettingsViewModel = hiltViewModel()
-                    MoreScreen(
-                        viewModel = viewModel,
-                        onNavigateToSettings = {
-                            navController.navigate(Screen.SettingsDetail.route)
-                        },
-                        onNavigateToHistory = {
-                            navController.navigate(Screen.BrowsingHistory.route)
-                        },
-                        onNavigateToSearch = {
-                            navController.navigate(Screen.Search.route)
-                        }
                     )
                 }
             }
@@ -319,60 +366,51 @@ fun MiooDaoNavGraph(
     }
 }
 
-private fun tabIndex(route: String?): Int = when (route) {
-    Screen.Forum.route -> 0
-    Screen.Feed.route -> 1
-    Screen.Settings.route -> 2
-    else -> -1
-}
-
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.tabEnter(
-    reducedMotion: Boolean,
-    risePx: Int
-): EnterTransition {
-    val from = tabIndex(initialState.destination.route)
-    val to = tabIndex(targetState.destination.route)
-    if (from < 0 || to < 0 || from == to) return EnterTransition.None
-    // Skip 收藏. A horizontal slide here would carry the middle tab across.
-    if (kotlin.math.abs(to - from) > 1) {
-        return MiooMotion.tabCrossEnter(
-            openingSkip = to > from,
-            risePx = risePx,
-            reducedMotion = reducedMotion
-        )
-    }
-    return MiooMotion.tabSlideEnter(
-        towardEnd = to > from,
-        // Returning to 板块 is a pop, so the page underneath is not the top layer.
-        incomingOnTop = targetState.destination.route != Screen.Forum.route,
-        reducedMotion = reducedMotion
-    )
-}
-
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.tabExit(
-    reducedMotion: Boolean,
-    risePx: Int,
-    popping: Boolean
-): ExitTransition {
-    val from = tabIndex(initialState.destination.route)
-    val to = tabIndex(targetState.destination.route)
-    if (from < 0 || to < 0 || from == to) {
-        return if (popping) {
-            MiooMotion.pagePopExit(reducedMotion)
-        } else {
-            MiooMotion.pageHoldExit(reducedMotion)
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MainTabs(
+    pagerState: PagerState,
+    onNavigateToThread: (String) -> Unit,
+    onColdStartContentReady: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onNavigateToHistory: () -> Unit,
+    onNavigateToSearch: () -> Unit
+) {
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        // Neighbor stays composed so a two-page jump can slide across it.
+        beyondBoundsPageCount = 1,
+        userScrollEnabled = false,
+        key = { it }
+    ) { page ->
+        PageBackdrop {
+            when (page) {
+                0 -> {
+                    val viewModel: ForumViewModel = hiltViewModel()
+                    ForumScreen(
+                        viewModel = viewModel,
+                        onNavigateToThread = onNavigateToThread,
+                        onColdStartContentReady = onColdStartContentReady
+                    )
+                }
+                1 -> {
+                    val viewModel: FeedViewModel = hiltViewModel()
+                    FeedScreen(
+                        viewModel = viewModel,
+                        onNavigateToThread = onNavigateToThread
+                    )
+                }
+                else -> {
+                    val viewModel: SettingsViewModel = hiltViewModel()
+                    MoreScreen(
+                        viewModel = viewModel,
+                        onNavigateToSettings = onNavigateToSettings,
+                        onNavigateToHistory = onNavigateToHistory,
+                        onNavigateToSearch = onNavigateToSearch
+                    )
+                }
+            }
         }
     }
-    if (kotlin.math.abs(to - from) > 1) {
-        return MiooMotion.tabCrossExit(
-            openingSkip = to > from,
-            risePx = risePx,
-            reducedMotion = reducedMotion
-        )
-    }
-    return MiooMotion.tabSlideExit(
-        towardEnd = to > from,
-        incomingOnTop = targetState.destination.route != Screen.Forum.route,
-        reducedMotion = reducedMotion
-    )
 }

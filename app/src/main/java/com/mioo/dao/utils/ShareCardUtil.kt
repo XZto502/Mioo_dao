@@ -140,8 +140,7 @@ object ShareCardUtil {
             }
 
             bitmap
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
             null
         }
     }
@@ -156,8 +155,7 @@ object ShareCardUtil {
             out.flush()
             out.close()
             file
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
             null
         }
     }

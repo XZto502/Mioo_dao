@@ -91,9 +91,13 @@ class SettingsRepository @Inject constructor(
                 notificationIntervalMinutes = notificationIntervalMinutes
             )
         },
-        settingsDataStore.glassEffectEnabledFlow
-    ) { base, glassEffectEnabled ->
-        base.copy(glassEffectEnabled = glassEffectEnabled)
+        settingsDataStore.glassEffectEnabledFlow,
+        settingsDataStore.cacheLimitMbFlow
+    ) { base, glassEffectEnabled, cacheLimitMb ->
+        base.copy(
+            glassEffectEnabled = glassEffectEnabled,
+            cacheLimitMb = cacheLimitMb
+        )
     }.stateIn(
         scope = repositoryScope,
         started = SharingStarted.Eagerly,
@@ -121,6 +125,12 @@ class SettingsRepository @Inject constructor(
     fun updateGlassEffectEnabled(enabled: Boolean) {
         repositoryScope.launch {
             settingsDataStore.saveGlassEffectEnabled(enabled)
+        }
+    }
+
+    fun updateCacheLimitMb(mb: Int) {
+        repositoryScope.launch {
+            settingsDataStore.saveCacheLimitMb(mb)
         }
     }
 

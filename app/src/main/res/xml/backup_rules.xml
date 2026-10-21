@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- userhash / 饼干在 DataStore 里，不进旧版云备份 -->
+    <exclude domain="file" path="datastore/mioo_settings.preferences_pb" />
+</full-backup-content>

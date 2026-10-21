@@ -4,6 +4,7 @@ import android.content.Context
 import com.mioo.dao.BuildConfig
 import com.mioo.dao.data.api.CookieInterceptor
 import com.mioo.dao.data.api.XdApiService
+import com.mioo.dao.data.api.XdPlainStringConverterFactory
 import com.mioo.dao.data.api.GithubApiService
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -53,13 +54,16 @@ object NetworkModule {
         val cacheDir = File(appContext.cacheDir, "okhttp_cache")
         builder.cache(Cache(cacheDir, 50L * 1024 * 1024))
 
-        // Debug: BASIC only — BODY logging serializes every JSON payload and tanks cold start.
-        if (BuildConfig.DEBUG) {
-            val loggingInterceptor = okhttp3.logging.HttpLoggingInterceptor().apply {
-                level = okhttp3.logging.HttpLoggingInterceptor.Level.BASIC
+        // BODY logging serializes every JSON payload and image upload. Release stays NONE
+        // so userhash cookies and upload bodies never hit logcat.
+        val loggingInterceptor = okhttp3.logging.HttpLoggingInterceptor().apply {
+            level = if (BuildConfig.DEBUG) {
+                okhttp3.logging.HttpLoggingInterceptor.Level.BASIC
+            } else {
+                okhttp3.logging.HttpLoggingInterceptor.Level.NONE
             }
-            builder.addInterceptor(loggingInterceptor)
         }
+        builder.addInterceptor(loggingInterceptor)
 
         return builder.build()
     }
@@ -73,7 +77,7 @@ object NetworkModule {
         return Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(okHttpClient)
-            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .addConverterFactory(XdPlainStringConverterFactory(MoshiConverterFactory.create(moshi)))
             .build()
     }
 
@@ -89,9 +93,10 @@ object NetworkModule {
         moshi: Moshi
     ): GithubApiService {
         val cleanClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .writeTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(8, TimeUnit.SECONDS)
             .build()
 
         val githubRetrofit = Retrofit.Builder()

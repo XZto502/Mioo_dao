@@ -1,6 +1,7 @@
 package com.mioo.dao.data.model
 
 import androidx.compose.runtime.Immutable
+import kotlin.math.roundToInt
 
 enum class ThemeMode {
     SYSTEM, LIGHT, DARK
@@ -35,5 +36,24 @@ data class UserSettings(
     /** Minutes between background checks; clamped 15–180. */
     val notificationIntervalMinutes: Int = 30,
     /** Semi-transparent glass surfaces + ambient glow background. */
-    val glassEffectEnabled: Boolean = true
+    val glassEffectEnabled: Boolean = true,
+    /** Image disk-cache cap in megabytes. Oldest files are dropped past this. */
+    val cacheLimitMb: Int = ImageCacheLimit.DEFAULT_MB
 )
+
+/** User-facing cap for the Coil image disk cache. */
+object ImageCacheLimit {
+    const val DEFAULT_MB = 1024
+    const val MIN_MB = 128
+    const val MAX_MB = 4096
+    const val STEP_MB = 128
+    val SLIDER_STEPS: Int = (MAX_MB - MIN_MB) / STEP_MB - 1
+
+    fun coerce(mb: Int): Int {
+        val clamped = mb.coerceIn(MIN_MB, MAX_MB)
+        val steps = ((clamped - MIN_MB).toDouble() / STEP_MB).roundToInt()
+        return (MIN_MB + steps * STEP_MB).coerceIn(MIN_MB, MAX_MB)
+    }
+
+    fun toBytes(mb: Int): Long = coerce(mb).toLong() * 1024L * 1024L
+}

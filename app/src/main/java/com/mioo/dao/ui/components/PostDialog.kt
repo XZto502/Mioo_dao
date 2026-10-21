@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,7 +54,6 @@ import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
-// imeLiftOverNavigationBars in same package
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,8 +97,7 @@ fun PostDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 // Draw under gesture bar; pad content + IME lift without reflowing sheet each frame
-                .imeLiftOverNavigationBars()
-                .navigationBarsPadding()
+                .imePaddingAndNavigationBars()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState())
         ) {

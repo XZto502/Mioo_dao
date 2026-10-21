@@ -1,5 +1,6 @@
 package com.mioo.dao.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -54,6 +56,8 @@ fun RefPopup(
     onQuoteClick: (String) -> Unit,
     onImageClick: (String) -> Unit,
     onViewThreadClick: (String) -> Unit = {},
+    canGoBack: Boolean = false,
+    onBack: () -> Unit = onDismiss,
     modifier: Modifier = Modifier,
     currentThreadId: String? = null
 ) {
@@ -66,11 +70,14 @@ fun RefPopup(
         onDismissRequest = onDismiss,
         properties = immersiveDialogProperties(
             usePlatformDefaultWidth = true,
-            dismissOnBackPress = true,
+            dismissOnBackPress = false,
             dismissOnClickOutside = true
         )
     ) {
         ImmersiveDialogEffect()
+        BackHandler {
+            if (canGoBack) onBack() else onDismiss()
+        }
         AnimatedVisibility(
             visibleState = visibleState,
             enter = MiooMotion.modalEnter(reducedMotion),
@@ -105,6 +112,11 @@ fun RefPopup(
                         modifier = Modifier.weight(1f)
                     )
 
+                    if (canGoBack) {
+                        TextButton(onClick = onBack) {
+                            Text("上一层")
+                        }
+                    }
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier.size(24.dp)
@@ -281,7 +293,7 @@ fun RefPopup(
                                 horizontalArrangement = Arrangement.End
                             ) {
                                 Text(
-                                    text = "查看原串",
+                                    text = "跳转原串",
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.primary
                                 )

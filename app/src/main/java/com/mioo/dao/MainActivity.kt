@@ -163,12 +163,14 @@ class MainActivity : ComponentActivity() {
                         ThreadRepositoryEntryPoint::class.java
                     ).threadRepository()
                 }.getOrNull() ?: return@LaunchedEffect
-                threadRepo.checkLatestRelease().collect { response ->
-                    if (response is XdResponse.Success) {
-                        val release = response.data
-                        val currentVersion = getAppVersionName()
-                        if (isNewerVersion(currentVersion, release.tagName)) {
-                            UpdatePromptController.offerAutomatic(release)
+                runCatching {
+                    threadRepo.checkLatestRelease().collect { response ->
+                        if (response is XdResponse.Success) {
+                            val release = response.data
+                            val currentVersion = getAppVersionName()
+                            if (isNewerVersion(currentVersion, release.tagName)) {
+                                UpdatePromptController.offerAutomatic(release)
+                            }
                         }
                     }
                 }

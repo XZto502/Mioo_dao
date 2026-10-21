@@ -40,7 +40,7 @@ data class ReplyDisplayItem(
 /**
  * Convert a Thread data model to a display-ready PostData.
  */
-fun Thread.toPostData(cdnUrl: String = "https://image.nmb.best"): PostData {
+fun Thread.toPostData(cdnUrl: String = ImageCdnState.baseUrl): PostData {
     return PostData(
         id = this.idStr,
         title = this.title.effectiveTitle(),
@@ -59,7 +59,7 @@ fun Thread.toPostData(cdnUrl: String = "https://image.nmb.best"): PostData {
 /**
  * Convert a Reply to display-ready PostData.
  */
-fun Reply.toPostData(isPo: Boolean, cdnUrl: String = "https://image.nmb.best"): PostData {
+fun Reply.toPostData(isPo: Boolean, cdnUrl: String = ImageCdnState.baseUrl): PostData {
     return PostData(
         id = this.idStr,
         title = this.title.effectiveTitle(),

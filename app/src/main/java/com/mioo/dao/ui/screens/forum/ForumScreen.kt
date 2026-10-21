@@ -125,11 +125,12 @@ import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
-import com.mioo.dao.ui.components.imeLiftOverNavigationBars
+import com.mioo.dao.ui.components.imePaddingAndNavigationBars
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.findDialogWindow
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.applyImmersiveSystemBars
 import com.mioo.dao.ui.theme.immersiveDialogProperties
@@ -143,7 +144,6 @@ import kotlinx.coroutines.withContext
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.window.DialogWindowProvider
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -165,6 +165,7 @@ fun ForumScreen(
     }
     val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var isPostingThread by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -491,6 +492,8 @@ fun ForumScreen(
                         isLoading = uiState.isLoading,
                         isRefreshing = uiState.isRefreshing,
                         isLastPage = uiState.isLastPage,
+                        emptyHint = uiState.emptyHint,
+                        onContinuePastBlocks = { viewModel.continuePastBlockedPages() },
                         listState = listState,
                         emptyStringLambda = emptyStringLambda,
                         onNavigateToThread = onNavigateToThread,
@@ -557,12 +560,29 @@ fun ForumScreen(
                 settingsViewModel.saveNewThreadDraft(draft)
             },
             onCookieSelect = { settingsViewModel.selectCookie(it) },
-            onDismiss = { showCreateDialog = false },
+            isSubmitting = isPostingThread,
+            onDismiss = {
+                if (!isPostingThread) showCreateDialog = false
+            },
             onSubmit = { title, author, content, imageUri ->
-                val imageFile = imageUri?.toFile(context)
-                viewModel.createThread(title, author, content, imageFile)
-                settingsViewModel.clearNewThreadDraft()
-                showCreateDialog = false
+                if (!isPostingThread) {
+                    val imageFile = imageUri?.toFile(context)
+                    if (imageUri != null && imageFile == null) {
+                        Toast.makeText(context, "图片读取失败", Toast.LENGTH_SHORT).show()
+                    } else {
+                        isPostingThread = true
+                        viewModel.createThread(title, author, content, imageFile) { ok, message ->
+                            isPostingThread = false
+                            if (ok) {
+                                settingsViewModel.clearNewThreadDraft()
+                                showCreateDialog = false
+                                Toast.makeText(context, "发串成功", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "发串失败: $message", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
             }
         )
     }
@@ -641,6 +661,8 @@ private fun ForumThreadListPane(
     isLoading: Boolean,
     isRefreshing: Boolean,
     isLastPage: Boolean,
+    emptyHint: String? = null,
+    onContinuePastBlocks: () -> Unit = {},
     listState: LazyListState,
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
@@ -823,7 +845,17 @@ private fun ForumThreadListPane(
                         .padding(top = 120.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("该板块下暂无帖子。", style = MaterialTheme.typography.bodyMedium)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            emptyHint ?: "该板块下暂无帖子。",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (!emptyHint.isNullOrBlank() && !isLastPage) {
+                            TextButton(onClick = onContinuePastBlocks) {
+                                Text("继续加载下一页")
+                            }
+                        }
+                    }
                 }
             }
             return@LazyColumn
@@ -842,6 +874,28 @@ private fun ForumThreadListPane(
                 onImageClick = onImageClick,
                 onLongClick = { blockTarget = item }
             )
+        }
+
+        if (!emptyHint.isNullOrBlank() && displayItems.isNotEmpty() && !isLoading) {
+            item(key = "blocked_hint", contentType = "hint") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = emptyHint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!isLastPage) {
+                        TextButton(onClick = onContinuePastBlocks) {
+                            Text("继续加载下一页")
+                        }
+                    }
+                }
+            }
         }
 
         if (isLoading && displayItems.isNotEmpty()) {
@@ -917,6 +971,7 @@ fun CreateThreadDialog(
     initialContent: String = "",
     onContentChange: (String) -> Unit = {},
     onCookieSelect: (Int) -> Unit,
+    isSubmitting: Boolean = false,
     onDismiss: () -> Unit,
     onSubmit: (title: String, author: String, content: String, imageUri: Uri?) -> Unit
 ) {
@@ -934,6 +989,7 @@ fun CreateThreadDialog(
     var kaomojiExpanded by remember { mutableStateOf(false) }
     var diceExpanded by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var confirmDiscard by remember { mutableStateOf(false) }
     /** 打开快捷面板后短时间内忽略 IME 可见（键盘下落动画） */
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
 
@@ -957,7 +1013,7 @@ fun CreateThreadDialog(
         attachedImageUri = uri
     }
 
-    val canSubmit = contentValue.text.isNotBlank() || attachedImageUri != null
+    val canSubmit = !isSubmitting && (contentValue.text.isNotBlank() || attachedImageUri != null)
 
     fun submit() {
         if (!canSubmit) return
@@ -986,7 +1042,18 @@ fun CreateThreadDialog(
         if (diceExpanded) diceExpanded = false
     }
 
-    BackHandler(onBack = onDismiss)
+    fun requestLeave() {
+        if (confirmDiscard) {
+            confirmDiscard = false
+            return
+        }
+        if (kaomojiExpanded || diceExpanded) {
+            closeToolPanels()
+            return
+        }
+        val dirty = title.isNotBlank() || contentValue.text.isNotBlank() || attachedImageUri != null
+        if (dirty) confirmDiscard = true else onDismiss()
+    }
 
     val isDark = isSystemInDarkTheme()
     // 与板块 / 串内页完全同一套毛玻璃色
@@ -994,23 +1061,25 @@ fun CreateThreadDialog(
     val glassBottom = DaoTheme.colors.glassNavBar
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { requestLeave() },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
-            dismissOnBackPress = true,
+            dismissOnBackPress = false,
             dismissOnClickOutside = false
         )
     ) {
+        BackHandler(enabled = !confirmDiscard) { requestLeave() }
         val dialogView = LocalView.current
         val context = LocalContext.current
+        ImmersiveDialogEffect(lightAppearance = !isDark)
 
         val hideSystemIme = remember(dialogView, context, keyboardController, focusManager) {
             {
                 focusManager.clearFocus(force = true)
                 keyboardController?.hide()
                 val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                val window = (dialogView.parent as? DialogWindowProvider)?.window
+                val window = dialogView.findDialogWindow()
                 val token = window?.currentFocus?.windowToken
                     ?: dialogView.windowToken
                     ?: window?.decorView?.windowToken
@@ -1072,14 +1141,14 @@ fun CreateThreadDialog(
         }
 
         SideEffect {
-            val window = (dialogView.parent as? DialogWindowProvider)?.window ?: return@SideEffect
+            val window = dialogView.findDialogWindow() ?: return@SideEffect
             window.applyImmersiveSystemBars(lightAppearance = !isDark)
             // 不遮罩、透明窗体：透出主界面主题光晕
             window.setDimAmount(0f)
             window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
-            // ADJUST_NOTHING：由 Compose WindowInsets.ime 抬起底栏，避免系统缩放与 insets 冲突
+            // adjustResize：由 IME insets 抬起底栏，不再叠加 graphicsLayer
             @Suppress("DEPRECATION")
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
 
         // 半透明背景叠在主题流光上；顶/底栏用与其它界面相同的 glass 色
@@ -1115,7 +1184,7 @@ fun CreateThreadDialog(
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = onDismiss) {
+                            IconButton(onClick = { requestLeave() }) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "关闭"
@@ -1129,13 +1198,20 @@ fun CreateThreadDialog(
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                                 modifier = Modifier.padding(end = 8.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                if (isSubmitting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("发送")
+                                Text(if (isSubmitting) "发送中" else "发送")
                             }
                         },
                         windowInsets = WindowInsets.statusBars,
@@ -1149,20 +1225,16 @@ fun CreateThreadDialog(
                     )
                 },
                 bottomBar = {
-                    // 导航条占布局高度；IME 用 graphicsLayer 上移，避免正文区随键盘逐帧 reflow
                     Surface(
                         color = glassBottom,
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            // 底色延伸到手势小白条下方；控件再加 navigationBarsPadding
-                            .imeLiftOverNavigationBars()
+                            .imePaddingAndNavigationBars()
                     ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .navigationBarsPadding()
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             HorizontalDivider(
                                 color = colorScheme.outlineVariant.copy(alpha = 0.35f)
@@ -1440,6 +1512,22 @@ fun CreateThreadDialog(
                 }
             }
         }
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("是否放弃编辑") },
+            text = { Text("标题、正文或图片还没发送。放弃后仍会保留草稿，下次可以继续写。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDiscard = false
+                    onDismiss()
+                }) { Text("放弃") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") }
+            }
+        )
     }
 }
 

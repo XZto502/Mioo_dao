@@ -25,7 +25,10 @@ object DatabaseModule {
             AppDatabase::class.java,
             "mioo_dao.db"
         )
-            .fallbackToDestructiveMigration()
+            // Versions 1–3 were never given a real migration. Keep that one-time
+            // destructive path. Version 4 (favorites, history, progress) must survive
+            // later upgrades, so do not use unconditional fallbackToDestructiveMigration().
+            .fallbackToDestructiveMigrationFrom(1, 2, 3)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())
