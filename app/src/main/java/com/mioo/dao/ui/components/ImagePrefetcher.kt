@@ -69,8 +69,9 @@ fun PrefetchListImages(
                 var n = 0
                 for (index in range) {
                     if (!enabled) return@collectLatest
-                    val url = imageUrls.getOrNull(index) ?: continue
-                    if (url.isBlank()) continue
+                    val raw = imageUrls.getOrNull(index) ?: continue
+                    if (raw.isBlank()) continue
+                    val url = IslandImage.listUrl(raw)
                     // Skip already-resident thumbs (same key as ListThumbImage.request)
                     if (memoryCache?.get(MemoryCache.Key(url)) != null) continue
                     imageLoader.enqueue(ListThumbImage.request(context, url))
@@ -92,8 +93,9 @@ fun prefetchImageUrls(
     var count = 0
     for (url in urls) {
         if (url.isNullOrBlank()) continue
-        if (memoryCache?.get(MemoryCache.Key(url)) != null) continue
-        loader.enqueue(ListThumbImage.request(context, url))
+        val listUrl = IslandImage.listUrl(url)
+        if (memoryCache?.get(MemoryCache.Key(listUrl)) != null) continue
+        loader.enqueue(ListThumbImage.request(context, listUrl))
         count++
         if (count >= limit) break
     }

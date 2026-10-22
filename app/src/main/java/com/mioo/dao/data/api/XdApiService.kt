@@ -16,9 +16,6 @@ import retrofit2.http.Query
 
 interface XdApiService {
 
-    @GET("getCDNPath")
-    suspend fun getCDNPath(): ResponseBody
-
     @GET("getForumList")
     suspend fun getForumList(): List<ForumGroup>
 

@@ -906,51 +906,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        val cdnBase by viewModel.cdnBase.collectAsState()
-        val cdnRefreshing by viewModel.cdnRefreshing.collectAsState()
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Image, contentDescription = "图片 CDN")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "图片 CDN",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = cdnBase,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "启动后会请求 getCDNPath 并记住结果。列表先试 /thumb/，失败再试 /image/ 和备用域名。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = {
-                        viewModel.refreshCdn { msg ->
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    enabled = !cdnRefreshing,
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(if (cdnRefreshing) "获取中" else "重新获取")
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         // 6. Offline and Caching Settings (离线与缓存设置)
         val cacheSize by viewModel.cacheSizeState.collectAsState()
         val isPreloading by viewModel.isPreloadingState.collectAsState()

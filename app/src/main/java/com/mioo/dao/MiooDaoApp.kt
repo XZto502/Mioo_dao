@@ -14,7 +14,6 @@ import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
-import com.mioo.dao.data.cdn.ImageCdn
 import com.mioo.dao.data.local.AppDatabase
 import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.model.ImageCacheLimit
@@ -45,7 +44,6 @@ interface AppLateInitEntryPoint {
     fun database(): AppDatabase
     fun settingsRepository(): SettingsRepository
     fun subscriptionScheduler(): SubscriptionScheduler
-    fun imageCdn(): ImageCdn
 }
 
 @HiltAndroidApp
@@ -110,15 +108,6 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
     }
 
     private fun deferNonCriticalWarm() {
-        appScope.launch(Dispatchers.IO) {
-            kotlinx.coroutines.delay(2200)
-            runCatching {
-                EntryPointAccessors.fromApplication(
-                    this@MiooDaoApp,
-                    AppLateInitEntryPoint::class.java
-                ).imageCdn().warm()
-            }
-        }
         appScope.launch {
             // After cold list + splash typically done
             kotlinx.coroutines.delay(1800)

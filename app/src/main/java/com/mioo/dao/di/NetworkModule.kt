@@ -46,7 +46,7 @@ object NetworkModule {
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
-            // Reuse TCP connections aggressively for API + image CDN traffic
+            // Reuse TCP connections for API traffic
             .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
             .retryOnConnectionFailure(true)
 

@@ -24,7 +24,6 @@ class SettingsDataStore(private val context: Context) {
     companion object {
         val KEY_USER_HASH = stringPreferencesKey("user_hash")
         val KEY_DARK_MODE = booleanPreferencesKey("dark_mode")
-        val KEY_CDN_PATH = stringPreferencesKey("cdn_path")
         val KEY_LAST_FORUM_ID = stringPreferencesKey("last_forum_id")
         val KEY_LAST_FORUM_NAME = stringPreferencesKey("last_forum_name")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
@@ -73,18 +72,6 @@ class SettingsDataStore(private val context: Context) {
         }
         .map { preferences ->
             preferences[KEY_DARK_MODE] ?: false
-        }
-
-    val cdnPathFlow: Flow<String?> = context.dataStore.data
-        .catch { exception ->
-            if (exception is IOException) {
-                emit(emptyPreferences())
-            } else {
-                throw exception
-            }
-        }
-        .map { preferences ->
-            preferences[KEY_CDN_PATH]
         }
 
     val lastForumIdFlow: Flow<String?> = context.dataStore.data
@@ -486,12 +473,6 @@ class SettingsDataStore(private val context: Context) {
             .joinToString(",") { "${it.key}:${it.value}" }
         context.dataStore.edit { preferences ->
             preferences[KEY_NOTIFIED_REPLY_SNAPSHOT] = trimmed
-        }
-    }
-
-    suspend fun saveCdnPath(cdnPath: String) {
-        context.dataStore.edit { preferences ->
-            preferences[KEY_CDN_PATH] = cdnPath
         }
     }
 

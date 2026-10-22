@@ -5,9 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.model.UserSettings
-import com.mioo.dao.data.cdn.ImageCdn
 import com.mioo.dao.data.repository.SettingsRepository
-import com.mioo.dao.ui.components.ImageCdnState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -45,32 +43,8 @@ data class ForumScreenSettings(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val threadRepository: ThreadRepository,
-    private val imageCdn: ImageCdn
+    private val threadRepository: ThreadRepository
 ) : ViewModel() {
-
-    val cdnBase: StateFlow<String> = imageCdn.base
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = ImageCdnState.baseUrl
-        )
-
-    private val _cdnRefreshing = MutableStateFlow(false)
-    val cdnRefreshing: StateFlow<Boolean> = _cdnRefreshing.asStateFlow()
-
-    fun refreshCdn(onResult: (String) -> Unit) {
-        if (_cdnRefreshing.value) return
-        viewModelScope.launch {
-            _cdnRefreshing.value = true
-            val message = runCatching { imageCdn.refresh() }.fold(
-                onSuccess = { "图片 CDN 已更新：$it" },
-                onFailure = { "获取 CDN 失败，继续使用 ${imageCdn.base.value}" }
-            )
-            _cdnRefreshing.value = false
-            onResult(message)
-        }
-    }
 
     val settingsState: StateFlow<UserSettings> = settingsRepository.settings
         .stateIn(

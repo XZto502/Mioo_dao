@@ -40,7 +40,7 @@ data class ReplyDisplayItem(
 /**
  * Convert a Thread data model to a display-ready PostData.
  */
-fun Thread.toPostData(cdnUrl: String = ImageCdnState.baseUrl): PostData {
+fun Thread.toPostData(): PostData {
     return PostData(
         id = this.idStr,
         title = this.title.effectiveTitle(),
@@ -48,7 +48,7 @@ fun Thread.toPostData(cdnUrl: String = ImageCdnState.baseUrl): PostData {
         userId = this.userHash,
         createdAt = this.now,
         content = this.content,
-        imageUrl = if (this.imageUrl != null) "$cdnUrl/image/${this.imageUrl}" else null,
+        imageUrl = IslandImage.url(this.imageUrl),
         isPo = false,
         isAdmin = this.isAdmin,
         isSage = this.isSage,
@@ -59,7 +59,7 @@ fun Thread.toPostData(cdnUrl: String = ImageCdnState.baseUrl): PostData {
 /**
  * Convert a Reply to display-ready PostData.
  */
-fun Reply.toPostData(isPo: Boolean, cdnUrl: String = ImageCdnState.baseUrl): PostData {
+fun Reply.toPostData(isPo: Boolean): PostData {
     return PostData(
         id = this.idStr,
         title = this.title.effectiveTitle(),
@@ -67,7 +67,7 @@ fun Reply.toPostData(isPo: Boolean, cdnUrl: String = ImageCdnState.baseUrl): Pos
         userId = this.userHash,
         createdAt = this.now,
         content = this.content,
-        imageUrl = if (this.imageUrl != null) "$cdnUrl/image/${this.imageUrl}" else null,
+        imageUrl = IslandImage.url(this.imageUrl),
         isPo = isPo,
         isAdmin = this.isAdmin,
         isSage = this.isSage,

@@ -126,7 +126,7 @@ import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
 import android.content.ClipData
 import android.content.ClipboardManager
-import com.mioo.dao.ui.components.ImageCdnState
+import com.mioo.dao.ui.components.IslandImage
 import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
@@ -523,7 +523,7 @@ fun ThreadScreen(
                     { quoteNo: String -> viewModel.showRefPopup(quoteNo) }
                 }
                 val onImageClick = remember {
-                    { url: String -> activeImageUrl = ImageCdnState.fullSize(url) }
+                    { url: String -> activeImageUrl = IslandImage.fullSize(url) }
                 }
                 val onViewThreadClick = remember(onNavigateToThread) {
                     { tid: String -> onNavigateToThread(tid) }
@@ -1108,16 +1108,14 @@ private fun ThreadReplyRow(
     // Resolve resto via API fields only — avoids rebuilding a reply-id Set on every page append.
     // No per-row LaunchedEffect prewarm: HtmlParseCache.getOrParse + ContentBlockSplitter
     // fill on first bind; row-level effects caused Default thrash during fling.
-    val cdn = ImageCdnState.baseUrl
-    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, currentThreadId, cdn) {
+    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, currentThreadId) {
         if (quotedReplies.isEmpty()) {
             StablePostList(emptyList())
         } else {
             StablePostList(
                 quotedReplies.map { quote ->
                     val base = quote.toPostData(
-                        isPo = quote.userHash == poUserHash,
-                        cdnUrl = cdn
+                        isPo = quote.userHash == poUserHash
                     )
                     val targetResto = when {
                         quote.resto != null && quote.resto > 0L -> quote.resto.toString()

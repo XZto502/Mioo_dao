@@ -13,7 +13,7 @@ import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.data.model.effectiveTitle
-import com.mioo.dao.ui.components.ImageCdnState
+import com.mioo.dao.ui.components.IslandImage
 import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReplyDisplayItem
 import com.mioo.dao.ui.components.decodeHtmlEntities
@@ -366,7 +366,7 @@ class ThreadViewModel @Inject constructor(
                         if (gen != loadGeneration) return@collect
                         rawPosts = combinedPosts
 
-                        val mainPostData = threadData.toPostData(ImageCdnState.baseUrl)
+                        val mainPostData = threadData.toPostData()
                         val matcher = keywordMatcher
                         val showImagesOnly = _listState.value.showImagesOnly
                         val searchQuery = _listState.value.searchQuery
@@ -577,7 +577,7 @@ class ThreadViewModel @Inject constructor(
                     id = reply.id,
                     idStr = reply.idStr,
                     userHash = reply.userHash,
-                    postData = reply.toPostData(isPo, ImageCdnState.baseUrl),
+                    postData = reply.toPostData(isPo),
                     quoteIds = extractQuoteIdsFromContent(reply.content),
                     hasImage = !reply.img.isNullOrBlank(),
                     rawContent = reply.content
@@ -1045,7 +1045,7 @@ class ThreadViewModel @Inject constructor(
             userId = userHash,
             createdAt = now,
             content = content,
-            imageUrl = ImageCdnState.imageUrl(imageUrl),
+            imageUrl = IslandImage.url(imageUrl),
             isPo = poUserHash != null && userHash == poUserHash,
             isAdmin = isAdmin,
             isSage = isSage,

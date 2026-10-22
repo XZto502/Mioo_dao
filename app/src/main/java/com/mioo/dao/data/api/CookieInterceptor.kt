@@ -50,7 +50,6 @@ class CookieInterceptor @Inject constructor(
     private fun shouldAttachCookie(host: String): Boolean {
         val normalized = host.lowercase()
         return normalized != "image.nmb.best" &&
-            normalized != "nmbimg.fastmirror.org" &&
             !normalized.startsWith("image.") &&
             !normalized.startsWith("img.")
     }
