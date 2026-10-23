@@ -308,7 +308,7 @@ fun QuotedPostBox(
                 if (quote.isPo) {
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "po",
+                        text = "PO",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
                         color = Color.White,
                         modifier = Modifier
