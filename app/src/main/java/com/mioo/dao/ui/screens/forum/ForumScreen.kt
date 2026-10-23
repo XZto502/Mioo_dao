@@ -478,6 +478,14 @@ fun ForumScreen(
                             alpha = 1f - f
                             translationY = 24.dp.toPx() * f
                         },
+                    // 去掉默认投影：elevation 阴影不随 graphicsLayer 缩放/淡出，
+                    // 动画期间会残留成一块黑影
+                    elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        focusedElevation = 0.dp,
+                        hoveredElevation = 0.dp
+                    ),
                     containerColor = DaoTheme.colors.fabBg,
                     contentColor = DaoTheme.colors.fabContent,
                     shape = androidx.compose.foundation.shape.CircleShape
@@ -615,6 +623,7 @@ fun ForumScreen(
                                 settingsViewModel.clearNewThreadDraft()
                                 pendingPostDraft?.let { viewModel.deleteDraft(it.id) }
                                 pendingPostDraft = null
+                                viewModel.deletePostDraftsForCurrentBoard()
                                 showCreateDialog = false
                                 Toast.makeText(context, "发串成功", Toast.LENGTH_SHORT).show()
                             } else {
@@ -1041,8 +1050,10 @@ fun CreateThreadDialog(
     val colorScheme = MaterialTheme.colorScheme
     val density = LocalDensity.current
 
+    var userEditedContent by remember { mutableStateOf(false) }
     LaunchedEffect(initialContent) {
-        if (contentValue.text != initialContent) {
+        // 异步草稿晚到时不得覆盖用户已输入的内容（打开对话框到 DataStore 返回有几十毫秒窗口）
+        if (!userEditedContent && contentValue.text != initialContent) {
             contentValue = contentValue.copy(
                 text = initialContent,
                 selection = TextRange(initialContent.length)
@@ -1065,6 +1076,7 @@ fun CreateThreadDialog(
     }
 
     fun insertAtCursor(snippet: String) {
+        userEditedContent = true
         val text = contentValue.text
         val selection = contentValue.selection
         val start = selection.start.coerceIn(0, text.length)
@@ -1086,6 +1098,9 @@ fun CreateThreadDialog(
     }
 
     fun requestLeave() {
+        // 发送中不允许关闭对话框；也不弹"放弃"确认——原实现会弹确认，
+        // 但点"放弃"被父层 isPostingThread 拦截成死点击
+        if (isSubmitting) return
         if (confirmDiscard) {
             confirmDiscard = false
             return
@@ -1481,6 +1496,7 @@ fun CreateThreadDialog(
                         BasicTextField(
                             value = contentValue,
                             onValueChange = { newValue ->
+                                userEditedContent = true
                                 contentValue = newValue
                                 onContentChange(newValue.text)
                             },

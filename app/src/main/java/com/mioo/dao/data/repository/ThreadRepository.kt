@@ -123,6 +123,8 @@ interface ThreadRepository {
     suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String)
     suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String)
     suspend fun deleteDraft(id: Long)
+    /** 删除某板块的全部发串草稿（发送成功后清理，防止草稿箱残留已发内容）。 */
+    suspend fun deletePostDrafts(boardId: String)
 
     // Cache management & preloading
     fun clearCache(): Flow<XdResponse<Unit>>
@@ -890,6 +892,11 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override suspend fun deleteDraft(id: Long) {
         draftDao.deleteById(id)
+    }
+
+    override suspend fun deletePostDrafts(boardId: String) {
+        ensureDraftsMigrated()
+        draftDao.deleteFor(com.mioo.dao.data.local.DraftEntity.TYPE_POST, boardId)
     }
 
     override fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>> = flow {

@@ -81,8 +81,11 @@ class MainActivity : ComponentActivity() {
     /**
      * Full clipboard text we already asked about (accept or dismiss).
      * Only suppress while the clipboard content is unchanged.
+     * 进程级：Activity 重建（深浅色切换/语言切换/进程恢复）后不再对同一段剪贴板重复弹窗。
      */
-    private var lastPromptedClipboardText: String? = null
+    companion object {
+        @Volatile private var lastPromptedClipboardText: String? = null
+    }
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -169,6 +172,8 @@ class MainActivity : ComponentActivity() {
                             val release = response.data
                             val currentVersion = getAppVersionName()
                             if (isNewerVersion(currentVersion, release.tagName)) {
+                                // 剪贴板弹窗未处理完不叠加更新弹窗（两个模态会互相压盖）
+                                while (clipboardThreadId != null) delay(800)
                                 UpdatePromptController.offerAutomatic(release)
                             }
                         }

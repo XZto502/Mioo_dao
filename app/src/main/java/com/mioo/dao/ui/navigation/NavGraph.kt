@@ -104,21 +104,27 @@ fun MiooDaoNavGraph(
     // pattern, and singleTop would reuse the top entry instead of stacking a new
     // one — the screen then never leaves the old thread (threadId is read once
     // in ThreadViewModel). alreadyOpen + the 400ms window cover the dedupe.
+    val lastThreadTapAt = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     val navigateToThread: (String) -> Unit = remember(navController) {
-        var lastThreadAt = 0L
         { id: String ->
             if (id.isNotBlank()) {
                 val now = android.os.SystemClock.uptimeMillis()
                 val top = navController.currentBackStackEntry
                 val topIsThread = top?.destination?.route == Screen.Thread.route
                 val topId = top?.arguments?.getString("threadId")
-                val repeatWhileCovered = !topIsThread && now - lastThreadAt < 400L
+                val repeatWhileCovered = !topIsThread && now - lastThreadTapAt.longValue < 400L
                 val alreadyOpen = topIsThread && topId == id
                 if (!repeatWhileCovered && !alreadyOpen) {
-                    lastThreadAt = now
+                    lastThreadTapAt.longValue = now
                     navController.navigate(Screen.Thread.createRoute(id))
                 }
             }
+        }
+    }
+    // 离开详情页即清零：返回列表后立刻重点同一串（快速预览习惯）不被 400ms 窗口吞掉
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != Screen.Thread.route) {
+            lastThreadTapAt.longValue = 0L
         }
     }
 
@@ -126,7 +132,13 @@ fun MiooDaoNavGraph(
         val id = pendingThreadId ?: return@LaunchedEffect
         if (id.isNotBlank()) {
             // Plain push (see navigateToThread): singleTop breaks thread→thread.
-            navController.navigate(Screen.Thread.createRoute(id))
+            // 与 navigateToThread 相同的去重：同一串已在栈顶时不重复入栈（连点通知场景）
+            val top = navController.currentBackStackEntry
+            val alreadyOpen = top?.destination?.route == Screen.Thread.route &&
+                top?.arguments?.getString("threadId") == id
+            if (!alreadyOpen) {
+                navController.navigate(Screen.Thread.createRoute(id))
+            }
             onPendingThreadConsumed()
         }
     }

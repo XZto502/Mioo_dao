@@ -149,6 +149,9 @@ class ForumViewModel @Inject constructor(
             val items = withContext(Dispatchers.Default) {
                 threads.toFilteredThreadListItems(blockedThreads, blockedUsers, matcher)
             }
+            // 过滤计算是挂起点：期间 loadNextPage 可能已追加新页（threads 引用变化）。
+            // 旧快照的 items 覆盖回去会吞掉整页，且 currentPage 已推进无法自愈 → 放弃本次结果。
+            if (_uiState.value.threads !== threads) return@launch
             _uiState.update { it.copy(displayItems = items) }
             val state = _uiState.value
             if (items.isEmpty() && !state.isLastPage && !state.isLoading && !state.isRefreshing) {
@@ -490,6 +493,13 @@ class ForumViewModel @Inject constructor(
     fun deleteDraft(id: Long) {
         viewModelScope.launch {
             threadRepository.deleteDraft(id)
+        }
+    }
+
+    /** 发送成功后清掉本板块的发串草稿（含手动存的与草稿箱预填的）。 */
+    fun deletePostDraftsForCurrentBoard() {
+        viewModelScope.launch {
+            threadRepository.deletePostDrafts(forumId)
         }
     }
 }

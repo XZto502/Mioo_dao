@@ -164,6 +164,7 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
     @OptIn(ExperimentalCoilApi::class)
     private fun applyImageCacheLimit(mb: Int) {
         val bytes = ImageCacheLimit.toBytes(mb)
+        var myGeneration = 0L
         val swap = synchronized(imageLoaderLock) {
             if (bytes == diskCacheMaxBytes && enforcedDiskCacheBytes == bytes) return
             diskCacheMaxBytes = bytes
@@ -178,11 +179,18 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
             enforceDiskCacheLimit(bytes)
             val replacement = buildImageLoader(bytes)
             installedImageLoader = replacement
+            myGeneration = imageLoaderSwapGeneration.incrementAndGet()
             ImageLoaderSwap(previousClient, replacement)
         }
         closeImageHttpClient(swap.previousClient)
+        // 代际校验：锁外安装前若已有更新的变更接管（其已在锁内 shutdown 本次的
+        // replacement 并装好自己的），放弃安装，防止把已 shutdown 的 loader 盖回去
+        if (imageLoaderSwapGeneration.get() != myGeneration) return
         Coil.setImageLoader(swap.replacement)
     }
+
+    /** Counts completed loader swaps; a stale thread must not overwrite a newer install. */
+    private val imageLoaderSwapGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
     private fun buildImageLoader(maxBytes: Long): ImageLoader {
         val client = OkHttpClient.Builder()

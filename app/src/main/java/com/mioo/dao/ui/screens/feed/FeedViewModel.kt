@@ -87,12 +87,15 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    private var remoteFeedJob: kotlinx.coroutines.Job? = null
+
     fun selectFolder(uuid: String?) {
         _uiState.update {
             it.copy(
                 selectedFolderId = uuid,
-                remoteThreads = if (uuid == null) emptyList() else it.remoteThreads,
-                remoteDisplayItems = if (uuid == null) emptyList() else it.remoteDisplayItems
+                // 任何切换都清空旧数据：留着会在新文件夹标题下展示上一个夹的帖子
+                remoteThreads = emptyList(),
+                remoteDisplayItems = emptyList()
             )
         }
         if (uuid != null) {
@@ -101,9 +104,12 @@ class FeedViewModel @Inject constructor(
     }
 
     private fun loadRemoteFeed(uuid: String) {
-        viewModelScope.launch {
+        remoteFeedJob?.cancel()
+        remoteFeedJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             threadRepository.getFeed(uuid, 1).collect { response ->
+                // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
+                if (_uiState.value.selectedFolderId != uuid) return@collect
                 if (response is XdResponse.Success) {
                     val threads = response.data
                     val items = withContext(Dispatchers.Default) {
@@ -121,7 +127,14 @@ class FeedViewModel @Inject constructor(
                         )
                     }
                 } else {
-                    _uiState.update { it.copy(isLoading = false) }
+                    // 失败也清空：不能让上一个夹的数据顶替当前夹展示
+                    _uiState.update {
+                        it.copy(
+                            remoteThreads = emptyList(),
+                            remoteDisplayItems = emptyList(),
+                            isLoading = false
+                        )
+                    }
                 }
             }
         }
