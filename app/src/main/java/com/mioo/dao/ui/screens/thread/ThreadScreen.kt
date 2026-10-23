@@ -250,9 +250,6 @@ fun ThreadScreen(
                 listState.scrollToItem(target)
             }
         }
-        if (index > 0) {
-            Toast.makeText(context, "已回到上次阅读位置", Toast.LENGTH_SHORT).show()
-        }
         viewModel.consumePendingScrollIndex()
     }
 
