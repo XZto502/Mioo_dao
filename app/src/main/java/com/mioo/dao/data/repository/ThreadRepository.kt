@@ -562,14 +562,13 @@ class ThreadRepositoryImpl @Inject constructor(
                 val count = thread.replyCount ?: 0
                 // Skip Room write when badge count unchanged
                 if (count != bookmark.lastKnownReplyCount) {
-                    historyDao.updateKnownReplyCount(bookmark.id, count)
-                    historyDao.insertBookmark(
-                        bookmark.copy(
-                            content = thread.content,
-                            title = thread.title,
-                            now = thread.now,
-                            lastKnownReplyCount = count
-                        )
+                    // 定向元数据更新：不覆盖 lastReadReplyCount，也不复活刚删除的收藏
+                    historyDao.updateBookmarkMetadata(
+                        id = bookmark.id,
+                        content = thread.content,
+                        title = thread.title,
+                        now = thread.now,
+                        knownCount = count
                     )
                 }
                 delay(200)
@@ -588,14 +587,12 @@ class ThreadRepositoryImpl @Inject constructor(
             try {
                 val thread = fetchThread(bookmark.id, 1)
                 val count = thread.replyCount ?: 0
-                historyDao.updateKnownReplyCount(bookmark.id, count)
-                historyDao.insertBookmark(
-                    bookmark.copy(
-                        content = thread.content,
-                        title = thread.title,
-                        now = thread.now,
-                        lastKnownReplyCount = count
-                    )
+                historyDao.updateBookmarkMetadata(
+                    id = bookmark.id,
+                    content = thread.content,
+                    title = thread.title,
+                    now = thread.now,
+                    knownCount = count
                 )
                 val baseline = snapshot[bookmark.id]
                     ?: bookmark.lastReadReplyCount.coerceAtLeast(bookmark.lastKnownReplyCount)
@@ -897,7 +894,21 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>> = flow {
         try {
-            val uuids = cloudFeedDao.feedUuidsFor(tid)
+            // 本地成员缓存只覆盖浏览过的页（通常第1页）；对排在深页的串，
+            // 必须遍历全部已配置云端收藏夹 + 用户自己的订阅 uuid，否则会静默 no-op。
+            val configured = try {
+                settingsDataStore.feedFoldersFlow.first().map { it.uuid }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val ownUuid = try {
+                settingsDataStore.userHashFlow.first()?.takeIf { it.isNotBlank() }
+            } catch (_: Exception) {
+                null
+            }
+            val uuids = (cloudFeedDao.feedUuidsFor(tid) + configured + listOfNotNull(ownUuid))
+                .filter { it.isNotBlank() }
+                .distinct()
             var removed = 0
             for (uuid in uuids) {
                 try {

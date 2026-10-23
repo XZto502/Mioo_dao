@@ -790,7 +790,10 @@ class ThreadViewModel @Inject constructor(
         viewModelScope.launch {
             threadRepository.removeCloudSubscriptions(threadId).collect { response ->
                 when (response) {
-                    is XdResponse.Success -> onComplete?.invoke("已从云端收藏夹移除")
+                    is XdResponse.Success ->
+                        onComplete?.invoke(
+                            if (response.data > 0) "已从云端收藏夹移除" else "云端收藏夹中没有找到该串"
+                        )
                     is XdResponse.Error -> onComplete?.invoke("移除失败: ${response.message}")
                 }
             }
