@@ -9,6 +9,7 @@ object IslandImage {
     /** 原图。已经是 http(s) 的岛图会改到固定域名的 /image/。 */
     fun url(filename: String?): String? {
         if (filename.isNullOrBlank()) return null
+        if (filename.startsWith("//")) return "https:${filename.trim()}"
         if (filename.startsWith("http://") || filename.startsWith("https://")) return fullSize(filename)
         return "$HOST/image/${filename.trimStart('/')}"
     }

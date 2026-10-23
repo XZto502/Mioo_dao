@@ -34,9 +34,10 @@ object StorageUtil {
         // Clear Coil cache
         context.imageLoader.diskCache?.clear()
         context.imageLoader.memoryCache?.clear()
-        
-        // Clear anything in cacheDir recursively
-        deleteFolderContents(context.cacheDir)
+
+        // 只清图片缓存目录：整个 cacheDir 还包含 okhttp_cache / 临时上传文件，
+        // 连带删除会让 OkHttp journal 短暂不一致、个别请求失败
+        deleteFolderContents(File(context.cacheDir, "image_cache"))
     }
 
     private fun getFolderSize(file: File): Long {

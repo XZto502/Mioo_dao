@@ -89,14 +89,22 @@ object ShareCardUtil {
                 val result = loader.execute(request)
                 if (result is SuccessResult) {
                     val drawable = result.drawable
-                    val bmp = Bitmap.createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888)
+                    // 条漫长图防 OOM：intrinsic 高度封顶（超出按比例缩到上限内），
+                    // 否则 704/60 的放大系数会生成 ~8000万 像素位图直接 OOM
+                    val maxSrcHeight = 4000
+                    val heightFactor = if (drawable.intrinsicHeight > maxSrcHeight) {
+                        maxSrcHeight.toFloat() / drawable.intrinsicHeight.toFloat()
+                    } else 1f
+                    val srcW = (drawable.intrinsicWidth * heightFactor).toInt().coerceAtLeast(1)
+                    val srcH = (drawable.intrinsicHeight * heightFactor).toInt().coerceAtLeast(1)
+                    val bmp = Bitmap.createBitmap(srcW, srcH, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(bmp)
                     drawable.setBounds(0, 0, canvas.width, canvas.height)
                     drawable.draw(canvas)
-                    
-                    // Scale to fit contentWidth
+
+                    // Scale to fit contentWidth；最终高度同样封顶，防止整卡位图超堆
                     val scale = contentWidth.toFloat() / bmp.width.toFloat()
-                    val targetHeight = (bmp.height * scale).toInt()
+                    val targetHeight = (bmp.height * scale).toInt().coerceAtMost(8000)
                     loadedImage = Bitmap.createScaledBitmap(bmp, contentWidth, targetHeight, true)
                 }
             }
@@ -140,7 +148,8 @@ object ShareCardUtil {
             }
 
             bitmap
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
+            // OutOfMemoryError 也吞：分享卡片失败不应崩溃，调用方降级为纯文本分享
             null
         }
     }

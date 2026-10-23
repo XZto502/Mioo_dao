@@ -176,6 +176,8 @@ object ImageDownloader {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/MiooDao")
+                // 写入期间对其他应用不可见，避免相册扫到半成品
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
             val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return null
             return try {
@@ -183,6 +185,10 @@ object ImageDownloader {
                     write(output)
                     output.flush()
                 } ?: throw IllegalStateException("no stream")
+                val published = ContentValues().apply {
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
+                }
+                resolver.update(uri, published, null, null)
                 uri
             } catch (_: Exception) {
                 runCatching { resolver.delete(uri, null, null) }
@@ -190,8 +196,10 @@ object ImageDownloader {
             }
         }
 
-        val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        val fileDir = File(imagesDir, "MiooDao")
+        // API 26-28：无 WRITE_EXTERNAL_STORAGE 权限，公共 Pictures 直接写会 Permission denied。
+        // 写应用外部专属目录（免权限）+ MediaScanner 扫描进相册。
+        val fileDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+            ?.let { File(it, "MiooDao") } ?: return null
         if (!fileDir.exists() && !fileDir.mkdirs()) return null
         val imageFile = File(fileDir, filename)
         return try {

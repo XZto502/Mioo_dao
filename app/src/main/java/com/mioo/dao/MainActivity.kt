@@ -393,8 +393,9 @@ private fun isNewerVersion(currentVersion: String, latestVersion: String): Boole
     val cleanLatest = latestVersion.trim().lowercase().removePrefix("v")
     if (cleanCurrent == cleanLatest) return false
 
-    val currentParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
-    val latestParts = cleanLatest.split(".").mapNotNull { it.toIntOrNull() }
+    // 剥掉每段的 -beta / +build 等后缀再转数字，避免 "10-beta" 整段被丢弃导致误判
+    val currentParts = cleanCurrent.split(".").mapNotNull { it.substringBefore('-').substringBefore('+').toIntOrNull() }
+    val latestParts = cleanLatest.split(".").mapNotNull { it.substringBefore('-').substringBefore('+').toIntOrNull() }
 
     val minLength = minOf(currentParts.size, latestParts.size)
     for (i in 0 until minLength) {
