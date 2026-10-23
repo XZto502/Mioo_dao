@@ -719,19 +719,26 @@ private fun ThreadChromeActions(
     val context = LocalContext.current
 
     Box {
+        // 已收藏 = 本地收藏 或 云端收藏夹成员（缓存）
+        val bookmarked = chrome.isSubscribed || chrome.isCloudSubscribed
         IconButton(onClick = {
-            if (chrome.isSubscribed || chrome.feedFolders.isEmpty()) {
-                viewModel.toggleBookmark(null) { msg ->
+            when {
+                // 本地已收藏 → 直接取消本地收藏（原有行为）
+                chrome.isSubscribed -> viewModel.toggleBookmark(null) { msg ->
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                onShowBookmarkMenuChange(true)
+                // 仅云端收藏（或配置了云端文件夹）→ 打开菜单，供选择本地/云端操作
+                chrome.isCloudSubscribed || chrome.feedFolders.isNotEmpty() ->
+                    onShowBookmarkMenuChange(true)
+                else -> viewModel.toggleBookmark(null) { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
             }
         }) {
             Icon(
-                imageVector = if (chrome.isSubscribed) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                contentDescription = if (chrome.isSubscribed) "取消收藏" else "收藏",
-                tint = if (chrome.isSubscribed) {
+                imageVector = if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                contentDescription = if (bookmarked) "取消收藏" else "收藏",
+                tint = if (bookmarked) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurface
@@ -743,6 +750,17 @@ private fun ThreadChromeActions(
             expanded = showBookmarkMenu,
             onDismissRequest = { onShowBookmarkMenuChange(false) }
         ) {
+            if (chrome.isCloudSubscribed) {
+                DropdownMenuItem(
+                    text = { Text("从云端收藏夹移除") },
+                    onClick = {
+                        onShowBookmarkMenuChange(false)
+                        viewModel.removeCloudSubscription { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text("本地收藏") },
                 onClick = {

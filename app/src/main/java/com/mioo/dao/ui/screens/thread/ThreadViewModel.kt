@@ -72,6 +72,8 @@ data class ThreadListUiState(
 @Immutable
 data class ThreadChromeUiState(
     val isSubscribed: Boolean = false,
+    /** Thread lives in a 云端收藏夹 (cloud feed cache) — icon also lights up for it. */
+    val isCloudSubscribed: Boolean = false,
     val feedFolders: List<FeedFolder> = emptyList(),
     val isDownloading: Boolean = false
 )
@@ -175,9 +177,16 @@ class ThreadViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            threadRepository.isBookmarked(threadId).collect { bookmarked ->
-                _chromeState.update { it.copy(isSubscribed = bookmarked) }
-            }
+            // 已收藏 = 本地收藏 或 云端收藏夹成员（云端状态来自 feed 列表缓存）
+            kotlinx.coroutines.flow.combine(
+                threadRepository.isBookmarked(threadId),
+                threadRepository.isInCloudFeed(threadId)
+            ) { local, cloud -> local to cloud }
+                .collect { (local, cloud) ->
+                    _chromeState.update {
+                        it.copy(isSubscribed = local, isCloudSubscribed = cloud)
+                    }
+                }
         }
 
         viewModelScope.launch {
@@ -771,6 +780,18 @@ class ThreadViewModel @Inject constructor(
             } else {
                 threadRepository.addFeed(folderUuid, threadId).collect {
                     onComplete?.invoke("已保存至云端收藏夹")
+                }
+            }
+        }
+    }
+
+    /** Remove this thread from every cloud feed it is cached under. */
+    fun removeCloudSubscription(onComplete: ((String) -> Unit)? = null) {
+        viewModelScope.launch {
+            threadRepository.removeCloudSubscriptions(threadId).collect { response ->
+                when (response) {
+                    is XdResponse.Success -> onComplete?.invoke("已从云端收藏夹移除")
+                    is XdResponse.Error -> onComplete?.invoke("移除失败: ${response.message}")
                 }
             }
         }

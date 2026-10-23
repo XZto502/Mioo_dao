@@ -110,6 +110,12 @@ interface ThreadRepository {
     fun addFeed(uuid: String, tid: String): Flow<XdResponse<String>>
     fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>>
 
+    /** Cloud-feed membership cache: is this thread in any known 云端收藏夹? */
+    fun isInCloudFeed(tid: String): Flow<Boolean>
+
+    /** Remove [tid] from every cloud feed it is cached under. Emits removed count. */
+    fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>>
+
     // Cache management & preloading
     fun clearCache(): Flow<XdResponse<Unit>>
     fun getCacheSize(): Flow<String>
@@ -126,6 +132,7 @@ class ThreadRepositoryImpl @Inject constructor(
     private val historyDao: HistoryDao,
     private val cacheDao: CacheDao,
     private val progressDao: ProgressDao,
+    private val cloudFeedDao: com.mioo.dao.data.local.CloudFeedDao,
     private val settingsDataStore: SettingsDataStore,
     @ApplicationContext private val context: Context,
     private val moshi: com.squareup.moshi.Moshi
@@ -611,6 +618,10 @@ class ThreadRepositoryImpl @Inject constructor(
         for (folder in folders.take(5)) {
             try {
                 val feedThreads = apiService.feed(folder.uuid, 1)
+                cloudFeedDao.replaceAll(
+                    folder.uuid,
+                    feedThreads.map { com.mioo.dao.data.local.CloudFeedThreadEntity(folder.uuid, it.idStr) }
+                )
                 for (thread in feedThreads.take(limit)) {
                     val id = thread.idStr
                     val count = thread.replyCount ?: 0
@@ -729,6 +740,17 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         try {
             val response = apiService.feed(uuid, page)
+            // Cache membership so detail pages can show cloud-subscribed state.
+            if (page == 1) {
+                cloudFeedDao.replaceAll(
+                    uuid,
+                    response.map { com.mioo.dao.data.local.CloudFeedThreadEntity(uuid, it.idStr) }
+                )
+            } else {
+                cloudFeedDao.insertAll(
+                    response.map { com.mioo.dao.data.local.CloudFeedThreadEntity(uuid, it.idStr) }
+                )
+            }
             emit(XdResponse.Success(response))
         } catch (e: Exception) {
             val msg = e.localizedMessage ?: "Network error"
@@ -739,7 +761,11 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun addFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
         try {
             val response = apiService.addFeed(uuid, tid)
-            emit(interpretPlainFeedWrite(response.string()))
+            val interpreted = interpretPlainFeedWrite(response.string())
+            if (interpreted is XdResponse.Success) {
+                cloudFeedDao.insert(com.mioo.dao.data.local.CloudFeedThreadEntity(uuid, tid))
+            }
+            emit(interpreted)
         } catch (e: Exception) {
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
@@ -749,7 +775,34 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
         try {
             val response = apiService.delFeed(uuid, tid)
-            emit(interpretPlainFeedWrite(response.string()))
+            val interpreted = interpretPlainFeedWrite(response.string())
+            if (interpreted is XdResponse.Success) {
+                cloudFeedDao.removeFeedThread(uuid, tid)
+            }
+            emit(interpreted)
+        } catch (e: Exception) {
+            val msg = e.localizedMessage ?: "Network error"
+            emit(XdResponse.Error(message = msg, throwable = e))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun isInCloudFeed(tid: String): Flow<Boolean> = cloudFeedDao.isMember(tid)
+
+    override fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>> = flow {
+        try {
+            val uuids = cloudFeedDao.feedUuidsFor(tid)
+            var removed = 0
+            for (uuid in uuids) {
+                try {
+                    val response = apiService.delFeed(uuid, tid)
+                    if (interpretPlainFeedWrite(response.string()) is XdResponse.Success) {
+                        cloudFeedDao.removeFeedThread(uuid, tid)
+                        removed++
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            emit(XdResponse.Success(removed))
         } catch (e: Exception) {
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
