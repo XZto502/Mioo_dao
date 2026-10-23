@@ -59,11 +59,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.toFile
+import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.DiceQuickPanel
 import com.mioo.dao.ui.components.KaomojiQuickPanel
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.ui.platform.LocalDensity
@@ -1245,10 +1244,9 @@ private fun ReplyInputBar(
         onCookieSelect = onCookieSelect,
         onReplyTextChange = remember(viewModel) { { text: String -> viewModel.updateReplyText(text) } },
         onCancelQuote = remember(viewModel) { { viewModel.setQuotedPost(null) } },
-        onSend = remember(viewModel, cookies, selectedCookieIndex) {
+        onSend = remember(viewModel) {
             { file: java.io.File? ->
-                val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "无名氏"
-                viewModel.submitReply(author = parseCookieName(currentCookie), imageFile = file)
+                viewModel.submitReply(imageFile = file)
             }
         }
     )
@@ -1323,8 +1321,8 @@ fun ReplyInputArea(
         closeToolPanels()
     }
 
-    // 系统键盘再次抬起 → 关闭快捷面板
-    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    // 系统键盘再次抬起 → 关闭快捷面板（含 insets 失派发设备的 visible-frame 兜底）
+    val imeBottomPx = rememberEffectiveImeBottomPx()
     val navBottomPx = WindowInsets.navigationBars.getBottom(density)
     val imeVisible = imeBottomPx > with(density) { 48.dp.toPx() }
     // 键盘盖住小白条时只抬整条回复栏；否则毛玻璃铺到屏幕底，控件留在导航条上方。
@@ -1371,7 +1369,11 @@ fun ReplyInputArea(
         tonalElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (imeCoversNav) Modifier.imePadding() else Modifier)
+            .then(
+                if (imeCoversNav)
+                    Modifier.padding(bottom = with(density) { imeBottomPx.toDp() })
+                else Modifier
+            )
     ) {
         Column(
             modifier = Modifier

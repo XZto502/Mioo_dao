@@ -126,6 +126,7 @@ import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.imePaddingAndNavigationBars
+import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
@@ -1128,8 +1129,8 @@ fun CreateThreadDialog(
             }
         }
 
-        // 系统键盘再次抬起 → 关闭颜文字 / 骰娘面板
-        val imeBottomPx = WindowInsets.ime.getBottom(density)
+        // 系统键盘再次抬起 → 关闭颜文字 / 骰娘面板（含 insets 失派发设备的兜底）
+        val imeBottomPx = rememberEffectiveImeBottomPx()
         val imeThresholdPx = with(density) { 48.dp.toPx() }
         val imeVisible = imeBottomPx > imeThresholdPx
         LaunchedEffect(imeVisible) {

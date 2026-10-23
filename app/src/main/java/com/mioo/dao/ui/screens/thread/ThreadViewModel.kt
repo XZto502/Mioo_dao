@@ -846,7 +846,7 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    fun submitReply(author: String = "无名氏", imageFile: File? = null, onSuccess: () -> Unit = {}) {
+    fun submitReply(imageFile: File? = null, onSuccess: () -> Unit = {}) {
         val currentComposer = _composerState.value
         if (currentComposer.replyText.isBlank() && imageFile == null) return
         if (currentComposer.isReplying) return
@@ -857,7 +857,7 @@ class ThreadViewModel @Inject constructor(
                 threadRepository.doReplyThread(
                     parent = threadId,
                     title = null,
-                    name = if (author.isBlank()) null else author,
+                    name = null,
                     email = null,
                     content = currentComposer.replyText,
                     imageFile = imageFile
