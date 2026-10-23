@@ -90,6 +90,29 @@ interface HistoryDao {
     )
     suspend fun updateKnownReplyCount(id: String, knownCount: Int)
 
+    /**
+     * Background-refresh metadata WITHOUT touching lastReadReplyCount and without
+     * inserting: a full-row REPLACE from a stale snapshot would roll back the read
+     * marker (false unread badge) and resurrect a bookmark the user just deleted.
+     */
+    @Query(
+        """
+        UPDATE bookmarks
+        SET content = :content,
+            title = :title,
+            now = :now,
+            lastKnownReplyCount = :knownCount
+        WHERE id = :id
+        """
+    )
+    suspend fun updateBookmarkMetadata(
+        id: String,
+        content: String,
+        title: String?,
+        now: String,
+        knownCount: Int
+    )
+
     @Query(
         """
         UPDATE bookmarks
