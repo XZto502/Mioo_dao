@@ -249,7 +249,7 @@ fun SearchScreen(
                                 Text(
                                     text = "site:nmbxd.com OR site:nmbxd1.com ${uiState.query.trim()}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )

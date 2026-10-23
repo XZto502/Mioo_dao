@@ -185,7 +185,7 @@ fun ThreadCard(
                 Text(
                     text = "No.${postData.id}",
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
