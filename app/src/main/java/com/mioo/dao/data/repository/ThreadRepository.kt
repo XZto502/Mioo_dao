@@ -902,7 +902,10 @@ class ThreadRepositoryImpl @Inject constructor(
                 emptyList()
             }
             val ownUuid = try {
-                settingsDataStore.userHashFlow.first()?.takeIf { it.isNotBlank() }
+                // 归一化 JSON 饼干后再当 uuid 用
+                com.mioo.dao.data.api.CookieInterceptor.extractHash(
+                    settingsDataStore.userHashFlow.first()
+                )
             } catch (_: Exception) {
                 null
             }

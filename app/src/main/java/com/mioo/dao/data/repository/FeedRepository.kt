@@ -27,7 +27,10 @@ class FeedRepositoryImpl @Inject constructor(
 ) : FeedRepository {
 
     private suspend fun getUserHash(): String? {
-        return settingsDataStore.userHashFlow.first()
+        // 归一化：用户存的可能 JSON 饼干（{"cookie":"..."}），uuid 参数需要纯 hash
+        return com.mioo.dao.data.api.CookieInterceptor.extractHash(
+            settingsDataStore.userHashFlow.first()
+        )
     }
 
     private fun interpretPlainFeedWrite(raw: String): XdResponse<String> {

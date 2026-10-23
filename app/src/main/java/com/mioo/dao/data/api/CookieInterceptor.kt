@@ -54,16 +54,23 @@ class CookieInterceptor @Inject constructor(
             !normalized.startsWith("img.")
     }
 
-    private fun extractHash(raw: String?): String? {
-        if (raw.isNullOrBlank()) return null
-        if (!raw.startsWith("{")) return raw
-        return try {
-            val json = org.json.JSONObject(raw)
-            json.optString("cookie", "")
-                .ifEmpty { json.optString("userhash", "") }
-                .ifEmpty { raw }
-        } catch (_: Exception) {
-            raw
+    companion object {
+        /**
+         * 用户粘贴的饼干可能是 X岛导出的 JSON（{"cookie":"..."}）；归一化为纯 hash。
+         * JSON 里没有 cookie/userhash 字段时返回 null（视为未配置，而不是把整段 JSON 发出去）。
+         */
+        fun extractHash(raw: String?): String? {
+            if (raw.isNullOrBlank()) return null
+            if (!raw.startsWith("{")) return raw
+            return try {
+                val json = org.json.JSONObject(raw)
+                json.optString("cookie", "")
+                    .ifEmpty { json.optString("userhash", "") }
+                    .ifEmpty { null }
+            } catch (_: Exception) {
+                // 不是合法 JSON 的花括号串按原样处理
+                raw
+            }
         }
     }
 }
