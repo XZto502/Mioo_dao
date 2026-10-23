@@ -301,6 +301,7 @@ fun MiooDaoNavGraph(
                     pagerState = tabPagerState,
                     onNavigateToThread = navigateToThread,
                     onColdStartContentReady = onColdStartContentReady,
+                    dockSinkFraction = { bottomBarSlide.value },
                     onNavigateToSettings = {
                         navController.navigate(Screen.SettingsDetail.route)
                     },
@@ -399,6 +400,7 @@ private fun MainTabs(
     pagerState: PagerState,
     onNavigateToThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
+    dockSinkFraction: () -> Float = { 0f },
     onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToDrafts: () -> Unit,
@@ -419,7 +421,8 @@ private fun MainTabs(
                     ForumScreen(
                         viewModel = viewModel,
                         onNavigateToThread = onNavigateToThread,
-                        onColdStartContentReady = onColdStartContentReady
+                        onColdStartContentReady = onColdStartContentReady,
+                        dockSinkFraction = dockSinkFraction
                     )
                 }
                 1 -> {

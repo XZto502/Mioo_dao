@@ -102,6 +102,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
@@ -154,6 +155,8 @@ fun ForumScreen(
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     onNavigateToThread: (threadId: String) -> Unit,
     onColdStartContentReady: () -> Unit = {},
+    /** 底部 dock 栏下沉进度 0f(可见)→1f(隐藏)；发串按钮随之向内缩小淡出。 */
+    dockSinkFraction: () -> Float = { 0f },
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -464,7 +467,17 @@ fun ForumScreen(
             floatingActionButton = {
                 FloatingActionButton(
                     onClick = { showCreateDialog = true },
-                    modifier = Modifier.padding(bottom = 120.dp),
+                    modifier = Modifier
+                        .padding(bottom = 120.dp)
+                        // dock 下沉时同步向内缩小 + 淡出 + 轻微下沉（绘制时读取，不触发重组）
+                        .graphicsLayer {
+                            val f = dockSinkFraction().coerceIn(0f, 1f)
+                            val shrink = 1f - 0.5f * f
+                            scaleX = shrink
+                            scaleY = shrink
+                            alpha = 1f - f
+                            translationY = 24.dp.toPx() * f
+                        },
                     containerColor = DaoTheme.colors.fabBg,
                     contentColor = DaoTheme.colors.fabContent,
                     shape = androidx.compose.foundation.shape.CircleShape
