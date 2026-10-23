@@ -38,7 +38,9 @@ data class UserSettings(
     /** Semi-transparent glass surfaces + ambient glow background. */
     val glassEffectEnabled: Boolean = true,
     /** Image disk-cache cap in megabytes. Oldest files are dropped past this. */
-    val cacheLimitMb: Int = ImageCacheLimit.DEFAULT_MB
+    val cacheLimitMb: Int = ImageCacheLimit.DEFAULT_MB,
+    /** 草稿箱总开关：关闭后回复/新串不再自动存草稿。 */
+    val draftBoxEnabled: Boolean = true
 )
 
 /** User-facing cap for the Coil image disk cache. */

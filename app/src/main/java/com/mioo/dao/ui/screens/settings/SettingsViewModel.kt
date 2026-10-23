@@ -37,7 +37,8 @@ data class ThreadScreenSettings(
 data class ForumScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
-    val pinnedForums: List<String> = emptyList()
+    val pinnedForums: List<String> = emptyList(),
+    val draftBoxEnabled: Boolean = true
 )
 
 @HiltViewModel
@@ -73,7 +74,8 @@ class SettingsViewModel @Inject constructor(
             ForumScreenSettings(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
-                pinnedForums = it.pinnedForums
+                pinnedForums = it.pinnedForums,
+                draftBoxEnabled = it.draftBoxEnabled
             )
         }
         .distinctUntilChanged()
@@ -279,6 +281,10 @@ class SettingsViewModel @Inject constructor(
 
     fun updateGlassEffectEnabled(enabled: Boolean) {
         settingsRepository.updateGlassEffectEnabled(enabled)
+    }
+
+    fun updateDraftBoxEnabled(enabled: Boolean) {
+        settingsRepository.updateDraftBoxEnabled(enabled)
     }
 
     fun updateCacheLimitMb(mb: Int) {

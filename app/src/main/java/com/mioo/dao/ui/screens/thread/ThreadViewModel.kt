@@ -209,10 +209,13 @@ class ThreadViewModel @Inject constructor(
                 }
         }
 
-        viewModelScope.launch {
-            val draft = threadRepository.getReplyDraftContent(threadId)
-            if (draft.isNotEmpty()) {
-                _composerState.update { it.copy(replyText = draft) }
+        // 草稿箱开关关闭时跳过恢复，避免关闭后旧草稿仍然回填输入框
+        if (settingsRepository.settings.value.draftBoxEnabled) {
+            viewModelScope.launch {
+                val draft = threadRepository.getReplyDraftContent(threadId)
+                if (draft.isNotEmpty()) {
+                    _composerState.update { it.copy(replyText = draft) }
+                }
             }
         }
 
@@ -851,6 +854,8 @@ class ThreadViewModel @Inject constructor(
         draftSaveJob?.cancel()
         draftSaveJob = viewModelScope.launch {
             delay(DRAFT_DEBOUNCE_MS)
+            // 草稿箱开关关闭时不落盘
+            if (!settingsRepository.settings.value.draftBoxEnabled) return@launch
             // 二次确认：等待期间文本又变了（或已被发送成功清空）就不落盘旧值
             if (text != _composerState.value.replyText) return@launch
             // 草稿箱条目：随输入自动更新（同一串只保留一份）
@@ -920,8 +925,11 @@ class ThreadViewModel @Inject constructor(
                                 // 发送成功 → 草稿箱中该串草稿一并清除。
                                 // 走 draftSaveJob 槽位串行化：保证清空落在任何在途防抖写入之后
                                 draftSaveJob?.cancel()
-                                draftSaveJob = viewModelScope.launch {
-                                    threadRepository.saveReplyDraft(threadId, null, "")
+                                // 草稿箱开关关闭时不做清理写入
+                                if (settingsRepository.settings.value.draftBoxEnabled) {
+                                    draftSaveJob = viewModelScope.launch {
+                                        threadRepository.saveReplyDraft(threadId, null, "")
+                                    }
                                 }
                             }
                             onSuccess()

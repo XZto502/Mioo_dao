@@ -597,11 +597,14 @@ fun ForumScreen(
                 // Debounced inside ViewModel — no per-keystroke coroutine spam
                 settingsViewModel.saveNewThreadDraft(draft)
             },
-            onSaveDraft = { draftTitle, draftAuthor, draftContent ->
-                viewModel.savePostDraft(draftTitle, draftAuthor, draftContent) {
-                    Toast.makeText(context, "已存入草稿箱", Toast.LENGTH_SHORT).show()
+            // 草稿箱开关关闭时不提供「存草稿」按钮（参数为 null 时对话框隐藏该入口）
+            onSaveDraft = if (forumSettings.draftBoxEnabled) {
+                { draftTitle: String, draftAuthor: String, draftContent: String ->
+                    viewModel.savePostDraft(draftTitle, draftAuthor, draftContent) {
+                        Toast.makeText(context, "已存入草稿箱", Toast.LENGTH_SHORT).show()
+                    }
                 }
-            },
+            } else null,
             onCookieSelect = { settingsViewModel.selectCookie(it) },
             isSubmitting = isPostingThread,
             onDismiss = {

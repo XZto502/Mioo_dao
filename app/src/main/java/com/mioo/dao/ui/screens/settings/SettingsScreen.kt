@@ -906,6 +906,51 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // 草稿箱开关
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Save, contentDescription = "草稿箱")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "草稿箱",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "关闭后，未发送的回复与新串内容不再自动保存到草稿箱",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDraftBoxEnabled(!settings.draftBoxEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.draftBoxEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.draftBoxEnabled,
+                        onCheckedChange = { viewModel.updateDraftBoxEnabled(it) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // 6. Offline and Caching Settings (离线与缓存设置)
         val cacheSize by viewModel.cacheSizeState.collectAsState()
         val isPreloading by viewModel.isPreloadingState.collectAsState()

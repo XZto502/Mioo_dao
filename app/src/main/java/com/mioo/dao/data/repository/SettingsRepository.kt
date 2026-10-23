@@ -96,11 +96,13 @@ class SettingsRepository @Inject constructor(
             )
         },
         settingsDataStore.glassEffectEnabledFlow,
-        settingsDataStore.cacheLimitMbFlow
-    ) { base, glassEffectEnabled, cacheLimitMb ->
+        settingsDataStore.cacheLimitMbFlow,
+        settingsDataStore.draftBoxEnabledFlow
+    ) { base, glassEffectEnabled, cacheLimitMb, draftBoxEnabled ->
         base.copy(
             glassEffectEnabled = glassEffectEnabled,
-            cacheLimitMb = cacheLimitMb
+            cacheLimitMb = cacheLimitMb,
+            draftBoxEnabled = draftBoxEnabled
         )
     }.stateIn(
         scope = repositoryScope,
@@ -129,6 +131,12 @@ class SettingsRepository @Inject constructor(
     fun updateGlassEffectEnabled(enabled: Boolean) {
         repositoryScope.launch {
             settingsDataStore.saveGlassEffectEnabled(enabled)
+        }
+    }
+
+    fun updateDraftBoxEnabled(enabled: Boolean) {
+        repositoryScope.launch {
+            settingsDataStore.saveDraftBoxEnabled(enabled)
         }
     }
 
