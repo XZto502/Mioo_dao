@@ -157,8 +157,11 @@ fun ThreadScreen(
     // open at the saved index (no paint-at-top then scrollToItem hitch).
     val hasThreadContent = listUi.thread != null
     val listState = remember(viewModel.threadId, hasThreadContent) {
+        // pendingScrollIndex 的索引模型：0=OP、1..=回复；跳到第2页及以上时 OP 不占位
+        val seeded = (listUi.pendingScrollIndex ?: 0).coerceAtLeast(0)
+        val lazyIndex = if (listUi.startPage > 1) (seeded - 1).coerceAtLeast(0) else seeded
         LazyListState(
-            firstVisibleItemIndex = (listUi.pendingScrollIndex ?: 0).coerceAtLeast(0),
+            firstVisibleItemIndex = lazyIndex,
             firstVisibleItemScrollOffset = 0
         )
     }
@@ -173,8 +176,8 @@ fun ThreadScreen(
             val page = if (firstVisibleIndex <= 0) {
                 listStartPage
             } else {
-                // index 0 is OP card; replies start at 1
-                val replyIndex = firstVisibleIndex - 1
+                // startPage==1 时 index 0 是 OP 卡；跳页/续读落在第2页及以上时 OP 不占位
+                val replyIndex = if (listStartPage <= 1) firstVisibleIndex - 1 else firstVisibleIndex
                 listStartPage + (replyIndex / 19)
             }
             page.coerceIn(1, totalPages.coerceAtLeast(1))
@@ -230,16 +233,19 @@ fun ThreadScreen(
         if (listUi.isLoading) return@LaunchedEffect
         if (listUi.thread == null) return@LaunchedEffect
 
+        // pendingScrollIndex：0=OP、1..=回复；第2页及以上 OP 不占位，目标减一
+        val lazyIndex = if (listUi.startPage > 1) (index - 1).coerceAtLeast(0) else index
+
         // If LazyListState was created with this index, we are already there — no jump.
-        if (listState.firstVisibleItemIndex != index) {
-            val targetMinCount = index + 1
+        if (listState.firstVisibleItemIndex != lazyIndex) {
+            val targetMinCount = lazyIndex + 1
             var attempts = 0
             while (listState.layoutInfo.totalItemsCount < targetMinCount && attempts < 8) {
                 delay(8)
                 attempts++
             }
             val maxIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-            val target = index.coerceIn(0, maxIndex)
+            val target = lazyIndex.coerceIn(0, maxIndex)
             if (listState.firstVisibleItemIndex != target) {
                 listState.scrollToItem(target)
             }
@@ -513,10 +519,10 @@ fun ThreadScreen(
                     if (n > 0) {
                         val idx = listState.firstVisibleItemIndex
                         val offset = listState.firstVisibleItemScrollOffset
-                        // index 0 is OP; only shift when user was already in the reply list
-                        if (idx > 0) {
-                            listState.scrollToItem(idx + n, offset)
-                        }
+                        // prepend 只发生在 startPage>1 时 → 补偿后 startPage==1 说明串首卡片
+                        // 同时出现在了顶部，额外多移一位
+                        val opAppeared = listUi.startPage <= 1
+                        listState.scrollToItem(idx + n + if (opAppeared) 1 else 0, offset)
                     }
                     viewModel.consumePrependAnchor()
                 }
@@ -543,7 +549,9 @@ fun ThreadScreen(
                         bottom = paddingValues.calculateBottomPadding() + 16.dp
                     )
                 ) {
-                    if (mainThread != null && mainPostData != null) {
+                    // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
+                    // 向上翻回第 1 页时串首卡片随 startPage==1 重新出现
+                    if (mainThread != null && mainPostData != null && listUi.startPage <= 1) {
                         item(key = "main_${mainThread.id}", contentType = "main_thread") {
                             var showBlockDialog by remember { mutableStateOf(false) }
 
