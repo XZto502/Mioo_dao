@@ -70,6 +70,8 @@ object DatabaseModule {
             // destructive path. Version 4+ (favorites, history, progress, cloud-feed
             // cache) must survive later upgrades via real migrations.
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
+            // 侧载分发下用户可能回滚安装旧版：降级重建好过访问 DB 即崩溃循环
+            .fallbackToDestructiveMigrationOnDowngrade()
             .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))

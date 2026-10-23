@@ -5,9 +5,11 @@ import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.model.UserSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -19,7 +21,9 @@ import javax.inject.Singleton
 class SettingsRepository @Inject constructor(
     private val settingsDataStore: SettingsDataStore
 ) {
-    private val repositoryScope = CoroutineScope(Dispatchers.IO)
+    // SupervisorJob: without it one failed write (e.g. DataStore IOException)
+    // cancels the scope root and every later settings write becomes a silent no-op.
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val settings: StateFlow<UserSettings> = combine(
         combine(
@@ -167,7 +171,9 @@ class SettingsRepository @Inject constructor(
 
     fun addCookie(cookie: String) {
         repositoryScope.launch {
-            val currentList = settings.value.cookiesList.toMutableList()
+            // 直读 DataStore：settings.value 是 stateIn 产物，存在传播滞后，
+            // 快速连续操作时基于旧快照计算会互相覆盖
+            val currentList = settingsDataStore.cookiesListFlow.first().toMutableList()
             if (cookie.isNotBlank() && !currentList.contains(cookie)) {
                 currentList.add(cookie)
                 settingsDataStore.saveCookiesList(currentList)
@@ -191,19 +197,25 @@ class SettingsRepository @Inject constructor(
 
     fun deleteCookie(cookie: String) {
         repositoryScope.launch {
-            val currentList = settings.value.cookiesList.toMutableList()
+            val currentList = settingsDataStore.cookiesListFlow.first().toMutableList()
             val indexToDelete = currentList.indexOf(cookie)
             if (indexToDelete != -1) {
                 currentList.removeAt(indexToDelete)
                 settingsDataStore.saveCookiesList(currentList)
 
-                val notes = settings.value.cookieNotes.toMutableMap()
+                val notes = settingsDataStore.cookieNotesFlow.first().toMutableMap()
                 notes.remove(cookie)
                 settingsDataStore.saveCookieNotes(notes)
 
                 val newIndex = if (currentList.isEmpty()) 0 else {
-                    val prevIndex = settings.value.selectedCookieIndex
-                    if (prevIndex >= currentList.size) currentList.size - 1 else prevIndex
+                    val prevIndex = settingsDataStore.selectedCookieIndexFlow.first()
+                    when {
+                        // 删除的是选中项之前的饼干 → 选中项左移一位，保持同一逻辑饼干
+                        indexToDelete < prevIndex -> prevIndex - 1
+                        // 删除的是末尾 → 收缩到新末尾
+                        prevIndex >= currentList.size -> currentList.size - 1
+                        else -> prevIndex
+                    }
                 }
                 settingsDataStore.saveSelectedCookieIndex(newIndex)
 
