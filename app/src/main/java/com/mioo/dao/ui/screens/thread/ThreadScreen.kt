@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -251,11 +252,14 @@ fun ThreadScreen(
 
     // HTML prewarm: key on content signature, not the list instance (avoids restart on
     // every StateFlow emission that rebuilds an equal list). Head first, then bulk.
+    // darkTheme 必须与 HtmlContent 消费端一致，否则暗色下缓存 key 永远不命中，预热全白做
+    val prewarmDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val threadPrewarmSig = remember(
         listUi.displayItems.size,
         listUi.displayItems.firstOrNull()?.id,
         listUi.displayItems.lastOrNull()?.id,
-        listUi.mainPostData?.content
+        listUi.mainPostData?.content,
+        prewarmDarkTheme
     ) {
         "${listUi.displayItems.size}:${listUi.displayItems.firstOrNull()?.id}:" +
             "${listUi.displayItems.lastOrNull()?.id}:${listUi.mainPostData?.content?.length ?: 0}"
@@ -266,12 +270,12 @@ fun ThreadScreen(
         // Head only on open — bulk of the page is warmed by settle-scroll effect below
         val head = listOfNotNull(listUi.mainPostData?.content) + bodies.take(10)
         withContext(Dispatchers.Default) {
-            HtmlParseCache.prewarm(head, quoteLinkColor)
+            HtmlParseCache.prewarm(head, quoteLinkColor, prewarmDarkTheme)
         }
         delay(350)
         // Cap bulk warm so long threads don't burn Default while user is already scrolling
         withContext(Dispatchers.Default) {
-            HtmlParseCache.prewarm(bodies.take(20), quoteLinkColor)
+            HtmlParseCache.prewarm(bodies.take(20), quoteLinkColor, prewarmDarkTheme)
         }
     }
 
@@ -288,7 +292,7 @@ fun ThreadScreen(
                 val near = bodies.drop((focus - 1).coerceAtLeast(0)).take(10)
                 if (near.isEmpty()) return@collect
                 withContext(Dispatchers.Default) {
-                    HtmlParseCache.prewarm(near, quoteLinkColor)
+                    HtmlParseCache.prewarm(near, quoteLinkColor, prewarmDarkTheme)
                 }
             }
     }
@@ -577,7 +581,10 @@ fun ThreadScreen(
                                 onThreadClick = emptyLambda,
                                 onQuoteClick = onQuoteClick,
                                 onImageClick = onImageClick,
-                                onLongClick = { showBlockDialog = true }
+                                onLongClick = { showBlockDialog = true },
+                                // 详情页主楼：完整正文 + 引用链接可点（列表预览才截断/关手势）
+                                contentMaxLines = Int.MAX_VALUE,
+                                enableHtmlGestures = true
                             )
                         }
                     }
@@ -1369,11 +1376,8 @@ fun ReplyInputArea(
         wasReplying = isReplying
     }
 
-    LaunchedEffect(replyText) {
-        if (replyText.isEmpty()) {
-            attachedImageUri = null
-        }
-    }
+    // 注意：不要在 replyText 变空时清 attachedImageUri —— 用户"选图→输入→删光文字"
+    // 的正常操作会把附件静默清掉。附件只在发送成功路径（isReplying 回落）清理。
 
     // Show error toast when replyError changes
     androidx.compose.runtime.LaunchedEffect(replyError) {

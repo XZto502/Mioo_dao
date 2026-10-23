@@ -241,7 +241,9 @@ class ThreadViewModel @Inject constructor(
                 pendingScrollIndex = null,
                 prependAnchorCount = null,
                 showImagesOnly = false,
-                searchQuery = ""
+                // 保留 searchQuery：发送回复后的 reload 不应静默清掉仍在生效的串内搜索
+                //（退出搜索由 UI 显式调用 updateSearchQuery("")）
+                searchQuery = _listState.value.searchQuery
             )
         }
         _refPopupState.value = ThreadRefPopupUiState()
@@ -527,6 +529,9 @@ class ThreadViewModel @Inject constructor(
         rebuildJob?.cancel()
         rebuildJob = viewModelScope.launch {
             if (debounceMs > 0L) delay(debounceMs)
+            // 捕获当前加载代际：rebuild 计算期间若有新一轮 loadPage 启动，
+            // 丢弃本次结果——新加载会带最新过滤重建，晚到的旧结果会把它覆盖
+            val gen = loadGeneration
             val thread = _listState.value.thread
             val posts = rawPosts
             if (thread == null && posts.isEmpty()) return@launch
@@ -543,6 +548,7 @@ class ThreadViewModel @Inject constructor(
                     searchQuery = searchQuery
                 )
             }
+            if (gen != loadGeneration) return@launch
             _listState.update { it.copy(displayItems = items) }
         }
     }
@@ -679,10 +685,14 @@ class ThreadViewModel @Inject constructor(
                 toFetch.map { id ->
                     async(Dispatchers.IO) {
                         semaphore.withPermit {
+                            // 失败不缓存：错误占位符一旦入 cache，引用卡会一直显示
+                            // 错误文案且弹窗不再走网络重试（重进串才能恢复）
                             val reply = resolveQuoteFromNetwork(id)
-                            withContext(Dispatchers.Main.immediate) {
-                                if (id !in quoteCache) {
-                                    quoteCache[id] = reply
+                            if (reply != null) {
+                                withContext(Dispatchers.Main.immediate) {
+                                    if (id !in quoteCache) {
+                                        quoteCache[id] = reply
+                                    }
                                 }
                             }
                         }
@@ -692,15 +702,16 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    private suspend fun resolveQuoteFromNetwork(id: String): Reply {
+    /** Network resolve; null on failure so callers do not cache an error placeholder. */
+    private suspend fun resolveQuoteFromNetwork(id: String): Reply? {
         var result: Reply? = null
         threadRepository.getRefPost(id).collect { response ->
             result = when (response) {
                 is XdResponse.Success -> response.data
-                is XdResponse.Error -> missingQuotePlaceholder(id, response.message)
+                is XdResponse.Error -> null
             }
         }
-        return result ?: missingQuotePlaceholder(id, null)
+        return result
     }
 
     private fun quoteErrorText(message: String?): String {
@@ -778,8 +789,12 @@ class ThreadViewModel @Inject constructor(
                     threadRepository.addBookmark(thread)
                 }
             } else {
-                threadRepository.addFeed(folderUuid, threadId).collect {
-                    onComplete?.invoke("已保存至云端收藏夹")
+                threadRepository.addFeed(folderUuid, threadId).collect { response ->
+                    when (response) {
+                        is XdResponse.Success -> onComplete?.invoke("已保存至云端收藏夹")
+                        is XdResponse.Error ->
+                            onComplete?.invoke("保存失败: ${response.message.ifBlank { "网络错误" }}")
+                    }
                 }
             }
         }
@@ -836,6 +851,8 @@ class ThreadViewModel @Inject constructor(
         draftSaveJob?.cancel()
         draftSaveJob = viewModelScope.launch {
             delay(DRAFT_DEBOUNCE_MS)
+            // 二次确认：等待期间文本又变了（或已被发送成功清空）就不落盘旧值
+            if (text != _composerState.value.replyText) return@launch
             // 草稿箱条目：随输入自动更新（同一串只保留一份）
             threadRepository.saveReplyDraft(
                 threadId = threadId,
@@ -900,8 +917,12 @@ class ThreadViewModel @Inject constructor(
                                 _composerState.update { it.copy(isReplying = false) }
                             } else {
                                 _composerState.update { ReplyComposerState() }
-                                // 发送成功 → 草稿箱中该串草稿一并清除
-                                threadRepository.saveReplyDraft(threadId, null, "")
+                                // 发送成功 → 草稿箱中该串草稿一并清除。
+                                // 走 draftSaveJob 槽位串行化：保证清空落在任何在途防抖写入之后
+                                draftSaveJob?.cancel()
+                                draftSaveJob = viewModelScope.launch {
+                                    threadRepository.saveReplyDraft(threadId, null, "")
+                                }
                             }
                             onSuccess()
                             loadThreadDetails()
@@ -1018,18 +1039,14 @@ class ThreadViewModel @Inject constructor(
      */
     fun saveReadingProgress(page: Int, firstVisibleIndex: Int) {
         val start = _listState.value.startPage.coerceAtLeast(1)
+        // UI 的 page 与推导结果可能因过滤偏移而不同；推导值与 rawPosts 分页体系一致，
+        // 直接采用（原先的 if/else 两分支对相同入参调用相同函数，是恒等死逻辑）
         val (savedPage, localIndex) = absoluteIndexToPageLocal(start, firstVisibleIndex)
-        // Prefer UI-computed page when it is consistent; fall back to derived page
-        val pageToSave = page.coerceAtLeast(1).let { uiPage ->
-            // If UI page matches derived, use localIndex for that page; else re-derive both
-            if (uiPage == savedPage) uiPage to localIndex
-            else absoluteIndexToPageLocal(start, firstVisibleIndex)
-        }
         viewModelScope.launch {
             threadRepository.saveThreadProgress(
                 threadId = threadId,
-                page = pageToSave.first,
-                firstVisibleIndex = pageToSave.second
+                page = savedPage,
+                firstVisibleIndex = localIndex
             )
         }
     }
