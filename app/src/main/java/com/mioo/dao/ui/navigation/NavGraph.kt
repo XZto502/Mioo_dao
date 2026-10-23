@@ -99,6 +99,10 @@ fun MiooDaoNavGraph(
 
     // A second tap can land while the detail page is still sliding over the list.
     // The list stays hit-testable until the cover finishes, so ignore that repeat.
+    // No launchSingleTop here: thread→thread (跳转原串) targets the same route
+    // pattern, and singleTop would reuse the top entry instead of stacking a new
+    // one — the screen then never leaves the old thread (threadId is read once
+    // in ThreadViewModel). alreadyOpen + the 400ms window cover the dedupe.
     val navigateToThread: (String) -> Unit = remember(navController) {
         var lastThreadAt = 0L
         { id: String ->
@@ -111,9 +115,7 @@ fun MiooDaoNavGraph(
                 val alreadyOpen = topIsThread && topId == id
                 if (!repeatWhileCovered && !alreadyOpen) {
                     lastThreadAt = now
-                    navController.navigate(Screen.Thread.createRoute(id)) {
-                        launchSingleTop = true
-                    }
+                    navController.navigate(Screen.Thread.createRoute(id))
                 }
             }
         }
@@ -122,9 +124,8 @@ fun MiooDaoNavGraph(
     androidx.compose.runtime.LaunchedEffect(pendingThreadId) {
         val id = pendingThreadId ?: return@LaunchedEffect
         if (id.isNotBlank()) {
-            navController.navigate(Screen.Thread.createRoute(id)) {
-                launchSingleTop = true
-            }
+            // Plain push (see navigateToThread): singleTop breaks thread→thread.
+            navController.navigate(Screen.Thread.createRoute(id))
             onPendingThreadConsumed()
         }
     }
