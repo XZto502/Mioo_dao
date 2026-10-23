@@ -13,11 +13,7 @@ internal fun interpretForumWriteResponse(raw: String): XdResponse<String> {
     if (trimmed.isEmpty()) return XdResponse.Error(message = "岛方返回空响应")
 
     extractQuotedJsonString(trimmed)?.let { msg ->
-        return if (msg.contains("成功")) {
-            XdResponse.Success(msg.take(80).ifBlank { "发送成功" })
-        } else {
-            XdResponse.Error(message = msg.take(160).ifBlank { "发送失败" })
-        }
+        return judgeOutcome(msg)
     }
 
     if (trimmed.startsWith("{")) {
@@ -49,11 +45,7 @@ internal fun interpretForumWriteResponse(raw: String): XdResponse<String> {
         ?.replace("\\'", "'")
         ?.trim()
     if (!alert.isNullOrEmpty()) {
-        return if (alert.contains("成功")) {
-            XdResponse.Success(alert.take(80))
-        } else {
-            XdResponse.Error(message = alert.take(160))
-        }
+        return judgeOutcome(alert)
     }
 
     val plain = SCRIPT_OR_STYLE.replace(trimmed, " ")
@@ -65,7 +57,7 @@ internal fun interpretForumWriteResponse(raw: String): XdResponse<String> {
         .trim('"')
 
     if (plain.contains("成功")) {
-        return XdResponse.Success(plain.take(80))
+        return judgeOutcome(plain)
     }
 
     if (ERROR_CLASS.containsMatchIn(trimmed)) {
@@ -95,6 +87,18 @@ internal fun interpretForumWriteResponse(raw: String): XdResponse<String> {
 }
 
 private val ALERT = Regex("""alert\(\s*(['"])([\s\S]*?)\1\s*\)""", RegexOption.IGNORE_CASE)
+
+/** 失败关键词优先于「成功」字样：如「发帖成功间隔太短」这类文案是失败。 */
+private fun judgeOutcome(msg: String): XdResponse<String> {
+    val text = msg.trim()
+    return if (FAILURE_HINTS.any { text.contains(it) }) {
+        XdResponse.Error(message = text.take(160).ifBlank { "发送失败" })
+    } else if (text.contains("成功")) {
+        XdResponse.Success(text.take(80).ifBlank { "发送成功" })
+    } else {
+        XdResponse.Error(message = text.take(160).ifBlank { "发送失败" })
+    }
+}
 private val SCRIPT_OR_STYLE = Regex(
     """<(script|style)[^>]*>[\s\S]*?</\1>""",
     RegexOption.IGNORE_CASE
