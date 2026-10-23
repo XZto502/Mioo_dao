@@ -33,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
@@ -116,6 +117,13 @@ interface ThreadRepository {
     /** Remove [tid] from every cloud feed it is cached under. Emits removed count. */
     fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>>
 
+    // 发言草稿箱 (draft box): reply drafts keyed by thread, post drafts keyed by board.
+    fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>>
+    suspend fun getReplyDraftContent(threadId: String): String
+    suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String)
+    suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String)
+    suspend fun deleteDraft(id: Long)
+
     // Cache management & preloading
     fun clearCache(): Flow<XdResponse<Unit>>
     fun getCacheSize(): Flow<String>
@@ -133,6 +141,7 @@ class ThreadRepositoryImpl @Inject constructor(
     private val cacheDao: CacheDao,
     private val progressDao: ProgressDao,
     private val cloudFeedDao: com.mioo.dao.data.local.CloudFeedDao,
+    private val draftDao: com.mioo.dao.data.local.DraftDao,
     private val settingsDataStore: SettingsDataStore,
     @ApplicationContext private val context: Context,
     private val moshi: com.squareup.moshi.Moshi
@@ -787,6 +796,104 @@ class ThreadRepositoryImpl @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     override fun isInCloudFeed(tid: String): Flow<Boolean> = cloudFeedDao.isMember(tid)
+
+    // --- 发言草稿箱 ---
+
+    /** In-process mirror of the DataStore one-time flag. */
+    private var draftsMigrated = false
+
+    /**
+     * One-time sweep of legacy DataStore drafts (per-thread reply map + global
+     * new-thread draft) into the Room draft box. Runs before any draft read/write.
+     */
+    private suspend fun ensureDraftsMigrated() {
+        if (draftsMigrated) return
+        if (settingsDataStore.isDraftsMigrated()) {
+            draftsMigrated = true
+            return
+        }
+        val now = System.currentTimeMillis()
+        settingsDataStore.getAllThreadDrafts().forEach { (tid, text) ->
+            draftDao.upsert(
+                com.mioo.dao.data.local.DraftEntity(
+                    type = com.mioo.dao.data.local.DraftEntity.TYPE_REPLY,
+                    targetId = tid,
+                    content = text,
+                    updatedAt = now
+                )
+            )
+        }
+        val postDraft = try {
+            settingsDataStore.getNewThreadDraft()
+        } catch (_: Exception) {
+            ""
+        }
+        if (postDraft.isNotBlank()) {
+            draftDao.upsert(
+                com.mioo.dao.data.local.DraftEntity(
+                    type = com.mioo.dao.data.local.DraftEntity.TYPE_POST,
+                    targetId = "new_thread",
+                    targetName = "草稿",
+                    content = postDraft,
+                    updatedAt = now
+                )
+            )
+        }
+        settingsDataStore.markDraftsMigrated()
+        draftsMigrated = true
+    }
+
+    override fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>> = flow {
+        ensureDraftsMigrated()
+        emitAll(draftDao.getAll())
+    }.flowOn(Dispatchers.IO)
+
+    override suspend fun getReplyDraftContent(threadId: String): String {
+        ensureDraftsMigrated()
+        return try {
+            draftDao.find(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)?.content ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    override suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String) {
+        ensureDraftsMigrated()
+        if (content.isBlank()) {
+            draftDao.deleteFor(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)
+        } else {
+            draftDao.upsert(
+                com.mioo.dao.data.local.DraftEntity(
+                    type = com.mioo.dao.data.local.DraftEntity.TYPE_REPLY,
+                    targetId = threadId,
+                    targetName = threadTitle ?: "",
+                    content = content
+                )
+            )
+        }
+    }
+
+    override suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String) {
+        ensureDraftsMigrated()
+        if (content.isBlank() && title.isNullOrBlank()) {
+            draftDao.deleteFor(com.mioo.dao.data.local.DraftEntity.TYPE_POST, boardId)
+        } else {
+            draftDao.upsert(
+                com.mioo.dao.data.local.DraftEntity(
+                    type = com.mioo.dao.data.local.DraftEntity.TYPE_POST,
+                    targetId = boardId,
+                    targetName = boardName,
+                    name = name?.takeIf { it.isNotBlank() },
+                    title = title?.takeIf { it.isNotBlank() },
+                    content = content
+                )
+            )
+        }
+    }
+
+    override suspend fun deleteDraft(id: Long) {
+        draftDao.deleteById(id)
+    }
 
     override fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>> = flow {
         try {

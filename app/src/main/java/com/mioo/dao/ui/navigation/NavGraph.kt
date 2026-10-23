@@ -78,6 +78,7 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object SettingsDetail : Screen("settings_detail")
     object BrowsingHistory : Screen("browsing_history")
+    object DraftBox : Screen("draft_box")
     object Search : Screen("search")
     object Thread : Screen("thread/{threadId}") {
         fun createRoute(threadId: String) = "thread/$threadId"
@@ -306,6 +307,9 @@ fun MiooDaoNavGraph(
                     onNavigateToHistory = {
                         navController.navigate(Screen.BrowsingHistory.route)
                     },
+                    onNavigateToDrafts = {
+                        navController.navigate(Screen.DraftBox.route)
+                    },
                     onNavigateToSearch = {
                         navController.navigate(Screen.Search.route)
                     }
@@ -348,6 +352,28 @@ fun MiooDaoNavGraph(
                 }
             }
 
+            composable(route = Screen.DraftBox.route) { _ ->
+                PageBackdrop {
+                    val viewModel: com.mioo.dao.ui.screens.drafts.DraftViewModel = hiltViewModel()
+                    com.mioo.dao.ui.screens.drafts.DraftBoxScreen(
+                        viewModel = viewModel,
+                        onBackClick = {
+                            navController.popBackStack()
+                        },
+                        onNavigateToThread = navigateToThread,
+                        onUsePostDraft = {
+                            // 回到主界面并切到板块 tab，ForumScreen 会从总线取草稿打开发串框
+                            navController.popBackStack()
+                            tabScope.launch {
+                                if (tabPagerState.currentPage != 0) {
+                                    tabPagerState.scrollToPage(0)
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
             composable(
                 route = Screen.Thread.route,
                 arguments = listOf(
@@ -375,6 +401,7 @@ private fun MainTabs(
     onColdStartContentReady: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
+    onNavigateToDrafts: () -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
     HorizontalPager(
@@ -408,6 +435,7 @@ private fun MainTabs(
                         viewModel = viewModel,
                         onNavigateToSettings = onNavigateToSettings,
                         onNavigateToHistory = onNavigateToHistory,
+                        onNavigateToDrafts = onNavigateToDrafts,
                         onNavigateToSearch = onNavigateToSearch
                     )
                 }

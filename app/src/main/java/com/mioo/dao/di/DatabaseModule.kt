@@ -37,6 +37,27 @@ object DatabaseModule {
         }
     }
 
+    /** v6 adds the 发言草稿箱 table. */
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `drafts` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`type` TEXT NOT NULL, " +
+                    "`targetId` TEXT NOT NULL, " +
+                    "`targetName` TEXT NOT NULL, " +
+                    "`title` TEXT, " +
+                    "`name` TEXT, " +
+                    "`content` TEXT NOT NULL, " +
+                    "`updatedAt` INTEGER NOT NULL)"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_drafts_type_targetId` " +
+                    "ON `drafts` (`type`, `targetId`)"
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -49,7 +70,7 @@ object DatabaseModule {
             // destructive path. Version 4+ (favorites, history, progress, cloud-feed
             // cache) must survive later upgrades via real migrations.
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
-            .addMigrations(MIGRATION_4_5)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())
@@ -78,6 +99,12 @@ object DatabaseModule {
     @Singleton
     fun provideCloudFeedDao(database: AppDatabase): CloudFeedDao {
         return database.cloudFeedDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideDraftDao(database: AppDatabase): com.mioo.dao.data.local.DraftDao {
+        return database.draftDao()
     }
 
     @Provides

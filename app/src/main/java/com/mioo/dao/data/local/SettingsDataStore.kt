@@ -40,6 +40,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_BLOCKED_KEYWORDS = stringPreferencesKey("blocked_keywords")
         val KEY_THREAD_DRAFTS = stringPreferencesKey("thread_drafts")
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
+        val KEY_DRAFTS_MIGRATED = booleanPreferencesKey("drafts_migrated")
         val KEY_SMART_PRELOAD_MODE = stringPreferencesKey("smart_preload_mode")
         val KEY_PRELOAD_COUNT = intPreferencesKey("preload_count")
         val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
@@ -596,6 +597,35 @@ class SettingsDataStore(private val context: Context) {
             }
         }
         ""
+    }
+
+    /** All legacy per-thread reply drafts (DataStore JSON map), for one-time Room migration. */
+    suspend fun getAllThreadDrafts(): Map<String, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val preferences = context.dataStore.data.first()
+        val jsonStr = preferences[KEY_THREAD_DRAFTS] ?: ""
+        if (jsonStr.isEmpty()) return@withContext emptyMap()
+        try {
+            val jsonObject = org.json.JSONObject(jsonStr)
+            val result = LinkedHashMap<String, String>()
+            for (key in jsonObject.keys()) {
+                val value = jsonObject.optString(key, "")
+                if (value.isNotBlank()) result[key] = value
+            }
+            result
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    /** One-time flag: legacy DataStore drafts have been swept into the Room draft box. */
+    suspend fun isDraftsMigrated(): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        context.dataStore.data.first()[KEY_DRAFTS_MIGRATED] ?: false
+    }
+
+    suspend fun markDraftsMigrated() {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_DRAFTS_MIGRATED] = true
+        }
     }
 
     suspend fun saveThreadDraft(threadId: String, draft: String) {

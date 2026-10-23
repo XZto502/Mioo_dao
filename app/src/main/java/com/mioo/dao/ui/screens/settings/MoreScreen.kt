@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Info
@@ -44,6 +45,7 @@ fun MoreScreen(
     viewModel: SettingsViewModel,
     onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
+    onNavigateToDrafts: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -173,6 +175,42 @@ fun MoreScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = "进入浏览历史",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // Draft Box Entry (发言草稿箱)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToDrafts() }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = "草稿箱",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "草稿箱",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "未发完的回复与新串草稿，可随时恢复继续编辑",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "进入草稿箱",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }

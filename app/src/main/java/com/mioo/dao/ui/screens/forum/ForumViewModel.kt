@@ -10,6 +10,7 @@ import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.model.ForumGroup
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
+import com.mioo.dao.data.repository.DraftPrefillBus
 import com.mioo.dao.data.repository.ForumRepository
 import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
@@ -48,7 +49,8 @@ class ForumViewModel @Inject constructor(
     private val threadRepository: ThreadRepository,
     private val forumRepository: ForumRepository,
     private val settingsDataStore: SettingsDataStore,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val draftPrefillBus: DraftPrefillBus
 ) : ViewModel() {
 
     var forumId: String by mutableStateOf("-1")
@@ -459,6 +461,35 @@ class ForumViewModel @Inject constructor(
             } catch (e: Exception) {
                 onResult(false, e.localizedMessage ?: "发串失败")
             }
+        }
+    }
+
+    // --- 发言草稿箱：发串草稿 ---
+
+    /** 草稿箱里待恢复的发串草稿（跨屏总线，单例持有）。 */
+    val postDraftPrefill: StateFlow<com.mioo.dao.data.local.DraftEntity?>
+        get() = draftPrefillBus.pending
+
+    fun consumePostDraftPrefill() {
+        draftPrefillBus.consume()
+    }
+
+    fun savePostDraft(title: String, author: String, content: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            threadRepository.savePostDraft(
+                boardId = forumId,
+                boardName = _uiState.value.currentForumName,
+                name = author.takeIf { it.isNotBlank() },
+                title = title.takeIf { it.isNotBlank() },
+                content = content
+            )
+            onDone()
+        }
+    }
+
+    fun deleteDraft(id: Long) {
+        viewModelScope.launch {
+            threadRepository.deleteDraft(id)
         }
     }
 }

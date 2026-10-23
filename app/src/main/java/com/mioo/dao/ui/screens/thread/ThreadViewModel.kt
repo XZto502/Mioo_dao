@@ -210,7 +210,7 @@ class ThreadViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            val draft = settingsRepository.getThreadDraft(threadId)
+            val draft = threadRepository.getReplyDraftContent(threadId)
             if (draft.isNotEmpty()) {
                 _composerState.update { it.copy(replyText = draft) }
             }
@@ -833,7 +833,12 @@ class ThreadViewModel @Inject constructor(
         draftSaveJob?.cancel()
         draftSaveJob = viewModelScope.launch {
             delay(DRAFT_DEBOUNCE_MS)
-            settingsRepository.saveThreadDraft(threadId, text)
+            // 草稿箱条目：随输入自动更新（同一串只保留一份）
+            threadRepository.saveReplyDraft(
+                threadId = threadId,
+                threadTitle = _listState.value.thread?.title,
+                content = text
+            )
         }
     }
 
@@ -887,7 +892,8 @@ class ThreadViewModel @Inject constructor(
                         is XdResponse.Success -> {
                             draftSaveJob?.cancel()
                             _composerState.update { ReplyComposerState() }
-                            settingsRepository.saveThreadDraft(threadId, "")
+                            // 发送成功 → 草稿箱中该串草稿一并清除
+                            threadRepository.saveReplyDraft(threadId, null, "")
                             onSuccess()
                             loadThreadDetails()
                         }

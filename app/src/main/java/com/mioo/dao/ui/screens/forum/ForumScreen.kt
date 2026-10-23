@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
@@ -544,9 +545,22 @@ fun ForumScreen(
     }
 
     var newThreadDraftText by remember { mutableStateOf("") }
+    /** 草稿箱恢复的发串草稿（优先于全局自动草稿预填）。 */
+    var pendingPostDraft by remember {
+        mutableStateOf<com.mioo.dao.data.local.DraftEntity?>(null)
+    }
     LaunchedEffect(showCreateDialog) {
         if (showCreateDialog) {
             newThreadDraftText = settingsViewModel.getNewThreadDraft()
+        }
+    }
+    // 草稿箱 → 发串：总线收到草稿后打开对话框并预填
+    val postDraftPrefill by viewModel.postDraftPrefill.collectAsState()
+    LaunchedEffect(postDraftPrefill) {
+        if (postDraftPrefill != null) {
+            pendingPostDraft = postDraftPrefill
+            showCreateDialog = true
+            viewModel.consumePostDraftPrefill()
         }
     }
 
@@ -555,15 +569,25 @@ fun ForumScreen(
             cookies = forumSettings.cookiesList,
             selectedCookieIndex = forumSettings.selectedCookieIndex,
             boardName = uiState.currentForumName,
-            initialContent = newThreadDraftText,
+            initialContent = pendingPostDraft?.content ?: newThreadDraftText,
+            initialTitle = pendingPostDraft?.title ?: "",
+            initialName = pendingPostDraft?.name ?: "",
             onContentChange = { draft ->
                 // Debounced inside ViewModel — no per-keystroke coroutine spam
                 settingsViewModel.saveNewThreadDraft(draft)
             },
+            onSaveDraft = { draftTitle, draftAuthor, draftContent ->
+                viewModel.savePostDraft(draftTitle, draftAuthor, draftContent) {
+                    Toast.makeText(context, "已存入草稿箱", Toast.LENGTH_SHORT).show()
+                }
+            },
             onCookieSelect = { settingsViewModel.selectCookie(it) },
             isSubmitting = isPostingThread,
             onDismiss = {
-                if (!isPostingThread) showCreateDialog = false
+                if (!isPostingThread) {
+                    showCreateDialog = false
+                    pendingPostDraft = null
+                }
             },
             onSubmit = { title, author, content, imageUri ->
                 if (!isPostingThread) {
@@ -576,6 +600,8 @@ fun ForumScreen(
                             isPostingThread = false
                             if (ok) {
                                 settingsViewModel.clearNewThreadDraft()
+                                pendingPostDraft?.let { viewModel.deleteDraft(it.id) }
+                                pendingPostDraft = null
                                 showCreateDialog = false
                                 Toast.makeText(context, "发串成功", Toast.LENGTH_SHORT).show()
                             } else {
@@ -970,14 +996,17 @@ fun CreateThreadDialog(
     selectedCookieIndex: Int,
     boardName: String = "",
     initialContent: String = "",
+    initialTitle: String = "",
+    initialName: String = "",
     onContentChange: (String) -> Unit = {},
+    onSaveDraft: ((title: String, author: String, content: String) -> Unit)? = null,
     onCookieSelect: (Int) -> Unit,
     isSubmitting: Boolean = false,
     onDismiss: () -> Unit,
     onSubmit: (title: String, author: String, content: String, imageUri: Uri?) -> Unit
 ) {
-    var title by remember { mutableStateOf("") }
-    var author by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf(initialTitle) }
+    var author by remember { mutableStateOf(initialName) }
     var contentValue by remember {
         mutableStateOf(
             TextFieldValue(
@@ -1193,6 +1222,17 @@ fun CreateThreadDialog(
                             }
                         },
                         actions = {
+                            if (onSaveDraft != null) {
+                                IconButton(
+                                    onClick = { onSaveDraft(title, author, contentValue.text) },
+                                    enabled = title.isNotBlank() || contentValue.text.isNotBlank()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Description,
+                                        contentDescription = "存草稿"
+                                    )
+                                }
+                            }
                             FilledTonalButton(
                                 onClick = { submit() },
                                 enabled = canSubmit,
