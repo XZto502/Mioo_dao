@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -1408,7 +1409,8 @@ fun CreateThreadDialog(
                             AnimatedVisibility(
                                 visible = diceExpanded || kaomojiExpanded,
                                 enter = MiooMotion.softExpandEnter(panelReducedMotion),
-                                exit = MiooMotion.softExpandExit(panelReducedMotion)
+                                // 键盘升起导致的面板关闭瞬切，避免 ime 上升+面板收起叠加过冲
+                                exit = if (imeVisible) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
                             ) {
                                 Box(
                                     modifier = Modifier

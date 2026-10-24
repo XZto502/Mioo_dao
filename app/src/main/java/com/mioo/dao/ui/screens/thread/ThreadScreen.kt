@@ -2,6 +2,7 @@ package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1634,7 +1635,9 @@ fun ReplyInputArea(
             AnimatedVisibility(
                 visible = toolPanelOpen,
                 enter = MiooMotion.softExpandEnter(reducedMotion),
-                exit = MiooMotion.softExpandExit(reducedMotion)
+                // 键盘升起导致的面板关闭瞬切（不播收起动画）：
+                // 否则 ime 上升 + 面板收起两个动画叠加，输入行会先冲过终态再回落
+                exit = if (imeVisible) ExitTransition.None else MiooMotion.softExpandExit(reducedMotion)
             ) {
                 Box(
                     modifier = Modifier
