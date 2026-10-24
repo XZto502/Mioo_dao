@@ -305,7 +305,7 @@ fun SettingsScreen(
                                 }
                             }
                         } catch (e: Exception) {}
-                        if (!cookie.startsWith("{")) displayName = cookieSixCharId(cookie)
+                        if (!cookie.startsWith("{")) displayName = cookie.take(6)
                         val sixId = cookieSixCharId(cookie)
                         val note = settings.cookieNotes[cookie].orEmpty()
                         val label = if (note.isNotBlank()) "$note · $displayName" else displayName
@@ -338,12 +338,14 @@ fun SettingsScreen(
                                     )
                                 }
                             }
-                            Text(
-                                text = "ID: $sixId",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 48.dp, bottom = 2.dp)
-                            )
+                            if (sixId.isNotEmpty()) {
+                                Text(
+                                    text = "ID: $sixId",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 48.dp, bottom = 2.dp)
+                                )
+                            }
                             OutlinedTextField(
                                 value = note,
                                 onValueChange = { viewModel.setCookieNote(cookie, it) },
@@ -1649,17 +1651,16 @@ private fun parseImportedCookie(raw: String?): String? {
 }
 
 /** X岛风格 6 位 ID：JSON 饼干取 userhash 字段前 6 位，否则取饼干值前 6 位 */
+/** 饼干的岛方 ID：仅认 JSON 里的 userhash 字段，原样返回（X岛为 7 位随机 ID，不截断）。 */
 private fun cookieSixCharId(cookie: String): String {
     if (cookie.startsWith("{")) {
         runCatching {
             val json = org.json.JSONObject(cookie)
             val userhash = json.optString("userhash", "")
-            if (userhash.isNotBlank()) return userhash.take(6)
-            val value = json.optString("cookie", "")
-            if (value.isNotBlank()) return value.take(6)
+            if (userhash.isNotBlank()) return userhash
         }
     }
-    return cookie.take(6)
+    return ""
 }
 
 private fun scanQrFromUri(context: Context, uri: Uri, onResult: (String?) -> Unit) {
