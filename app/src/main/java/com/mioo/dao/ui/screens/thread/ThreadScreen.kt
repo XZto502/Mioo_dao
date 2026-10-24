@@ -1,7 +1,6 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,7 +62,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.ComposerToolButtons
-import com.mioo.dao.ui.components.DiceQuickPanel
+import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -1302,8 +1301,7 @@ fun ReplyInputArea(
 ) {
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
-    var diceMenuExpanded by remember { mutableStateOf(false) }
-    var diceFieldFocused by remember { mutableStateOf(false) }
+    var showDiceDialog by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1347,18 +1345,11 @@ fun ReplyInputArea(
         onReplyTextChange(newText)
     }
 
-    fun closeToolPanels(hideIme: Boolean = true) {
+    fun closeToolPanels() {
         if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
-        if (diceMenuExpanded) {
-            diceMenuExpanded = false
-            if (diceFieldFocused) {
-                diceFieldFocused = false
-                if (hideIme) hideSystemIme()
-            }
-        }
     }
 
-    val toolPanelOpen = kaomojiMenuExpanded || diceMenuExpanded
+    val toolPanelOpen = kaomojiMenuExpanded
     BackHandler(enabled = toolPanelOpen) {
         closeToolPanels()
     }
@@ -1380,12 +1371,9 @@ fun ReplyInputArea(
         // 键盘升起 → 同帧关面板（单一动画源）。这是键盘主动升起，不是用户点面板按钮。
         // 仍尊重刚点开面板后的 450ms 窗口：从键盘态点开面板会先 hideSystemIme，
         // 键盘下落动画期间 isKeyboardRising 同样为 true，无窗口会把刚打开的面板立刻关掉。
-        // 骰子面板内部输入框持焦时键盘升起不收面板（面板骑在键盘上方），
-        // 只有主输入框引发键盘时才收。
         if (isKeyboardRising) {
             if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
             if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
-            if (diceMenuExpanded && !diceFieldFocused) diceMenuExpanded = false
         }
     }
     // 【核心】底部总占位 = max(键盘, 面板)，绝不相加
@@ -1525,7 +1513,7 @@ fun ReplyInputArea(
                     .fillMaxWidth()
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
-                            closeToolPanels(hideIme = false)
+                            closeToolPanels()
                         }
                     },
                 maxLines = 4,
@@ -1594,25 +1582,14 @@ fun ReplyInputArea(
 
                 // 骰娘 · 颜文字 · 图片（同组）
                 ComposerToolButtons(
-                    diceSelected = diceMenuExpanded,
+                    diceSelected = false,
                     kaomojiSelected = kaomojiMenuExpanded,
                     hasImage = attachedImageUri != null,
-                    onDiceClick = {
-                        if (diceMenuExpanded) {
-                            closeToolPanels()
-                        } else {
-                            diceMenuExpanded = true
-                            kaomojiMenuExpanded = false
-                            diceFieldFocused = false
-                            ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
-                            hideSystemIme()
-                        }
-                    },
+                    onDiceClick = { showDiceDialog = true },
                     onKaomojiClick = {
                         val open = !kaomojiMenuExpanded
                         kaomojiMenuExpanded = open
                         if (open) {
-                            diceMenuExpanded = false
                             ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
                             hideSystemIme()
                         }
@@ -1667,29 +1644,27 @@ fun ReplyInputArea(
                     .height(bottomSlotHeightDp)
             ) {
                 if (toolPanelOpen) {
-                    Crossfade(targetState = diceMenuExpanded, label = "composerToolPanel") { dice ->
-                        if (dice) {
-                            DiceQuickPanel(
-                                onInsert = { insertAtCursor(it) },
-                                onFieldFocusChange = { diceFieldFocused = it },
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .navigationBarsPadding()
-                            )
-                        } else {
-                            KaomojiQuickPanel(
-                                onInsert = { insertAtCursor(it) },
-                                modifier = Modifier.navigationBarsPadding(),
-                                heightDp = with(density) {
-                                    (bottomSlotHeightPx - navBarBottomPx).coerceAtLeast(0)
-                                        .toDp().value.roundToInt()
-                                }
-                            )
+                    KaomojiQuickPanel(
+                        onInsert = { insertAtCursor(it) },
+                        modifier = Modifier.navigationBarsPadding(),
+                        heightDp = with(density) {
+                            (bottomSlotHeightPx - navBarBottomPx).coerceAtLeast(0)
+                                .toDp().value.roundToInt()
                         }
-                    }
+                    )
                 }
             }
         }
+    }
+
+    if (showDiceDialog) {
+        DiceDialog(
+            onDismiss = { showDiceDialog = false },
+            onInsert = { expr ->
+                insertAtCursor(expr)
+                showDiceDialog = false
+            }
+        )
     }
 }
 

@@ -10,7 +10,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -124,7 +123,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.ComposerToolButtons
-import com.mioo.dao.ui.components.DiceQuickPanel
+import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.KaomojiQuickPanel
@@ -1072,8 +1071,7 @@ fun CreateThreadDialog(
     }
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiExpanded by remember { mutableStateOf(false) }
-    var diceExpanded by remember { mutableStateOf(false) }
-    var diceFieldFocused by remember { mutableStateOf(false) }
+    var showDiceDialog by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
     /** 打开快捷面板后短时间内忽略 IME 可见（键盘下落动画） */
@@ -1126,18 +1124,8 @@ fun CreateThreadDialog(
         onContentChange(newText)
     }
 
-    fun closeToolPanels(hideIme: Boolean = true) {
+    fun closeToolPanels() {
         if (kaomojiExpanded) kaomojiExpanded = false
-        if (diceExpanded) {
-            diceExpanded = false
-            if (diceFieldFocused) {
-                diceFieldFocused = false
-                if (hideIme) {
-                    keyboardController?.hide()
-                    focusManager.clearFocus(force = true)
-                }
-            }
-        }
     }
 
     fun requestLeave() {
@@ -1148,7 +1136,7 @@ fun CreateThreadDialog(
             confirmDiscard = false
             return
         }
-        if (kaomojiExpanded || diceExpanded) {
+        if (kaomojiExpanded) {
             closeToolPanels()
             return
         }
@@ -1191,16 +1179,7 @@ fun CreateThreadDialog(
         }
 
         fun openKaomojiPanel() {
-            diceExpanded = false
             kaomojiExpanded = true
-            ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
-            hideSystemIme()
-        }
-
-        fun openDicePanel() {
-            kaomojiExpanded = false
-            diceExpanded = true
-            diceFieldFocused = false
             ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
             hideSystemIme()
         }
@@ -1213,17 +1192,9 @@ fun CreateThreadDialog(
             }
         }
 
-        fun toggleDicePanel() {
-            if (diceExpanded) {
-                diceExpanded = false
-            } else {
-                openDicePanel()
-            }
-        }
-
         // 快捷面板展开时压一次键盘（避免多帧重复 hide 造成卡顿）
-        LaunchedEffect(kaomojiExpanded, diceExpanded) {
-            if (kaomojiExpanded || diceExpanded) {
+        LaunchedEffect(kaomojiExpanded) {
+            if (kaomojiExpanded) {
                 hideSystemIme()
                 delay(48)
                 hideSystemIme()
@@ -1239,7 +1210,6 @@ fun CreateThreadDialog(
             if (!imeCoversNav) return@LaunchedEffect
             if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
             if (kaomojiExpanded) kaomojiExpanded = false
-            if (diceExpanded && !diceFieldFocused) diceExpanded = false
         }
 
         SideEffect {
@@ -1432,13 +1402,13 @@ fun CreateThreadDialog(
                                 Spacer(modifier = Modifier.weight(1f))
 
                                 ComposerToolButtons(
-                                    diceSelected = diceExpanded,
+                                    diceSelected = false,
                                     kaomojiSelected = kaomojiExpanded,
                                     hasImage = attachedImageUri != null,
-                                    onDiceClick = { toggleDicePanel() },
+                                    onDiceClick = { showDiceDialog = true },
                                     onKaomojiClick = { toggleKaomojiPanel() },
                                     onImageClick = {
-                                        closeToolPanels()
+                                        kaomojiExpanded = false
                                         imagePickerLauncher.launch("image/*")
                                     }
                                 )
@@ -1448,7 +1418,7 @@ fun CreateThreadDialog(
                             // visible 绑定 !imeCoversNav：与对话框抬升同帧消失，杜绝晚一帧的 ime+面板叠加
                             val panelReducedMotion = isReducedMotionEnabled()
                             AnimatedVisibility(
-                                visible = (diceExpanded && (diceFieldFocused || !imeCoversNav)) || (kaomojiExpanded && !imeCoversNav),
+                                visible = kaomojiExpanded && !imeCoversNav,
                                 enter = MiooMotion.softExpandEnter(panelReducedMotion),
                                 exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
                             ) {
@@ -1457,23 +1427,11 @@ fun CreateThreadDialog(
                                         .fillMaxWidth()
                                         .height(220.dp)
                                 ) {
-                                    Crossfade(targetState = diceExpanded, label = "composerToolPanel") { dice ->
-                                        if (dice) {
-                                            DiceQuickPanel(
-                                                onInsert = { insertAtCursor(it) },
-                                                onFieldFocusChange = { diceFieldFocused = it },
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(220.dp)
-                                            )
-                                        } else {
-                                            KaomojiQuickPanel(
-                                                onInsert = { insertAtCursor(it) },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                heightDp = 220
-                                            )
-                                        }
-                                    }
+                                    KaomojiQuickPanel(
+                                        onInsert = { insertAtCursor(it) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        heightDp = 220
+                                    )
                                 }
                             }
                         }
@@ -1492,7 +1450,7 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused) closeToolPanels(hideIme = false)
+                                if (state.isFocused) closeToolPanels()
                             },
                         singleLine = true,
                         placeholder = {
@@ -1519,7 +1477,7 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused) closeToolPanels(hideIme = false)
+                                if (state.isFocused) closeToolPanels()
                             },
                         singleLine = true,
                         placeholder = {
@@ -1557,7 +1515,7 @@ fun CreateThreadDialog(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .onFocusChanged { state ->
-                                    if (state.isFocused) closeToolPanels(hideIme = false)
+                                    if (state.isFocused) closeToolPanels()
                                 },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = colorScheme.onSurface
@@ -1631,6 +1589,16 @@ fun CreateThreadDialog(
                         }
                     }
                 }
+            }
+
+            if (showDiceDialog) {
+                DiceDialog(
+                    onDismiss = { showDiceDialog = false },
+                    onInsert = { expr ->
+                        insertAtCursor(expr)
+                        showDiceDialog = false
+                    }
+                )
             }
         }
     }
