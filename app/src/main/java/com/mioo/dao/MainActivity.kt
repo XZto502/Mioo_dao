@@ -160,6 +160,8 @@ class MainActivity : ComponentActivity() {
 
             // Update check well after cold start settles (lazy EntryPoint — no Activity field inject)
             LaunchedEffect(Unit) {
+                // 测试版不检查更新：下载到的正式包包名/签名不同，无法覆盖安装
+                if (com.mioo.dao.BuildConfig.BETA) return@LaunchedEffect
                 delay(10000)
                 val threadRepo = runCatching {
                     EntryPointAccessors.fromApplication(

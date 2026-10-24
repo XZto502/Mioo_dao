@@ -32,6 +32,7 @@ android {
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "BETA", "false")
     }
 
     val releaseStorePath = secret("RELEASE_STORE_FILE")
@@ -63,6 +64,36 @@ android {
         }
     }
 
+    // 测试版签名：与正式版不同的 keystore，可并行安装互不覆盖。
+    // 未配置 BETA_* 时退回 debug 证书（同样与正式版不同签名）。
+    val betaStorePath = secret("BETA_STORE_FILE")
+    val betaStore = betaStorePath?.let { path ->
+        val candidate = File(path)
+        if (candidate.isAbsolute) candidate else rootProject.file(path)
+    }
+    val betaStorePassword = secret("BETA_STORE_PASSWORD")
+    val betaKeyAlias = secret("BETA_KEY_ALIAS")
+    val betaKeyPassword = secret("BETA_KEY_PASSWORD")
+    val hasBetaKeystore = betaStore != null &&
+        betaStore.exists() &&
+        !betaStorePassword.isNullOrBlank() &&
+        !betaKeyAlias.isNullOrBlank() &&
+        !betaKeyPassword.isNullOrBlank()
+    if (hasBetaKeystore && betaStore != null) {
+        val store = betaStore
+        val storePass = betaStorePassword.orEmpty()
+        val alias = betaKeyAlias.orEmpty()
+        val keyPass = betaKeyPassword.orEmpty()
+        signingConfigs {
+            create("beta") {
+                storeFile = store
+                storePassword = storePass
+                keyAlias = alias
+                keyPassword = keyPass
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -76,6 +107,22 @@ android {
                 signingConfigs.getByName("debug")
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // 测试版：包名加 .beta 后缀可与正式版共存，签名独立，应用名区分
+        create("beta") {
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
+            isMinifyEnabled = true
+            isShrinkResources = true
+            isDebuggable = false
+            signingConfig = if (hasBetaKeystore) {
+                signingConfigs.getByName("beta")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            buildConfigField("boolean", "BETA", "true")
+            resValue("string", "app_name", "喵岛测试版")
         }
     }
     compileOptions {
