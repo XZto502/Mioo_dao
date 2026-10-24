@@ -128,7 +128,8 @@ fun SearchScreen(
             Text(
                 text = "搜索引擎 site:",
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(6.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -171,7 +172,7 @@ fun SearchScreen(
 
             if (uiState.recentQueries.isNotEmpty() && uiState.query.isBlank()) {
                 Spacer(modifier = Modifier.height(12.dp))
-                Text("最近搜索", style = MaterialTheme.typography.labelLarge)
+                Text("最近搜索", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(6.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(uiState.recentQueries) { q ->
@@ -214,7 +215,8 @@ fun SearchScreen(
                                     Text(
                                         text = "打开串 No.$tid",
                                         style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
                                         text = "按串号直达（不依赖搜索）",
@@ -243,7 +245,8 @@ fun SearchScreen(
                                 Text(
                                     text = "用 ${uiState.preferredEngine.label} 全站搜索",
                                     style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
@@ -264,6 +267,7 @@ fun SearchScreen(
                             text = "本地结果",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
@@ -281,7 +285,11 @@ fun SearchScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("本地没有匹配", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "本地没有匹配",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "点上方「全站搜索」用搜索引擎 site: 检索岛上内容",
@@ -354,6 +362,7 @@ private fun SearchHitRow(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

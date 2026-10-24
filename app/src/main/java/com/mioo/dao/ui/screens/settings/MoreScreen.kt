@@ -1,6 +1,8 @@
 package com.mioo.dao.ui.screens.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -56,7 +58,8 @@ fun MoreScreen(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(16.dp),
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
@@ -91,7 +94,8 @@ fun MoreScreen(
                         Text(
                             text = "搜索",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -127,7 +131,8 @@ fun MoreScreen(
                         Text(
                             text = "应用设置",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -163,7 +168,8 @@ fun MoreScreen(
                         Text(
                             text = "浏览历史",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -199,7 +205,8 @@ fun MoreScreen(
                         Text(
                             text = "草稿箱",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -233,7 +240,8 @@ fun MoreScreen(
                     Text(
                         text = "关于 喵岛",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -243,7 +251,7 @@ fun MoreScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("作者", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Sanae-Koishi", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Sanae-Koishi", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -255,7 +263,7 @@ fun MoreScreen(
                     Text("版本", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val currentVer = com.mioo.dao.BuildConfig.VERSION_NAME
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("v$currentVer", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text("v$currentVer", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (isCheckingUpdate) "正在检查..." else "检查更新",
@@ -352,5 +360,7 @@ fun MoreScreen(
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(80.dp))
     }
 }
