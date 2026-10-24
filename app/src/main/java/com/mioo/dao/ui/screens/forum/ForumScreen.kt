@@ -1308,9 +1308,10 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .imePaddingAndNavigationBars()
-                            // 键盘态再多留 16dp：对话框下键盘顶的候选词条会吃掉贴边空间
-                            //（无键盘态此 padding 不生效，贴底行为不变）
-                            .padding(bottom = if (imeCoversNav) 16.dp else 0.dp)
+                            // 键盘态再多留 56dp：各输入法候选词条/工具条高度不一
+                            //（实测 Gboard ~40px、带工具条的中输入法可达 150px+），
+                            // 固定余量保证工具栏永远在键盘可视区上方（无键盘态不生效）
+                            .padding(bottom = if (imeCoversNav) 56.dp else 0.dp)
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth()
