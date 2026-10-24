@@ -167,6 +167,34 @@ private val DarkGreenColorScheme = darkColorScheme(
     onSurfaceVariant = DarkOnSurfaceVariant
 )
 
+// AMOLED 纯黑：深色下背景/表面纯黑省电；浅色模式退回经典色板
+private val LightAmoledColorScheme = LightColorScheme
+
+private val DarkAmoledColorScheme = darkColorScheme(
+    primary = DarkPrimary,
+    onPrimary = DarkOnPrimary,
+    primaryContainer = DarkPrimaryContainer,
+    onPrimaryContainer = DarkOnPrimaryContainer,
+    secondary = DarkSecondary,
+    onSecondary = DarkOnSecondary,
+    secondaryContainer = DarkSecondaryContainer,
+    onSecondaryContainer = DarkOnSecondaryContainer,
+    tertiary = DarkTertiary,
+    onTertiary = DarkOnTertiary,
+    tertiaryContainer = DarkTertiaryContainer,
+    onTertiaryContainer = DarkOnTertiaryContainer,
+    error = DarkError,
+    onError = DarkOnError,
+    errorContainer = DarkErrorContainer,
+    onBackground = DarkOnBackground,
+    background = Color(0xFF000000),
+    surface = Color(0xFF000000),
+    onSurface = DarkOnSurface,
+    surfaceVariant = Color(0xFF1A1A1E),
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    outline = DarkOutline
+)
+
 @Composable
 fun MiooDaoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -199,6 +227,7 @@ fun MiooDaoTheme(
         "green" -> {
             if (darkTheme) DarkGreenColorScheme else LightGreenColorScheme
         }
+        "amoled" -> { if (darkTheme) DarkAmoledColorScheme else LightAmoledColorScheme }
         else -> {
             if (darkTheme) DarkColorScheme else LightColorScheme
         }
@@ -216,19 +245,21 @@ fun MiooDaoTheme(
         return enabledColor.copy(alpha = maxOf(enabledColor.alpha, 0.95f))
     }
 
+    val amoledDark = darkTheme && themeColor == "amoled"
     val customColors = if (darkTheme) {
+        // AMOLED 深色下卡片/玻璃用近黑底
         DaoCustomColors(
             po = DarkPoColor,
             sage = DarkSageColor,
             admin = DarkAdminColor,
             quoteLink = DarkQuoteLinkColor,
-            threadCardBg = glassFill(DarkThreadCardBg, solidCard),
-            replyCardBg = glassFill(DarkReplyCardBg, solidCard),
+            threadCardBg = if (amoledDark) Color(0xE6000000) else glassFill(DarkThreadCardBg, solidCard),
+            replyCardBg = if (amoledDark) Color(0xE6000000) else glassFill(DarkReplyCardBg, solidCard),
             fabBg = DarkFabColor,
             fabContent = DarkOnFabColor,
             sageTag = DarkSageTagColor,
-            glassTopBar = glassFill(DarkGlassTopBar, solidSurface),
-            glassNavBar = glassFill(DarkGlassNavBar, solidSurface)
+            glassTopBar = if (amoledDark) Color(0xE6000000) else glassFill(DarkGlassTopBar, solidSurface),
+            glassNavBar = if (amoledDark) Color(0xE6000000) else glassFill(DarkGlassNavBar, solidSurface)
         )
     } else {
         DaoCustomColors(

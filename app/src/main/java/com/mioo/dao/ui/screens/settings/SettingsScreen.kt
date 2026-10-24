@@ -549,7 +549,8 @@ fun SettingsScreen(
                     "classic" to "经典紫色 (Classic M3)",
                     "teal" to "青蓝色 (Cyan)",
                     "pink" to "樱花粉 (Sakura Pink)",
-                    "green" to "森林绿 (Forest Green)"
+                    "green" to "森林绿 (Forest Green)",
+                    "amoled" to "纯黑 (AMOLED)"
                 )
                 
                 colors.forEach { (colorKey, colorLabel) ->
