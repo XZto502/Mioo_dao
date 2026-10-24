@@ -72,12 +72,14 @@ object FontStore {
         val enFile = file(context, english)
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && cnFile != null && enFile != null) {
-                val enFont = android.graphics.fonts.Font.Builder(enFile).build()
-                val cnFont = android.graphics.fonts.Font.Builder(cnFile).build()
-                android.graphics.Typeface.CustomFallbackBuilder(
-                    android.graphics.fonts.FontFamily(enFont)
-                )
-                    .addFallback(android.graphics.fonts.FontFamily(cnFont))
+                val enFamily = android.graphics.fonts.FontFamily.Builder(
+                    android.graphics.fonts.Font.Builder(enFile).build()
+                ).build()
+                val cnFamily = android.graphics.fonts.FontFamily.Builder(
+                    android.graphics.fonts.Font.Builder(cnFile).build()
+                ).build()
+                android.graphics.Typeface.CustomFallbackBuilder(enFamily)
+                    .addCustomFallback(cnFamily)
                     .build()
             } else if (cnFile != null) {
                 android.graphics.Typeface.createFromFile(cnFile)
