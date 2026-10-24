@@ -2,7 +2,6 @@ package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -97,6 +96,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -141,6 +141,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, kotlinx.coroutines.FlowPreview::class)
 @Composable
@@ -1353,20 +1354,33 @@ fun ReplyInputArea(
         closeToolPanels()
     }
 
-    // 系统键盘再次抬起 → 关闭快捷面板（含 insets 失派发设备的 visible-frame 兜底）。
-    // 触发阈值与回复栏抬升(imeCoversNav)一致：否则 ime 在 nav~48dp 区间边抬边带面板，
-    // 高度先冲过终态再回落（弹跳）。
+    // 【共享底部高度槽位】底部总占位恒取 max(键盘, 面板)，绝不相加——
+    // 从颜文字/骰子面板切到系统键盘时，槽位只在两个值之间平滑取大变化，永不过冲。
     val imeBottomPx = rememberEffectiveImeBottomPx()
-    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
-    // 键盘盖住小白条时只抬整条回复栏；否则毛玻璃铺到屏幕底，控件留在导航条上方。
-    val imeCoversNav = imeBottomPx > navBottomPx
-    LaunchedEffect(imeCoversNav) {
-        if (!imeCoversNav) return@LaunchedEffect
-        if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
-        if (kaomojiMenuExpanded || diceMenuExpanded) {
-            closeToolPanels()
+    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
+    var rememberedImeHeightPx by remember { mutableIntStateOf(0) }
+    val defaultPanelHeightPx = with(density) { 280.dp.roundToPx() }
+    // 面板高度跟随用户键盘实际高度（键盘升过一次后记录），否则兜底 280dp
+    val targetPanelHeightPx =
+        if (rememberedImeHeightPx > navBarBottomPx) rememberedImeHeightPx else defaultPanelHeightPx
+    val isKeyboardRising = imeBottomPx > navBarBottomPx + with(density) { 40.dp.roundToPx() }
+    LaunchedEffect(imeBottomPx, isKeyboardRising) {
+        if (imeBottomPx > rememberedImeHeightPx) {
+            rememberedImeHeightPx = imeBottomPx
+        }
+        // 键盘升起 → 同帧关面板（单一动画源）。这是键盘主动升起，不是用户点面板按钮。
+        // 仍尊重刚点开面板后的 450ms 窗口：从键盘态点开面板会先 hideSystemIme，
+        // 键盘下落动画期间 isKeyboardRising 同样为 true，无窗口会把刚打开的面板立刻关掉。
+        if (isKeyboardRising) {
+            if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
+            if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
+            if (diceMenuExpanded) diceMenuExpanded = false
         }
     }
+    // 【核心】底部总占位 = max(键盘, 面板)，绝不相加
+    val bottomSlotHeightPx =
+        if (toolPanelOpen) maxOf(imeBottomPx, targetPanelHeightPx) else maxOf(imeBottomPx, navBarBottomPx)
+    val bottomSlotHeightDp = with(density) { bottomSlotHeightPx.toDp() }
 
     LaunchedEffect(replyText) {
         if (textFieldValue.text != replyText) {
@@ -1394,23 +1408,22 @@ fun ReplyInputArea(
         }
     }
 
+    // 毛玻璃贴屏幕物理底边，由内容下方的共享槽位把控件顶起来：
+    // 无键盘无面板时槽位 = 导航条高度（与现在贴导航条一致）；
+    // 键盘/面板谁高用谁，玻璃始终铺到屏幕底无断层。
     Surface(
         color = DaoTheme.colors.glassNavBar,
         tonalElevation = 0.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (imeCoversNav)
-                    Modifier.padding(bottom = with(density) { imeBottomPx.toDp() })
-                else Modifier
-            )
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (imeCoversNav) Modifier else Modifier.navigationBarsPadding())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
             val reducedMotion = isReducedMotionEnabled()
             AnimatedVisibility(
                 visible = quotedPostNo != null,
@@ -1631,34 +1644,33 @@ fun ReplyInputArea(
                 }
             }
 
-            // 骰子/颜文字共用固定高度面板：切换时只交叉淡入内容，高度不变，
-            // 避免旧面板收起+新面板展开造成的工具栏上下弹跳。
-            // visible 直接绑定 !imeCoversNav：键盘开始抬栏的同一帧面板即消失，
-            // 不再经过 LaunchedEffect 晚一帧（那一帧 ime+面板叠加=过冲弹跳）
-            AnimatedVisibility(
-                visible = toolPanelOpen && !imeCoversNav,
-                enter = MiooMotion.softExpandEnter(reducedMotion),
-                exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(reducedMotion)
+            }
+
+            // 【共享底部槽位】max(键盘, 面板)，绝不相加。面板开时直接填充槽位
+            // （无收起动画，高度变化完全由槽位驱动 = 单一动画源，杜绝 ime+面板叠加过冲）。
+            // 毛玻璃铺底直达屏幕底，面板内容 navigationBarsPadding 防撞小白条。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(bottomSlotHeightDp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .height(200.dp)
-                ) {
+                if (toolPanelOpen) {
                     Crossfade(targetState = diceMenuExpanded, label = "composerToolPanel") { dice ->
                         if (dice) {
                             DiceQuickPanel(
                                 onInsert = { insertAtCursor(it) },
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp)
+                                    .fillMaxSize()
+                                    .navigationBarsPadding()
                             )
                         } else {
                             KaomojiQuickPanel(
                                 onInsert = { insertAtCursor(it) },
-                                modifier = Modifier.fillMaxWidth(),
-                                heightDp = 200
+                                modifier = Modifier.navigationBarsPadding(),
+                                heightDp = with(density) {
+                                    (bottomSlotHeightPx - navBarBottomPx).coerceAtLeast(0)
+                                        .toDp().value.roundToInt()
+                                }
                             )
                         }
                     }
