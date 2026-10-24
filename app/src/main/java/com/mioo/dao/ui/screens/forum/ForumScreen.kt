@@ -1308,8 +1308,9 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .imePaddingAndNavigationBars()
-                            // 键盘测量顶边在部分设备偏低（候选词条/悬浮键盘），再抬高一点防遮住工具栏
-                            .padding(bottom = 12.dp)
+                            // 键盘态再多留 16dp：对话框下键盘顶的候选词条会吃掉贴边空间
+                            //（无键盘态此 padding 不生效，贴底行为不变）
+                            .padding(bottom = if (imeCoversNav) 16.dp else 0.dp)
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth()
@@ -1406,12 +1407,12 @@ fun CreateThreadDialog(
                                 )
                             }
 
-                            // 骰子/颜文字共用固定高度面板：切换只交叉淡入，高度不变（防工具栏弹跳）
+                            // 骰子/颜文字共用固定高度面板：切换只交叉淡入，高度不变（防工具栏弹跳）。
+                            // visible 绑定 !imeCoversNav：与对话框抬升同帧消失，杜绝晚一帧的 ime+面板叠加
                             val panelReducedMotion = isReducedMotionEnabled()
                             AnimatedVisibility(
-                                visible = diceExpanded || kaomojiExpanded,
+                                visible = (diceExpanded || kaomojiExpanded) && !imeCoversNav,
                                 enter = MiooMotion.softExpandEnter(panelReducedMotion),
-                                // 键盘升起导致的面板关闭瞬切，避免 ime 上升+面板收起叠加过冲
                                 exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
                             ) {
                                 Box(

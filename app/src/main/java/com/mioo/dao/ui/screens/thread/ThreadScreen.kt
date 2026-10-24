@@ -1632,12 +1632,12 @@ fun ReplyInputArea(
             }
 
             // 骰子/颜文字共用固定高度面板：切换时只交叉淡入内容，高度不变，
-            // 避免旧面板收起+新面板展开造成的工具栏上下弹跳
+            // 避免旧面板收起+新面板展开造成的工具栏上下弹跳。
+            // visible 直接绑定 !imeCoversNav：键盘开始抬栏的同一帧面板即消失，
+            // 不再经过 LaunchedEffect 晚一帧（那一帧 ime+面板叠加=过冲弹跳）
             AnimatedVisibility(
-                visible = toolPanelOpen,
+                visible = toolPanelOpen && !imeCoversNav,
                 enter = MiooMotion.softExpandEnter(reducedMotion),
-                // 键盘升起导致的面板关闭瞬切（不播收起动画）：
-                // 否则 ime 上升 + 面板收起两个动画叠加，输入行会先冲过终态再回落
                 exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(reducedMotion)
             ) {
                 Box(

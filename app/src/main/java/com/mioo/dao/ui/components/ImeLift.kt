@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 
 /**
  * Effective IME bottom offset in px: max(WindowInsets.ime, visible-frame fallback).
@@ -24,8 +25,14 @@ import androidx.compose.ui.platform.LocalView
  * Some OEM / emulator builds never dispatch IME insets to edge-to-edge windows
  * (source stays invisible with an empty frame), which silently breaks imePadding().
  * The fallback measures the keyboard with the classic getWindowVisibleDisplayFrame
- * trick: root height minus visible-frame bottom, latched when it exceeds 15% of
- * the root height so the navigation bar alone never counts as a keyboard.
+ * trick, latched when it exceeds 25% of the screen so navigation-bar residue
+ * never counts as a keyboard.
+ *
+ * Inside a Dialog window the fallback alone under-reports (~90px): the dialog's
+ * own rootView is resized by adjustResize, and visibleFrame.bottom lags the real
+ * keyboard top. So the listener ALSO samples the host Activity's decor view
+ * (never resized, always reports the true keyboard top) and takes the max of
+ * both measurements.
  */
 @Composable
 fun rememberEffectiveImeBottomPx(): Int {
@@ -35,21 +42,42 @@ fun rememberEffectiveImeBottomPx(): Int {
 
     var fallback by remember(view) { mutableIntStateOf(0) }
     DisposableEffect(view) {
-        val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            val frame = Rect()
-            view.getWindowVisibleDisplayFrame(frame)
-            val root = view.rootView
-            val rootHeight = root.height
-            if (rootHeight > 0) {
-                val covered = (rootHeight - frame.bottom).coerceAtLeast(0)
-                fallback = if (covered > rootHeight * 15 / 100) covered else 0
+        // Host activity decor: unwrap ContextThemeWrapper chains (dialogs wrap).
+        var ctx: android.content.Context? = view.context
+        var activity: android.app.Activity? = null
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is android.app.Activity) {
+                activity = ctx
+                break
             }
+            ctx = ctx.baseContext
+        }
+        val activityDecor = activity?.window?.decorView
+
+        fun measure(root: android.view.View, screenH: Int): Int {
+            val frame = Rect()
+            root.getWindowVisibleDisplayFrame(frame)
+            val covered = (screenH - frame.bottom).coerceAtLeast(0)
+            return if (covered > screenH * 25 / 100) covered else 0
+        }
+
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            val metrics = view.resources.displayMetrics
+            val screenH = metrics.heightPixels
+            if (screenH <= 0) return@OnGlobalLayoutListener
+            val own = measure(view.rootView, screenH)
+            val host = activityDecor?.let { measure(it, screenH) } ?: 0
+            fallback = maxOf(own, host)
         }
         view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        activityDecor?.viewTreeObserver?.addOnGlobalLayoutListener(listener)
         listener.onGlobalLayout()
         onDispose {
             val observer = view.viewTreeObserver
             if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
+            activityDecor?.viewTreeObserver?.let { o ->
+                if (o.isAlive) o.removeOnGlobalLayoutListener(listener)
+            }
         }
     }
 
