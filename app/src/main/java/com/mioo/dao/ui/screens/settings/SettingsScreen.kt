@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Palette
@@ -944,6 +945,51 @@ fun SettingsScreen(
                     androidx.compose.material3.Switch(
                         checked = settings.draftBoxEnabled,
                         onCheckedChange = { viewModel.updateDraftBoxEnabled(it) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 引用自动显示开关
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.FormatQuote, contentDescription = "引用自动显示")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "引用自动显示",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateQuoteAutoDisplay(!settings.quoteAutoDisplayEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.quoteAutoDisplayEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.quoteAutoDisplayEnabled,
+                        onCheckedChange = { viewModel.updateQuoteAutoDisplay(it) }
                     )
                 }
             }

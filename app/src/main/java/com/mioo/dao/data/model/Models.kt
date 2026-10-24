@@ -40,7 +40,9 @@ data class UserSettings(
     /** Image disk-cache cap in megabytes. Oldest files are dropped past this. */
     val cacheLimitMb: Int = ImageCacheLimit.DEFAULT_MB,
     /** 草稿箱总开关：关闭后回复/新串不再自动存草稿。 */
-    val draftBoxEnabled: Boolean = true
+    val draftBoxEnabled: Boolean = true,
+    /** 引用自动显示：关闭后串内页回复正文不再内嵌展开引用卡片，仅保留可点击链接。 */
+    val quoteAutoDisplayEnabled: Boolean = true
 )
 
 /** User-facing cap for the Coil image disk cache. */

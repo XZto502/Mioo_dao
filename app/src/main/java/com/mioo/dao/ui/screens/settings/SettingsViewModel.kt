@@ -29,7 +29,8 @@ import kotlinx.coroutines.launch
 data class ThreadScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
-    val blockedThreads: List<String> = emptyList()
+    val blockedThreads: List<String> = emptyList(),
+    val quoteAutoDisplayEnabled: Boolean = true
 )
 
 /** Minimal slice for ForumScreen — pins + compose cookies only. */
@@ -59,7 +60,8 @@ class SettingsViewModel @Inject constructor(
             ThreadScreenSettings(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
-                blockedThreads = it.blockedThreads
+                blockedThreads = it.blockedThreads,
+                quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled
             )
         }
         .distinctUntilChanged()
@@ -285,6 +287,10 @@ class SettingsViewModel @Inject constructor(
 
     fun updateDraftBoxEnabled(enabled: Boolean) {
         settingsRepository.updateDraftBoxEnabled(enabled)
+    }
+
+    fun updateQuoteAutoDisplay(enabled: Boolean) {
+        settingsRepository.updateQuoteAutoDisplay(enabled)
     }
 
     fun updateCacheLimitMb(mb: Int) {

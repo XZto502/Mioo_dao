@@ -610,6 +610,7 @@ fun ThreadScreen(
                         ThreadReplyRow(
                             item = item,
                             quoteCache = quoteCache,
+                            inlineQuotesEnabled = threadSettings.quoteAutoDisplayEnabled,
                             poUserHash = poUserHash,
                             currentThreadId = viewModel.threadId,
                             onQuoteClick = onQuoteClick,
@@ -1120,6 +1121,7 @@ fun parseCookieName(cookie: String): String {
 private fun ThreadReplyRow(
     item: ReplyDisplayItem,
     quoteCache: androidx.compose.runtime.snapshots.SnapshotStateMap<String, Reply>,
+    inlineQuotesEnabled: Boolean,
     poUserHash: String?,
     currentThreadId: String,
     onQuoteClick: (String) -> Unit,
@@ -1132,7 +1134,7 @@ private fun ThreadReplyRow(
     onFreeCopy: () -> Unit
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
-    val quotedReplies = if (item.quoteIds.isEmpty()) {
+    val quotedReplies = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
         emptyList()
     } else {
         item.quoteIds.mapNotNull { id -> quoteCache[id] }
