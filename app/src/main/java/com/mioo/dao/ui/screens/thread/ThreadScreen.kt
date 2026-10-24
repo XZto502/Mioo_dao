@@ -1472,7 +1472,7 @@ fun ReplyInputArea(
                         IconButton(
                             onClick = { attachedImageUri = null },
                             modifier = Modifier
-                                .size(16.dp)
+                                .size(14.dp)
                                 .align(Alignment.TopEnd)
                                 .background(Color.Black.copy(alpha = 0.4f), shape = androidx.compose.foundation.shape.CircleShape)
                         ) {
@@ -1480,7 +1480,7 @@ fun ReplyInputArea(
                                 imageVector = Icons.Default.Cancel,
                                 contentDescription = "Remove",
                                 tint = Color.White,
-                                modifier = Modifier.size(10.dp)
+                                modifier = Modifier.size(12.dp)
                             )
                         }
                     }

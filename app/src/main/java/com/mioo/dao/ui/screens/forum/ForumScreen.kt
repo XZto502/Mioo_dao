@@ -1566,7 +1566,7 @@ fun CreateThreadDialog(
                                 IconButton(
                                     onClick = { attachedImageUri = null },
                                     modifier = Modifier
-                                        .size(20.dp)
+                                        .size(18.dp)
                                         .align(Alignment.TopEnd)
                                         .padding(4.dp)
                                         .background(
@@ -1578,7 +1578,7 @@ fun CreateThreadDialog(
                                         imageVector = Icons.Default.Cancel,
                                         contentDescription = "移除图片",
                                         tint = Color.White,
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 }
                             }
