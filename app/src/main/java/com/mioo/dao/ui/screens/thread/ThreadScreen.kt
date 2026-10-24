@@ -1398,6 +1398,7 @@ fun ReplyInputArea(
     var showCookieConfirm by remember { mutableStateOf(false) }
     var cookieConfirmedOnce by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var previewAttachedUri by remember { mutableStateOf<Uri?>(null) }
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val view = androidx.compose.ui.platform.LocalView.current
@@ -1585,7 +1586,9 @@ fun ReplyInputArea(
                             painter = rememberAsyncImagePainter(attachedImageUri),
                             contentDescription = "Preview",
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable { previewAttachedUri = attachedImageUri }
                         )
                         IconButton(
                             onClick = { attachedImageUri = null },
@@ -1765,6 +1768,28 @@ fun ReplyInputArea(
                 showDiceDialog = false
             }
         )
+    }
+
+    previewAttachedUri?.let { uri ->
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { previewAttachedUri = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.92f))
+                    .clickable { previewAttachedUri = null },
+                contentAlignment = Alignment.Center
+            ) {
+                coil.compose.AsyncImage(
+                    model = uri,
+                    contentDescription = "附件预览",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
     }
 
     if (showCookieConfirm) {

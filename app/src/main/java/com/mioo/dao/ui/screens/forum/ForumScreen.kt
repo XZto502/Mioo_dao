@@ -1075,6 +1075,7 @@ fun CreateThreadDialog(
     var showCookieConfirm by remember { mutableStateOf(false) }
     var cookieConfirmedOnce by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var previewAttachedUri by remember { mutableStateOf<Uri?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
     /** 打开快捷面板后短时间内忽略 IME 可见（键盘下落动画） */
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
@@ -1568,7 +1569,9 @@ fun CreateThreadDialog(
                                     painter = rememberAsyncImagePainter(attachedImageUri),
                                     contentDescription = "图片预览",
                                     contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable { previewAttachedUri = attachedImageUri }
                                 )
                                 IconButton(
                                     onClick = { attachedImageUri = null },
@@ -1605,6 +1608,28 @@ fun CreateThreadDialog(
                         showDiceDialog = false
                     }
                 )
+            }
+
+            previewAttachedUri?.let { uri ->
+                Dialog(
+                    onDismissRequest = { previewAttachedUri = null },
+                    properties = DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.92f))
+                            .clickable { previewAttachedUri = null },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        coil.compose.AsyncImage(
+                            model = uri,
+                            contentDescription = "附件预览",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             }
 
             if (showCookieConfirm) {

@@ -136,12 +136,7 @@ fun SearchScreen(
                 items(XdWebSearch.Engine.entries.toList()) { engine ->
                     FilterChip(
                         selected = uiState.preferredEngine == engine,
-                        onClick = {
-                            viewModel.selectEngine(engine)
-                            if (uiState.query.isNotBlank()) {
-                                viewModel.openSiteSearch(engine)
-                            }
-                        },
+                        onClick = { viewModel.selectEngine(engine) },
                         label = { Text(engine.label) }
                     )
                 }
