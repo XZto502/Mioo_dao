@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.model.ForumGroup
 import com.mioo.dao.ui.components.FreeCopyDialog
@@ -143,8 +144,8 @@ fun HomeScreen(
                     )
                     1 -> ForumList(
                         forumGroups = uiState.forumGroups,
-                        collapsedGroups = homeForumSettings.collapsedForumGroups,
-                        onToggleGroup = { settingsViewModel.toggleForumGroupCollapse(it) },
+                        expandedGroups = homeForumSettings.expandedForumGroups,
+                        onToggleGroup = { settingsViewModel.toggleForumGroupExpand(it) },
                         onForumClick = onNavigateToForum
                     )
                 }
@@ -295,7 +296,7 @@ fun TimelineList(
 @Composable
 fun ForumList(
     forumGroups: List<ForumGroup>,
-    collapsedGroups: List<String>,
+    expandedGroups: List<String>,
     onToggleGroup: (String) -> Unit,
     onForumClick: (String, String) -> Unit
 ) {
@@ -305,7 +306,7 @@ fun ForumList(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         forumGroups.forEach { group ->
-            val groupCollapsed = collapsedGroups.contains(group.id)
+            val groupCollapsed = !expandedGroups.contains(group.id)
             item(key = "group_${group.id}", contentType = "forum_group_header") {
                 Row(
                     modifier = Modifier
@@ -315,7 +316,7 @@ fun ForumList(
                 ) {
                     Text(
                         text = group.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.weight(1f)

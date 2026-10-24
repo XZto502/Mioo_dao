@@ -30,7 +30,7 @@ data class UserSettings(
     val blockedThreads: List<String> = emptyList(),
     val blockedUsers: List<String> = emptyList(),
     val pinnedForums: List<String> = emptyList(),
-    val collapsedForumGroups: List<String> = emptyList(),
+    val expandedForumGroups: List<String> = emptyList(),
     val blockedKeywords: List<String> = emptyList(),
     val smartPreloadMode: String = "DISABLED",
     val preloadCount: Int = 10,

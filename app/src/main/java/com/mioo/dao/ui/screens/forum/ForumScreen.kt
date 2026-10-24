@@ -384,25 +384,25 @@ fun ForumScreen(
 
                     // Normal Forum Groups
                     uiState.forumGroups.forEach { group ->
-                        val groupCollapsed = forumSettings.collapsedForumGroups.contains(group.id)
+                        val groupCollapsed = !forumSettings.expandedForumGroups.contains(group.id)
                         item(key = "header_${group.id}", contentType = "drawer_header") {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { settingsViewModel.toggleForumGroupCollapse(group.id) }
+                                    .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = group.name,
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
                                     text = "${group.forums.size}",
-                                    style = MaterialTheme.typography.labelSmall,
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(end = 6.dp)
                                 )
@@ -411,7 +411,7 @@ fun ForumScreen(
                                     contentDescription = if (groupCollapsed) "展开分类" else "收起分类",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(18.dp)
                                         .rotate(if (groupCollapsed) 0f else 180f)
                                 )
                             }

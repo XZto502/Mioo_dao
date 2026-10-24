@@ -39,7 +39,7 @@ data class ForumScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
     val pinnedForums: List<String> = emptyList(),
-    val collapsedForumGroups: List<String> = emptyList(),
+    val expandedForumGroups: List<String> = emptyList(),
     val draftBoxEnabled: Boolean = true
 )
 
@@ -78,7 +78,7 @@ class SettingsViewModel @Inject constructor(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
                 pinnedForums = it.pinnedForums,
-                collapsedForumGroups = it.collapsedForumGroups,
+                expandedForumGroups = it.expandedForumGroups,
                 draftBoxEnabled = it.draftBoxEnabled
             )
         }
@@ -185,8 +185,8 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.togglePinForum(forumId)
     }
 
-    fun toggleForumGroupCollapse(groupId: String) {
-        settingsRepository.toggleForumGroupCollapse(groupId)
+    fun toggleForumGroupExpand(groupId: String) {
+        settingsRepository.toggleForumGroupExpand(groupId)
     }
 
     fun addBlockedKeyword(keyword: String) {

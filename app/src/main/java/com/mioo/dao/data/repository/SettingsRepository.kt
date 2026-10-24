@@ -45,7 +45,7 @@ class SettingsRepository @Inject constructor(
             settingsDataStore.subscriptionNotificationsFlow,
             settingsDataStore.notificationIntervalMinutesFlow,
             settingsDataStore.lineHeightScaleFlow,
-            settingsDataStore.collapsedForumGroupsFlow,
+            settingsDataStore.expandedForumGroupsFlow,
             settingsDataStore.fontFamilyFlow
         ) { args ->
             val cookie = args[0] as? String
@@ -74,7 +74,7 @@ class SettingsRepository @Inject constructor(
             val notificationIntervalMinutes = args[16] as Int
             val lineHeightScale = args[17] as Float
             @Suppress("UNCHECKED_CAST")
-            val collapsedForumGroups = args[18] as List<String>
+            val expandedForumGroups = args[18] as List<String>
             val fontFamily = args[19] as String
 
             val themeMode = try {
@@ -97,7 +97,7 @@ class SettingsRepository @Inject constructor(
                 blockedThreads = blockedThreads,
                 blockedUsers = blockedUsers,
                 pinnedForums = pinnedForums,
-                collapsedForumGroups = collapsedForumGroups,
+                expandedForumGroups = expandedForumGroups,
                 blockedKeywords = blockedKeywords,
                 smartPreloadMode = smartPreloadMode,
                 preloadCount = preloadCount,
@@ -348,15 +348,15 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    fun toggleForumGroupCollapse(groupId: String) {
+    fun toggleForumGroupExpand(groupId: String) {
         repositoryScope.launch {
-            val current = settings.value.collapsedForumGroups.toMutableList()
+            val current = settings.value.expandedForumGroups.toMutableList()
             if (current.contains(groupId)) {
                 current.remove(groupId)
             } else {
                 current.add(groupId)
             }
-            settingsDataStore.saveCollapsedForumGroups(current)
+            settingsDataStore.saveExpandedForumGroups(current)
         }
     }
 
