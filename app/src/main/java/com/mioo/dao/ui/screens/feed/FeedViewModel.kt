@@ -16,9 +16,12 @@ import com.mioo.dao.ui.components.toFilteredThreadListItems
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -47,6 +50,14 @@ class FeedViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(FeedUiState())
     val uiState: StateFlow<FeedUiState> = _uiState
+
+    /** 一次性错误提示事件（取消订阅失败 / 加载更多失败等），由 FeedScreen 弹 Toast */
+    private val _errorEvents = MutableSharedFlow<String>()
+    val errorEvents: SharedFlow<String> = _errorEvents.asSharedFlow()
+
+    private var remotePage = 1
+    private var remoteLoadingMore = false
+    private var remoteEndReached = false
 
     init {
         // Local bookmarks → prebuilt display items
@@ -104,6 +115,8 @@ class FeedViewModel @Inject constructor(
     }
 
     private fun loadRemoteFeed(uuid: String) {
+        remotePage = 1
+        remoteEndReached = false
         remoteFeedJob?.cancel()
         remoteFeedJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
@@ -142,8 +155,51 @@ class FeedViewModel @Inject constructor(
 
     fun unsubscribeRemote(uuid: String, threadId: String) {
         viewModelScope.launch {
-            threadRepository.delFeed(uuid, threadId).collect {
-                loadRemoteFeed(uuid)
+            threadRepository.delFeed(uuid, threadId).collect { response ->
+                when (response) {
+                    is XdResponse.Success -> loadRemoteFeed(uuid)
+                    is XdResponse.Error -> _errorEvents.tryEmit("取消订阅失败：${response.message}")
+                }
+            }
+        }
+    }
+
+    fun loadMoreRemote() {
+        val uuid = _uiState.value.selectedFolderId ?: return
+        // 独立标志：加载更多不动 isLoading（那是首页全屏 spinner 的开关，动了会闪屏）
+        if (remoteLoadingMore || remoteEndReached || _uiState.value.isLoading) return
+        remoteLoadingMore = true
+        remotePage += 1
+        viewModelScope.launch {
+            try {
+                threadRepository.getFeed(uuid, remotePage).collect { response ->
+                    if (_uiState.value.selectedFolderId != uuid) return@collect
+                    if (response is XdResponse.Success) {
+                        val fresh = response.data
+                        if (fresh.isEmpty()) {
+                            remoteEndReached = true
+                            return@collect
+                        }
+                        val merged = (_uiState.value.remoteThreads + fresh).distinctBy { it.idStr }
+                        if (merged.size == _uiState.value.remoteThreads.size) remoteEndReached = true
+                        val items = withContext(Dispatchers.Default) {
+                            merged.toFilteredThreadListItems(
+                                blockedThreads = emptySet(),
+                                blockedUsers = emptySet(),
+                                blockedKeywords = emptyList()
+                            )
+                        }
+                        _uiState.update {
+                            it.copy(remoteThreads = merged, remoteDisplayItems = items)
+                        }
+                    } else {
+                        // 失败回退页码，让用户下拉重试
+                        remotePage -= 1
+                        _errorEvents.tryEmit("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")
+                    }
+                }
+            } finally {
+                remoteLoadingMore = false
             }
         }
     }

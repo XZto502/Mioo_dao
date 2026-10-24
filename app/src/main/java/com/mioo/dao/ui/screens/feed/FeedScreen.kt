@@ -1,6 +1,5 @@
 package com.mioo.dao.ui.screens.feed
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,9 +13,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -24,19 +24,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +51,8 @@ import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -69,6 +72,14 @@ fun FeedScreen(
     val scope = rememberCoroutineScope()
     val emptyStringLambda = remember { { _: String -> } }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
+
+    // 订阅操作失败等一次性错误提示
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.errorEvents.collect { msg ->
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     // Pre-parse HTML for currently visible feed list
     LaunchedEffect(
@@ -209,6 +220,18 @@ fun FeedScreen(
                         initialDelayMs = 400
                     )
 
+                    // 触底加载更多（本地收藏为全量数据，loadMoreRemote 在 VM 里对 null 夹直接返回）
+                    val shouldLoadMore = remember {
+                        derivedStateOf {
+                            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+                                ?: return@derivedStateOf false
+                            last.index >= listState.layoutInfo.totalItemsCount - 3
+                        }
+                    }
+                    LaunchedEffect(shouldLoadMore.value) {
+                        if (shouldLoadMore.value) viewModel.loadMoreRemote()
+                    }
+
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
@@ -261,7 +284,6 @@ fun FeedScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LocalBookmarkRow(
     item: BookmarkListItem,
@@ -269,49 +291,45 @@ private fun LocalBookmarkRow(
     onUnsubscribe: () -> Unit,
     emptyStringLambda: (String) -> Unit
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onUnsubscribe()
-                true
-            } else {
-                false
-            }
-        }
-    )
+    var confirmDelete by remember { mutableStateOf(false) }
     val onClick = remember(item.id) { { onNavigateToThread(item.id) } }
 
-    SwipeToDismissBox(
-        state = dismissState,
-        backgroundContent = {
-            DismissBackground(dismissDirection = dismissState.dismissDirection)
-        },
-        content = {
-            Box {
-                ThreadCard(
-                    postData = item.postData,
-                    replyCount = 0,
-                    onThreadClick = onClick,
-                    onQuoteClick = emptyStringLambda,
-                    onImageClick = emptyStringLambda
-                )
-                if (item.newReplyCount > 0) {
-                    Badge(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(10.dp),
-                        containerColor = MaterialTheme.colorScheme.error
-                    ) {
-                        Text("+${item.newReplyCount}")
-                    }
-                }
+    Box {
+        ThreadCard(
+            postData = item.postData,
+            replyCount = 0,
+            onThreadClick = onClick,
+            onQuoteClick = emptyStringLambda,
+            onImageClick = emptyStringLambda,
+            onLongClick = { confirmDelete = true }
+        )
+        if (item.newReplyCount > 0) {
+            Badge(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp),
+                containerColor = MaterialTheme.colorScheme.error
+            ) {
+                Text("+${item.newReplyCount}")
             }
-        },
-        enableDismissFromStartToEnd = false
-    )
+        }
+        if (confirmDelete) {
+            AlertDialog(
+                onDismissRequest = { confirmDelete = false },
+                properties = immersiveDialogProperties(),
+                title = { ImmersiveDialogEffect(); Text("取消订阅？") },
+                text = { Text("将从订阅列表移除 No.${item.id}") },
+                confirmButton = {
+                    Button(onClick = { confirmDelete = false; onUnsubscribe() }) { Text("移除") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+                }
+            )
+        }
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RemoteBookmarkRow(
     item: ThreadListItem,
@@ -319,56 +337,29 @@ private fun RemoteBookmarkRow(
     onUnsubscribe: () -> Unit,
     emptyStringLambda: (String) -> Unit
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onUnsubscribe()
-                true
-            } else {
-                false
-            }
-        }
-    )
+    var confirmDelete by remember { mutableStateOf(false) }
     val onClick = remember(item.idStr) { { onNavigateToThread(item.idStr) } }
 
-    SwipeToDismissBox(
-        state = dismissState,
-        backgroundContent = {
-            DismissBackground(dismissDirection = dismissState.dismissDirection)
-        },
-        content = {
-            ThreadCard(
-                postData = item.postData,
-                replyCount = item.replyCount,
-                onThreadClick = onClick,
-                onQuoteClick = emptyStringLambda,
-                onImageClick = emptyStringLambda
-            )
-        },
-        enableDismissFromStartToEnd = false
+    ThreadCard(
+        postData = item.postData,
+        replyCount = item.replyCount,
+        onThreadClick = onClick,
+        onQuoteClick = emptyStringLambda,
+        onImageClick = emptyStringLambda,
+        onLongClick = { confirmDelete = true }
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DismissBackground(dismissDirection: SwipeToDismissBoxValue) {
-    val color = when (dismissDirection) {
-        SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
-        else -> Color.Transparent
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(color, shape = MaterialTheme.shapes.medium)
-            .padding(horizontal = 24.dp),
-        contentAlignment = Alignment.CenterEnd
-    ) {
-        if (dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "Delete",
-                tint = MaterialTheme.colorScheme.onErrorContainer
-            )
-        }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            properties = immersiveDialogProperties(),
+            title = { ImmersiveDialogEffect(); Text("取消订阅？") },
+            text = { Text("将从订阅列表移除 No.${item.idStr}") },
+            confirmButton = {
+                Button(onClick = { confirmDelete = false; onUnsubscribe() }) { Text("移除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            }
+        )
     }
 }

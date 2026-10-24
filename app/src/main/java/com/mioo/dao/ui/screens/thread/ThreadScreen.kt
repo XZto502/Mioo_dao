@@ -1498,6 +1498,8 @@ fun ReplyInputArea(
     LaunchedEffect(isReplying) {
         if (wasReplying && !isReplying && replyError == null) {
             attachedImageUri = null
+            // 发送成功后收起输入法
+            hideSystemIme()
         }
         wasReplying = isReplying
     }

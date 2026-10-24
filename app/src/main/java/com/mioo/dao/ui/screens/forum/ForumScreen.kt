@@ -1111,6 +1111,9 @@ fun CreateThreadDialog(
         }
         if (!canSubmit) return
         val finalAuthor = if (author.isBlank()) "无名氏" else author
+        // 成功路径在父层关闭对话框，这里先收起键盘、清焦点
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
         onSubmit(title, finalAuthor, contentValue.text, attachedImageUri)
     }
 

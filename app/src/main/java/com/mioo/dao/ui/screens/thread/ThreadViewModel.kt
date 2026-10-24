@@ -465,6 +465,14 @@ class ThreadViewModel @Inject constructor(
                             )
                         }
 
+                        // 续读直接进第 N 页时 repo 的 page<=1 历史写入会跳过，这里补记
+                        //（saveToHistory 自带去重/节流）
+                        if (mode == LoadMode.REPLACE) {
+                            viewModelScope.launch {
+                                runCatching { threadRepository.saveToHistory(threadData) }
+                            }
+                        }
+
                         // Bookmark read: only when subscribed, once per distinct replyCount
                         if (_chromeState.value.isSubscribed &&
                             mode != LoadMode.PREPEND &&
