@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.model.UserSettings
+import com.mioo.dao.data.repository.BackupRepository
 import com.mioo.dao.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -47,7 +48,8 @@ data class ForumScreenSettings(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val threadRepository: ThreadRepository
+    private val threadRepository: ThreadRepository,
+    private val backupRepository: BackupRepository
 ) : ViewModel() {
 
     val settingsState: StateFlow<UserSettings> = settingsRepository.settings
@@ -178,6 +180,12 @@ class SettingsViewModel @Inject constructor(
     fun exportCookiesJson(): String = settingsRepository.exportCookiesJson()
 
     fun importCookiesJson(json: String): Int = settingsRepository.importCookiesJson(json)
+
+    suspend fun buildBackup(sections: Set<String>): String =
+        backupRepository.exportBackup(sections)
+
+    suspend fun restoreBackup(json: String): BackupRepository.ImportResult =
+        backupRepository.importBackup(json)
 
     fun updateAuthCookie(authCookie: String) {
         settingsRepository.updateAuthCookie(authCookie)

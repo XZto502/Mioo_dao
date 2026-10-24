@@ -18,6 +18,9 @@ interface DraftDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(draft: DraftEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(drafts: List<DraftEntity>)
+
     @Query("DELETE FROM drafts WHERE id = :id")
     suspend fun deleteById(id: Long)
 

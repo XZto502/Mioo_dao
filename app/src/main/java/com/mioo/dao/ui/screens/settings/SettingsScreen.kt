@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FormatLineSpacing
@@ -59,6 +60,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
@@ -73,6 +77,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,8 +87,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.data.model.ImageCacheLimit
 import com.mioo.dao.data.model.ThemeMode
+import com.mioo.dao.data.repository.BackupRepository
 import com.mioo.dao.ui.theme.DaoTheme
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -134,35 +141,42 @@ fun SettingsScreen(
         }
     }
 
-    val exportFileLauncher = rememberLauncherForActivityResult(
+    var pendingBackupSections by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showBackupPicker by remember { mutableStateOf(false) }
+    var importResult by remember { mutableStateOf<BackupRepository.ImportResult?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val backupExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.openOutputStream(uri)?.use { os ->
-                os.write(viewModel.exportCookiesJson().toByteArray(Charsets.UTF_8))
+        val sections = pendingBackupSections
+        scope.launch {
+            runCatching {
+                val json = viewModel.buildBackup(sections)
+                context.contentResolver.openOutputStream(uri)?.use { os ->
+                    os.write(json.toByteArray(Charsets.UTF_8))
+                }
+            }.onSuccess {
+                Toast.makeText(context, "备份已导出（${sections.size} 部分）", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, "导出失败: ${it.message}", Toast.LENGTH_SHORT).show()
             }
-            Toast.makeText(context, "饼干备份已导出到文件", Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            Toast.makeText(context, "导出失败: ${it.message}", Toast.LENGTH_SHORT).show()
+            pendingBackupSections = emptySet()
         }
     }
 
-    val importFileLauncher = rememberLauncherForActivityResult(
+    val importBackupFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        runCatching {
-            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()
-                ?.use { it.readText() }.orEmpty()
-            val n = viewModel.importCookiesJson(text)
-            if (n > 0) {
-                Toast.makeText(context, "已从文件导入 $n 个饼干", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "文件中没有可导入的饼干", Toast.LENGTH_SHORT).show()
-            }
-        }.onFailure {
-            Toast.makeText(context, "导入失败: ${it.message}", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            runCatching {
+                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()
+                    ?.use { it.readText() }.orEmpty()
+                viewModel.restoreBackup(text)
+            }.onSuccess { importResult = it }
+                .onFailure { Toast.makeText(context, "恢复失败: ${it.message}", Toast.LENGTH_LONG).show() }
         }
     }
 
@@ -342,22 +356,8 @@ fun SettingsScreen(
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = {
-                            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
-                                .format(java.util.Date())
-                            exportFileLauncher.launch("mioo-cookies-$stamp.json")
-                        }) { Text("导出到文件") }
-                        OutlinedButton(onClick = {
-                            importFileLauncher.launch(
-                                arrayOf("application/json", "text/plain", "application/octet-stream")
-                            )
-                        }) { Text("从文件导入") }
-                    }
                 }
-                
+
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                 
                 // 2. Auth Cookie (鉴权饼干)
@@ -442,6 +442,42 @@ fun SettingsScreen(
         }
         
         Spacer(modifier = Modifier.height(16.dp))
+
+        // 备份与恢复
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Backup, contentDescription = "备份与恢复")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "备份与恢复",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "自选内容导出为一个 JSON 文件，可在此设备或另一台设备恢复；旧版纯饼干备份文件也可恢复",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        pendingBackupSections = BackupRepository.ALL_SECTIONS.toSet()
+                        showBackupPicker = true
+                    }) { Text("备份") }
+                    OutlinedButton(onClick = {
+                        importBackupFileLauncher.launch(
+                            arrayOf("application/json", "text/plain", "application/octet-stream")
+                        )
+                    }) { Text("恢复") }
+                }
+            }
+        }
 
         // 3. Multiple Feed Folders (多云端收藏夹)
         Card(
@@ -1517,7 +1553,77 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showBackupPicker) {
+        val sectionLabels = listOf(
+            "cookies" to "发言饼干（含备注/鉴权/选中）",
+            "history" to "浏览历史",
+            "bookmarks" to "本地收藏",
+            "drafts" to "草稿箱",
+            "settings" to "应用设置（主题/字体/开关等）",
+            "blocks" to "屏蔽与板块（串/饼干/关键词/置顶/展开）"
+        )
+        AlertDialog(
+            onDismissRequest = { showBackupPicker = false },
+            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
+            title = { com.mioo.dao.ui.theme.ImmersiveDialogEffect(); Text("选择备份内容") },
+            text = {
+                Column {
+                    sectionLabels.forEach { (key, label) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable { pendingBackupSections = toggleSection(pendingBackupSections, key) },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = key in pendingBackupSections,
+                                onCheckedChange = { pendingBackupSections = toggleSection(pendingBackupSections, key) }
+                            )
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBackupPicker = false
+                        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+                        backupExportLauncher.launch("mioo-backup-$stamp.json")
+                    },
+                    enabled = pendingBackupSections.isNotEmpty()
+                ) { Text("导出") }
+            },
+            dismissButton = { TextButton(onClick = { showBackupPicker = false; pendingBackupSections = emptySet() }) { Text("取消") } }
+        )
+    }
+
+    importResult?.let { r ->
+        AlertDialog(
+            onDismissRequest = { importResult = null },
+            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
+            title = { com.mioo.dao.ui.theme.ImmersiveDialogEffect(); Text("恢复完成") },
+            text = {
+                val lines = buildList {
+                    if (r.legacyCookiesOnly) add("旧版饼干备份：已导入 ${r.cookies} 个饼干")
+                    else {
+                        if (r.cookies >= 0) add("发言饼干：${r.cookies} 个")
+                        if (r.history >= 0) add("浏览历史：${r.history} 条")
+                        if (r.bookmarks >= 0) add("本地收藏：${r.bookmarks} 条")
+                        if (r.drafts >= 0) add("草稿箱：${r.drafts} 条")
+                        if (r.settings) add("应用设置：已恢复")
+                        if (r.blocks) add("屏蔽与板块：已恢复")
+                    }
+                }
+                Text(lines.joinToString("\n"))
+            },
+            confirmButton = { TextButton(onClick = { importResult = null }) { Text("好") } }
+        )
+    }
 }
+
+private fun toggleSection(current: Set<String>, key: String): Set<String> =
+    if (key in current) current - key else current + key
 
 /**
  * Accept a cookie QR. JSON must contain a non-blank cookie or userhash.

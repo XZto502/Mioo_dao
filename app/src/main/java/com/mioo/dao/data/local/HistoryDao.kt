@@ -15,6 +15,9 @@ interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(history: HistoryEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHistories(histories: List<HistoryEntity>)
+
     @Delete
     suspend fun deleteHistory(history: HistoryEntity)
 
