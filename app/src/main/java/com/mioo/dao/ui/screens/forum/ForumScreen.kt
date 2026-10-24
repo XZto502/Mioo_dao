@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -1191,12 +1192,13 @@ fun CreateThreadDialog(
             }
         }
 
-        // 系统键盘再次抬起 → 关闭颜文字 / 骰娘面板（含 insets 失派发设备的兜底）
+        // 系统键盘再次抬起 → 关闭颜文字 / 骰娘面板（含 insets 失派发设备的兜底）。
+        // 阈值与对话框抬升(imePaddingAndNavigationBars 的 ime>nav)一致，避免中间区间弹跳
         val imeBottomPx = rememberEffectiveImeBottomPx()
-        val imeThresholdPx = with(density) { 48.dp.toPx() }
-        val imeVisible = imeBottomPx > imeThresholdPx
-        LaunchedEffect(imeVisible) {
-            if (!imeVisible) return@LaunchedEffect
+        val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+        val imeCoversNav = imeBottomPx > navBottomPx
+        LaunchedEffect(imeCoversNav) {
+            if (!imeCoversNav) return@LaunchedEffect
             if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
             if (kaomojiExpanded || diceExpanded) {
                 closeToolPanels()
@@ -1410,7 +1412,7 @@ fun CreateThreadDialog(
                                 visible = diceExpanded || kaomojiExpanded,
                                 enter = MiooMotion.softExpandEnter(panelReducedMotion),
                                 // 键盘升起导致的面板关闭瞬切，避免 ime 上升+面板收起叠加过冲
-                                exit = if (imeVisible) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
+                                exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -1567,20 +1569,17 @@ fun CreateThreadDialog(
                                 )
                                 IconButton(
                                     onClick = { attachedImageUri = null },
+                                    // 不要黑色圆底：只留白色 ×
                                     modifier = Modifier
-                                        .size(18.dp)
+                                        .size(20.dp)
                                         .align(Alignment.TopEnd)
                                         .padding(4.dp)
-                                        .background(
-                                            Color.Black.copy(alpha = 0.4f),
-                                            CircleShape
-                                        )
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Cancel,
                                         contentDescription = "移除图片",
                                         tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }

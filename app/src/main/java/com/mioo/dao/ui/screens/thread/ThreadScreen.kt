@@ -1353,14 +1353,15 @@ fun ReplyInputArea(
         closeToolPanels()
     }
 
-    // 系统键盘再次抬起 → 关闭快捷面板（含 insets 失派发设备的 visible-frame 兜底）
+    // 系统键盘再次抬起 → 关闭快捷面板（含 insets 失派发设备的 visible-frame 兜底）。
+    // 触发阈值与回复栏抬升(imeCoversNav)一致：否则 ime 在 nav~48dp 区间边抬边带面板，
+    // 高度先冲过终态再回落（弹跳）。
     val imeBottomPx = rememberEffectiveImeBottomPx()
     val navBottomPx = WindowInsets.navigationBars.getBottom(density)
-    val imeVisible = imeBottomPx > with(density) { 48.dp.toPx() }
     // 键盘盖住小白条时只抬整条回复栏；否则毛玻璃铺到屏幕底，控件留在导航条上方。
     val imeCoversNav = imeBottomPx > navBottomPx
-    LaunchedEffect(imeVisible) {
-        if (!imeVisible) return@LaunchedEffect
+    LaunchedEffect(imeCoversNav) {
+        if (!imeCoversNav) return@LaunchedEffect
         if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
         if (kaomojiMenuExpanded || diceMenuExpanded) {
             closeToolPanels()
@@ -1472,16 +1473,16 @@ fun ReplyInputArea(
                         )
                         IconButton(
                             onClick = { attachedImageUri = null },
+                            // 不要黑色圆底：只留白色 ×，靠图标自身可见性
                             modifier = Modifier
-                                .size(14.dp)
+                                .size(18.dp)
                                 .align(Alignment.TopEnd)
-                                .background(Color.Black.copy(alpha = 0.4f), shape = androidx.compose.foundation.shape.CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Cancel,
                                 contentDescription = "Remove",
                                 tint = Color.White,
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
@@ -1637,7 +1638,7 @@ fun ReplyInputArea(
                 enter = MiooMotion.softExpandEnter(reducedMotion),
                 // 键盘升起导致的面板关闭瞬切（不播收起动画）：
                 // 否则 ime 上升 + 面板收起两个动画叠加，输入行会先冲过终态再回落
-                exit = if (imeVisible) ExitTransition.None else MiooMotion.softExpandExit(reducedMotion)
+                exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(reducedMotion)
             ) {
                 Box(
                     modifier = Modifier
