@@ -56,6 +56,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
         val KEY_DRAFT_BOX_ENABLED = booleanPreferencesKey("draft_box_enabled")
         val KEY_QUOTE_AUTO_DISPLAY = booleanPreferencesKey("quote_auto_display")
+        val KEY_DATA_SAVER_ENABLED = booleanPreferencesKey("data_saver_enabled")
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data
@@ -494,6 +495,18 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_QUOTE_AUTO_DISPLAY] ?: true
         }
 
+    val dataSaverEnabledFlow: Flow<Boolean> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_DATA_SAVER_ENABLED] ?: false
+        }
+
     suspend fun saveUserHash(userHash: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_USER_HASH] = userHash
@@ -551,6 +564,12 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveQuoteAutoDisplay(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_QUOTE_AUTO_DISPLAY] = enabled
+        }
+    }
+
+    suspend fun saveDataSaverEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_DATA_SAVER_ENABLED] = enabled
         }
     }
 

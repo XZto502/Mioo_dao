@@ -203,6 +203,7 @@ fun MiooDaoTheme(
     lineHeightScale: Float = 1.0f,
     chineseFont: String = "",
     englishFont: String = "",
+    dataSaverEnabled: Boolean = false,
     glassEffectEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -311,7 +312,8 @@ fun MiooDaoTheme(
 
     CompositionLocalProvider(
         LocalDaoCustomColors provides customColors,
-        LocalGlassEffectEnabled provides glassEffectEnabled
+        LocalGlassEffectEnabled provides glassEffectEnabled,
+        LocalDataSaverEnabled provides dataSaverEnabled
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

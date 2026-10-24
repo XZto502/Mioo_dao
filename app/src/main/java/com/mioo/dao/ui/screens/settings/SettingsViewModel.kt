@@ -335,6 +335,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateQuoteAutoDisplay(enabled)
     }
 
+    fun updateDataSaverEnabled(enabled: Boolean) {
+        settingsRepository.updateDataSaverEnabled(enabled)
+    }
+
     fun updateCacheLimitMb(mb: Int) {
         settingsRepository.updateCacheLimitMb(mb)
     }

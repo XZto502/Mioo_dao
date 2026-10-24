@@ -130,3 +130,6 @@ val LocalDaoCustomColors = staticCompositionLocalOf {
 
 /** Whether frosted-glass / ambient-glow styling is enabled. */
 val LocalGlassEffectEnabled = staticCompositionLocalOf { true }
+
+/** 省流量模式：列表图片不自动加载，点击单张加载。 */
+val LocalDataSaverEnabled = staticCompositionLocalOf { false }
