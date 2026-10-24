@@ -350,7 +350,7 @@ fun ForumScreen(
                         item(key = "header_pinned", contentType = "drawer_header") {
                             Text(
                                 text = "置顶版块",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
@@ -395,7 +395,7 @@ fun ForumScreen(
                             ) {
                                 Text(
                                     text = group.name,
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.weight(1f)
