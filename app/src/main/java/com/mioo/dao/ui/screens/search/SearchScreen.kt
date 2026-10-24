@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Card
@@ -33,7 +32,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
@@ -142,28 +140,8 @@ fun SearchScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { viewModel.openSiteSearch() },
-                    enabled = uiState.query.isNotBlank()
-                ) {
-                    Icon(
-                        Icons.Default.OpenInBrowser,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("全站搜索 (${uiState.preferredEngine.label})")
-                }
-                OutlinedButton(
-                    onClick = viewModel::searchNow,
-                    enabled = uiState.query.isNotBlank()
-                ) {
-                    Text("仅本地")
-                }
-            }
+            // 全站搜索入口只保留结果区的「用 xx 全站搜索」卡片，避免多个按钮都跳浏览器造成困惑；
+            // 本地搜索输入即搜（防抖自动执行），无需独立按钮
 
             if (uiState.recentQueries.isNotEmpty() && uiState.query.isBlank()) {
                 Spacer(modifier = Modifier.height(12.dp))
