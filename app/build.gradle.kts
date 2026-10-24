@@ -28,7 +28,7 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
+        versionCode = 22
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

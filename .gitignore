@@ -21,3 +21,6 @@ build/
 *.aar
 *.jks
 *.keystore
+
+# Release signing keystore — never commit
+mioodao-release.jks
