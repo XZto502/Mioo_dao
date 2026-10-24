@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.ListAlt
@@ -46,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,6 +76,7 @@ fun HomeScreen(
     settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val homeForumSettings by settingsViewModel.forumScreenSettings.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = remember { listOf("Timeline", "Forums") }
     val timelineListState = rememberLazyListState()
@@ -139,6 +143,8 @@ fun HomeScreen(
                     )
                     1 -> ForumList(
                         forumGroups = uiState.forumGroups,
+                        collapsedGroups = homeForumSettings.collapsedForumGroups,
+                        onToggleGroup = { settingsViewModel.toggleForumGroupCollapse(it) },
                         onForumClick = onNavigateToForum
                     )
                 }
@@ -289,6 +295,8 @@ fun TimelineList(
 @Composable
 fun ForumList(
     forumGroups: List<ForumGroup>,
+    collapsedGroups: List<String>,
+    onToggleGroup: (String) -> Unit,
     onForumClick: (String, String) -> Unit
 ) {
     LazyColumn(
@@ -297,52 +305,70 @@ fun ForumList(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         forumGroups.forEach { group ->
+            val groupCollapsed = collapsedGroups.contains(group.id)
             item(key = "group_${group.id}", contentType = "forum_group_header") {
-                Text(
-                    text = group.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-                Divider(color = MaterialTheme.colorScheme.outlineVariant)
-            }
-            items(group.forums, key = { it.id }, contentType = { "forum_card" }) { forum ->
-                Card(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onForumClick(forum.id, forum.name) },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                        .clickable { onToggleGroup(group.id) },
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
+                    Text(
+                        text = group.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = if (groupCollapsed) "展开分类" else "收起分类",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(if (groupCollapsed) 0f else 180f)
+                    )
+                }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+            if (!groupCollapsed) {
+                items(group.forums, key = { it.id }, contentType = { "forum_card" }) { forum ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = forum.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            if (!forum.msg.isNullOrBlank()) {
-                                Text(
-                                    text = forum.msg,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = ">>",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            .clickable { onForumClick(forum.id, forum.name) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = forum.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                if (!forum.msg.isNullOrBlank()) {
+                                    Text(
+                                        text = forum.msg,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = ">>",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }

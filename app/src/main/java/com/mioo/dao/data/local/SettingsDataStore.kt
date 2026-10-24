@@ -38,6 +38,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_BLOCKED_THREADS = stringPreferencesKey("blocked_threads")
         val KEY_BLOCKED_USERS = stringPreferencesKey("blocked_users")
         val KEY_PINNED_FORUMS = stringPreferencesKey("pinned_forums")
+        val KEY_COLLAPSED_FORUM_GROUPS = stringPreferencesKey("collapsed_forum_groups")
         val KEY_BLOCKED_KEYWORDS = stringPreferencesKey("blocked_keywords")
         val KEY_THREAD_DRAFTS = stringPreferencesKey("thread_drafts")
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
@@ -309,6 +310,29 @@ class SettingsDataStore(private val context: Context) {
         }
         .map { preferences ->
             val jsonStr = preferences[KEY_PINNED_FORUMS]
+            val list = mutableListOf<String>()
+            if (!jsonStr.isNullOrEmpty()) {
+                try {
+                    val jsonArray = org.json.JSONArray(jsonStr)
+                    for (i in 0 until jsonArray.length()) {
+                        list.add(jsonArray.getString(i))
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            list
+        }
+
+    val collapsedForumGroupsFlow: Flow<List<String>> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            val jsonStr = preferences[KEY_COLLAPSED_FORUM_GROUPS]
             val list = mutableListOf<String>()
             if (!jsonStr.isNullOrEmpty()) {
                 try {
@@ -633,6 +657,17 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_PINNED_FORUMS] = jsonArray.toString()
         }
     }
+
+    suspend fun saveCollapsedForumGroups(list: List<String>) {
+        context.dataStore.edit { preferences ->
+            val jsonArray = org.json.JSONArray()
+            for (item in list) {
+                jsonArray.put(item)
+            }
+            preferences[KEY_COLLAPSED_FORUM_GROUPS] = jsonArray.toString()
+        }
+    }
+
     suspend fun saveBlockedKeywords(list: List<String>) {
         context.dataStore.edit { preferences ->
             val jsonArray = org.json.JSONArray()

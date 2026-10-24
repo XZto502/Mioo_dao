@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
@@ -103,6 +104,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -383,32 +385,57 @@ fun ForumScreen(
 
                     // Normal Forum Groups
                     uiState.forumGroups.forEach { group ->
+                        val groupCollapsed = forumSettings.collapsedForumGroups.contains(group.id)
                         item(key = "header_${group.id}", contentType = "drawer_header") {
-                            Text(
-                                text = group.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { settingsViewModel.toggleForumGroupCollapse(group.id) }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = group.name,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "${group.forums.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(end = 6.dp)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ExpandMore,
+                                    contentDescription = if (groupCollapsed) "展开分类" else "收起分类",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .rotate(if (groupCollapsed) 0f else 180f)
+                                )
+                            }
                         }
-                        items(group.forums, key = { "g${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
-                            val isPinned = forumSettings.pinnedForums.contains(forum.id)
-                            ForumDrawerItem(
-                                name = forum.name,
-                                isSelected = forum.id == viewModel.forumId,
-                                showStar = isPinned,
-                                starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                onClick = { selectBoard(forum.id, forum.name) },
-                                onLongClick = {
-                                    settingsViewModel.togglePinForum(forum.id)
-                                    Toast.makeText(
-                                        context,
-                                        if (isPinned) "已取消置顶" else "已将版块置顶",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            )
+                        if (!groupCollapsed) {
+                            items(group.forums, key = { "g${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
+                                val isPinned = forumSettings.pinnedForums.contains(forum.id)
+                                ForumDrawerItem(
+                                    name = forum.name,
+                                    isSelected = forum.id == viewModel.forumId,
+                                    showStar = isPinned,
+                                    starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                    onClick = { selectBoard(forum.id, forum.name) },
+                                    onLongClick = {
+                                        settingsViewModel.togglePinForum(forum.id)
+                                        Toast.makeText(
+                                            context,
+                                            if (isPinned) "已取消置顶" else "已将版块置顶",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                )
+                            }
                         }
                     }
                 }

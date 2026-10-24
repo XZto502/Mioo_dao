@@ -44,7 +44,8 @@ class SettingsRepository @Inject constructor(
             settingsDataStore.preloadCountFlow,
             settingsDataStore.subscriptionNotificationsFlow,
             settingsDataStore.notificationIntervalMinutesFlow,
-            settingsDataStore.lineHeightScaleFlow
+            settingsDataStore.lineHeightScaleFlow,
+            settingsDataStore.collapsedForumGroupsFlow
         ) { args ->
             val cookie = args[0] as? String
             val themeModeStr = args[1] as String
@@ -71,6 +72,8 @@ class SettingsRepository @Inject constructor(
             val subscriptionNotifications = args[15] as Boolean
             val notificationIntervalMinutes = args[16] as Int
             val lineHeightScale = args[17] as Float
+            @Suppress("UNCHECKED_CAST")
+            val collapsedForumGroups = args[18] as List<String>
 
             val themeMode = try {
                 ThemeMode.valueOf(themeModeStr)
@@ -91,6 +94,7 @@ class SettingsRepository @Inject constructor(
                 blockedThreads = blockedThreads,
                 blockedUsers = blockedUsers,
                 pinnedForums = pinnedForums,
+                collapsedForumGroups = collapsedForumGroups,
                 blockedKeywords = blockedKeywords,
                 smartPreloadMode = smartPreloadMode,
                 preloadCount = preloadCount,
@@ -332,6 +336,18 @@ class SettingsRepository @Inject constructor(
                 current.add(forumId)
             }
             settingsDataStore.savePinnedForums(current)
+        }
+    }
+
+    fun toggleForumGroupCollapse(groupId: String) {
+        repositoryScope.launch {
+            val current = settings.value.collapsedForumGroups.toMutableList()
+            if (current.contains(groupId)) {
+                current.remove(groupId)
+            } else {
+                current.add(groupId)
+            }
+            settingsDataStore.saveCollapsedForumGroups(current)
         }
     }
 
