@@ -2,11 +2,16 @@ package com.mioo.dao.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -18,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
@@ -26,6 +32,7 @@ import com.mioo.dao.ui.theme.immersiveDialogProperties
 /**
  * X岛骰娘二级弹窗：快捷点数直接插入，或自定义 [起,止] 区间（发帖后由岛方掷骰）。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiceDialog(
     onDismiss: () -> Unit,
@@ -41,42 +48,61 @@ fun DiceDialog(
         properties = immersiveDialogProperties(),
         title = {
             ImmersiveDialogEffect()
-            Text("骰娘 [起,止]")
+            Text("骰娘")
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // 快捷点数：点了直接插入，与跳转页码的 首页/末页 同款交互
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // 常用点数：芯片流式排布，点一下直接插入
+                Text(
+                    text = "常用点数",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    TextButton(onClick = { onInsert("[1,100]") }, modifier = Modifier.weight(1f)) {
-                        Text("[1,100]", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(onClick = { onInsert("[1,20]") }, modifier = Modifier.weight(1f)) {
-                        Text("[1,20]", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(onClick = { onInsert("[1,10]") }, modifier = Modifier.weight(1f)) {
-                        Text("[1,10]", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(onClick = { onInsert("[0,1]") }, modifier = Modifier.weight(1f)) {
-                        Text("[0,1]", style = MaterialTheme.typography.labelMedium)
+                    listOf("[1,100]", "[1,20]", "[1,10]", "[1,6]", "[0,1]").forEach { preset ->
+                        AssistChip(
+                            onClick = { onInsert(preset) },
+                            label = { Text(preset, style = MaterialTheme.typography.labelLarge) }
+                        )
                     }
                 }
 
-                // 自定义区间
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // 自定义区间：按实际语法 [起,止] 排布
+                Text(
+                    text = "自定义区间",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    Text(
+                        text = "[",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     OutlinedTextField(
                         value = rangeStart,
                         onValueChange = { v -> rangeStart = sanitizeDiceBound(v) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        label = { Text("起") }
+                        placeholder = { Text("起") },
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    Text(
+                        text = ",",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = rangeEnd,
@@ -84,7 +110,13 @@ fun DiceDialog(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        label = { Text("止") }
+                        placeholder = { Text("止") },
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    Text(
+                        text = "]",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Text(
