@@ -1304,6 +1304,8 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .imePaddingAndNavigationBars()
+                            // 键盘测量顶边在部分设备偏低（候选词条/悬浮键盘），再抬高一点防遮住工具栏
+                            .padding(bottom = 12.dp)
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth()
