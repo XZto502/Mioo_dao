@@ -242,6 +242,15 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    suspend fun getThreadCookie(threadId: String): String? =
+        settingsDataStore.getThreadCookie(threadId)
+
+    fun saveThreadCookie(threadId: String, cookie: String) {
+        repositoryScope.launch {
+            settingsDataStore.saveThreadCookie(threadId, cookie)
+        }
+    }
+
     fun deleteCookie(cookie: String) {
         repositoryScope.launch {
             val currentList = settingsDataStore.cookiesListFlow.first().toMutableList()

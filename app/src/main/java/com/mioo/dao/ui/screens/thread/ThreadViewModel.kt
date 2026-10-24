@@ -219,6 +219,16 @@ class ThreadViewModel @Inject constructor(
             }
         }
 
+        // 本串上次回复所用饼干自动设为当前选中（饼干仍在列表时才生效）
+        viewModelScope.launch {
+            val remembered = settingsRepository.getThreadCookie(threadId) ?: return@launch
+            val s = settingsRepository.settings.value
+            val idx = s.cookiesList.indexOf(remembered)
+            if (idx >= 0 && idx != s.selectedCookieIndex) {
+                settingsRepository.selectCookieIndex(idx)
+            }
+        }
+
         loadThreadDetails()
     }
 
@@ -930,6 +940,11 @@ class ThreadViewModel @Inject constructor(
                                     draftSaveJob = viewModelScope.launch {
                                         threadRepository.saveReplyDraft(threadId, null, "")
                                     }
+                                }
+                                // 记录本串本次回复所用饼干，下次进串默认选中
+                                val s = settingsRepository.settings.value
+                                s.cookiesList.getOrNull(s.selectedCookieIndex)?.let { used ->
+                                    settingsRepository.saveThreadCookie(threadId, used)
                                 }
                             }
                             onSuccess()

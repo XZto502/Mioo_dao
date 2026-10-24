@@ -43,6 +43,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_EXPANDED_FORUM_GROUPS = stringPreferencesKey("expanded_forum_groups")
         val KEY_BLOCKED_KEYWORDS = stringPreferencesKey("blocked_keywords")
         val KEY_THREAD_DRAFTS = stringPreferencesKey("thread_drafts")
+        val KEY_THREAD_COOKIE_MAP = stringPreferencesKey("thread_cookie_map")
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
         val KEY_DRAFTS_MIGRATED = booleanPreferencesKey("drafts_migrated")
         val KEY_SMART_PRELOAD_MODE = stringPreferencesKey("smart_preload_mode")
@@ -776,6 +777,40 @@ class SettingsDataStore(private val context: Context) {
                 jsonObject.put(threadId, draft)
             }
             preferences[KEY_THREAD_DRAFTS] = jsonObject.toString()
+        }
+    }
+
+    /** 串 → 上次回复所用饼干的映射里取一条（饼干存值，不存索引）。 */
+    suspend fun getThreadCookie(threadId: String): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val jsonStr = context.dataStore.data.first()[KEY_THREAD_COOKIE_MAP] ?: return@withContext null
+        try {
+            org.json.JSONObject(jsonStr).optString(threadId, "").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun saveThreadCookie(threadId: String, cookie: String) {
+        context.dataStore.edit { preferences ->
+            val jsonStr = preferences[KEY_THREAD_COOKIE_MAP] ?: ""
+            val jsonObject = if (jsonStr.isNotEmpty()) {
+                try {
+                    org.json.JSONObject(jsonStr)
+                } catch (e: Exception) {
+                    org.json.JSONObject()
+                }
+            } else {
+                org.json.JSONObject()
+            }
+            jsonObject.put(threadId, cookie)
+            // 防无限膨胀：超 500 条时丢掉最早插入的 100 条（先取键再删，org.json 的活迭代器不能边遍历边删）
+            if (jsonObject.length() > 500) {
+                val keyList = mutableListOf<String>()
+                val keys = jsonObject.keys()
+                while (keys.hasNext() && keyList.size < 100) keyList.add(keys.next())
+                keyList.forEach { jsonObject.remove(it) }
+            }
+            preferences[KEY_THREAD_COOKIE_MAP] = jsonObject.toString()
         }
     }
 
