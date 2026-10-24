@@ -479,49 +479,47 @@ fun SettingsScreen(
             }
         }
 
-        // 3. Multiple Feed Folders (多云端收藏夹)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 草稿箱开关
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(2.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(androidx.compose.material.icons.Icons.Default.Save, contentDescription = "云端收藏夹")
+                    Icon(Icons.Default.Save, contentDescription = "草稿箱")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "云端收藏夹",
+                        text = "草稿箱",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { showAddFolderDialog = true }) {
-                        Icon(androidx.compose.material.icons.Icons.Default.Add, contentDescription = "添加收藏夹")
-                    }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "添加额外的收藏夹UUID，可在收藏界面作为卡片独立浏览。",
+                    text = "关闭后，未发送的回复与新串内容不再自动保存到草稿箱",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                settings.feedFolders.forEach { folder ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = folder.name, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                            Text(text = folder.uuid, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(onClick = { viewModel.removeFeedFolder(folder.uuid) }) {
-                            Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                    androidx.compose.material3.HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDraftBoxEnabled(!settings.draftBoxEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.draftBoxEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.draftBoxEnabled,
+                        onCheckedChange = { viewModel.updateDraftBoxEnabled(it) }
+                    )
                 }
             }
         }
@@ -879,6 +877,96 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // 引用自动显示开关
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.FormatQuote, contentDescription = "引用自动显示")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "引用自动显示",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateQuoteAutoDisplay(!settings.quoteAutoDisplayEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.quoteAutoDisplayEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.quoteAutoDisplayEnabled,
+                        onCheckedChange = { viewModel.updateQuoteAutoDisplay(it) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 省流量模式开关
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CloudOff, contentDescription = "省流量模式")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "省流量模式",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDataSaverEnabled(!settings.dataSaverEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.dataSaverEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.dataSaverEnabled,
+                        onCheckedChange = { viewModel.updateDataSaverEnabled(it) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // 7. Block Management (屏蔽管理)
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1059,6 +1147,53 @@ fun SettingsScreen(
             }
         }
 
+        // 3. Multiple Feed Folders (多云端收藏夹)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(androidx.compose.material.icons.Icons.Default.Save, contentDescription = "云端收藏夹")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "云端收藏夹",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(onClick = { showAddFolderDialog = true }) {
+                        Icon(androidx.compose.material.icons.Icons.Default.Add, contentDescription = "添加收藏夹")
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "添加额外的收藏夹UUID，可在收藏界面作为卡片独立浏览。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                settings.feedFolders.forEach { folder ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = folder.name, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                            Text(text = folder.uuid, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = { viewModel.removeFeedFolder(folder.uuid) }) {
+                            Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    androidx.compose.material3.HorizontalDivider()
+                }
+            }
+        }
+
         // 5. Subscription notifications (蓝岛-style local poll)
         val notifPermissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
@@ -1137,141 +1272,6 @@ fun SettingsScreen(
                         },
                         valueRange = 15f..180f,
                         steps = 10
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 草稿箱开关
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Save, contentDescription = "草稿箱")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "草稿箱",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "关闭后，未发送的回复与新串内容不再自动保存到草稿箱",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateDraftBoxEnabled(!settings.draftBoxEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.draftBoxEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.draftBoxEnabled,
-                        onCheckedChange = { viewModel.updateDraftBoxEnabled(it) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 引用自动显示开关
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FormatQuote, contentDescription = "引用自动显示")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "引用自动显示",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateQuoteAutoDisplay(!settings.quoteAutoDisplayEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.quoteAutoDisplayEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.quoteAutoDisplayEnabled,
-                        onCheckedChange = { viewModel.updateQuoteAutoDisplay(it) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 省流量模式开关
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudOff, contentDescription = "省流量模式")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "省流量模式",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateDataSaverEnabled(!settings.dataSaverEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.dataSaverEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.dataSaverEnabled,
-                        onCheckedChange = { viewModel.updateDataSaverEnabled(it) }
                     )
                 }
             }
