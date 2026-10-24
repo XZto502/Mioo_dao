@@ -48,8 +48,7 @@ class SettingsRepository @Inject constructor(
             settingsDataStore.expandedForumGroupsFlow,
             settingsDataStore.chineseFontFlow,
             settingsDataStore.englishFontFlow,
-            settingsDataStore.dataSaverEnabledFlow,
-            settingsDataStore.volumeKeyPagingFlow
+            settingsDataStore.dataSaverEnabledFlow
         ) { args ->
             val cookie = args[0] as? String
             val themeModeStr = args[1] as String
@@ -81,7 +80,6 @@ class SettingsRepository @Inject constructor(
             val chineseFont = args[19] as String
             val englishFont = args[20] as String
             val dataSaverEnabled = args[21] as Boolean
-            val volumeKeyPaging = args[22] as Boolean
 
             val themeMode = try {
                 ThemeMode.valueOf(themeModeStr)
@@ -96,7 +94,6 @@ class SettingsRepository @Inject constructor(
                 chineseFont = chineseFont,
                 englishFont = englishFont,
                 dataSaverEnabled = dataSaverEnabled,
-                volumeKeyPaging = volumeKeyPaging,
                 themeColor = themeColor,
                 cookiesList = cookiesList,
                 cookieNotes = cookieNotes,
@@ -170,12 +167,6 @@ class SettingsRepository @Inject constructor(
     fun updateDataSaverEnabled(enabled: Boolean) {
         repositoryScope.launch {
             settingsDataStore.saveDataSaverEnabled(enabled)
-        }
-    }
-
-    fun updateVolumeKeyPaging(enabled: Boolean) {
-        repositoryScope.launch {
-            settingsDataStore.saveVolumeKeyPaging(enabled)
         }
     }
 

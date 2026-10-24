@@ -35,7 +35,6 @@ import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Add
@@ -964,51 +963,6 @@ fun SettingsScreen(
                     androidx.compose.material3.Switch(
                         checked = settings.dataSaverEnabled,
                         onCheckedChange = { viewModel.updateDataSaverEnabled(it) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 音量键翻页开关
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.VolumeUp, contentDescription = "音量键翻页")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "音量键翻页",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后在串内页按音量键上下键翻页（音量调节在其它页面不受影响）；注意部分系统可能优先调节音量",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateVolumeKeyPaging(!settings.volumeKeyPaging)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.volumeKeyPaging) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.volumeKeyPaging,
-                        onCheckedChange = { viewModel.updateVolumeKeyPaging(it) }
                     )
                 }
             }

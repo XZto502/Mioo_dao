@@ -32,8 +32,7 @@ data class ThreadScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
     val blockedThreads: List<String> = emptyList(),
-    val quoteAutoDisplayEnabled: Boolean = true,
-    val volumeKeyPaging: Boolean = false
+    val quoteAutoDisplayEnabled: Boolean = true
 )
 
 /** Minimal slice for ForumScreen — pins + compose cookies only. */
@@ -66,8 +65,7 @@ class SettingsViewModel @Inject constructor(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
                 blockedThreads = it.blockedThreads,
-                quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled,
-                volumeKeyPaging = it.volumeKeyPaging
+                quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled
             )
         }
         .distinctUntilChanged()
@@ -347,10 +345,6 @@ class SettingsViewModel @Inject constructor(
 
     fun updateDataSaverEnabled(enabled: Boolean) {
         settingsRepository.updateDataSaverEnabled(enabled)
-    }
-
-    fun updateVolumeKeyPaging(enabled: Boolean) {
-        settingsRepository.updateVolumeKeyPaging(enabled)
     }
 
     fun updateCacheLimitMb(mb: Int) {
