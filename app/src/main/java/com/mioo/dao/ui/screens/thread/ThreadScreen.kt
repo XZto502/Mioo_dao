@@ -1301,6 +1301,7 @@ fun ReplyInputArea(
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
     var diceMenuExpanded by remember { mutableStateOf(false) }
+    var diceFieldFocused by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1344,9 +1345,15 @@ fun ReplyInputArea(
         onReplyTextChange(newText)
     }
 
-    fun closeToolPanels() {
+    fun closeToolPanels(hideIme: Boolean = true) {
         if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
-        if (diceMenuExpanded) diceMenuExpanded = false
+        if (diceMenuExpanded) {
+            diceMenuExpanded = false
+            if (diceFieldFocused) {
+                diceFieldFocused = false
+                if (hideIme) hideSystemIme()
+            }
+        }
     }
 
     val toolPanelOpen = kaomojiMenuExpanded || diceMenuExpanded
@@ -1371,10 +1378,12 @@ fun ReplyInputArea(
         // 键盘升起 → 同帧关面板（单一动画源）。这是键盘主动升起，不是用户点面板按钮。
         // 仍尊重刚点开面板后的 450ms 窗口：从键盘态点开面板会先 hideSystemIme，
         // 键盘下落动画期间 isKeyboardRising 同样为 true，无窗口会把刚打开的面板立刻关掉。
+        // 骰子面板内部输入框持焦时键盘升起不收面板（面板骑在键盘上方），
+        // 只有主输入框引发键盘时才收。
         if (isKeyboardRising) {
             if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
             if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
-            if (diceMenuExpanded) diceMenuExpanded = false
+            if (diceMenuExpanded && !diceFieldFocused) diceMenuExpanded = false
         }
     }
     // 【核心】底部总占位 = max(键盘, 面板)，绝不相加
@@ -1514,8 +1523,7 @@ fun ReplyInputArea(
                     .fillMaxWidth()
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
-                            kaomojiMenuExpanded = false
-                            diceMenuExpanded = false
+                            closeToolPanels(hideIme = false)
                         }
                     },
                 maxLines = 4,
@@ -1588,10 +1596,12 @@ fun ReplyInputArea(
                     kaomojiSelected = kaomojiMenuExpanded,
                     hasImage = attachedImageUri != null,
                     onDiceClick = {
-                        val open = !diceMenuExpanded
-                        diceMenuExpanded = open
-                        if (open) {
+                        if (diceMenuExpanded) {
+                            closeToolPanels()
+                        } else {
+                            diceMenuExpanded = true
                             kaomojiMenuExpanded = false
+                            diceFieldFocused = false
                             ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
                             hideSystemIme()
                         }
@@ -1659,6 +1669,7 @@ fun ReplyInputArea(
                         if (dice) {
                             DiceQuickPanel(
                                 onInsert = { insertAtCursor(it) },
+                                onFieldFocusChange = { diceFieldFocused = it },
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .navigationBarsPadding()

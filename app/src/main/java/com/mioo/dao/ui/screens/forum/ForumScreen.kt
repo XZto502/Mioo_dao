@@ -1046,6 +1046,7 @@ fun CreateThreadDialog(
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiExpanded by remember { mutableStateOf(false) }
     var diceExpanded by remember { mutableStateOf(false) }
+    var diceFieldFocused by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
     /** 打开快捷面板后短时间内忽略 IME 可见（键盘下落动画） */
@@ -1098,9 +1099,18 @@ fun CreateThreadDialog(
         onContentChange(newText)
     }
 
-    fun closeToolPanels() {
+    fun closeToolPanels(hideIme: Boolean = true) {
         if (kaomojiExpanded) kaomojiExpanded = false
-        if (diceExpanded) diceExpanded = false
+        if (diceExpanded) {
+            diceExpanded = false
+            if (diceFieldFocused) {
+                diceFieldFocused = false
+                if (hideIme) {
+                    keyboardController?.hide()
+                    focusManager.clearFocus(force = true)
+                }
+            }
+        }
     }
 
     fun requestLeave() {
@@ -1163,6 +1173,7 @@ fun CreateThreadDialog(
         fun openDicePanel() {
             kaomojiExpanded = false
             diceExpanded = true
+            diceFieldFocused = false
             ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
             hideSystemIme()
         }
@@ -1200,9 +1211,8 @@ fun CreateThreadDialog(
         LaunchedEffect(imeCoversNav) {
             if (!imeCoversNav) return@LaunchedEffect
             if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
-            if (kaomojiExpanded || diceExpanded) {
-                closeToolPanels()
-            }
+            if (kaomojiExpanded) kaomojiExpanded = false
+            if (diceExpanded && !diceFieldFocused) diceExpanded = false
         }
 
         SideEffect {
@@ -1401,8 +1411,7 @@ fun CreateThreadDialog(
                                     onDiceClick = { toggleDicePanel() },
                                     onKaomojiClick = { toggleKaomojiPanel() },
                                     onImageClick = {
-                                        kaomojiExpanded = false
-                                        diceExpanded = false
+                                        closeToolPanels()
                                         imagePickerLauncher.launch("image/*")
                                     }
                                 )
@@ -1412,7 +1421,7 @@ fun CreateThreadDialog(
                             // visible 绑定 !imeCoversNav：与对话框抬升同帧消失，杜绝晚一帧的 ime+面板叠加
                             val panelReducedMotion = isReducedMotionEnabled()
                             AnimatedVisibility(
-                                visible = (diceExpanded || kaomojiExpanded) && !imeCoversNav,
+                                visible = (diceExpanded && (diceFieldFocused || !imeCoversNav)) || (kaomojiExpanded && !imeCoversNav),
                                 enter = MiooMotion.softExpandEnter(panelReducedMotion),
                                 exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
                             ) {
@@ -1425,6 +1434,7 @@ fun CreateThreadDialog(
                                         if (dice) {
                                             DiceQuickPanel(
                                                 onInsert = { insertAtCursor(it) },
+                                                onFieldFocusChange = { diceFieldFocused = it },
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .height(220.dp)
@@ -1455,7 +1465,7 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused) closeToolPanels()
+                                if (state.isFocused) closeToolPanels(hideIme = false)
                             },
                         singleLine = true,
                         placeholder = {
@@ -1482,7 +1492,7 @@ fun CreateThreadDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged { state ->
-                                if (state.isFocused) closeToolPanels()
+                                if (state.isFocused) closeToolPanels(hideIme = false)
                             },
                         singleLine = true,
                         placeholder = {
@@ -1520,7 +1530,7 @@ fun CreateThreadDialog(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .onFocusChanged { state ->
-                                    if (state.isFocused) closeToolPanels()
+                                    if (state.isFocused) closeToolPanels(hideIme = false)
                                 },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 color = colorScheme.onSurface

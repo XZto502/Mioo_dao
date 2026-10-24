@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
@@ -32,10 +33,13 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun DiceQuickPanel(
     onInsert: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onFieldFocusChange: (Boolean) -> Unit = {}
 ) {
     var rangeStart by remember { mutableStateOf("1") }
     var rangeEnd by remember { mutableStateOf("100") }
+    var startFocused by remember { mutableStateOf(false) }
+    var endFocused by remember { mutableStateOf(false) }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -74,7 +78,12 @@ fun DiceQuickPanel(
                     // 允许负号（如 [-10,10]）与数字
                     rangeStart = sanitizeDiceBound(v)
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged {
+                        startFocused = it.isFocused
+                        onFieldFocusChange(startFocused || endFocused)
+                    },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -93,7 +102,12 @@ fun DiceQuickPanel(
                 onValueChange = { v ->
                     rangeEnd = sanitizeDiceBound(v)
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged {
+                        endFocused = it.isFocused
+                        onFieldFocusChange(startFocused || endFocused)
+                    },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
