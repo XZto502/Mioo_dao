@@ -1294,35 +1294,37 @@ fun SettingsScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Preload Bookmarks
-                Button(
-                    onClick = { viewModel.preloadBookmarks() },
-                    enabled = !isPreloading,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(if (isPreloading) "正在缓存收藏夹..." else "一键缓存所有收藏串")
-                }
-
-                if (isPreloading && preloadProgress != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val (current, total) = preloadProgress!!
-                    val progressFraction = if (total > 0) current.toFloat() / total.toFloat() else 0f
-                    Row(
+                // Preload Bookmarks — 正式版屏蔽批量缓存，避免对岛服务器造成过大负担
+                if (com.mioo.dao.BuildConfig.BETA || com.mioo.dao.BuildConfig.DEBUG) {
+                    Button(
+                        onClick = { viewModel.preloadBookmarks() },
+                        enabled = !isPreloading,
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        LinearProgressIndicator(
-                            progress = { progressFraction },
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "$current / $total",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Text(if (isPreloading) "正在缓存收藏夹..." else "一键缓存所有收藏串")
+                    }
+
+                    if (isPreloading && preloadProgress != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val (current, total) = preloadProgress!!
+                        val progressFraction = if (total > 0) current.toFloat() / total.toFloat() else 0f
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            LinearProgressIndicator(
+                                progress = { progressFraction },
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "$current / $total",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
