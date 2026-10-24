@@ -32,7 +32,7 @@ data class UserSettings(
     val pinnedForums: List<String> = emptyList(),
     val collapsedForumGroups: List<String> = emptyList(),
     val blockedKeywords: List<String> = emptyList(),
-    val smartPreloadMode: String = "WIFI_ONLY",
+    val smartPreloadMode: String = "DISABLED",
     val preloadCount: Int = 10,
     /** Local poll of bookmarked threads for new-reply system notifications (蓝岛-style). */
     val subscriptionNotificationsEnabled: Boolean = false,

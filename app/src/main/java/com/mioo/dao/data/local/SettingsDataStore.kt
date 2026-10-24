@@ -391,7 +391,7 @@ class SettingsDataStore(private val context: Context) {
             }
         }
         .map { preferences ->
-            preferences[KEY_SMART_PRELOAD_MODE] ?: "WIFI_ONLY"
+            preferences[KEY_SMART_PRELOAD_MODE] ?: "DISABLED"
         }
 
     val preloadCountFlow: Flow<Int> = context.dataStore.data

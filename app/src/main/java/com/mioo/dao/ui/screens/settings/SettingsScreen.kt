@@ -1269,24 +1269,26 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Preload Count Slider
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "列表预加载数: ${settings.preloadCount} 串",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                // Preload Count Slider — 关闭预加载时无意义，隐藏
+                if (settings.smartPreloadMode != "DISABLED") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "列表预加载数: ${settings.preloadCount} 串",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                    }
+                    Slider(
+                        value = settings.preloadCount.toFloat(),
+                        onValueChange = { viewModel.updatePreloadCount(it.toInt()) },
+                        valueRange = 5f..30f,
+                        steps = 4
                     )
                 }
-                Slider(
-                    value = settings.preloadCount.toFloat(),
-                    onValueChange = { viewModel.updatePreloadCount(it.toInt()) },
-                    valueRange = 5f..30f,
-                    steps = 4
-                )
 
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
