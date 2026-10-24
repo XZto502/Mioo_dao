@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -89,7 +90,6 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
-    var newCookieInput by remember { mutableStateOf("") }
     var authMenuExpanded by remember { mutableStateOf(false) }
     
     var showAddFolderDialog by remember { mutableStateOf(false) }
@@ -128,6 +128,38 @@ fun SettingsScreen(
                 viewModel.addCookie(cookieToAdd)
                 Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(viewModel.exportCookiesJson().toByteArray(Charsets.UTF_8))
+            }
+            Toast.makeText(context, "饼干备份已导出到文件", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "导出失败: ${it.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val importFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()
+                ?.use { it.readText() }.orEmpty()
+            val n = viewModel.importCookiesJson(text)
+            if (n > 0) {
+                Toast.makeText(context, "已从文件导入 $n 个饼干", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "文件中没有可导入的饼干", Toast.LENGTH_SHORT).show()
+            }
+        }.onFailure {
+            Toast.makeText(context, "导入失败: ${it.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -185,52 +217,38 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                OutlinedTextField(
-                    value = newCookieInput,
-                    onValueChange = { newCookieInput = it },
-                    label = { Text("新增发言饼干") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    trailingIcon = {
-                        Row {
-                            IconButton(
-                                onClick = {
-                                    val options = ScanOptions().apply {
-                                        setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                                        setPrompt("请扫描含有饼干的二维码")
-                                        setBeepEnabled(false)
-                                        setOrientationLocked(true)
-                                        setCaptureActivity(CustomCaptureActivity::class.java)
-                                        setBarcodeImageEnabled(false)
-                                    }
-                                    scanLauncher.launch(options)
-                                }
-                            ) {
-                                Icon(Icons.Default.CameraAlt, contentDescription = "相机扫码")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val options = ScanOptions().apply {
+                                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                setPrompt("请扫描含有饼干的二维码")
+                                setBeepEnabled(false)
+                                setOrientationLocked(true)
+                                setCaptureActivity(CustomCaptureActivity::class.java)
+                                setBarcodeImageEnabled(false)
                             }
-                            IconButton(
-                                onClick = {
-                                    galleryLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                }
-                            ) {
-                                Icon(Icons.Default.Image, contentDescription = "相册扫码")
-                            }
-                            IconButton(
-                                onClick = {
-                                    if (newCookieInput.isNotBlank()) {
-                                        viewModel.addCookie(newCookieInput)
-                                        newCookieInput = ""
-                                        Toast.makeText(context, "发言饼干已添加", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "添加")
-                            }
-                        }
+                            scanLauncher.launch(options)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("扫码添加")
                     }
-                )
+                    OutlinedButton(
+                        onClick = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("相册选图扫码")
+                    }
+                }
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
@@ -258,6 +276,8 @@ fun SettingsScreen(
                                 }
                             }
                         } catch (e: Exception) {}
+                        if (!cookie.startsWith("{")) displayName = cookieSixCharId(cookie)
+                        val sixId = cookieSixCharId(cookie)
                         val note = settings.cookieNotes[cookie].orEmpty()
                         val label = if (note.isNotBlank()) "$note · $displayName" else displayName
 
@@ -289,6 +309,12 @@ fun SettingsScreen(
                                     )
                                 }
                             }
+                            Text(
+                                text = "ID: $sixId",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 48.dp, bottom = 2.dp)
+                            )
                             OutlinedTextField(
                                 value = note,
                                 onValueChange = { viewModel.setCookieNote(cookie, it) },
@@ -305,28 +331,15 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
-                            val json = viewModel.exportCookiesJson()
-                            val clip = android.content.ClipData.newPlainText("mioo_cookies", json)
-                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                                as android.content.ClipboardManager
-                            cm.setPrimaryClip(clip)
-                            Toast.makeText(context, "饼干备份已复制到剪贴板", Toast.LENGTH_SHORT).show()
-                        }) { Text("导出饼干") }
+                            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                                .format(java.util.Date())
+                            exportFileLauncher.launch("mioo-cookies-$stamp.json")
+                        }) { Text("导出到文件") }
                         OutlinedButton(onClick = {
-                            try {
-                                val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-                                    as android.content.ClipboardManager
-                                val clipText = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-                                if (clipText.isBlank()) {
-                                    Toast.makeText(context, "剪贴板为空", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    val n = viewModel.importCookiesJson(clipText)
-                                    Toast.makeText(context, "已导入 $n 个饼干", Toast.LENGTH_SHORT).show()
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "导入失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }) { Text("从剪贴板导入") }
+                            importFileLauncher.launch(
+                                arrayOf("application/json", "text/plain", "application/octet-stream")
+                            )
+                        }) { Text("从文件导入") }
                     }
                 }
                 
@@ -1341,6 +1354,20 @@ private fun parseImportedCookie(raw: String?): String? {
         return null
     }
     return text
+}
+
+/** X岛风格 6 位 ID：JSON 饼干取 userhash 字段前 6 位，否则取饼干值前 6 位 */
+private fun cookieSixCharId(cookie: String): String {
+    if (cookie.startsWith("{")) {
+        runCatching {
+            val json = org.json.JSONObject(cookie)
+            val userhash = json.optString("userhash", "")
+            if (userhash.isNotBlank()) return userhash.take(6)
+            val value = json.optString("cookie", "")
+            if (value.isNotBlank()) return value.take(6)
+        }
+    }
+    return cookie.take(6)
 }
 
 private fun scanQrFromUri(context: Context, uri: Uri, onResult: (String?) -> Unit) {
