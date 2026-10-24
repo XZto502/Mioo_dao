@@ -46,7 +46,8 @@ class SettingsRepository @Inject constructor(
             settingsDataStore.notificationIntervalMinutesFlow,
             settingsDataStore.lineHeightScaleFlow,
             settingsDataStore.expandedForumGroupsFlow,
-            settingsDataStore.fontFamilyFlow
+            settingsDataStore.chineseFontFlow,
+            settingsDataStore.englishFontFlow
         ) { args ->
             val cookie = args[0] as? String
             val themeModeStr = args[1] as String
@@ -75,7 +76,8 @@ class SettingsRepository @Inject constructor(
             val lineHeightScale = args[17] as Float
             @Suppress("UNCHECKED_CAST")
             val expandedForumGroups = args[18] as List<String>
-            val fontFamily = args[19] as String
+            val chineseFont = args[19] as String
+            val englishFont = args[20] as String
 
             val themeMode = try {
                 ThemeMode.valueOf(themeModeStr)
@@ -87,7 +89,8 @@ class SettingsRepository @Inject constructor(
                 themeMode = themeMode,
                 fontSizeScale = fontSizeScale,
                 lineHeightScale = lineHeightScale,
-                fontFamily = fontFamily,
+                chineseFont = chineseFont,
+                englishFont = englishFont,
                 themeColor = themeColor,
                 cookiesList = cookiesList,
                 cookieNotes = cookieNotes,
@@ -195,9 +198,15 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    fun updateFontFamily(family: String) {
+    fun updateChineseFont(name: String) {
         repositoryScope.launch {
-            settingsDataStore.saveFontFamily(family)
+            settingsDataStore.saveChineseFont(name)
+        }
+    }
+
+    fun updateEnglishFont(name: String) {
+        repositoryScope.launch {
+            settingsDataStore.saveEnglishFont(name)
         }
     }
 

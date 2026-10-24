@@ -173,7 +173,8 @@ fun MiooDaoTheme(
     themeColor: String = "dynamic",
     fontSizeScale: Float = 1.0f,
     lineHeightScale: Float = 1.0f,
-    fontFamily: String = "default",
+    chineseFont: String = "",
+    englishFont: String = "",
     glassEffectEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -245,15 +246,14 @@ fun MiooDaoTheme(
         )
     }
 
-    val resolvedFontFamily = when (fontFamily) {
-        "serif" -> FontFamily.Serif
-        "monospace" -> FontFamily.Monospace
-        "cursive" -> FontFamily.Cursive
-        else -> null
+    val appContext = LocalContext.current
+    val customTypeface = remember(chineseFont, englishFont) {
+        com.mioo.dao.utils.FontStore.buildTypeface(appContext, chineseFont, englishFont)
     }
+    val customFontFamily = customTypeface?.let { FontFamily(typeface = it) }
     val scaledTypography = Typography.scale(fontSizeScale)
         .scaleLineHeight(lineHeightScale)
-        .withFontFamily(resolvedFontFamily)
+        .withFontFamily(customFontFamily)
 
     val view = LocalView.current
     if (!view.isInEditMode) {

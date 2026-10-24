@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.model.GithubRelease
+import com.mioo.dao.utils.FontStore
 import javax.inject.Inject
 
 import com.mioo.dao.data.local.HistoryEntity
@@ -123,8 +124,35 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateLineHeightScale(scale)
     }
 
-    fun updateFontFamily(family: String) {
-        settingsRepository.updateFontFamily(family)
+    private val _fontsState = MutableStateFlow<List<String>>(emptyList())
+    val fontsState: StateFlow<List<String>> = _fontsState.asStateFlow()
+
+    fun refreshFonts(context: android.content.Context) {
+        _fontsState.value = FontStore.list(context).map { it.name }
+    }
+
+    /** 导入字体文件，成功返回 true。 */
+    fun importFont(context: android.content.Context, uri: android.net.Uri): Boolean {
+        val name = FontStore.import(context, uri)
+        if (name != null) refreshFonts(context)
+        return name != null
+    }
+
+    /** 删除字体；若正被中文/英文槽位使用则同时清空该槽位。 */
+    fun deleteFont(context: android.content.Context, name: String) {
+        FontStore.delete(context, name)
+        refreshFonts(context)
+        val s = settingsState.value
+        if (s.chineseFont == name) settingsRepository.updateChineseFont("")
+        if (s.englishFont == name) settingsRepository.updateEnglishFont("")
+    }
+
+    fun updateChineseFont(name: String) {
+        settingsRepository.updateChineseFont(name)
+    }
+
+    fun updateEnglishFont(name: String) {
+        settingsRepository.updateEnglishFont(name)
     }
 
     fun updateThemeColor(color: String) {

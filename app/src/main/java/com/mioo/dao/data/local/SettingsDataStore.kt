@@ -29,7 +29,8 @@ class SettingsDataStore(private val context: Context) {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_FONT_SIZE_SCALE = floatPreferencesKey("font_size_scale")
         val KEY_LINE_HEIGHT_SCALE = floatPreferencesKey("line_height_scale")
-        val KEY_FONT_FAMILY = stringPreferencesKey("font_family")
+        val KEY_CHINESE_FONT = stringPreferencesKey("chinese_font")
+        val KEY_ENGLISH_FONT = stringPreferencesKey("english_font")
         val KEY_THEME_COLOR = stringPreferencesKey("theme_color")
         val KEY_COOKIES_LIST = stringPreferencesKey("cookies_list")
         val KEY_COOKIE_NOTES = stringPreferencesKey("cookie_notes")
@@ -140,7 +141,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_LINE_HEIGHT_SCALE] ?: 1.0f
         }
 
-    val fontFamilyFlow: Flow<String> = context.dataStore.data
+    val chineseFontFlow: Flow<String> = context.dataStore.data
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -149,7 +150,19 @@ class SettingsDataStore(private val context: Context) {
             }
         }
         .map { preferences ->
-            preferences[KEY_FONT_FAMILY] ?: "default"
+            preferences[KEY_CHINESE_FONT] ?: ""
+        }
+
+    val englishFontFlow: Flow<String> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_ENGLISH_FONT] ?: ""
         }
 
     val themeColorFlow: Flow<String> = context.dataStore.data
@@ -590,9 +603,15 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    suspend fun saveFontFamily(family: String) {
+    suspend fun saveChineseFont(name: String) {
         context.dataStore.edit { preferences ->
-            preferences[KEY_FONT_FAMILY] = family
+            preferences[KEY_CHINESE_FONT] = name
+        }
+    }
+
+    suspend fun saveEnglishFont(name: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_ENGLISH_FONT] = name
         }
     }
 

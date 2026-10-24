@@ -165,6 +165,18 @@ fun SettingsScreen(
         }
     }
 
+    val importFontLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val ok = viewModel.importFont(context, uri)
+        Toast.makeText(
+            context,
+            if (ok) "字体已导入" else "字体导入失败，请换一个文件重试",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -708,46 +720,106 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 字体样式
+        // 自定义字体
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(2.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FontDownload, contentDescription = "字体样式")
+                    Icon(Icons.Default.FontDownload, contentDescription = "自定义字体")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "字体样式", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(text = "自定义字体", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "更换全应用字体，与字体大小、行间距独立生效。部分机型手写体会回退为默认字体。",
+                    text = "导入手机存储中的 ttf/otf/ttc 字体文件，可分别为中文与英文指定：英文负责字母数字，中文负责汉字；未指定则用系统默认。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(onClick = {
+                    importFontLauncher.launch(
+                        arrayOf("font/ttf", "font/otf", "font/ttc", "application/octet-stream", "*/*")
+                    )
+                }) { Text("导入字体文件") }
+
+                val fonts by viewModel.fontsState.collectAsState()
+                LaunchedEffect(Unit) { viewModel.refreshFonts(context) }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                if (fonts.isEmpty()) {
+                    Text(
+                        text = "尚未导入字体，点上方按钮从文件管理器/网盘选择字体文件",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+                fonts.forEach { name ->
+                    val preview = remember(name) {
+                        runCatching {
+                            androidx.compose.ui.text.font.FontFamily(
+                                android.graphics.Typeface.createFromFile(
+                                    java.io.File(com.mioo.dao.utils.FontStore.dir(context), name)
+                                )
+                            )
+                        }.getOrNull()
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "预览 Aa喵岛 $name",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = preview,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        IconButton(onClick = { viewModel.deleteFont(context, name) }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "删除字体",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(8.dp))
 
-                val fontOptions = listOf(
-                    Triple("default", "默认字体", null as FontFamily?),
-                    Triple("serif", "衬线字体 (Serif)", FontFamily.Serif),
-                    Triple("monospace", "等宽字体 (Monospace)", FontFamily.Monospace),
-                    Triple("cursive", "手写体 (Cursive)", FontFamily.Cursive)
-                )
-                fontOptions.forEach { (key, label, family) ->
+                Text(text = "中文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.updateFontFamily(key) }
-                            .padding(vertical = 4.dp),
+                            .clickable { viewModel.updateChineseFont(value) }
+                            .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = settings.fontFamily == key, onClick = null)
+                        RadioButton(selected = settings.chineseFont == value, onClick = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontFamily = family
-                        )
+                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "英文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.updateEnglishFont(value) }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = settings.englishFont == value, onClick = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
