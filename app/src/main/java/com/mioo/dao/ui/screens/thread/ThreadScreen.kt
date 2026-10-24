@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +45,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ButtonDefaults
@@ -109,6 +112,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -316,6 +326,13 @@ fun ThreadScreen(
         viewModel.updateSearchQuery(searchFieldText)
     }
 
+    // 音量键翻页：开启时把焦点固定在根容器，onPreviewKeyEvent 拦截音量键改为翻页
+    val volumePaging = threadSettings.volumeKeyPaging
+    val volumeFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(volumePaging) {
+        if (volumePaging) volumeFocusRequester.requestFocus()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -427,7 +444,36 @@ fun ThreadScreen(
                 onCookieSelect = { viewModel.selectThreadCookie(it) }
             )
         },
-        modifier = modifier,
+        modifier = modifier
+            .focusRequester(volumeFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (!volumePaging) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.VolumeDown -> {
+                        // 与"下一页"相同的守卫：未到最后一页才翻页，否则交还系统调音量
+                        val current = currentScrollPage.value
+                        if (current < viewModel.totalPages) {
+                            viewModel.jumpToPage(current + 1)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    Key.VolumeUp -> {
+                        // 与"上一页"相同的守卫：不在第一页才翻页
+                        val current = currentScrollPage.value
+                        if (current > 1) {
+                            viewModel.jumpToPage(current - 1)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
+            },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Color.Transparent
     ) { paddingValues ->
@@ -701,6 +747,49 @@ fun ThreadScreen(
                 onImageClick = { activeImageUrl = it },
                 onNavigateToThread = onNavigateToThread
             )
+
+            // 回顶/回底浮钮：叠在列表右下、底栏上方
+            Column(
+                horizontalAlignment = Alignment.End,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+                        .clickable { scope.launch { listState.animateScrollToItem(0) } },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VerticalAlignTop,
+                        contentDescription = "回到顶部",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+                        .clickable {
+                            val last = listState.layoutInfo.totalItemsCount - 1
+                            if (last >= 0) scope.launch { listState.animateScrollToItem(last) }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VerticalAlignBottom,
+                        contentDescription = "回到底部",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
     }
 
