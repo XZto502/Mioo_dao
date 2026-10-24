@@ -1072,8 +1072,6 @@ fun CreateThreadDialog(
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiExpanded by remember { mutableStateOf(false) }
     var showDiceDialog by remember { mutableStateOf(false) }
-    var showCookieConfirm by remember { mutableStateOf(false) }
-    var cookieConfirmedOnce by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var previewAttachedUri by remember { mutableStateOf<Uri?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -1105,10 +1103,6 @@ fun CreateThreadDialog(
     val canSubmit = !isSubmitting && (contentValue.text.isNotBlank() || attachedImageUri != null)
 
     fun submit() {
-        if (!cookieConfirmedOnce && cookies.size > 1) {
-            showCookieConfirm = true
-            return
-        }
         if (!canSubmit) return
         val finalAuthor = if (author.isBlank()) "无名氏" else author
         // 成功路径在父层关闭对话框，这里先收起键盘、清焦点
@@ -1633,28 +1627,6 @@ fun CreateThreadDialog(
                         )
                     }
                 }
-            }
-
-            if (showCookieConfirm) {
-                val activeCookieName = cookies.getOrNull(selectedCookieIndex)?.let { parseCookieName(it) } ?: "当前饼干"
-                AlertDialog(
-                    onDismissRequest = { showCookieConfirm = false },
-                    properties = immersiveDialogProperties(),
-                    title = { ImmersiveDialogEffect(); Text("确认使用的饼干") },
-                    text = {
-                        Text("将使用饼干：$activeCookieName 发布新串\n确认无误后再发送，避免身份串味。")
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            cookieConfirmedOnce = true
-                            showCookieConfirm = false
-                            submit()
-                        }) { Text("确认发布") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showCookieConfirm = false }) { Text("再想想") }
-                    }
-                )
             }
         }
     }

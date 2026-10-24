@@ -123,10 +123,6 @@ class ThreadViewModel @Inject constructor(
     private val _threadCookieIndex = MutableStateFlow<Int?>(null)
     val threadCookieIndex: StateFlow<Int?> = _threadCookieIndex.asStateFlow()
 
-    /** 本串是否已有饼干使用记录（决定回复前是否弹首次确认）。 */
-    private val _hasThreadCookieRecord = MutableStateFlow(false)
-    val hasThreadCookieRecord: StateFlow<Boolean> = _hasThreadCookieRecord.asStateFlow()
-
     fun selectThreadCookie(index: Int) {
         _threadCookieIndex.value = index
     }
@@ -233,9 +229,7 @@ class ThreadViewModel @Inject constructor(
 
         // 本串独立饼干选择：进串恢复上次回复所用饼干（仅本串状态，不改全局选中）
         viewModelScope.launch {
-            val remembered = settingsRepository.getThreadCookie(threadId)
-            if (remembered != null) _hasThreadCookieRecord.value = true
-            if (remembered == null) return@launch
+            val remembered = settingsRepository.getThreadCookie(threadId) ?: return@launch
             val idx = settingsRepository.settings.value.cookiesList.indexOf(remembered)
             if (idx >= 0) _threadCookieIndex.value = idx
         }
@@ -971,7 +965,6 @@ class ThreadViewModel @Inject constructor(
                                     }
                                 if (usedCookie != null) {
                                     settingsRepository.saveThreadCookie(threadId, usedCookie)
-                                    _hasThreadCookieRecord.value = true
                                 }
                             }
                             onSuccess()

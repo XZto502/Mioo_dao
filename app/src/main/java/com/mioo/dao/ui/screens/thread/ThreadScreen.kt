@@ -1280,7 +1280,6 @@ private fun ReplyInputBar(
         onCookieSelect = onCookieSelect,
         onReplyTextChange = remember(viewModel) { { text: String -> viewModel.updateReplyText(text) } },
         onCancelQuote = remember(viewModel) { { viewModel.setQuotedPost(null) } },
-        confirmFirstPost = !viewModel.hasThreadCookieRecord.collectAsState().value,
         onSend = remember(viewModel) {
             { file: java.io.File? ->
                 viewModel.submitReply(imageFile = file)
@@ -1300,14 +1299,11 @@ fun ReplyInputArea(
     onCookieSelect: (Int) -> Unit,
     onReplyTextChange: (String) -> Unit,
     onCancelQuote: () -> Unit,
-    confirmFirstPost: Boolean = false,
     onSend: (java.io.File?) -> Unit
 ) {
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
     var showDiceDialog by remember { mutableStateOf(false) }
-    var showCookieConfirm by remember { mutableStateOf(false) }
-    var cookieConfirmedOnce by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var previewAttachedUri by remember { mutableStateOf<Uri?>(null) }
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
@@ -1354,15 +1350,6 @@ fun ReplyInputArea(
 
     fun closeToolPanels() {
         if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
-    }
-
-    fun doSend() {
-        val file = attachedImageUri?.toFile(context)
-        if (attachedImageUri != null && file == null) {
-            android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        onSend(file)
     }
 
     val toolPanelOpen = kaomojiMenuExpanded
@@ -1628,8 +1615,12 @@ fun ReplyInputArea(
                 
                 IconButton(
                     onClick = {
-                        val needConfirm = confirmFirstPost && !cookieConfirmedOnce && cookies.size > 1
-                        if (needConfirm) showCookieConfirm = true else doSend()
+                        val file = attachedImageUri?.toFile(context)
+                        if (attachedImageUri != null && file == null) {
+                            android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
+                            return@IconButton
+                        }
+                        onSend(file)
                     },
                     enabled = isSendActive
                 ) {
@@ -1703,28 +1694,6 @@ fun ReplyInputArea(
                 )
             }
         }
-    }
-
-    if (showCookieConfirm) {
-        val activeCookieName = cookies.getOrNull(selectedCookieIndex)?.let { parseCookieName(it) } ?: "当前饼干"
-        AlertDialog(
-            onDismissRequest = { showCookieConfirm = false },
-            properties = immersiveDialogProperties(),
-            title = { ImmersiveDialogEffect(); Text("确认使用的饼干") },
-            text = {
-                Text("首次在此串发言，将使用饼干：$activeCookieName\n确认无误后再发送，避免身份串味。")
-            },
-            confirmButton = {
-                Button(onClick = {
-                    cookieConfirmedOnce = true
-                    showCookieConfirm = false
-                    doSend()
-                }) { Text("确认发送") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCookieConfirm = false }) { Text("再想想") }
-            }
-        )
     }
 }
 
