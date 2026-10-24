@@ -18,6 +18,7 @@ data class UserSettings(
     val cookie: String = "",
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val fontSizeScale: Float = 1.0f,
+    val lineHeightScale: Float = 1.0f,
     val themeColor: String = "dynamic",
     val cookiesList: List<String> = emptyList(),
     /** Display notes keyed by cookie raw string. */

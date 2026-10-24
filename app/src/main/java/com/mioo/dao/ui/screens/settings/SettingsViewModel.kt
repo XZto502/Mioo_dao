@@ -117,6 +117,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateFontSizeScale(scale)
     }
 
+    fun updateLineHeight(scale: Float) {
+        settingsRepository.updateLineHeightScale(scale)
+    }
+
     fun updateThemeColor(color: String) {
         settingsRepository.updateThemeColor(color)
     }

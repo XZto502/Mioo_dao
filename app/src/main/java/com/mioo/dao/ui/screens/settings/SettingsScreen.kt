@@ -26,6 +26,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.FormatLineSpacing
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Save
@@ -635,6 +636,56 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "预览文字：欢迎来到喵岛讨论区！",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 行间距
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.FormatLineSpacing, contentDescription = "行间距")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "行间距", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "滑动调整行与行之间的距离，与字体大小独立生效，全应用即时应用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "最小", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = "${(settings.lineHeightScale * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(text = "最大", style = MaterialTheme.typography.bodySmall)
+                }
+
+                Slider(
+                    value = settings.lineHeightScale,
+                    onValueChange = { viewModel.updateLineHeight(it) },
+                    valueRange = 0.8f..2.0f,
+                    steps = 11
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "预览文字：欢迎来到喵岛讨论区！\n行间距越大，正文越舒展，阅读长串更轻松。",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }

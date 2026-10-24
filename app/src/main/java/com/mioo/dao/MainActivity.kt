@@ -136,13 +136,14 @@ class MainActivity : ComponentActivity() {
                             themeMode = it.themeMode,
                             themeColor = it.themeColor,
                             fontSizeScale = it.fontSizeScale,
+                            lineHeightScale = it.lineHeightScale,
                             glassEffectEnabled = it.glassEffectEnabled
                         )
                     }
                     .distinctUntilChanged()
             }.collectAsState(initial = ThemeConfig())
 
-            val (themeMode, themeColor, fontSizeScale, glassEffectEnabled) = themeConfig
+            val (themeMode, themeColor, fontSizeScale, lineHeightScale, glassEffectEnabled) = themeConfig
             val darkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
@@ -185,6 +186,7 @@ class MainActivity : ComponentActivity() {
                 darkTheme = darkTheme,
                 themeColor = themeColor,
                 fontSizeScale = fontSizeScale,
+                lineHeightScale = lineHeightScale,
                 glassEffectEnabled = glassEffectEnabled
             ) {
                 MiooDaoNavGraph(
@@ -349,6 +351,7 @@ private data class ThemeConfig(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val themeColor: String = "dynamic",
     val fontSizeScale: Float = 1.0f,
+    val lineHeightScale: Float = 1.0f,
     val glassEffectEnabled: Boolean = true
 )
 

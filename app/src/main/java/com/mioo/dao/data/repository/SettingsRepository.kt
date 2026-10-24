@@ -43,7 +43,8 @@ class SettingsRepository @Inject constructor(
             settingsDataStore.smartPreloadModeFlow,
             settingsDataStore.preloadCountFlow,
             settingsDataStore.subscriptionNotificationsFlow,
-            settingsDataStore.notificationIntervalMinutesFlow
+            settingsDataStore.notificationIntervalMinutesFlow,
+            settingsDataStore.lineHeightScaleFlow
         ) { args ->
             val cookie = args[0] as? String
             val themeModeStr = args[1] as String
@@ -69,6 +70,7 @@ class SettingsRepository @Inject constructor(
             val preloadCount = args[14] as Int
             val subscriptionNotifications = args[15] as Boolean
             val notificationIntervalMinutes = args[16] as Int
+            val lineHeightScale = args[17] as Float
 
             val themeMode = try {
                 ThemeMode.valueOf(themeModeStr)
@@ -79,6 +81,7 @@ class SettingsRepository @Inject constructor(
                 cookie = cookie ?: "",
                 themeMode = themeMode,
                 fontSizeScale = fontSizeScale,
+                lineHeightScale = lineHeightScale,
                 themeColor = themeColor,
                 cookiesList = cookiesList,
                 cookieNotes = cookieNotes,
@@ -176,6 +179,12 @@ class SettingsRepository @Inject constructor(
     fun updateFontSizeScale(scale: Float) {
         repositoryScope.launch {
             settingsDataStore.saveFontSizeScale(scale)
+        }
+    }
+
+    fun updateLineHeightScale(scale: Float) {
+        repositoryScope.launch {
+            settingsDataStore.saveLineHeightScale(scale)
         }
     }
 

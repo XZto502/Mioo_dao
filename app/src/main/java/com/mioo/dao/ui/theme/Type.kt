@@ -63,3 +63,30 @@ fun Typography.scale(scale: Float): Typography {
         labelSmall = labelSmall.scale(scale)
     )
 }
+
+private fun TextStyle.scaleLineHeight(scale: Float): TextStyle {
+    return this.copy(
+        lineHeight = this.lineHeight.scale(scale)
+    )
+}
+
+fun Typography.scaleLineHeight(scale: Float): Typography {
+    if (scale == 1.0f) return this
+    return Typography(
+        displayLarge = displayLarge.scaleLineHeight(scale),
+        displayMedium = displayMedium.scaleLineHeight(scale),
+        displaySmall = displaySmall.scaleLineHeight(scale),
+        headlineLarge = headlineLarge.scaleLineHeight(scale),
+        headlineMedium = headlineMedium.scaleLineHeight(scale),
+        headlineSmall = headlineSmall.scaleLineHeight(scale),
+        titleLarge = titleLarge.scaleLineHeight(scale),
+        titleMedium = titleMedium.scaleLineHeight(scale),
+        titleSmall = titleSmall.scaleLineHeight(scale),
+        bodyLarge = bodyLarge.scaleLineHeight(scale),
+        bodyMedium = bodyMedium.scaleLineHeight(scale),
+        bodySmall = bodySmall.scaleLineHeight(scale),
+        labelLarge = labelLarge.scaleLineHeight(scale),
+        labelMedium = labelMedium.scaleLineHeight(scale),
+        labelSmall = labelSmall.scaleLineHeight(scale)
+    )
+}

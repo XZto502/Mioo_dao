@@ -28,6 +28,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_LAST_FORUM_NAME = stringPreferencesKey("last_forum_name")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_FONT_SIZE_SCALE = floatPreferencesKey("font_size_scale")
+        val KEY_LINE_HEIGHT_SCALE = floatPreferencesKey("line_height_scale")
         val KEY_THEME_COLOR = stringPreferencesKey("theme_color")
         val KEY_COOKIES_LIST = stringPreferencesKey("cookies_list")
         val KEY_COOKIE_NOTES = stringPreferencesKey("cookie_notes")
@@ -123,6 +124,18 @@ class SettingsDataStore(private val context: Context) {
         }
         .map { preferences ->
             preferences[KEY_FONT_SIZE_SCALE] ?: 1.0f
+        }
+
+    val lineHeightScaleFlow: Flow<Float> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_LINE_HEIGHT_SCALE] ?: 1.0f
         }
 
     val themeColorFlow: Flow<String> = context.dataStore.data
@@ -531,6 +544,12 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveFontSizeScale(scale: Float) {
         context.dataStore.edit { preferences ->
             preferences[KEY_FONT_SIZE_SCALE] = scale
+        }
+    }
+
+    suspend fun saveLineHeightScale(scale: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_LINE_HEIGHT_SCALE] = scale
         }
     }
 

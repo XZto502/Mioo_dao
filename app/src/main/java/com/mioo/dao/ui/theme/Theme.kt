@@ -171,6 +171,7 @@ fun MiooDaoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     themeColor: String = "dynamic",
     fontSizeScale: Float = 1.0f,
+    lineHeightScale: Float = 1.0f,
     glassEffectEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -242,7 +243,7 @@ fun MiooDaoTheme(
         )
     }
 
-    val scaledTypography = Typography.scale(fontSizeScale)
+    val scaledTypography = Typography.scale(fontSizeScale).scaleLineHeight(lineHeightScale)
 
     val view = LocalView.current
     if (!view.isInEditMode) {
