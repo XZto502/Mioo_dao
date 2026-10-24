@@ -89,6 +89,8 @@ import com.mioo.dao.data.model.ImageCacheLimit
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.repository.BackupRepository
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
 
@@ -105,6 +107,7 @@ fun SettingsScreen(
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
     var newFolderUuid by remember { mutableStateOf("") }
+    var pendingScannedCookie by remember { mutableStateOf<String?>(null) }
     
     val context = LocalContext.current
 
@@ -117,8 +120,7 @@ fun SettingsScreen(
             Toast.makeText(context, "无效的饼干二维码", Toast.LENGTH_SHORT).show()
             return@rememberLauncherForActivityResult
         }
-        viewModel.addCookie(cookieToAdd)
-        Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
+        pendingScannedCookie = cookieToAdd
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -135,8 +137,7 @@ fun SettingsScreen(
                     Toast.makeText(context, "无效的饼干二维码", Toast.LENGTH_SHORT).show()
                     return@scanQrFromUri
                 }
-                viewModel.addCookie(cookieToAdd)
-                Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
+                pendingScannedCookie = cookieToAdd
             }
         }
     }
@@ -682,13 +683,13 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "最小", style = MaterialTheme.typography.bodySmall)
+                    Text(text = "80%", style = MaterialTheme.typography.bodySmall)
                     Text(
                         text = "${(settings.fontSizeScale * 100).toInt()}%",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Text(text = "最大", style = MaterialTheme.typography.bodySmall)
+                    Text(text = "150%", style = MaterialTheme.typography.bodySmall)
                 }
                 
                 Slider(
@@ -732,13 +733,13 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "最小", style = MaterialTheme.typography.bodySmall)
+                    Text(text = "80%", style = MaterialTheme.typography.bodySmall)
                     Text(
                         text = "${(settings.lineHeightScale * 100).toInt()}%",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Text(text = "最大", style = MaterialTheme.typography.bodySmall)
+                    Text(text = "200%", style = MaterialTheme.typography.bodySmall)
                 }
 
                 Slider(
@@ -1620,6 +1621,36 @@ fun SettingsScreen(
                 Text(lines.joinToString("\n"))
             },
             confirmButton = { TextButton(onClick = { importResult = null }) { Text("好") } }
+        )
+    }
+
+    pendingScannedCookie?.let { scanned ->
+        AlertDialog(
+            onDismissRequest = { pendingScannedCookie = null },
+            properties = immersiveDialogProperties(),
+            title = { ImmersiveDialogEffect(); Text("添加这块饼干？") },
+            text = {
+                Column {
+                    Text("识别到饼干，确认添加：", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = cookieSixCharId(scanned).ifBlank { scanned.take(16) }.let { if (it.length < scanned.length) "$it…" else it },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.addCookie(scanned)
+                    pendingScannedCookie = null
+                    Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
+                }) { Text("添加") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingScannedCookie = null }) { Text("取消") }
+            }
         )
     }
 }
