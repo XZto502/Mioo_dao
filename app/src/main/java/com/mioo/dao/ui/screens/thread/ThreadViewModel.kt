@@ -119,6 +119,14 @@ class ThreadViewModel @Inject constructor(
     private val _composerState = MutableStateFlow(ReplyComposerState())
     val composerState: StateFlow<ReplyComposerState> = _composerState.asStateFlow()
 
+    /** 本串独立选中的饼干下标；null = 未单独选过，跟随全局。绝不写回全局。 */
+    private val _threadCookieIndex = MutableStateFlow<Int?>(null)
+    val threadCookieIndex: StateFlow<Int?> = _threadCookieIndex.asStateFlow()
+
+    fun selectThreadCookie(index: Int) {
+        _threadCookieIndex.value = index
+    }
+
     /**
      * Per-key observable quote map. Compose only invalidates items that read a given id,
      * so filling quote A does not recompose the card that only needs quote B.
@@ -219,14 +227,11 @@ class ThreadViewModel @Inject constructor(
             }
         }
 
-        // 本串上次回复所用饼干自动设为当前选中（饼干仍在列表时才生效）
+        // 本串独立饼干选择：进串恢复上次回复所用饼干（仅本串状态，不改全局选中）
         viewModelScope.launch {
             val remembered = settingsRepository.getThreadCookie(threadId) ?: return@launch
-            val s = settingsRepository.settings.value
-            val idx = s.cookiesList.indexOf(remembered)
-            if (idx >= 0 && idx != s.selectedCookieIndex) {
-                settingsRepository.selectCookieIndex(idx)
-            }
+            val idx = settingsRepository.settings.value.cookiesList.indexOf(remembered)
+            if (idx >= 0) _threadCookieIndex.value = idx
         }
 
         loadThreadDetails()
@@ -909,6 +914,9 @@ class ThreadViewModel @Inject constructor(
 
     fun submitReply(imageFile: File? = null, onSuccess: () -> Unit = {}) {
         val currentComposer = _composerState.value
+        val threadCookie = _threadCookieIndex.value?.let { idx ->
+            settingsRepository.settings.value.cookiesList.getOrNull(idx)
+        }
         if (currentComposer.replyText.isBlank() && imageFile == null) return
         if (currentComposer.isReplying) return
 
@@ -921,7 +929,8 @@ class ThreadViewModel @Inject constructor(
                     name = null,
                     email = null,
                     content = currentComposer.replyText,
-                    imageFile = imageFile
+                    imageFile = imageFile,
+                    cookie = threadCookie
                 ).collect { response ->
                     when (response) {
                         is XdResponse.Success -> {
@@ -941,10 +950,13 @@ class ThreadViewModel @Inject constructor(
                                         threadRepository.saveReplyDraft(threadId, null, "")
                                     }
                                 }
-                                // 记录本串本次回复所用饼干，下次进串默认选中
-                                val s = settingsRepository.settings.value
-                                s.cookiesList.getOrNull(s.selectedCookieIndex)?.let { used ->
-                                    settingsRepository.saveThreadCookie(threadId, used)
+                                // 记录本串本次回复所用饼干（串级覆盖优先，其次全局选中），下次进串默认选中
+                                val usedCookie = threadCookie
+                                    ?: settingsRepository.settings.value.let { s ->
+                                        s.cookiesList.getOrNull(s.selectedCookieIndex)
+                                    }
+                                if (usedCookie != null) {
+                                    settingsRepository.saveThreadCookie(threadId, usedCookie)
                                 }
                             }
                             onSuccess()

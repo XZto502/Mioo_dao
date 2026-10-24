@@ -77,7 +77,8 @@ interface ThreadRepository {
         name: String?,
         email: String?,
         content: String,
-        imageFile: File?
+        imageFile: File?,
+        cookie: String? = null
     ): Flow<XdResponse<String>>
 
     // Local DB operations
@@ -438,7 +439,8 @@ class ThreadRepositoryImpl @Inject constructor(
         name: String?,
         email: String?,
         content: String,
-        imageFile: File?
+        imageFile: File?,
+        cookie: String?
     ): Flow<XdResponse<String>> = flow {
         try {
             val response = if (imageFile != null) {
@@ -449,10 +451,11 @@ class ThreadRepositoryImpl @Inject constructor(
                 val contentBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
                 val parentBody = parent.toRequestBody("text/plain".toMediaTypeOrNull())
                 val imagePart = imageFile.asImagePart()
-                apiService.doReplyThread(null, titleBody, nameBody, emailBody, contentBody, parentBody, imagePart)
+                apiService.doReplyThread(cookie, null, titleBody, nameBody, emailBody, contentBody, parentBody, imagePart)
             } else {
                 // Use FormUrlEncoded for text-only replies (more reliable)
                 apiService.doReplyThreadText(
+                    cookieOverride = cookie,
                     resto = parent,
                     content = content,
                     name = name,

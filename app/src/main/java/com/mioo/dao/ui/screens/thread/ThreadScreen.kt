@@ -421,8 +421,10 @@ fun ThreadScreen(
             ReplyInputBar(
                 viewModel = viewModel,
                 cookies = threadSettings.cookiesList,
-                selectedCookieIndex = threadSettings.selectedCookieIndex,
-                onCookieSelect = { settingsViewModel.selectCookie(it) }
+                selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
+                    ?.takeIf { it < threadSettings.cookiesList.size }
+                    ?: threadSettings.selectedCookieIndex,
+                onCookieSelect = { viewModel.selectThreadCookie(it) }
             )
         },
         modifier = modifier,

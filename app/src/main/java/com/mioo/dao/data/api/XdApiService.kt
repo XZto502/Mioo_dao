@@ -9,6 +9,7 @@ import okhttp3.ResponseBody
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
@@ -87,6 +88,7 @@ interface XdApiService {
     @Multipart
     @POST("/Home/Forum/doReplyThread.html")
     suspend fun doReplyThread(
+        @Header("X-Mioo-Cookie") cookieOverride: String?,
         @Part("modo") modo: RequestBody?, // Sometimes used in forms
         @Part("title") title: RequestBody?,
         @Part("name") name: RequestBody?,
@@ -99,6 +101,7 @@ interface XdApiService {
     @FormUrlEncoded
     @POST("/Home/Forum/doReplyThread.html")
     suspend fun doReplyThreadText(
+        @Header("X-Mioo-Cookie") cookieOverride: String?,
         @Field("resto") resto: String,
         @Field("content") content: String,
         @Field("name") name: String?,

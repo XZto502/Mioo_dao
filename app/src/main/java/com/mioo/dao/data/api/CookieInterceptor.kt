@@ -24,14 +24,16 @@ class CookieInterceptor @Inject constructor(
         }
         val settings = settingsRepository.settings.value
 
-        var activeCookie = settings.cookiesList.getOrNull(settings.selectedCookieIndex)
-            ?: settings.cookie.takeIf { it.isNotBlank() }
-        activeCookie = extractHash(activeCookie)
+        // X-Mioo-Cookie：串级饼干覆盖（每串记忆），优先于全局选中
+        var activeCookie = extractHash(originalRequest.header("X-Mioo-Cookie"))
+            ?: settings.cookiesList.getOrNull(settings.selectedCookieIndex)?.let { extractHash(it) }
+            ?: settings.cookie.takeIf { it.isNotBlank() }?.let { extractHash(it) }
 
         var authCookie = extractHash(settings.authCookie.takeIf { it.isNotBlank() })
 
         val requestBuilder = originalRequest.newBuilder()
             .header("User-Agent", "HavfunClient-Android")
+        requestBuilder.removeHeader("X-Mioo-Cookie")
 
         val cookieParts = ArrayList<String>(2)
         if (!activeCookie.isNullOrBlank()) {
