@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -1402,30 +1403,35 @@ fun CreateThreadDialog(
                                 )
                             }
 
-                            // Soft expand: ease-out, scale from 0.95, exit faster than enter
+                            // 骰子/颜文字共用固定高度面板：切换只交叉淡入，高度不变（防工具栏弹跳）
                             val panelReducedMotion = isReducedMotionEnabled()
                             AnimatedVisibility(
-                                visible = diceExpanded,
+                                visible = diceExpanded || kaomojiExpanded,
                                 enter = MiooMotion.softExpandEnter(panelReducedMotion),
                                 exit = MiooMotion.softExpandExit(panelReducedMotion)
                             ) {
-                                DiceQuickPanel(
-                                    onInsert = { insertAtCursor(it) },
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(220.dp)
-                                )
-                            }
-                            AnimatedVisibility(
-                                visible = kaomojiExpanded,
-                                enter = MiooMotion.softExpandEnter(panelReducedMotion),
-                                exit = MiooMotion.softExpandExit(panelReducedMotion)
-                            ) {
-                                KaomojiQuickPanel(
-                                    onInsert = { insertAtCursor(it) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    heightDp = 220
-                                )
+                                ) {
+                                    Crossfade(targetState = diceExpanded, label = "composerToolPanel") { dice ->
+                                        if (dice) {
+                                            DiceQuickPanel(
+                                                onInsert = { insertAtCursor(it) },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(220.dp)
+                                            )
+                                        } else {
+                                            KaomojiQuickPanel(
+                                                onInsert = { insertAtCursor(it) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                heightDp = 220
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1560,11 +1566,11 @@ fun CreateThreadDialog(
                                 IconButton(
                                     onClick = { attachedImageUri = null },
                                     modifier = Modifier
-                                        .size(26.dp)
+                                        .size(20.dp)
                                         .align(Alignment.TopEnd)
                                         .padding(4.dp)
                                         .background(
-                                            Color.Black.copy(alpha = 0.55f),
+                                            Color.Black.copy(alpha = 0.4f),
                                             CircleShape
                                         )
                                 ) {
@@ -1572,7 +1578,7 @@ fun CreateThreadDialog(
                                         imageVector = Icons.Default.Cancel,
                                         contentDescription = "移除图片",
                                         tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(12.dp)
                                     )
                                 }
                             }

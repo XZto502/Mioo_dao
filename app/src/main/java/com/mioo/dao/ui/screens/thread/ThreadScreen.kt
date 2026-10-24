@@ -1,6 +1,7 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1471,15 +1472,15 @@ fun ReplyInputArea(
                         IconButton(
                             onClick = { attachedImageUri = null },
                             modifier = Modifier
-                                .size(20.dp)
+                                .size(16.dp)
                                 .align(Alignment.TopEnd)
-                                .background(Color.Black.copy(alpha = 0.6f), shape = androidx.compose.foundation.shape.CircleShape)
+                                .background(Color.Black.copy(alpha = 0.4f), shape = androidx.compose.foundation.shape.CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Cancel,
                                 contentDescription = "Remove",
                                 tint = Color.White,
-                                modifier = Modifier.size(12.dp)
+                                modifier = Modifier.size(10.dp)
                             )
                         }
                     }
@@ -1628,31 +1629,36 @@ fun ReplyInputArea(
                 }
             }
 
+            // 骰子/颜文字共用固定高度面板：切换时只交叉淡入内容，高度不变，
+            // 避免旧面板收起+新面板展开造成的工具栏上下弹跳
             AnimatedVisibility(
-                visible = diceMenuExpanded,
+                visible = toolPanelOpen,
                 enter = MiooMotion.softExpandEnter(reducedMotion),
                 exit = MiooMotion.softExpandExit(reducedMotion)
             ) {
-                DiceQuickPanel(
-                    onInsert = { insertAtCursor(it) },
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
                         .height(200.dp)
-                )
-            }
-            AnimatedVisibility(
-                visible = kaomojiMenuExpanded,
-                enter = MiooMotion.softExpandEnter(reducedMotion),
-                exit = MiooMotion.softExpandExit(reducedMotion)
-            ) {
-                KaomojiQuickPanel(
-                    onInsert = { insertAtCursor(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    heightDp = 180
-                )
+                ) {
+                    Crossfade(targetState = diceMenuExpanded, label = "composerToolPanel") { dice ->
+                        if (dice) {
+                            DiceQuickPanel(
+                                onInsert = { insertAtCursor(it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                            )
+                        } else {
+                            KaomojiQuickPanel(
+                                onInsert = { insertAtCursor(it) },
+                                modifier = Modifier.fillMaxWidth(),
+                                heightDp = 200
+                            )
+                        }
+                    }
+                }
             }
         }
     }
