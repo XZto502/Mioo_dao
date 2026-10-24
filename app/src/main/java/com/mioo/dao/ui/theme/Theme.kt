@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -172,6 +173,7 @@ fun MiooDaoTheme(
     themeColor: String = "dynamic",
     fontSizeScale: Float = 1.0f,
     lineHeightScale: Float = 1.0f,
+    fontFamily: String = "default",
     glassEffectEnabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -243,7 +245,15 @@ fun MiooDaoTheme(
         )
     }
 
-    val scaledTypography = Typography.scale(fontSizeScale).scaleLineHeight(lineHeightScale)
+    val resolvedFontFamily = when (fontFamily) {
+        "serif" -> FontFamily.Serif
+        "monospace" -> FontFamily.Monospace
+        "cursive" -> FontFamily.Cursive
+        else -> null
+    }
+    val scaledTypography = Typography.scale(fontSizeScale)
+        .scaleLineHeight(lineHeightScale)
+        .withFontFamily(resolvedFontFamily)
 
     val view = LocalView.current
     if (!view.isInEditMode) {

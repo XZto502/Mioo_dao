@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FormatLineSpacing
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Palette
@@ -75,6 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.data.model.ImageCacheLimit
@@ -701,6 +703,53 @@ fun SettingsScreen(
                     text = "预览文字：欢迎来到喵岛讨论区！\n行间距越大，正文越舒展，阅读长串更轻松。",
                     style = MaterialTheme.typography.bodyMedium
                 )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 字体样式
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.FontDownload, contentDescription = "字体样式")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "字体样式", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "更换全应用字体，与字体大小、行间距独立生效。部分机型手写体会回退为默认字体。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val fontOptions = listOf(
+                    Triple("default", "默认字体", null as FontFamily?),
+                    Triple("serif", "衬线字体 (Serif)", FontFamily.Serif),
+                    Triple("monospace", "等宽字体 (Monospace)", FontFamily.Monospace),
+                    Triple("cursive", "手写体 (Cursive)", FontFamily.Cursive)
+                )
+                fontOptions.forEach { (key, label, family) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.updateFontFamily(key) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = settings.fontFamily == key, onClick = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = family
+                        )
+                    }
+                }
             }
         }
 
