@@ -36,7 +36,9 @@ object IslandImage {
             else -> return null
         }
         val name = url.substringAfter(marker).substringBefore('?').substringBefore('#')
-        if (name.isBlank() || '/' in name || ' ' in name) return null
+        // 岛图带日期子目录（如 2022-06-28/62ba647ab18dc.jpg），名字里允许 '/'；
+        // 只拒绝会导致转换丢路径或越界的形态。
+        if (name.isBlank() || name.startsWith('/') || ' ' in name || ".." in name) return null
         return name
     }
 }

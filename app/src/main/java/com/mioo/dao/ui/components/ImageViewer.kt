@@ -300,6 +300,19 @@ private fun ZoomableImageContainer(
                 .diskCacheKey(imageUrl)
                 .build()
         }
+        // 原图加载期间先垫缩略图：列表看过的话命中内存缓存秒显，没看过也只差 6KB；
+        // 非岛图（thumb 转换不动地址）跳过，避免同 URL 重复加载。
+        val thumbUrl = remember(imageUrl) {
+            IslandImage.listUrl(imageUrl).takeIf { it != imageUrl }
+        }
+        if (thumbUrl != null) {
+            AsyncImage(
+                model = thumbUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         AsyncImage(
             model = imageRequest,
             contentDescription = "Zoomable Image",
