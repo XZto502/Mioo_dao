@@ -614,7 +614,15 @@ fun ForumScreen(
     }
 
     if (showCreateDialog) {
+        // 与串内回复栏同源：键盘/导航条高度在 Activity 窗口里量取。
+        // Dialog 窗口在这台设备上收不到 ime insets、可见区兜底也不收缩，
+        // 槽位如果用对话框自己量到的 0，底栏就会被键盘整个盖住。
+        val density = LocalDensity.current
+        val imeBottomPx = rememberEffectiveImeBottomPx()
+        val navBottomPx = WindowInsets.navigationBars.getBottom(density)
         CreateThreadDialog(
+            imeBottomPx = imeBottomPx,
+            navBottomPx = navBottomPx,
             cookies = forumSettings.cookiesList,
             selectedCookieIndex = forumSettings.selectedCookieIndex,
             boardName = uiState.currentForumName,
@@ -1045,6 +1053,9 @@ private fun ForumThreadRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateThreadDialog(
+    // 由 Activity 窗口量取后传入（Dialog 窗口在部分设备上拿不到 ime insets）
+    imeBottomPx: Int,
+    navBottomPx: Int,
     cookies: List<String>,
     selectedCookieIndex: Int,
     boardName: String = "",
@@ -1217,8 +1228,7 @@ fun CreateThreadDialog(
 
         // 【共享底部高度槽位】与串内回复栏同款：底部总占位恒取 max(键盘, 导航条, 面板)，
         // 绝不相加——键盘升起时槽位只在几个值之间平滑取大，玻璃由槽位顶起，杜绝双计飞栏。
-        val imeBottomPx = rememberEffectiveImeBottomPx()
-        val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+        // ime/nav 高度由 Activity 窗口量取后经参数传入，见 CreateThreadDialog 调用处注释。
         var rememberedImeHeightPx by remember { mutableIntStateOf(0) }
         val defaultPanelHeightPx = with(density) { 280.dp.roundToPx() }
         // 面板高度跟随用户键盘实际高度（键盘升过一次后记录），否则兜底 280dp
@@ -1393,16 +1403,20 @@ fun CreateThreadDialog(
                                     .fillMaxWidth()
                                     .height(bottomSlotHeightDp)
                             ) {
-                                if (kaomojiExpanded) {
-                                    KaomojiQuickPanel(
-                                        onInsert = { insertAtCursor(it) },
-                                        modifier = Modifier.navigationBarsPadding(),
-                                        heightDp = with(density) {
-                                            (bottomSlotHeightPx - navBottomPx).coerceAtLeast(0)
-                                                .toDp().value.roundToInt()
-                                        }
-                                    )
-                                }
+                            if (kaomojiExpanded) {
+                                KaomojiQuickPanel(
+                                    onInsert = { insertAtCursor(it) },
+                                    // 对话框里 navigationBarsPadding 可能拿不到值，
+                                    // 用 Activity 量取的导航条高度显式垫底
+                                    modifier = Modifier.padding(
+                                        bottom = with(density) { navBottomPx.toDp() }
+                                    ),
+                                    heightDp = with(density) {
+                                        (bottomSlotHeightPx - navBottomPx).coerceAtLeast(0)
+                                            .toDp().value.roundToInt()
+                                    }
+                                )
+                            }
                             }
                         }
                     }
