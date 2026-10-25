@@ -234,11 +234,25 @@ private fun ZoomableImageContainer(
                     }
                 }
                 detectTapGestures(
-                    onDoubleTap = {
+                    onDoubleTap = { tap ->
                         if (scale > 1.01f) {
                             applyScale(1f)
                         } else {
-                            applyScale(3f)
+                            // 双击以指尖为锚点放大：变换是"中心缩放 + 平移"，
+                            // 保持指尖下的内容点在缩放前后位置不变
+                            //（t' = (tap - center)(1 - s'/s) + (s'/s)t）。
+                            val s0 = scale
+                            val ratio = 3f / s0
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            val nextX = (tap.x - cx) * (1f - ratio) + ratio * offsetX
+                            val nextY = (tap.y - cy) * (1f - ratio) + ratio * offsetY
+                            if (nextX.isFinite() && nextY.isFinite()) {
+                                offsetX = nextX
+                                offsetY = nextY
+                            }
+                            scale = 3f
+                            onZoomedChangedState.value(true)
                         }
                     },
                     onTap = {
