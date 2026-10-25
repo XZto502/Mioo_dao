@@ -321,7 +321,8 @@ class ThreadViewModel @Inject constructor(
         resumeScrollSeeded = false
         _listState.update {
             it.copy(
-                displayItems = emptyList(),
+                // 不清空 displayItems：旧页内容保留到新页数据整体替换（SWR 同款行为），
+                // 清空会在 AMOLED 纯黑背景上闪黑帧。落顶由 stickyResumeIndex 种子完成。
                 isLastPage = false,
                 currentPage = page,
                 startPage = page,
