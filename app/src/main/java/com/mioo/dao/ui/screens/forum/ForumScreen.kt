@@ -53,7 +53,6 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Casino
-import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Face
@@ -65,8 +64,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
@@ -117,13 +114,14 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
@@ -1168,6 +1166,17 @@ fun CreateThreadDialog(
         val context = LocalContext.current
         ImmersiveDialogEffect(lightAppearance = !isDark)
 
+        // 宿主 Activity 是 adjustNothing，但 Dialog 窗口有独立的 softInputMode：
+        // 部分 OEM 默认让对话框 adjustResize → 内容被系统先顶一次，底栏的
+        // imePaddingAndNavigationBars 再垫一次 = 双倍抬升，整个栏"飞"到键盘上方。
+        // 显式钉死 ADJUST_NOTHING，抬升只由底栏自己的 inset 逻辑负责。
+        val dialogWindow = (dialogView.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            dialogWindow?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            )
+        }
+
         val hideSystemIme = remember(dialogView, context, keyboardController, focusManager) {
             {
                 focusManager.clearFocus(force = true)
@@ -1339,78 +1348,15 @@ fun CreateThreadDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 if (cookies.isNotEmpty()) {
-                                    Box {
-                                        OutlinedButton(
-                                            onClick = { cookieMenuExpanded = true },
-                                            contentPadding = PaddingValues(
-                                                horizontal = 12.dp,
-                                                vertical = 6.dp
-                                            ),
-                                            shape = RoundedCornerShape(20.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Cookie,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            val currentCookie =
-                                                cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
-                                            val displayName = parseCookieName(currentCookie)
-                                            Text(
-                                                text = if (displayName.length > 8) {
-                                                    displayName.take(8) + "…"
-                                                } else {
-                                                    displayName
-                                                },
-                                                style = MaterialTheme.typography.labelLarge,
-                                                maxLines = 1
-                                            )
-                                        }
-                                        DropdownMenu(
-                                            expanded = cookieMenuExpanded,
-                                            onDismissRequest = { cookieMenuExpanded = false },
-                                            // 与串内回复栏的饼干菜单同规格：正向 y 把翻转后
-                                            // 悬在上方的菜单向下拉回，贴住触发按钮顶边
-                                            offset = DpOffset(0.dp, 4.dp)
-                                        ) {
-                                            cookies.forEachIndexed { index, cookie ->
-                                                val isSelected = index == selectedCookieIndex
-                                                val displayName = parseCookieName(cookie)
-                                                DropdownMenuItem(
-                                                    // 垂直边距交给 DropdownMenu 内置的 8dp，
-                                                    // 水平收齐 8dp，与回复栏菜单四边对称
-                                                    contentPadding = PaddingValues(
-                                                        horizontal = 8.dp,
-                                                        vertical = 0.dp
-                                                    ),
-                                                    text = {
-                                                        Text(
-                                                            text = if (displayName.length > 8) {
-                                                                displayName.take(8) + "…"
-                                                            } else {
-                                                                displayName
-                                                            },
-                                                            fontWeight = if (isSelected) {
-                                                                FontWeight.Bold
-                                                            } else {
-                                                                FontWeight.Normal
-                                                            },
-                                                            color = if (isSelected) {
-                                                                colorScheme.primary
-                                                            } else {
-                                                                colorScheme.onSurface
-                                                            }
-                                                        )
-                                                    },
-                                                    onClick = {
-                                                        onCookieSelect(index)
-                                                        cookieMenuExpanded = false
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
+                                    // 与串内回复栏/举报对话框同一套饼干选择器：
+                                    // 40dp 胶囊 + 自绘弹出菜单（贴锚点、四边 8dp、缩放淡出）
+                                    CookieSelector(
+                                        cookies = cookies,
+                                        selectedIndex = selectedCookieIndex,
+                                        expanded = cookieMenuExpanded,
+                                        onExpandedChange = { cookieMenuExpanded = it },
+                                        onSelect = onCookieSelect
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.weight(1f))
@@ -1655,22 +1601,6 @@ fun CreateThreadDialog(
                 TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") }
             }
         )
-    }
-}
-
-private fun parseCookieName(cookie: String): String {
-    return try {
-        if (cookie.startsWith("{")) {
-            val json = org.json.JSONObject(cookie)
-            var name = json.optString("name", "")
-            if (name.isEmpty()) name = json.optString("cookie", "")
-            if (name.isEmpty()) name = json.optString("userhash", cookie)
-            name
-        } else {
-            cookie
-        }
-    } catch (e: Exception) {
-        cookie
     }
 }
 

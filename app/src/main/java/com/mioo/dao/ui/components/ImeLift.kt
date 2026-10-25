@@ -2,6 +2,9 @@ package com.mioo.dao.ui.components
 
 import android.graphics.Rect
 import android.view.ViewTreeObserver
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
@@ -91,16 +94,21 @@ fun rememberEffectiveImeBottomPx(): Int {
  * The keyboard covers the gesture pill, so the two paddings are never stacked.
  * Uses [rememberEffectiveImeBottomPx] so the lift also works where IME insets
  * dispatch is broken. Pair with `windowSoftInputMode="adjustNothing"`.
+ *
+ * 抬升量用动画抹平：insets 失派发的设备上兜底值来自 GlobalLayout，
+ * 会整帧跳变（键盘还在半途、底栏已瞬移到终点，看起来像"飞起来"）。
  */
 fun Modifier.imePaddingAndNavigationBars(): Modifier = composed {
     val density = LocalDensity.current
     val imeBottom = rememberEffectiveImeBottomPx()
     val navBottom = WindowInsets.navigationBars.getBottom(density)
-    if (imeBottom > navBottom) {
-        Modifier.padding(bottom = with(density) { imeBottom.toDp() })
-    } else {
-        Modifier.navigationBarsPadding()
-    }
+    val liftTarget = with(density) { maxOf(imeBottom, navBottom).toDp() }
+    val lift by animateDpAsState(
+        targetValue = liftTarget,
+        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+        label = "imeLiftPadding"
+    )
+    Modifier.padding(bottom = lift)
 }
 
 /** @see imePaddingAndNavigationBars */
