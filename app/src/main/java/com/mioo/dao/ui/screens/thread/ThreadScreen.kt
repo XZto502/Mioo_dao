@@ -5,6 +5,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -14,9 +18,11 @@ import androidx.compose.foundation.clickable
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +37,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -213,6 +220,7 @@ fun ThreadScreen(
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
     var showPageJumpDialog by remember { mutableStateOf(false) }
+    var showJumpBubble by remember { mutableStateOf(false) }
     var isSearchMode by remember { mutableStateOf(false) }
     // Local text field value — do not write listUi on every keystroke
     var searchFieldText by remember { mutableStateOf("") }
@@ -450,8 +458,13 @@ fun ThreadScreen(
                             ThreadPageJumpButton(
                                 totalPages = totalPages,
                                 currentPage = currentScrollPage.value,
+                                expanded = showJumpBubble,
+                                onExpandedChange = { showJumpBubble = it },
                                 onJumpToPage = { viewModel.jumpToPage(it) },
-                                onOpenInputDialog = { showPageJumpDialog = true }
+                                onOpenInputDialog = {
+                                    showJumpBubble = false
+                                    showPageJumpDialog = true
+                                }
                             )
                         }
                         // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
@@ -735,6 +748,23 @@ fun ThreadScreen(
                         }
                     }
                 }
+            }
+
+            // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）
+            AnimatedVisibility(
+                visible = showJumpBubble,
+                enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(120)),
+                exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(120)),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { showJumpBubble = false }
+                )
             }
 
             freeCopyText?.let { text ->
@@ -1025,17 +1055,23 @@ private fun ThreadRefPopupHost(
 private fun ThreadPageJumpButton(
     totalPages: Int,
     currentPage: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onJumpToPage: (Int) -> Unit,
     onOpenInputDialog: () -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
     // 拖动预览页码；每次打开气泡时重置为当前页
-    var sliderPage by remember(expanded) { mutableStateOf(currentPage.toFloat()) }
+    var sliderPage by remember { mutableStateOf(1f) }
+    LaunchedEffect(expanded) {
+        if (expanded) sliderPage = currentPage.toFloat()
+    }
     val previewPage = sliderPage.toInt().coerceIn(1, totalPages.coerceAtLeast(1))
+    val reducedMotion = isReducedMotionEnabled()
+    BackHandler(enabled = expanded) { onExpandedChange(false) }
 
-    Box {
+    Box(modifier = Modifier.size(40.dp)) {
         IconButton(
-            onClick = { expanded = true },
+            onClick = { onExpandedChange(!expanded) },
             modifier = Modifier.size(40.dp)
         ) {
             Icon(
@@ -1046,21 +1082,28 @@ private fun ThreadPageJumpButton(
             )
         }
 
-        // material3 1.2.0 的 DropdownMenu 无 containerColor/tonalElevation 参数，
-        // 通过 colorScheme/shapes 覆盖实现同款视觉（20dp 圆角 + 高一级容器色）
-        MaterialTheme(
-            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(20.dp)),
-            colorScheme = MaterialTheme.colorScheme.copy(
-                surfaceContainer = MaterialTheme.colorScheme.surfaceContainerHighest,
-                surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHighest
+        // 树内 overlay + AnimatedVisibility：进出场动画可控；右缘与跳页图标对齐
+        AnimatedVisibility(
+            visible = expanded,
+            enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(180)) + scaleIn(
+                initialScale = 0.9f,
+                animationSpec = tween(180),
+                transformOrigin = TransformOrigin(1f, 0f)
+            ),
+            exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(180)) + scaleOut(
+                targetScale = 0.9f,
+                animationSpec = tween(180),
+                transformOrigin = TransformOrigin(1f, 0f)
             )
         ) {
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.width(244.dp)
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = 6.dp,
+                modifier = Modifier
+                    .offset(x = -204.dp, y = 48.dp)
+                    .width(244.dp)
             ) {
-                val reducedMotion = isReducedMotionEnabled()
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                     // 第 1 行：步进器 + 可点击页码胶囊（点胶囊 = 精确输入）
                     Row(
@@ -1099,7 +1142,7 @@ private fun ThreadPageJumpButton(
                                 MaterialTheme.colorScheme.surfaceContainerHighest
                             },
                             onClick = {
-                                expanded = false
+                                onExpandedChange(false)
                                 onOpenInputDialog()
                             },
                             modifier = Modifier.height(32.dp)
@@ -1174,13 +1217,13 @@ private fun ThreadPageJumpButton(
                     Slider(
                         value = sliderPage,
                         onValueChange = { sliderPage = it },
-                        onValueChangeFinished = {
-                            val target = sliderPage.toInt().coerceIn(1, totalPages)
-                            expanded = false
-                            if (target != currentPage) {
-                                onJumpToPage(target)
-                            }
-                        },
+                    onValueChangeFinished = {
+                        onExpandedChange(false)
+                        val target = sliderPage.toInt().coerceIn(1, totalPages)
+                        if (target != currentPage) {
+                            onJumpToPage(target)
+                        }
+                    },
                         valueRange = 1f..totalPages.toFloat().coerceAtLeast(1f),
                         steps = if (totalPages in 3..20) totalPages - 2 else 0,
                         modifier = Modifier.height(32.dp)
