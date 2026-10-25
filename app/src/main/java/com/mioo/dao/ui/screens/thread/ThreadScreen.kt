@@ -32,14 +32,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.AddPhotoAlternate
@@ -59,9 +65,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -84,6 +94,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -1020,6 +1031,7 @@ private fun ThreadPageJumpButton(
     var expanded by remember { mutableStateOf(false) }
     // 拖动预览页码；每次打开气泡时重置为当前页
     var sliderPage by remember(expanded) { mutableStateOf(currentPage.toFloat()) }
+    val previewPage = sliderPage.toInt().coerceIn(1, totalPages.coerceAtLeast(1))
 
     Box {
         IconButton(
@@ -1034,84 +1046,145 @@ private fun ThreadPageJumpButton(
             )
         }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.width(272.dp)
+        // material3 1.2.0 的 DropdownMenu 无 containerColor/tonalElevation 参数，
+        // 通过 colorScheme/shapes 覆盖实现同款视觉（20dp 圆角 + 高一级容器色）
+        MaterialTheme(
+            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(20.dp)),
+            colorScheme = MaterialTheme.colorScheme.copy(
+                surfaceContainer = MaterialTheme.colorScheme.surfaceContainerHighest,
+                surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
         ) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                // 顶部：页码状态 + 精确输入入口
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "第 ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${sliderPage.toInt()}",
-                        style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = " / $totalPages 页",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    TextButton(
-                        onClick = {
-                            expanded = false
-                            onOpenInputDialog()
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.width(244.dp)
+            ) {
+                val reducedMotion = isReducedMotionEnabled()
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    // 第 1 行：步进器 + 可点击页码胶囊（点胶囊 = 精确输入）
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("输入页码", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-
-                // 中部：进度滑块（拖动只预览，松手才跳页）
-                Slider(
-                    value = sliderPage,
-                    onValueChange = { sliderPage = it },
-                    onValueChangeFinished = {
-                        val target = sliderPage.toInt().coerceIn(1, totalPages)
-                        if (target != currentPage) {
-                            expanded = false
-                            onJumpToPage(target)
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(1)
+                                sliderPage = 1f
+                            },
+                            enabled = currentPage > 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.FirstPage, contentDescription = "首页", modifier = Modifier.size(18.dp))
                         }
-                    },
-                    valueRange = 1f..totalPages.toFloat().coerceAtLeast(1f)
-                )
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(currentPage - 1)
+                                sliderPage = (currentPage - 1).toFloat()
+                            },
+                            enabled = currentPage > 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一页", modifier = Modifier.size(18.dp))
+                        }
+                        val highlight = previewPage != currentPage
+                        Surface(
+                            shape = CircleShape,
+                            color = if (highlight) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                            onClick = {
+                                expanded = false
+                                onOpenInputDialog()
+                            },
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp)
+                            ) {
+                                AnimatedContent(
+                                    targetState = previewPage,
+                                    transitionSpec = {
+                                        if (reducedMotion) {
+                                            fadeIn(tween(1)) togetherWith fadeOut(tween(1))
+                                        } else {
+                                            val forward = targetState >= initialState
+                                            val enter = slideInVertically(tween(180)) { it / 2 } + fadeIn(tween(180))
+                                            val exit = slideOutVertically(tween(180)) { -it / 2 } + fadeOut(tween(180))
+                                            val enterBack = slideInVertically(tween(180)) { -it / 2 } + fadeIn(tween(180))
+                                            val exitBack = slideOutVertically(tween(180)) { it / 2 } + fadeOut(tween(180))
+                                            if (forward) enter.togetherWith(exit) else enterBack.togetherWith(exitBack)
+                                        }
+                                    },
+                                    label = "capsulePage"
+                                ) { page ->
+                                    Text(
+                                        text = "$page/$totalPages",
+                                        style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (highlight) {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "手动输入页码",
+                                    modifier = Modifier.size(11.dp),
+                                    tint = if (highlight) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                        }
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(currentPage + 1)
+                                sliderPage = (currentPage + 1).toFloat()
+                            },
+                            enabled = currentPage < totalPages,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一页", modifier = Modifier.size(18.dp))
+                        }
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(totalPages)
+                                sliderPage = totalPages.toFloat()
+                            },
+                            enabled = currentPage < totalPages,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.LastPage, contentDescription = "末页", modifier = Modifier.size(18.dp))
+                        }
+                    }
 
-                // 底部：四枚快捷直达
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    TextButton(
-                        onClick = { expanded = false; onJumpToPage(1) },
-                        enabled = currentPage > 1,
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) { Text("首页", style = MaterialTheme.typography.labelMedium) }
-                    TextButton(
-                        onClick = { expanded = false; onJumpToPage(currentPage - 1) },
-                        enabled = currentPage > 1,
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) { Text("上一页", style = MaterialTheme.typography.labelMedium) }
-                    TextButton(
-                        onClick = { expanded = false; onJumpToPage(currentPage + 1) },
-                        enabled = currentPage < totalPages,
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) { Text("下一页", style = MaterialTheme.typography.labelMedium) }
-                    TextButton(
-                        onClick = { expanded = false; onJumpToPage(totalPages) },
-                        enabled = currentPage < totalPages,
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) { Text("末页", style = MaterialTheme.typography.labelMedium) }
+                    // 第 2 行：紧凑滑块（拖动预览，松手跳页并收起）
+                    Slider(
+                        value = sliderPage,
+                        onValueChange = { sliderPage = it },
+                        onValueChangeFinished = {
+                            val target = sliderPage.toInt().coerceIn(1, totalPages)
+                            expanded = false
+                            if (target != currentPage) {
+                                onJumpToPage(target)
+                            }
+                        },
+                        valueRange = 1f..totalPages.toFloat().coerceAtLeast(1f),
+                        steps = if (totalPages in 3..20) totalPages - 2 else 0,
+                        modifier = Modifier.height(32.dp)
+                    )
                 }
             }
         }
@@ -1178,6 +1251,13 @@ fun PageJumpDialog(
 ) {
     var inputText by remember { mutableStateOf("") }
 
+    fun confirmJump() {
+        val target = inputText.toIntOrNull()
+        if (target != null && target in 1..totalPages) {
+            onJump(target)
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = immersiveDialogProperties(),
@@ -1187,41 +1267,6 @@ fun PageJumpDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Quick buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextButton(
-                        onClick = { onJump(1) },
-                        enabled = currentPage > 1,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("首页", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(
-                        onClick = { onJump(currentPage - 1) },
-                        enabled = currentPage > 1,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("上一页", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(
-                        onClick = { onJump(currentPage + 1) },
-                        enabled = currentPage < totalPages,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("下一页", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(
-                        onClick = { onJump(totalPages) },
-                        enabled = currentPage < totalPages,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("末页", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-
                 // Manual input
                 OutlinedTextField(
                     value = inputText,
@@ -1229,6 +1274,8 @@ fun PageJumpDialog(
                         inputText = newValue.filter { it.isDigit() }
                     },
                     label = { Text("页码 (1 - $totalPages)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { confirmJump() }),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1236,12 +1283,7 @@ fun PageJumpDialog(
         },
         confirmButton = {
             Button(
-                onClick = {
-                    val page = inputText.toIntOrNull()
-                    if (page != null && page in 1..totalPages) {
-                        onJump(page)
-                    }
-                },
+                onClick = { confirmJump() },
                 enabled = inputText.isNotEmpty() && inputText.toIntOrNull()?.let { it in 1..totalPages } == true
             ) {
                 Text("跳转")
