@@ -236,6 +236,9 @@ class SettingsRepository @Inject constructor(
                 if (currentList.size == 1) {
                     settingsDataStore.saveSelectedCookieIndex(0)
                     settingsDataStore.saveUserHash(cookie)
+                    // 鉴权饼干默认跟随第一块导入的饼干（用户手动选择其他后不再覆盖）
+                    val auth = settingsDataStore.authCookieFlow.first()
+                    if (auth.isNullOrBlank()) settingsDataStore.saveAuthCookie(cookie)
                 }
             }
         }
@@ -464,7 +467,12 @@ class SettingsRepository @Inject constructor(
         repositoryScope.launch {
             settingsDataStore.saveCookiesList(list)
             settingsDataStore.saveCookieNotes(notes)
-            if (auth.isNotBlank()) settingsDataStore.saveAuthCookie(auth)
+            if (auth.isNotBlank()) {
+                settingsDataStore.saveAuthCookie(auth)
+            } else if (list.isNotEmpty()) {
+                // 导入未带鉴权饼干：默认跟随第一块导入的饼干
+                settingsDataStore.saveAuthCookie(list.first())
+            }
             if (list.isNotEmpty()) {
                 settingsDataStore.saveSelectedCookieIndex(selected)
                 settingsDataStore.saveUserHash(list[selected])
