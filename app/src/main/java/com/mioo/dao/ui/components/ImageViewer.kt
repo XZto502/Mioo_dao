@@ -208,9 +208,36 @@ private fun ZoomableImageContainer(
     var offsetY by remember(imageUrl) { mutableFloatStateOf(0f) }
     var isLoading by remember(imageUrl) { mutableStateOf(true) }
     var failed by remember(imageUrl) { mutableStateOf(false) }
+    // 加载完成后记录图片真实宽高，用于计算 Fit 内切矩形做拖动夹紧
+    var drawnImageSize by remember(imageUrl) { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
     val context = LocalContext.current
     val onZoomedChangedState = rememberUpdatedState(onZoomedChanged)
     val onTapDismissState = rememberUpdatedState(onTapDismiss)
+
+    // 把平移量夹紧到 Fit 内切矩形始终覆盖视口：拖到图片边界就停，不再拖出黑边；
+    // 某轴放大后仍小于视口（如竖图横向）则该轴强制居中。
+    fun clampOffset(scale: Float, x: Float, y: Float, wPx: Int, hPx: Int): Pair<Float, Float> {
+        if (wPx <= 0 || hPx <= 0 || !scale.isFinite() || !x.isFinite() || !y.isFinite()) return x to y
+        val w = wPx.toFloat()
+        val h = hPx.toFloat()
+        val iw = drawnImageSize.width.takeIf { it.isFinite() && it > 0f } ?: w
+        val ih = drawnImageSize.height.takeIf { it.isFinite() && it > 0f } ?: h
+        val fit = minOf(w / iw, h / ih)
+        val dw = iw * fit
+        val dh = ih * fit
+        val dx = (w - dw) / 2f
+        val dy = (h - dh) / 2f
+        fun axis(off: Float, side: Float, d: Float, drawn: Float): Float {
+            return if (scale * drawn >= side) {
+                val minOff = side / 2f - scale * (d + drawn - side / 2f)
+                val maxOff = side / 2f * (scale - 1f) - scale * d
+                off.coerceIn(minOff, maxOff)
+            } else {
+                -scale * (d + drawn / 2f - side / 2f)
+            }
+        }
+        return axis(x, w, dx, dw) to axis(y, h, dy, dh)
+    }
 
     Box(
         modifier = Modifier
@@ -248,8 +275,9 @@ private fun ZoomableImageContainer(
                             val nextX = (tap.x - cx) * (1f - ratio) + ratio * offsetX
                             val nextY = (tap.y - cy) * (1f - ratio) + ratio * offsetY
                             if (nextX.isFinite() && nextY.isFinite()) {
-                                offsetX = nextX
-                                offsetY = nextY
+                                val (ax, ay) = clampOffset(3f, nextX, nextY, size.width, size.height)
+                                offsetX = ax
+                                offsetY = ay
                             }
                             scale = 3f
                             onZoomedChangedState.value(true)
@@ -268,10 +296,15 @@ private fun ZoomableImageContainer(
                             val wasZoomed = scale > 1.01f
                             scale = clamped
                             if (clamped > 1.01f) {
-                                val nextX = offsetX + pan.x
-                                val nextY = offsetY + pan.y
-                                offsetX = if (nextX.isFinite()) nextX else 0f
-                                offsetY = if (nextY.isFinite()) nextY else 0f
+                                val (cx, cy) = clampOffset(
+                                    clamped,
+                                    offsetX + pan.x,
+                                    offsetY + pan.y,
+                                    size.width,
+                                    size.height
+                                )
+                                offsetX = if (cx.isFinite()) cx else 0f
+                                offsetY = if (cy.isFinite()) cy else 0f
                             } else {
                                 offsetX = 0f
                                 offsetY = 0f
@@ -347,6 +380,9 @@ private fun ZoomableImageContainer(
                 onState = { state ->
                     isLoading = state is AsyncImagePainter.State.Loading
                     failed = state is AsyncImagePainter.State.Error
+                    if (state is AsyncImagePainter.State.Success) {
+                        drawnImageSize = state.painter.intrinsicSize
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )
