@@ -378,19 +378,6 @@ fun ThreadScreen(
                         }) {
                             Icon(Icons.Default.Search, contentDescription = "串内搜索")
                         }
-                        IconButton(onClick = {
-                            val tid = viewModel.threadId
-                            val link = XdWebSearch.threadUrl(tid)
-                            val title = listUi.thread?.title.effectiveTitle() ?: "No.$tid"
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, title)
-                                putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
-                            }
-                            context.startActivity(Intent.createChooser(send, "分享串"))
-                        }) {
-                            Icon(Icons.Default.Share, contentDescription = "分享")
-                        }
                         if (totalPages > 1) {
                             ThreadPageIndicatorButton(
                                 listState = listState,
@@ -399,11 +386,22 @@ fun ThreadScreen(
                                 onClick = { showPageJumpDialog = true }
                             )
                         }
-                        // Chrome (bookmark / folders / download) collected inside — not listUi
+                        // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
                         ThreadChromeActions(
                             viewModel = viewModel,
                             showPoOnly = listUi.showPoOnly,
                             showImagesOnly = listUi.showImagesOnly,
+                            onShare = {
+                                val tid = viewModel.threadId
+                                val link = XdWebSearch.threadUrl(tid)
+                                val title = listUi.thread?.title.effectiveTitle() ?: "No.$tid"
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, title)
+                                    putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
+                                }
+                                context.startActivity(Intent.createChooser(send, "分享串"))
+                            },
                             showBookmarkMenu = showBookmarkMenu,
                             onShowBookmarkMenuChange = { showBookmarkMenu = it },
                             showOverflowMenu = showOverflowMenu,
@@ -727,6 +725,7 @@ private fun ThreadChromeActions(
     viewModel: ThreadViewModel,
     showPoOnly: Boolean,
     showImagesOnly: Boolean,
+    onShare: () -> Unit,
     showBookmarkMenu: Boolean,
     onShowBookmarkMenuChange: (Boolean) -> Unit,
     showOverflowMenu: Boolean,
@@ -734,6 +733,20 @@ private fun ThreadChromeActions(
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
+
+    // 只看 Po：独立按钮（从三点菜单移出），激活时高亮
+    IconButton(onClick = { viewModel.togglePoOnly() }) {
+        Text(
+            text = "Po",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = if (showPoOnly) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
+        )
+    }
 
     Box {
         // 已收藏 = 本地收藏 或 云端收藏夹成员（缓存）
@@ -811,19 +824,13 @@ private fun ThreadChromeActions(
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
             DropdownMenuItem(
-                text = { Text("只看 PO") },
+                text = { Text("分享") },
                 onClick = {
                     onShowOverflowMenuChange(false)
-                    viewModel.togglePoOnly()
+                    onShare()
                 },
                 leadingIcon = {
-                    if (showPoOnly) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Icon(Icons.Default.Share, contentDescription = null)
                 }
             )
             DropdownMenuItem(
