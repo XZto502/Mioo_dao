@@ -297,7 +297,7 @@ private fun LocalBookmarkRow(
     Box {
         ThreadCard(
             postData = item.postData,
-            replyCount = 0,
+            replyCount = item.replyCount,
             onThreadClick = onClick,
             onQuoteClick = emptyStringLambda,
             onImageClick = emptyStringLambda,

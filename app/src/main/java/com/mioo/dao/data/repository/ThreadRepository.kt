@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -118,6 +119,15 @@ interface ThreadRepository {
 
     /** Remove [tid] from every cloud feed it is cached under. Emits removed count. */
     fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>>
+
+    /** 该夹内已缓存的回复数（threadId → count，仅含 >0 的已知值）。 */
+    suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int>
+
+    /**
+     * 补抓一个云端订阅串的回复总数并写入缓存。
+     * feed 接口不返回回复数，只能按串抓第 1 页；失败返回 null。
+     */
+    suspend fun refreshCloudFeedReplyCount(tid: String): Int?
 
     // 发言草稿箱 (draft box): reply drafts keyed by thread, post drafts keyed by board.
     fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>>
@@ -941,6 +951,30 @@ class ThreadRepositoryImpl @Inject constructor(
             emit(XdResponse.Error(message = msg, throwable = e))
         }
     }.flowOn(Dispatchers.IO)
+
+    override suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int> =
+        withContext(Dispatchers.IO) {
+            try {
+                cloudFeedDao.getThreadsForFeed(uuid)
+                    .mapNotNull { entity ->
+                        entity.replyCount.takeIf { it > 0 }?.let { entity.threadId to it }
+                    }
+                    .toMap()
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
+
+    override suspend fun refreshCloudFeedReplyCount(tid: String): Int? =
+        withContext(Dispatchers.IO) {
+            try {
+                val count = fetchThread(tid, 1).replyCount?.takeIf { it > 0 } ?: return@withContext null
+                cloudFeedDao.updateReplyCount(tid, count)
+                count
+            } catch (_: Exception) {
+                null
+            }
+        }
 
     override fun clearCache(): Flow<XdResponse<Unit>> = flow {
         try {

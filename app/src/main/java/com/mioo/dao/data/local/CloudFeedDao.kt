@@ -19,11 +19,14 @@ interface CloudFeedDao {
     @Query("DELETE FROM cloud_feed_threads WHERE feedUuid = :feedUuid")
     suspend fun clearFeed(feedUuid: String)
 
-    /** Page snapshot of one feed: replace what we previously cached for it. */
+    /** Page snapshot of one feed: replace what we previously cached for it, keeping known reply counts. */
     @Transaction
     suspend fun replaceAll(feedUuid: String, items: List<CloudFeedThreadEntity>) {
+        val counts = getThreadsForFeed(feedUuid).associate { it.threadId to it.replyCount }
         clearFeed(feedUuid)
-        insertAll(items)
+        insertAll(items.map { item ->
+            counts[item.threadId]?.takeIf { it > 0 }?.let { item.copy(replyCount = it) } ?: item
+        })
     }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -34,4 +37,11 @@ interface CloudFeedDao {
 
     @Query("SELECT feedUuid FROM cloud_feed_threads WHERE threadId = :tid")
     suspend fun feedUuidsFor(tid: String): List<String>
+
+    @Query("SELECT * FROM cloud_feed_threads WHERE feedUuid = :feedUuid")
+    suspend fun getThreadsForFeed(feedUuid: String): List<CloudFeedThreadEntity>
+
+    /** 记录一次补抓到的回复总数；同一串可能在多个夹里，按 threadId 全量更新。 */
+    @Query("UPDATE cloud_feed_threads SET replyCount = :count WHERE threadId = :tid")
+    suspend fun updateReplyCount(tid: String, count: Int)
 }

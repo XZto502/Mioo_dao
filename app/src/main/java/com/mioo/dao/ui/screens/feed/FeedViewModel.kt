@@ -31,12 +31,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+/** 单次进入夹列表最多补抓多少串的回复数，保护服务器。 */
+private const val REPLY_COUNT_ENRICH_LIMIT = 80
+
 @Immutable
 data class FeedUiState(
     val bookmarkedThreads: List<BookmarkEntity> = emptyList(),
     val localDisplayItems: List<BookmarkListItem> = emptyList(),
     val remoteThreads: List<Thread> = emptyList(),
     val remoteDisplayItems: List<ThreadListItem> = emptyList(),
+    /** 云端订阅串的已知回复数（threadId → count）。feed 接口不带回复数，靠后台逐串补抓。 */
+    val remoteReplyCounts: Map<String, Int> = emptyMap(),
     val feedFolders: List<FeedFolder> = emptyList(),
     val isLoading: Boolean = false,
     val selectedFolderId: String? = null
@@ -99,6 +104,7 @@ class FeedViewModel @Inject constructor(
     }
 
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
+    private var replyCountJob: kotlinx.coroutines.Job? = null
 
     fun selectFolder(uuid: String?) {
         _uiState.update {
@@ -106,7 +112,8 @@ class FeedViewModel @Inject constructor(
                 selectedFolderId = uuid,
                 // 任何切换都清空旧数据：留着会在新文件夹标题下展示上一个夹的帖子
                 remoteThreads = emptyList(),
-                remoteDisplayItems = emptyList()
+                remoteDisplayItems = emptyList(),
+                remoteReplyCounts = emptyMap()
             )
         }
         if (uuid != null) {
@@ -125,32 +132,73 @@ class FeedViewModel @Inject constructor(
                 if (_uiState.value.selectedFolderId != uuid) return@collect
                 if (response is XdResponse.Success) {
                     val threads = response.data
-                    val items = withContext(Dispatchers.Default) {
-                        threads.toFilteredThreadListItems(
-                            blockedThreads = emptySet(),
-                            blockedUsers = emptySet(),
-                            blockedKeywords = emptyList()
-                        )
-                    }
+                    val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
                     _uiState.update {
                         it.copy(
                             remoteThreads = threads,
-                            remoteDisplayItems = items,
+                            remoteReplyCounts = knownCounts,
+                            remoteDisplayItems = buildRemoteItems(threads, knownCounts),
                             isLoading = false
                         )
                     }
+                    enrichRemoteReplyCounts(uuid, threads)
                 } else {
                     // 失败也清空：不能让上一个夹的数据顶替当前夹展示
                     _uiState.update {
                         it.copy(
                             remoteThreads = emptyList(),
                             remoteDisplayItems = emptyList(),
+                            remoteReplyCounts = emptyMap(),
                             isLoading = false
                         )
                     }
                 }
             }
         }
+    }
+
+    /** feed 接口不带回复数：对已知计数缺失的串逐个补抓第 1 页并缓存，250ms 限速。 */
+    private fun enrichRemoteReplyCounts(uuid: String, threads: List<Thread>) {
+        replyCountJob?.cancel()
+        replyCountJob = viewModelScope.launch {
+            var consecutiveFailures = 0
+            for (thread in threads.take(REPLY_COUNT_ENRICH_LIMIT)) {
+                if (_uiState.value.selectedFolderId != uuid) return@launch
+                if ((_uiState.value.remoteReplyCounts[thread.idStr] ?: 0) > 0) continue
+                val count = threadRepository.refreshCloudFeedReplyCount(thread.idStr)
+                if (count != null) {
+                    consecutiveFailures = 0
+                    _uiState.update { state ->
+                        val merged = state.remoteReplyCounts + (thread.idStr to count)
+                        state.copy(
+                            remoteReplyCounts = merged,
+                            remoteDisplayItems = buildRemoteItems(state.remoteThreads, merged)
+                        )
+                    }
+                } else {
+                    consecutiveFailures++
+                    if (consecutiveFailures >= 3) return@launch
+                }
+                delay(250)
+            }
+        }
+    }
+
+    private fun buildRemoteItems(
+        threads: List<Thread>,
+        counts: Map<String, Int>
+    ): List<ThreadListItem> {
+        val withCounts = threads.map { thread ->
+            counts[thread.idStr]
+                ?.takeIf { it > (thread.replyCount ?: 0) }
+                ?.let { thread.copy(replyCount = it) }
+                ?: thread
+        }
+        return withCounts.toFilteredThreadListItems(
+            blockedThreads = emptySet(),
+            blockedUsers = emptySet(),
+            blockedKeywords = emptyList()
+        )
     }
 
     fun unsubscribeRemote(uuid: String, threadId: String) {
@@ -182,16 +230,13 @@ class FeedViewModel @Inject constructor(
                         }
                         val merged = (_uiState.value.remoteThreads + fresh).distinctBy { it.idStr }
                         if (merged.size == _uiState.value.remoteThreads.size) remoteEndReached = true
-                        val items = withContext(Dispatchers.Default) {
-                            merged.toFilteredThreadListItems(
-                                blockedThreads = emptySet(),
-                                blockedUsers = emptySet(),
-                                blockedKeywords = emptyList()
+                        _uiState.update {
+                            it.copy(
+                                remoteThreads = merged,
+                                remoteDisplayItems = buildRemoteItems(merged, it.remoteReplyCounts)
                             )
                         }
-                        _uiState.update {
-                            it.copy(remoteThreads = merged, remoteDisplayItems = items)
-                        }
+                        enrichRemoteReplyCounts(uuid, merged)
                     } else {
                         // 失败回退页码，让用户下拉重试
                         remotePage -= 1
