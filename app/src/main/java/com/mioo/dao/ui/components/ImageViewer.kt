@@ -305,22 +305,9 @@ private fun ZoomableImageContainer(
         val thumbUrl = remember(imageUrl) {
             IslandImage.listUrl(imageUrl).takeIf { it != imageUrl }
         }
-        if (thumbUrl != null) {
-            AsyncImage(
-                model = thumbUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        AsyncImage(
-            model = imageRequest,
-            contentDescription = "Zoomable Image",
-            contentScale = ContentScale.Fit,
-            onState = { state ->
-                isLoading = state is AsyncImagePainter.State.Loading
-                failed = state is AsyncImagePainter.State.Error
-            },
+        // 缩略图与原图必须共享同一个变换层：graphicsLayer 只挂原图的话，
+        // 放大拖动时原图滑走会露出静止的缩略图，画面像被"劈成两半"。
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
@@ -330,7 +317,26 @@ private fun ZoomableImageContainer(
                     translationX = if (offsetX.isFinite()) offsetX else 0f
                     translationY = if (offsetY.isFinite()) offsetY else 0f
                 }
-        )
+        ) {
+            if (thumbUrl != null) {
+                AsyncImage(
+                    model = thumbUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            AsyncImage(
+                model = imageRequest,
+                contentDescription = "Zoomable Image",
+                contentScale = ContentScale.Fit,
+                onState = { state ->
+                    isLoading = state is AsyncImagePainter.State.Loading
+                    failed = state is AsyncImagePainter.State.Error
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         if (isLoading) {
             CircularProgressIndicator(
