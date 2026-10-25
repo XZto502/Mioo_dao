@@ -935,34 +935,19 @@ private fun ThreadPageIndicatorButton(
             raw.coerceIn(1, totalPages.coerceAtLeast(1))
         }
     }
-    OutlinedButton(
+    // 方案 A：纯文字页码，与 Po 按钮同款视觉（无边框/图标），点击区仍可跳页
+    TextButton(
         onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        modifier = Modifier.padding(end = 4.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.primary
-        ),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-        )
+        modifier = Modifier.padding(end = 4.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.MenuBook,
-                contentDescription = "跳转页码",
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = "$page/$totalPages",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
+        Text(
+            text = "$page/$totalPages",
+            // 与 Po 按钮一致的视觉高度
+            style = MaterialTheme.typography.titleSmall.copy(fontSize = 20.sp),
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
 
