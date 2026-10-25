@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cookie
@@ -580,15 +581,25 @@ fun SettingsScreen(
                     Text(text = "主题色选择", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
+                // 纯黑 (AMOLED) 仅在深色模式（含跟随系统的深色）下提供
+                val darkNow = when (settings.themeMode) {
+                    ThemeMode.DARK -> true
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                }
                 val colors = listOf(
                     "dynamic" to "动态取色 (Material You)",
                     "classic" to "经典紫色 (Classic M3)",
                     "teal" to "青蓝色 (Cyan)",
                     "pink" to "樱花粉 (Sakura Pink)",
-                    "green" to "森林绿 (Forest Green)",
-                    "amoled" to "纯黑 (AMOLED)"
-                )
+                    "green" to "森林绿 (Forest Green)"
+                ) + if (darkNow) {
+                    listOf("amoled" to "纯黑 (AMOLED)")
+                } else {
+                    emptyList()
+                }
+
                 
                 colors.forEach { (colorKey, colorLabel) ->
                     Row(
