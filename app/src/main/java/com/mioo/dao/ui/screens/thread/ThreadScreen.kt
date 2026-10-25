@@ -112,6 +112,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import android.widget.Toast
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.model.Reply
@@ -738,7 +739,8 @@ private fun ThreadChromeActions(
     IconButton(onClick = { viewModel.togglePoOnly() }) {
         Text(
             text = "Po",
-            style = MaterialTheme.typography.titleSmall,
+            // 20sp：与 24dp 的搜索/收藏图标视觉等高
+            style = MaterialTheme.typography.titleSmall.copy(fontSize = 20.sp),
             fontWeight = FontWeight.Bold,
             color = if (showPoOnly) {
                 MaterialTheme.colorScheme.primary
