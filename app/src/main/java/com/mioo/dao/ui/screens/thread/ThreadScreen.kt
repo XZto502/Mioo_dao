@@ -1070,9 +1070,13 @@ private fun ThreadPageJumpButton(
     // 拖动预览页码；每次打开气泡时重置为当前页
     var sliderPage by remember { mutableStateOf(1f) }
     var anchorBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    // 气泡进出场状态：关闭（点空白/返回/跳页）时保持 Popup 在组合里播完退场动画再卸载
+    val bubbleVisible = remember { MutableTransitionState(false) }
     LaunchedEffect(expanded) {
+        bubbleVisible.targetState = expanded
         if (expanded) sliderPage = currentPage.toFloat()
     }
+    val keepComposed = expanded || bubbleVisible.currentState != bubbleVisible.targetState
     val previewPage = sliderPage.toInt().coerceIn(1, totalPages.coerceAtLeast(1))
     val reducedMotion = isReducedMotionEnabled()
     BackHandler(enabled = expanded) { onExpandedChange(false) }
@@ -1094,7 +1098,7 @@ private fun ThreadPageJumpButton(
 
         // Popup 独立窗口：不会被顶栏裁剪；位置按图标窗口坐标精确计算——
         // 右缘贴屏幕右边距、顶边在图标下方 8dp（与最初 DropdownMenu 的落点一致）
-        if (expanded) {
+        if (keepComposed) {
             val density = LocalDensity.current
             val bounds = anchorBounds
             val marginPx = with(density) { 12.dp.roundToPx() }
@@ -1114,11 +1118,15 @@ private fun ThreadPageJumpButton(
                 onDismissRequest = { onExpandedChange(false) },
                 properties = PopupProperties(focusable = true)
             ) {
-                val enterState = remember { MutableTransitionState(false).apply { targetState = true } }
                 AnimatedVisibility(
-                    visibleState = enterState,
+                    visibleState = bubbleVisible,
                     enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(180)) + scaleIn(
                         initialScale = 0.9f,
+                        animationSpec = tween(180),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    ),
+                    exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(180)) + scaleOut(
+                        targetScale = 0.9f,
                         animationSpec = tween(180),
                         transformOrigin = TransformOrigin(1f, 0f)
                     )
