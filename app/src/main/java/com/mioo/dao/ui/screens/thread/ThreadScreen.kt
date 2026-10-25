@@ -1070,13 +1070,15 @@ private fun ThreadPageJumpButton(
     // 拖动预览页码；每次打开气泡时重置为当前页
     var sliderPage by remember { mutableStateOf(1f) }
     var anchorBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-    // 气泡进出场状态：关闭（点空白/返回/跳页）时保持 Popup 在组合里播完退场动画再卸载
+    // 气泡进出场状态：关闭（点空白/返回/跳页）时保持 Popup 在组合里播完退场动画再卸载。
+    // targetState 必须在组合期同步赋值——放进 LaunchedEffect 会晚一帧，重开时
+    // currentState 残留 true 导致首帧满透明度闪现
     val bubbleVisible = remember { MutableTransitionState(false) }
+    bubbleVisible.targetState = expanded
+    val keepComposed = expanded || bubbleVisible.currentState != expanded
     LaunchedEffect(expanded) {
-        bubbleVisible.targetState = expanded
         if (expanded) sliderPage = currentPage.toFloat()
     }
-    val keepComposed = expanded || bubbleVisible.currentState != bubbleVisible.targetState
     val previewPage = sliderPage.toInt().coerceIn(1, totalPages.coerceAtLeast(1))
     val reducedMotion = isReducedMotionEnabled()
     BackHandler(enabled = expanded) { onExpandedChange(false) }
