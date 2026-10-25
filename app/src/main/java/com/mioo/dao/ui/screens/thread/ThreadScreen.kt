@@ -1624,36 +1624,13 @@ private fun ReportDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 // Cookie selector
-                val currentCookie = cookies.getOrNull(reportCookieIndex) ?: "选择饼干"
-                val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
-                Box {
-                    TextButton(onClick = { cookieMenuExpanded = true }) {
-                        Text(displayName)
-                    }
-                    DropdownMenu(
-                        expanded = cookieMenuExpanded,
-                        onDismissRequest = { cookieMenuExpanded = false }
-                    ) {
-                        cookies.forEachIndexed { index, cookie ->
-                            val isSelected = index == reportCookieIndex
-                            val itemDisplayName = remember(cookie) { parseCookieName(cookie) }
-
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = itemDisplayName,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                onClick = {
-                                    reportCookieIndex = index
-                                    cookieMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+                CookieSelector(
+                    cookies = cookies,
+                    selectedIndex = reportCookieIndex,
+                    expanded = cookieMenuExpanded,
+                    onExpandedChange = { cookieMenuExpanded = it },
+                    onSelect = { reportCookieIndex = it }
+                )
             }
         },
         confirmButton = {
@@ -1670,6 +1647,140 @@ private fun ReportDialog(
             }
         }
     )
+}
+
+/**
+ * 回复栏 / 举报对话框共用的饼干选择器：与右侧工具栏同源的 40dp MD3 胶囊。
+ */
+@Composable
+private fun CookieSelector(
+    cookies: List<String>,
+    selectedIndex: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    val currentCookie = cookies.getOrNull(selectedIndex) ?: "选择饼干"
+    val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
+    val displayText = if (displayName.length > 8) displayName.take(8) + "..." else displayName
+    // 胶囊色不透明：透出下层文字的 alpha 色会在玻璃底栏上糊字
+    val capsuleColor by animateColorAsState(
+        targetValue = if (expanded) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        label = "cookieCapsule"
+    )
+    val capsuleBorderColor = if (expanded) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+    }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "cookieArrow"
+    )
+
+    Box {
+        Surface(
+            onClick = { onExpandedChange(true) },
+            shape = CircleShape,
+            color = capsuleColor,
+            border = BorderStroke(1.dp, capsuleBorderColor),
+            modifier = Modifier.height(40.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 12.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                Text(
+                    text = displayText,
+                    style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowUp,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(15.dp)
+                        .rotate(arrowRotation),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        // M3 1.2.0 的 DropdownMenu 没有 containerColor/tonalElevation 参数，
+        // 圆角与容器色用 MaterialTheme 局部覆盖等效实现：menu 圆角跟随
+        // shapes.extraSmall、容器色跟随 surfaceContainer role
+        MaterialTheme(
+            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(18.dp)),
+            colorScheme = MaterialTheme.colorScheme.copy(
+                surfaceContainer = MaterialTheme.colorScheme.surfaceContainerHigh,
+                surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHigh
+            )
+        ) {
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { onExpandedChange(false) },
+                modifier = Modifier.widthIn(min = 148.dp, max = 210.dp),
+                offset = DpOffset(0.dp, (-6).dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    cookies.forEachIndexed { index, cookie ->
+                        val isSelected = index == selectedIndex
+                        Surface(
+                            onClick = {
+                                onSelect(index)
+                                onExpandedChange(false)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                Color.Transparent
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = parseCookieName(cookie),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    maxLines = 1
+                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -1961,128 +2072,14 @@ fun ReplyInputArea(
                     attachedImageUri = uri
                 }
 
-                // Cookie selector：与右侧工具栏同源的 40dp MD3 胶囊
-                val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
-                val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
-                val displayText = if (displayName.length > 8) displayName.take(8) + "..." else displayName
-                // 胶囊色不透明：透出下层文字的 alpha 色会在玻璃底栏上糊字
-                val capsuleColor by animateColorAsState(
-                    targetValue = if (cookieMenuExpanded) MaterialTheme.colorScheme.secondaryContainer
-                    else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    label = "cookieCapsule"
+                // Cookie selector
+                CookieSelector(
+                    cookies = cookies,
+                    selectedIndex = selectedCookieIndex,
+                    expanded = cookieMenuExpanded,
+                    onExpandedChange = { cookieMenuExpanded = it },
+                    onSelect = onCookieSelect
                 )
-                val capsuleBorderColor = if (cookieMenuExpanded) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                } else {
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                }
-                val arrowRotation by animateFloatAsState(
-                    targetValue = if (cookieMenuExpanded) 180f else 0f,
-                    label = "cookieArrow"
-                )
-
-                Box {
-                    Surface(
-                        onClick = { cookieMenuExpanded = true },
-                        shape = CircleShape,
-                        color = capsuleColor,
-                        border = BorderStroke(1.dp, capsuleBorderColor),
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(start = 12.dp, end = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                            )
-                            Text(
-                                text = displayText,
-                                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1
-                            )
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowUp,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(15.dp)
-                                    .rotate(arrowRotation),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    // M3 1.2.0 的 DropdownMenu 没有 containerColor/tonalElevation 参数，
-                    // 圆角与容器色用 MaterialTheme 局部覆盖等效实现：menu 圆角跟随
-                    // shapes.extraSmall、容器色跟随 surfaceContainer role
-                    MaterialTheme(
-                        shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(18.dp)),
-                        colorScheme = MaterialTheme.colorScheme.copy(
-                            surfaceContainer = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
-                    ) {
-                        DropdownMenu(
-                            expanded = cookieMenuExpanded,
-                            onDismissRequest = { cookieMenuExpanded = false },
-                            modifier = Modifier.widthIn(min = 148.dp, max = 210.dp),
-                            offset = DpOffset(0.dp, (-6).dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                cookies.forEachIndexed { index, cookie ->
-                                    val isSelected = index == selectedCookieIndex
-                                    Surface(
-                                        onClick = {
-                                            onCookieSelect(index)
-                                            cookieMenuExpanded = false
-                                        },
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (isSelected) {
-                                            MaterialTheme.colorScheme.secondaryContainer
-                                        } else {
-                                            Color.Transparent
-                                        }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = parseCookieName(cookie),
-                                                style = MaterialTheme.typography.labelLarge,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) {
-                                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurface
-                                                },
-                                                maxLines = 1
-                                            )
-                                            if (isSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Check,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(15.dp),
-                                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
 
                 Spacer(modifier = Modifier.weight(1f))
 
