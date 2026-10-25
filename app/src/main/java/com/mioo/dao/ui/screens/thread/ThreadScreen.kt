@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +37,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
@@ -88,6 +91,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.TextStyle
@@ -154,6 +158,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -1714,65 +1720,88 @@ private fun CookieSelector(
                 )
             }
         }
-        // M3 1.2.0 的 DropdownMenu 没有 containerColor/tonalElevation 参数，
-        // 圆角与容器色用 MaterialTheme 局部覆盖等效实现：menu 圆角跟随
-        // shapes.extraSmall、容器色跟随 surfaceContainer role
-        MaterialTheme(
-            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(18.dp)),
-            colorScheme = MaterialTheme.colorScheme.copy(
-                surfaceContainer = MaterialTheme.colorScheme.surfaceContainerHigh,
-                surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHigh
-            )
-        ) {
-            DropdownMenu(
-                expanded = expanded,
+        // 菜单挂载状态：收起动画播完才卸载 Popup（isIdle 前不能走 if）
+        val menuState = remember { MutableTransitionState(false) }
+        menuState.targetState = expanded
+        if (menuState.currentState || menuState.targetState || !menuState.isIdle) {
+            val density = LocalDensity.current
+            // 与 DropdownMenu 同款 contentOffset：贴合锚点方向再回退 6dp，保持轻微重叠视觉
+            val menuPositionProvider = remember(density) {
+                CookieMenuPositionProvider(density, DpOffset(0.dp, (-6).dp))
+            }
+            Popup(
+                popupPositionProvider = menuPositionProvider,
                 onDismissRequest = { onExpandedChange(false) },
-                modifier = Modifier.widthIn(min = 148.dp, max = 210.dp),
-                offset = DpOffset(0.dp, (-6).dp)
+                properties = PopupProperties(focusable = true)
             ) {
-                Column(
-                    modifier = Modifier.padding(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                AnimatedVisibility(
+                    visibleState = menuState,
+                    enter = scaleIn(
+                        initialScale = 0.9f,
+                        animationSpec = tween(160),
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    ) + fadeIn(tween(120)),
+                    exit = scaleOut(
+                        targetScale = 0.94f,
+                        animationSpec = tween(140),
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    ) + fadeOut(tween(120))
                 ) {
-                    cookies.forEachIndexed { index, cookie ->
-                        val isSelected = index == selectedIndex
-                        Surface(
-                            onClick = {
-                                onSelect(index)
-                                onExpandedChange(false)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                Color.Transparent
-                            }
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier.widthIn(min = 148.dp, max = 210.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(6.dp)
+                                .heightIn(max = 320.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = parseCookieName(cookie),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
+                            cookies.forEachIndexed { index, cookie ->
+                                val isSelected = index == selectedIndex
+                                Surface(
+                                    onClick = {
+                                        onSelect(index)
+                                        onExpandedChange(false)
                                     },
-                                    maxLines = 1
-                                )
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(15.dp),
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    } else {
+                                        Color.Transparent
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = parseCookieName(cookie),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) {
+                                                MaterialTheme.colorScheme.onSecondaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                            maxLines = 1
+                                        )
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(15.dp),
+                                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1780,6 +1809,86 @@ private fun CookieSelector(
                 }
             }
         }
+    }
+}
+
+/**
+ * 复刻 M3 1.2.0 DropdownMenuPositionProvider 的定位候选与回退：
+ * 优先贴锚点下方，放不下依次回退锚点上方、窗口上/下缘（水平先锚点左/右对齐，再回退窗口左/右缘），
+ * 让自绘 Popup 的落点在任意位置都与原 DropdownMenu 一致。
+ */
+private class CookieMenuPositionProvider(
+    private val density: Density,
+    private val contentOffset: DpOffset
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize
+    ): IntOffset {
+        val offsetX = with(density) { contentOffset.x.roundToPx() }
+        val offsetY = with(density) { contentOffset.y.roundToPx() }
+        // M3 MenuDefaults 的 MenuVerticalMargin
+        val verticalMargin = with(density) { 48.dp.roundToPx() }
+        val menuWidth = popupContentSize.width
+        val menuHeight = popupContentSize.height
+
+        val xCandidates = listOf(
+            anchorBounds.left + offsetX,
+            anchorBounds.right - menuWidth + offsetX,
+            windowHorizontal(anchorBounds, windowSize, layoutDirection, menuWidth)
+        )
+        val x = xCandidates.firstOrNull { it >= 0 && it + menuWidth <= windowSize.width }
+            ?: xCandidates.last()
+
+        val yCandidates = listOf(
+            anchorBounds.bottom + offsetY,
+            anchorBounds.top - menuHeight + offsetY,
+            anchorBounds.top - menuHeight / 2 + offsetY,
+            windowVertical(anchorBounds, windowSize, menuHeight, verticalMargin)
+        )
+        val y = yCandidates.firstOrNull {
+            it >= verticalMargin && it + menuHeight <= windowSize.height - verticalMargin
+        } ?: yCandidates.last()
+
+        return IntOffset(x, y)
+    }
+
+    /** 对应 WindowAlignmentMarginPosition.Horizontal(margin = 0)：锚点偏左贴窗口左缘，偏右贴右缘，放不下居中 */
+    private fun windowHorizontal(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        menuWidth: Int
+    ): Int {
+        if (menuWidth >= windowSize.width) {
+            return Alignment.CenterHorizontally.align(menuWidth, windowSize.width, layoutDirection)
+        }
+        val x = if (anchorBounds.center.x < windowSize.width / 2) {
+            0
+        } else {
+            windowSize.width - menuWidth
+        }
+        return x.coerceIn(0, windowSize.width - menuWidth)
+    }
+
+    /** 对应 WindowAlignmentMarginPosition.Vertical(margin = 48dp)：锚点偏上贴窗口上缘，偏下贴下缘，放不下居中 */
+    private fun windowVertical(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        menuHeight: Int,
+        verticalMargin: Int
+    ): Int {
+        if (menuHeight >= windowSize.height - 2 * verticalMargin) {
+            return Alignment.CenterVertically.align(menuHeight, windowSize.height)
+        }
+        val y = if (anchorBounds.center.y < windowSize.height / 2) {
+            verticalMargin
+        } else {
+            windowSize.height - verticalMargin - menuHeight
+        }
+        return y.coerceIn(verticalMargin, windowSize.height - verticalMargin - menuHeight)
     }
 }
 
