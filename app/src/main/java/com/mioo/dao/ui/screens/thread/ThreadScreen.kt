@@ -4,10 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -87,7 +83,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -476,19 +471,6 @@ fun ThreadScreen(
                     containerColor = DaoTheme.colors.glassTopBar
                 )
             )
-            // 原地换页/换源（跳页、只看Po）时的可见进度信号：细进度条贴在顶栏下沿，
-            // 内容保留不闪黑，加载完成即收起。冷启动整页加载仍走全屏 spinner。
-            AnimatedVisibility(
-                visible = listUi.isLoading && listUi.thread != null,
-                enter = if (reducedMotion) EnterTransition.None else expandVertically(),
-                exit = if (reducedMotion) ExitTransition.None else shrinkVertically()
-            ) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                )
-            }
         },
         bottomBar = {
             // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
