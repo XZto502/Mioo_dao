@@ -10,7 +10,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -130,7 +129,6 @@ import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
-import com.mioo.dao.ui.components.imePaddingAndNavigationBars
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
@@ -150,6 +148,8 @@ import kotlinx.coroutines.withContext
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.mutableIntStateOf
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -1215,16 +1215,32 @@ fun CreateThreadDialog(
             }
         }
 
-        // 系统键盘再次抬起 → 关闭颜文字 / 骰娘面板（含 insets 失派发设备的兜底）。
-        // 阈值与对话框抬升(imePaddingAndNavigationBars 的 ime>nav)一致，避免中间区间弹跳
+        // 【共享底部高度槽位】与串内回复栏同款：底部总占位恒取 max(键盘, 导航条, 面板)，
+        // 绝不相加——键盘升起时槽位只在几个值之间平滑取大，玻璃由槽位顶起，杜绝双计飞栏。
         val imeBottomPx = rememberEffectiveImeBottomPx()
         val navBottomPx = WindowInsets.navigationBars.getBottom(density)
-        val imeCoversNav = imeBottomPx > navBottomPx
-        LaunchedEffect(imeCoversNav) {
-            if (!imeCoversNav) return@LaunchedEffect
-            if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
-            if (kaomojiExpanded) kaomojiExpanded = false
+        var rememberedImeHeightPx by remember { mutableIntStateOf(0) }
+        val defaultPanelHeightPx = with(density) { 280.dp.roundToPx() }
+        // 面板高度跟随用户键盘实际高度（键盘升过一次后记录），否则兜底 280dp
+        val targetPanelHeightPx =
+            if (rememberedImeHeightPx > navBottomPx) rememberedImeHeightPx else defaultPanelHeightPx
+        val isKeyboardRising = imeBottomPx > navBottomPx + with(density) { 40.dp.roundToPx() }
+        LaunchedEffect(imeBottomPx, isKeyboardRising) {
+            if (imeBottomPx > rememberedImeHeightPx) {
+                rememberedImeHeightPx = imeBottomPx
+            }
+            // 键盘主动升起 → 同帧关面板（单一动画源）。尊重刚点开面板后的 450ms 窗口：
+            // 从键盘态点开面板会先 hideSystemIme，键盘下落动画期间同样为 true，
+            // 无窗口会把刚打开的面板立刻关掉。
+            if (isKeyboardRising) {
+                if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
+                if (kaomojiExpanded) kaomojiExpanded = false
+            }
         }
+        // 【核心】底部总占位 = max(键盘, 面板)，绝不相加
+        val bottomSlotHeightPx =
+            if (kaomojiExpanded) maxOf(imeBottomPx, targetPanelHeightPx) else maxOf(imeBottomPx, navBottomPx)
+        val bottomSlotHeightDp = with(density) { bottomSlotHeightPx.toDp() }
 
         SideEffect {
             val window = dialogView.findDialogWindow() ?: return@SideEffect
@@ -1322,17 +1338,13 @@ fun CreateThreadDialog(
                     )
                 },
                 bottomBar = {
+                    // 与串内回复栏同款：玻璃 Surface 不挂任何 ime modifier，
+                    // 由内容下方的共享槽位把控件顶起来，玻璃始终铺到屏幕底无断层
                     Surface(
                         color = glassBottom,
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .imePaddingAndNavigationBars()
-                            // 键盘态再多留 56dp：各输入法候选词条/工具条高度不一
-                            //（实测 Gboard ~40px、带工具条的中输入法可达 150px+），
-                            // 固定余量保证工具栏永远在键盘可视区上方（无键盘态不生效）
-                            .padding(bottom = if (imeCoversNav) 56.dp else 0.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth()
@@ -1374,23 +1386,21 @@ fun CreateThreadDialog(
                                 )
                             }
 
-                            // 骰子/颜文字共用固定高度面板：切换只交叉淡入，高度不变（防工具栏弹跳）。
-                            // visible 绑定 !imeCoversNav：与对话框抬升同帧消失，杜绝晚一帧的 ime+面板叠加
-                            val panelReducedMotion = isReducedMotionEnabled()
-                            AnimatedVisibility(
-                                visible = kaomojiExpanded && !imeCoversNav,
-                                enter = MiooMotion.softExpandEnter(panelReducedMotion),
-                                exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
+                            // 【共享底部槽位】max(键盘, 面板)，绝不相加。面板开时直接填充槽位
+                            // （无收起动画，高度变化完全由槽位驱动 = 单一动画源，杜绝 ime+面板叠加过冲）。
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(bottomSlotHeightDp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(220.dp)
-                                ) {
+                                if (kaomojiExpanded) {
                                     KaomojiQuickPanel(
                                         onInsert = { insertAtCursor(it) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        heightDp = 220
+                                        modifier = Modifier.navigationBarsPadding(),
+                                        heightDp = with(density) {
+                                            (bottomSlotHeightPx - navBottomPx).coerceAtLeast(0)
+                                                .toDp().value.roundToInt()
+                                        }
                                     )
                                 }
                             }
