@@ -1725,9 +1725,10 @@ private fun CookieSelector(
         menuState.targetState = expanded
         if (menuState.currentState || menuState.targetState || !menuState.isIdle) {
             val density = LocalDensity.current
-            // 与 DropdownMenu 同款 contentOffset：贴合锚点方向再回退 6dp，保持轻微重叠视觉
+            // 正向 y 微调：把翻转后悬在锚点上方的菜单向下拉回，
+            // 让卡片底边贴在胶囊顶边上方 4-6dp，不再飞向回复输入框上方
             val menuPositionProvider = remember(density) {
-                CookieMenuPositionProvider(density, DpOffset(0.dp, (-6).dp))
+                CookieMenuPositionProvider(density, DpOffset(0.dp, 4.dp))
             }
             Popup(
                 popupPositionProvider = menuPositionProvider,
@@ -1756,7 +1757,10 @@ private fun CookieSelector(
                     ) {
                         Column(
                             modifier = Modifier
-                                .padding(6.dp)
+                                // 四边等宽 8dp：自绘卡片没有 DropdownMenu 内置的
+                                // DropdownMenuVerticalPadding，上下留白须自己给足，
+                                // 否则选中胶囊会顶到大圆角卡片边缘
+                                .padding(horizontal = 8.dp, vertical = 8.dp)
                                 .heightIn(max = 320.dp)
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(2.dp)

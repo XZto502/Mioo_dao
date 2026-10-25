@@ -117,6 +117,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -1368,12 +1369,21 @@ fun CreateThreadDialog(
                                         }
                                         DropdownMenu(
                                             expanded = cookieMenuExpanded,
-                                            onDismissRequest = { cookieMenuExpanded = false }
+                                            onDismissRequest = { cookieMenuExpanded = false },
+                                            // 与串内回复栏的饼干菜单同规格：正向 y 把翻转后
+                                            // 悬在上方的菜单向下拉回，贴住触发按钮顶边
+                                            offset = DpOffset(0.dp, 4.dp)
                                         ) {
                                             cookies.forEachIndexed { index, cookie ->
                                                 val isSelected = index == selectedCookieIndex
                                                 val displayName = parseCookieName(cookie)
                                                 DropdownMenuItem(
+                                                    // 垂直边距交给 DropdownMenu 内置的 8dp，
+                                                    // 水平收齐 8dp，与回复栏菜单四边对称
+                                                    contentPadding = PaddingValues(
+                                                        horizontal = 8.dp,
+                                                        vertical = 0.dp
+                                                    ),
                                                     text = {
                                                         Text(
                                                             text = if (displayName.length > 8) {
