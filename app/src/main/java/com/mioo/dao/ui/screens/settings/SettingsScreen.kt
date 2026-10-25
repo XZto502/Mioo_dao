@@ -539,11 +539,12 @@ fun SettingsScreen(
                     Text(text = "显示模式", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                // 当前生效的深色状态（点击回调里不能调 Composable，提前算好）
+                // 系统实时深色状态 + 当前生效的深色状态（点击回调里不能调 Composable，提前算好）
+                val systemDark = isSystemInDarkTheme()
                 val darkNow = when (settings.themeMode) {
                     ThemeMode.DARK -> true
                     ThemeMode.LIGHT -> false
-                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                    ThemeMode.SYSTEM -> systemDark
                 }
 
                 ThemeMode.values().forEach { mode ->
@@ -551,11 +552,12 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // 纯黑 (AMOLED) 仅深色可用：切到浅色（含跟随系统的浅色）时回落动态取色
+                                // 纯黑 (AMOLED) 仅深色可用：切到浅色（含跟随系统的浅色）时回落动态取色；
+                                // 跟随系统分支用系统实时深色判断，与当前模式无关
                                 val newDark = when (mode) {
                                     ThemeMode.DARK -> true
                                     ThemeMode.LIGHT -> false
-                                    ThemeMode.SYSTEM -> darkNow
+                                    ThemeMode.SYSTEM -> systemDark
                                 }
                                 if (!newDark && settings.themeColor == "amoled") {
                                     viewModel.updateThemeColor("dynamic")
