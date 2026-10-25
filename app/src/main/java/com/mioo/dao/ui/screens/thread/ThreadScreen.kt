@@ -2,6 +2,7 @@ package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,6 +23,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -76,7 +78,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.TextStyle
@@ -94,6 +100,7 @@ import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -1062,6 +1069,7 @@ private fun ThreadPageJumpButton(
 ) {
     // 拖动预览页码；每次打开气泡时重置为当前页
     var sliderPage by remember { mutableStateOf(1f) }
+    var anchorBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     LaunchedEffect(expanded) {
         if (expanded) sliderPage = currentPage.toFloat()
     }
@@ -1072,7 +1080,9 @@ private fun ThreadPageJumpButton(
     Box(modifier = Modifier.size(40.dp)) {
         IconButton(
             onClick = { onExpandedChange(!expanded) },
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier
+                .size(40.dp)
+                .onGloballyPositioned { anchorBounds = it.boundsInWindow() }
         ) {
             Icon(
                 imageVector = Icons.Outlined.AutoStories,
@@ -1082,27 +1092,42 @@ private fun ThreadPageJumpButton(
             )
         }
 
-        // 树内 overlay + AnimatedVisibility：进出场动画可控；右缘与跳页图标对齐
-        AnimatedVisibility(
-            visible = expanded,
-            enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(180)) + scaleIn(
-                initialScale = 0.9f,
-                animationSpec = tween(180),
-                transformOrigin = TransformOrigin(1f, 0f)
-            ),
-            exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(180)) + scaleOut(
-                targetScale = 0.9f,
-                animationSpec = tween(180),
-                transformOrigin = TransformOrigin(1f, 0f)
-            )
-        ) {
+        // Popup 独立窗口：不会被顶栏裁剪；位置按图标窗口坐标精确计算——
+        // 右缘贴屏幕右边距、顶边在图标下方 8dp（与最初 DropdownMenu 的落点一致）
+        if (expanded) {
+            val density = LocalDensity.current
+            val bounds = anchorBounds
+            val marginPx = with(density) { 12.dp.roundToPx() }
+            val bubbleWidthPx = with(density) { 244.dp.roundToPx() }
+            val gapPx = with(density) { 8.dp.roundToPx() }
+            val windowWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
+            val desiredLeft = windowWidthPx - marginPx - bubbleWidthPx
+            val desiredTop = (bounds?.bottom?.toInt() ?: 0) + gapPx
+            val anchorOffset = if (bounds != null) {
+                IntOffset(desiredLeft - bounds.left.toInt(), desiredTop - bounds.top.toInt())
+            } else {
+                IntOffset.Zero
+            }
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = anchorOffset,
+                onDismissRequest = { onExpandedChange(false) },
+                properties = PopupProperties(focusable = true)
+            ) {
+                val enterState = remember { MutableTransitionState(false).apply { targetState = true } }
+                AnimatedVisibility(
+                    visibleState = enterState,
+                    enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(180)) + scaleIn(
+                        initialScale = 0.9f,
+                        animationSpec = tween(180),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    )
+                ) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shadowElevation = 6.dp,
-                modifier = Modifier
-                    .offset(x = -204.dp, y = 48.dp)
-                    .width(244.dp)
+                modifier = Modifier.width(244.dp)
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                     // 第 1 行：步进器 + 可点击页码胶囊（点胶囊 = 精确输入）
@@ -1228,6 +1253,8 @@ private fun ThreadPageJumpButton(
                         steps = if (totalPages in 3..20) totalPages - 2 else 0,
                         modifier = Modifier.height(32.dp)
                     )
+                }
+            }
                 }
             }
         }
