@@ -77,6 +77,7 @@ interface XdApiService {
     @Multipart
     @POST("/Home/Forum/doPostThread.html")
     suspend fun doPostThread(
+        @Header("X-Mioo-Cookie") cookieOverride: String?,
         @Part("fid") fid: RequestBody,
         @Part("title") title: RequestBody?,
         @Part("name") name: RequestBody?,

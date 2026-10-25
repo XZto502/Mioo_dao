@@ -1009,7 +1009,7 @@ class ThreadViewModel @Inject constructor(
      * 独立发串链路：不写历史、不存草稿、不碰 DraftPrefillBus / saveNewThreadDraft，
      * 避免污染正常发串的草稿链路。
      */
-    fun submitReport(title: String, content: String, onResult: (success: Boolean, errorMessage: String?) -> Unit) {
+    fun submitReport(title: String, content: String, cookie: String?, onResult: (success: Boolean, errorMessage: String?) -> Unit) {
         viewModelScope.launch {
             threadRepository.doPostThread(
                 fid = REPORT_BOARD_FID,
@@ -1017,7 +1017,8 @@ class ThreadViewModel @Inject constructor(
                 name = null,
                 email = null,
                 content = content,
-                imageFile = null
+                imageFile = null,
+                cookie = cookie
             ).collect { response ->
                 when (response) {
                     is XdResponse.Success -> onResult(true, null)

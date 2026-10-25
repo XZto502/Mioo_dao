@@ -68,7 +68,8 @@ interface ThreadRepository {
         name: String?,
         email: String?,
         content: String,
-        imageFile: File?
+        imageFile: File?,
+        cookie: String? = null
     ): Flow<XdResponse<String>>
 
     fun doReplyThread(
@@ -412,7 +413,8 @@ class ThreadRepositoryImpl @Inject constructor(
         name: String?,
         email: String?,
         content: String,
-        imageFile: File?
+        imageFile: File?,
+        cookie: String?
     ): Flow<XdResponse<String>> = flow {
         try {
             val fidBody = fid.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -423,7 +425,7 @@ class ThreadRepositoryImpl @Inject constructor(
 
             val imagePart = imageFile?.asImagePart()
 
-            val response = apiService.doPostThread(fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
+            val response = apiService.doPostThread(cookie, fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
             emit(interpretForumWriteResponse(response.string()))
         } catch (e: Exception) {
             if (e is CancellationException) throw e

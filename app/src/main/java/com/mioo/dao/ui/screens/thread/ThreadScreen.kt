@@ -834,9 +834,9 @@ fun ThreadScreen(
             targetNo = target,
             isSubmitting = isReportSubmitting,
             onDismiss = { reportTargetNo = null },
-            onSubmit = { title, content ->
+            onSubmit = { title, content, cookie ->
                 isReportSubmitting = true
-                viewModel.submitReport(title, content) { success, errorMessage ->
+                viewModel.submitReport(title, content, cookie) { success, errorMessage ->
                     isReportSubmitting = false
                     if (success) {
                         Toast.makeText(context, "已发到值班室，感谢反馈", Toast.LENGTH_SHORT).show()
@@ -1580,30 +1580,21 @@ private fun ReportDialog(
     targetNo: String,
     isSubmitting: Boolean,
     onDismiss: () -> Unit,
-    onSubmit: (title: String, content: String) -> Unit
+    onSubmit: (title: String, content: String, cookie: String?) -> Unit
 ) {
-    var titleText by remember { mutableStateOf("举报") }
+    var titleText by remember { mutableStateOf("") }
     // 预填对被举报楼层的引用；换目标楼层时重置预填内容
     var contentText by remember(targetNo) { mutableStateOf(">>No.$targetNo\n") }
-
-    // 当前饼干的岛方 7 位 ID（JSON 取 userhash 字段）原样显示；非 JSON 时回退原串
-    val currentCookie = cookies.getOrNull(selectedCookieIndex).orEmpty()
-    val cookieDisplay = remember(currentCookie) {
-        if (currentCookie.startsWith("{")) {
-            runCatching {
-                org.json.JSONObject(currentCookie).optString("userhash", "")
-            }.getOrNull()?.takeIf { it.isNotBlank() } ?: currentCookie
-        } else {
-            currentCookie
-        }
-    }
+    // 对话框局部饼干选择：不改串级/全局选中
+    var reportCookieIndex by remember(selectedCookieIndex) { mutableIntStateOf(selectedCookieIndex) }
+    var cookieMenuExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = immersiveDialogProperties(),
         title = {
             ImmersiveDialogEffect()
-            Text("举报到值班室")
+            Text("举报")
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1626,16 +1617,42 @@ private fun ReportDialog(
                     minLines = 4,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text(
-                    text = "当前饼干：$cookieDisplay",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Cookie selector
+                val currentCookie = cookies.getOrNull(reportCookieIndex) ?: "选择饼干"
+                val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
+                Box {
+                    TextButton(onClick = { cookieMenuExpanded = true }) {
+                        Text(displayName)
+                    }
+                    DropdownMenu(
+                        expanded = cookieMenuExpanded,
+                        onDismissRequest = { cookieMenuExpanded = false }
+                    ) {
+                        cookies.forEachIndexed { index, cookie ->
+                            val isSelected = index == reportCookieIndex
+                            val itemDisplayName = remember(cookie) { parseCookieName(cookie) }
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = itemDisplayName,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    reportCookieIndex = index
+                                    cookieMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSubmit(titleText, contentText) },
+                onClick = { onSubmit(titleText, contentText, cookies.getOrNull(reportCookieIndex)) },
                 enabled = contentText.isNotBlank() && !isSubmitting
             ) {
                 Text("发送")
