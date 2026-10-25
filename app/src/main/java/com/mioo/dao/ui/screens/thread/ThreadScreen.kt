@@ -341,12 +341,27 @@ fun ThreadScreen(
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
                         )
                     } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = listUi.thread?.title.effectiveTitle() ?: "详情",
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        if (totalPages > 1) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "· ${currentScrollPage.value}/$totalPages",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 12.sp,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
                     }
+                }
                 },
                 navigationIcon = {
                     if (isSearchMode) {
@@ -382,8 +397,6 @@ fun ThreadScreen(
                         }
                         if (totalPages > 1) {
                             ThreadPageJumpButton(
-                                listState = listState,
-                                listStartPage = listStartPage,
                                 totalPages = totalPages,
                                 currentPage = currentScrollPage.value,
                                 onJumpToPage = { viewModel.jumpToPage(it) },
@@ -739,19 +752,38 @@ private fun ThreadChromeActions(
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
 
-    // 只看 Po：独立按钮（从三点菜单移出）；高亮色只代表已激活的过滤/收藏状态
+    // 只看 Po：[HD]/[CC] 式线性徽章；高亮色只代表已激活的过滤/收藏状态
     IconButton(onClick = { viewModel.togglePoOnly() }) {
-        Text(
-            text = "Po",
-            // 20sp：与 24dp 的搜索/收藏图标视觉等高
-            style = MaterialTheme.typography.titleSmall.copy(fontSize = 20.sp),
-            fontWeight = FontWeight.Bold,
-            color = if (showPoOnly) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
-        )
+        Box(
+            modifier = Modifier
+                .size(width = 22.dp, height = 18.dp)
+                .then(
+                    if (showPoOnly) {
+                        Modifier.background(
+                            MaterialTheme.colorScheme.primary,
+                            RoundedCornerShape(4.dp)
+                        )
+                    } else {
+                        Modifier.border(
+                            1.8.dp,
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                            RoundedCornerShape(4.dp)
+                        )
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "PO",
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (showPoOnly) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
     }
 
     Box {
@@ -917,13 +949,11 @@ private fun ThreadRefPopupHost(
 }
 
 /**
- * Isolated page chip — reading [LazyListState.firstVisibleItemIndex] here only
- * recomposes this button, not the thread LazyColumn / Scaffold body.
+ * 跳页入口：24dp 图标与搜索/收藏图标同基线；点击弹出滑块快捷跳页气泡。
+ * 当前页常驻展示在顶栏 title 侧（currentScrollPage），不在此处堆叠文字。
  */
 @Composable
 private fun ThreadPageJumpButton(
-    listState: LazyListState,
-    listStartPage: Int,
     totalPages: Int,
     currentPage: Int,
     onJumpToPage: (Int) -> Unit,
@@ -933,37 +963,14 @@ private fun ThreadPageJumpButton(
     // 拖动预览页码；每次打开气泡时重置为当前页
     var sliderPage by remember(expanded) { mutableStateOf(currentPage.toFloat()) }
 
-    val livePage by remember(listStartPage, totalPages) {
-        derivedStateOf {
-            val firstVisibleIndex = listState.firstVisibleItemIndex
-            val raw = if (firstVisibleIndex <= 0) {
-                listStartPage
-            } else {
-                val replyIndex = firstVisibleIndex - 1
-                listStartPage + (replyIndex / 19)
-            }
-            raw.coerceIn(1, totalPages.coerceAtLeast(1))
-        }
-    }
-
     Box {
         IconButton(onClick = { expanded = true }) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Outlined.AutoStories,
-                    contentDescription = "跳转页码",
-                    modifier = Modifier.size(16.dp),
-                    tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "P.$livePage",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 9.sp,
-                        fontFeatureSettings = "tnum"
-                    ),
-                    color = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Icon(
+                imageVector = Icons.Outlined.AutoStories,
+                contentDescription = "跳转页码",
+                modifier = Modifier.size(24.dp),
+                tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
         }
 
         DropdownMenu(
