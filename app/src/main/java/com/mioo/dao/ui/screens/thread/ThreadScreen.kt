@@ -39,11 +39,11 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ButtonDefaults
@@ -77,6 +77,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -380,11 +381,13 @@ fun ThreadScreen(
                             Icon(Icons.Default.Search, contentDescription = "串内搜索")
                         }
                         if (totalPages > 1) {
-                            ThreadPageIndicatorButton(
+                            ThreadPageJumpButton(
                                 listState = listState,
                                 listStartPage = listStartPage,
                                 totalPages = totalPages,
-                                onClick = { showPageJumpDialog = true }
+                                currentPage = currentScrollPage.value,
+                                onJumpToPage = { viewModel.jumpToPage(it) },
+                                onOpenInputDialog = { showPageJumpDialog = true }
                             )
                         }
                         // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
@@ -394,7 +397,8 @@ fun ThreadScreen(
                             showImagesOnly = listUi.showImagesOnly,
                             onShare = {
                                 val tid = viewModel.threadId
-                                val link = XdWebSearch.threadUrl(tid)
+                                // 分享统一用主站域名
+                                val link = XdWebSearch.threadUrlAlt(tid)
                                 val title = listUi.thread?.title.effectiveTitle() ?: "No.$tid"
                                 val send = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
@@ -735,7 +739,7 @@ private fun ThreadChromeActions(
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
 
-    // 只看 Po：独立按钮（从三点菜单移出），激活时高亮
+    // 只看 Po：独立按钮（从三点菜单移出）；高亮色只代表已激活的过滤/收藏状态
     IconButton(onClick = { viewModel.togglePoOnly() }) {
         Text(
             text = "Po",
@@ -745,7 +749,7 @@ private fun ThreadChromeActions(
             color = if (showPoOnly) {
                 MaterialTheme.colorScheme.primary
             } else {
-                MaterialTheme.colorScheme.onSurface
+                MaterialTheme.colorScheme.onSurfaceVariant
             }
         )
     }
@@ -917,13 +921,19 @@ private fun ThreadRefPopupHost(
  * recomposes this button, not the thread LazyColumn / Scaffold body.
  */
 @Composable
-private fun ThreadPageIndicatorButton(
+private fun ThreadPageJumpButton(
     listState: LazyListState,
     listStartPage: Int,
     totalPages: Int,
-    onClick: () -> Unit
+    currentPage: Int,
+    onJumpToPage: (Int) -> Unit,
+    onOpenInputDialog: () -> Unit
 ) {
-    val page by remember(listStartPage, totalPages) {
+    var expanded by remember { mutableStateOf(false) }
+    // 拖动预览页码；每次打开气泡时重置为当前页
+    var sliderPage by remember(expanded) { mutableStateOf(currentPage.toFloat()) }
+
+    val livePage by remember(listStartPage, totalPages) {
         derivedStateOf {
             val firstVisibleIndex = listState.firstVisibleItemIndex
             val raw = if (firstVisibleIndex <= 0) {
@@ -935,19 +945,108 @@ private fun ThreadPageIndicatorButton(
             raw.coerceIn(1, totalPages.coerceAtLeast(1))
         }
     }
-    // 方案 A：纯文字页码，与 Po 按钮同款视觉（无边框/图标），点击区仍可跳页
-    TextButton(
-        onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        modifier = Modifier.padding(end = 4.dp)
-    ) {
-        Text(
-            text = "$page/$totalPages",
-            // 与 Po 按钮一致的视觉高度
-            style = MaterialTheme.typography.titleSmall.copy(fontSize = 20.sp),
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
+
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Outlined.AutoStories,
+                    contentDescription = "跳转页码",
+                    modifier = Modifier.size(16.dp),
+                    tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "P.$livePage",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 9.sp,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.width(272.dp)
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                // 顶部：页码状态 + 精确输入入口
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "第 ",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${sliderPage.toInt()}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = " / $totalPages 页",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(
+                        onClick = {
+                            expanded = false
+                            onOpenInputDialog()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text("输入页码", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                // 中部：进度滑块（拖动只预览，松手才跳页）
+                Slider(
+                    value = sliderPage,
+                    onValueChange = { sliderPage = it },
+                    onValueChangeFinished = {
+                        val target = sliderPage.toInt().coerceIn(1, totalPages)
+                        if (target != currentPage) {
+                            expanded = false
+                            onJumpToPage(target)
+                        }
+                    },
+                    valueRange = 1f..totalPages.toFloat().coerceAtLeast(1f)
+                )
+
+                // 底部：四枚快捷直达
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    TextButton(
+                        onClick = { expanded = false; onJumpToPage(1) },
+                        enabled = currentPage > 1,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) { Text("首页", style = MaterialTheme.typography.labelMedium) }
+                    TextButton(
+                        onClick = { expanded = false; onJumpToPage(currentPage - 1) },
+                        enabled = currentPage > 1,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) { Text("上一页", style = MaterialTheme.typography.labelMedium) }
+                    TextButton(
+                        onClick = { expanded = false; onJumpToPage(currentPage + 1) },
+                        enabled = currentPage < totalPages,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) { Text("下一页", style = MaterialTheme.typography.labelMedium) }
+                    TextButton(
+                        onClick = { expanded = false; onJumpToPage(totalPages) },
+                        enabled = currentPage < totalPages,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) { Text("末页", style = MaterialTheme.typography.labelMedium) }
+                }
+            }
+        }
     }
 }
 
