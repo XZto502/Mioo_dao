@@ -371,14 +371,14 @@ fun ThreadScreen(
                                         fadeIn(tween(1)) togetherWith fadeOut(tween(1))
                                     } else {
                                         val forward = targetState.first >= initialState.first
-                                        val enter = slideInVertically(tween(150)) { it / 2 } +
-                                            fadeIn(tween(150))
-                                        val exit = slideOutVertically(tween(150)) { -it / 2 } +
-                                            fadeOut(tween(150))
-                                        val enterBack = slideInVertically(tween(150)) { -it / 2 } +
-                                            fadeIn(tween(150))
-                                        val exitBack = slideOutVertically(tween(150)) { it / 2 } +
-                                            fadeOut(tween(150))
+                                        val enter = slideInVertically(tween(280)) { it / 2 } +
+                                            fadeIn(tween(280))
+                                        val exit = slideOutVertically(tween(280)) { -it / 2 } +
+                                            fadeOut(tween(280))
+                                        val enterBack = slideInVertically(tween(280)) { -it / 2 } +
+                                            fadeIn(tween(280))
+                                        val exitBack = slideOutVertically(tween(280)) { it / 2 } +
+                                            fadeOut(tween(280))
                                         if (forward) enter.togetherWith(exit) else enterBack.togetherWith(exitBack)
                                     }
                                 },
