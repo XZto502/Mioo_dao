@@ -1396,8 +1396,9 @@ fun ReplyInputArea(
     LaunchedEffect(isReplying) {
         if (wasReplying && !isReplying && replyError == null) {
             attachedImageUri = null
-            // 发送成功后收起输入法
+            // 发送成功后收起输入法与颜文字面板
             hideSystemIme()
+            if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
         }
         wasReplying = isReplying
     }
