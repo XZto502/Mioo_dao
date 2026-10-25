@@ -2,6 +2,8 @@ package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -32,12 +34,14 @@ import androidx.compose.foundation.layout.height
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.luminance
@@ -54,6 +58,7 @@ import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Download
@@ -148,6 +153,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.widget.Toast
@@ -1955,41 +1961,125 @@ fun ReplyInputArea(
                     attachedImageUri = uri
                 }
 
-                // Cookie selector
+                // Cookie selector：与右侧工具栏同源的 40dp MD3 胶囊
                 val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
                 val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
                 val displayText = if (displayName.length > 8) displayName.take(8) + "..." else displayName
+                // 胶囊色不透明：透出下层文字的 alpha 色会在玻璃底栏上糊字
+                val capsuleColor by animateColorAsState(
+                    targetValue = if (cookieMenuExpanded) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    label = "cookieCapsule"
+                )
+                val capsuleBorderColor = if (cookieMenuExpanded) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                }
+                val arrowRotation by animateFloatAsState(
+                    targetValue = if (cookieMenuExpanded) 180f else 0f,
+                    label = "cookieArrow"
+                )
 
                 Box {
-                    OutlinedButton(
+                    Surface(
                         onClick = { cookieMenuExpanded = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = CircleShape,
+                        color = capsuleColor,
+                        border = BorderStroke(1.dp, capsuleBorderColor),
+                        modifier = Modifier.height(40.dp)
                     ) {
-                        Text(displayText, style = MaterialTheme.typography.labelLarge)
-                    }
-                    DropdownMenu(
-                        expanded = cookieMenuExpanded,
-                        onDismissRequest = { cookieMenuExpanded = false }
-                    ) {
-                        cookies.forEachIndexed { index, cookie ->
-                            val isSelected = index == selectedCookieIndex
-                            val itemDisplayName = remember(cookie) { parseCookieName(cookie) }
-                            val itemDisplayText = if (itemDisplayName.length > 8) itemDisplayName.take(8) + "..." else itemDisplayName
-                            
-                            DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        text = itemDisplayText,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    ) 
-                                },
-                                onClick = {
-                                    onCookieSelect(index)
-                                    cookieMenuExpanded = false
-                                }
+                        Row(
+                            modifier = Modifier.padding(start = 12.dp, end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
                             )
+                            Text(
+                                text = displayText,
+                                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1
+                            )
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(15.dp)
+                                    .rotate(arrowRotation),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    // M3 1.2.0 的 DropdownMenu 没有 containerColor/tonalElevation 参数，
+                    // 圆角与容器色用 MaterialTheme 局部覆盖等效实现：menu 圆角跟随
+                    // shapes.extraSmall、容器色跟随 surfaceContainer role
+                    MaterialTheme(
+                        shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(18.dp)),
+                        colorScheme = MaterialTheme.colorScheme.copy(
+                            surfaceContainer = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            surfaceContainerHigh = MaterialTheme.colorScheme.surfaceContainerHigh
+                        )
+                    ) {
+                        DropdownMenu(
+                            expanded = cookieMenuExpanded,
+                            onDismissRequest = { cookieMenuExpanded = false },
+                            modifier = Modifier.widthIn(min = 148.dp, max = 210.dp),
+                            offset = DpOffset(0.dp, (-6).dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                cookies.forEachIndexed { index, cookie ->
+                                    val isSelected = index == selectedCookieIndex
+                                    Surface(
+                                        onClick = {
+                                            onCookieSelect(index)
+                                            cookieMenuExpanded = false
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.secondaryContainer
+                                        } else {
+                                            Color.Transparent
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = parseCookieName(cookie),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) {
+                                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
+                                                maxLines = 1
+                                            )
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(15.dp),
+                                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
