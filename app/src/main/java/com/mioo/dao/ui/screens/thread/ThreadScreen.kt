@@ -163,8 +163,6 @@ import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
-import android.content.ClipData
-import android.content.ClipboardManager
 import com.mioo.dao.ui.components.IslandImage
 import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
@@ -226,6 +224,10 @@ fun ThreadScreen(
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
+    // 串内举报：目标楼层 id（该楼自身），null = 对话框关闭
+    var reportTargetNo by remember { mutableStateOf<String?>(null) }
+    // 提交状态放屏幕层：失败留在对话框时可再次点发送重试
+    var isReportSubmitting by remember { mutableStateOf(false) }
     var showPageJumpDialog by remember { mutableStateOf(false) }
     var showJumpBubble by remember { mutableStateOf(false) }
     var isSearchMode by remember { mutableStateOf(false) }
@@ -662,7 +664,7 @@ fun ThreadScreen(
                                     },
                                     blockThreadLabel = "屏蔽此串 (No.${mainThread.idStr})",
                                     blockUserLabel = "屏蔽该饼干 (ID: ${mainThread.userHash})",
-                                    onReport = { copyThreadReportLink(context, mainThread.idStr) },
+                                    onReport = { reportTargetNo = mainThread.idStr },
                                     onShareCard = {
                                         scope.launch {
                                             com.mioo.dao.utils.ShareCardUtil.sharePostCard(context, mainPostData)
@@ -715,7 +717,8 @@ fun ThreadScreen(
                             onBlockUser = {
                                 settingsViewModel.addBlockedUser(item.userHash)
                             },
-                            onFreeCopy = { freeCopyText = item.rawContent }
+                            onFreeCopy = { freeCopyText = item.rawContent },
+                            onReport = { reportTargetNo = item.idStr }
                         )
                     }
 
@@ -817,6 +820,31 @@ fun ThreadScreen(
             onJump = { page ->
                 viewModel.jumpToPage(page)
                 showPageJumpDialog = false
+            }
+        )
+    }
+
+    // 串内举报：饼干取值复用传给 ReplyInputBar 的同一组值（串级覆盖优先，其次全局选中）
+    reportTargetNo?.let { target ->
+        ReportDialog(
+            cookies = threadSettings.cookiesList,
+            selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
+                ?.takeIf { it < threadSettings.cookiesList.size }
+                ?: threadSettings.selectedCookieIndex,
+            targetNo = target,
+            isSubmitting = isReportSubmitting,
+            onDismiss = { reportTargetNo = null },
+            onSubmit = { title, content ->
+                isReportSubmitting = true
+                viewModel.submitReport(title, content) { success, errorMessage ->
+                    isReportSubmitting = false
+                    if (success) {
+                        Toast.makeText(context, "已发到值班室，感谢反馈", Toast.LENGTH_SHORT).show()
+                        reportTargetNo = null
+                    } else {
+                        Toast.makeText(context, errorMessage ?: "举报发送失败", Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         )
     }
@@ -1415,7 +1443,8 @@ private fun ThreadReplyRow(
     onRequestQuote: () -> Unit,
     onBlockThread: () -> Unit,
     onBlockUser: () -> Unit,
-    onFreeCopy: () -> Unit
+    onFreeCopy: () -> Unit,
+    onReport: () -> Unit
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
     val quotedReplies = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1459,7 +1488,7 @@ private fun ThreadReplyRow(
             onCopy = onFreeCopy,
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
             blockUserLabel = "屏蔽该饼干 (ID: ${item.userHash})",
-            onReport = { copyThreadReportLink(rowContext, currentThreadId) },
+            onReport = onReport,
             onShareCard = {
                 rowScope.launch {
                     com.mioo.dao.utils.ShareCardUtil.sharePostCard(rowContext, item.postData)
@@ -1538,6 +1567,85 @@ private fun PostActionDialog(
             }
         },
         confirmButton = {}
+    )
+}
+
+/**
+ * 串内举报对话框：把 >>No.<被举报楼层> 的引用 + 说明文字作为新串发到值班室（fid=18）。
+ */
+@Composable
+private fun ReportDialog(
+    cookies: List<String>,
+    selectedCookieIndex: Int,
+    targetNo: String,
+    isSubmitting: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (title: String, content: String) -> Unit
+) {
+    var titleText by remember { mutableStateOf("举报") }
+    // 预填对被举报楼层的引用；换目标楼层时重置预填内容
+    var contentText by remember(targetNo) { mutableStateOf(">>No.$targetNo\n") }
+
+    // 当前饼干的岛方 7 位 ID（JSON 取 userhash 字段）原样显示；非 JSON 时回退原串
+    val currentCookie = cookies.getOrNull(selectedCookieIndex).orEmpty()
+    val cookieDisplay = remember(currentCookie) {
+        if (currentCookie.startsWith("{")) {
+            runCatching {
+                org.json.JSONObject(currentCookie).optString("userhash", "")
+            }.getOrNull()?.takeIf { it.isNotBlank() } ?: currentCookie
+        } else {
+            currentCookie
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = immersiveDialogProperties(),
+        title = {
+            ImmersiveDialogEffect()
+            Text("举报到值班室")
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "将以新串发送到值班室，包含对 No.$targetNo 的引用",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = titleText,
+                    onValueChange = { titleText = it },
+                    label = { Text("标题") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = contentText,
+                    onValueChange = { contentText = it },
+                    label = { Text("内容") },
+                    minLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "当前饼干：$cookieDisplay",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(titleText, contentText) },
+                enabled = contentText.isNotBlank() && !isSubmitting
+            ) {
+                Text("发送")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
     )
 }
 
@@ -1979,11 +2087,4 @@ fun ReplyInputArea(
             }
         }
     }
-}
-
-private fun copyThreadReportLink(context: android.content.Context, threadId: String) {
-    val url = "https://www.nmbxd.com/t/$threadId"
-    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("mioodao-report", url))
-    Toast.makeText(context, "已复制串链接，可到网页版举报该串", Toast.LENGTH_LONG).show()
 }

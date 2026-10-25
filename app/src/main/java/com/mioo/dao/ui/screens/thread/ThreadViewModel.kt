@@ -142,6 +142,7 @@ class ThreadViewModel @Inject constructor(
         private const val MAX_NETWORK_QUOTES_PER_PAGE = 10
         private val QUOTE_ID_PATTERN: Pattern = Pattern.compile(">>(?:No\\.)?(\\d+)")
         private const val MAX_FILTERED_SKIPS = 4
+        private const val REPORT_BOARD_FID = "18" // 值班室
     }
 
     private var currentPage = 1
@@ -998,6 +999,29 @@ class ThreadViewModel @Inject constructor(
             } catch (e: Exception) {
                 _composerState.update {
                     it.copy(isReplying = false, replyError = e.localizedMessage ?: "回复失败")
+                }
+            }
+        }
+    }
+
+    /**
+     * 串内举报：把对被举报楼层的引用作为新串发到值班室（fid=18）。
+     * 独立发串链路：不写历史、不存草稿、不碰 DraftPrefillBus / saveNewThreadDraft，
+     * 避免污染正常发串的草稿链路。
+     */
+    fun submitReport(title: String, content: String, onResult: (success: Boolean, errorMessage: String?) -> Unit) {
+        viewModelScope.launch {
+            threadRepository.doPostThread(
+                fid = REPORT_BOARD_FID,
+                title = title.ifBlank { "举报" },
+                name = null,
+                email = null,
+                content = content,
+                imageFile = null
+            ).collect { response ->
+                when (response) {
+                    is XdResponse.Success -> onResult(true, null)
+                    is XdResponse.Error -> onResult(false, response.message)
                 }
             }
         }
