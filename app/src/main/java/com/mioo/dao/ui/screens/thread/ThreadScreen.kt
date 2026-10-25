@@ -1,6 +1,13 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -357,17 +364,38 @@ fun ThreadScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         if (totalPages > 1) {
-                            Text(
-                                text = "第 ${currentScrollPage.value} / $totalPages 页",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    lineHeight = 11.sp,
-                                    fontFeatureSettings = "tnum",
-                                    platformStyle = PlatformTextStyle(includeFontPadding = false)
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
+                            AnimatedContent(
+                                targetState = currentScrollPage.value to totalPages,
+                                transitionSpec = {
+                                    if (reducedMotion) {
+                                        fadeIn(tween(1)) togetherWith fadeOut(tween(1))
+                                    } else {
+                                        val forward = targetState.first >= initialState.first
+                                        val enter = slideInVertically(tween(150)) { it / 2 } +
+                                            fadeIn(tween(150))
+                                        val exit = slideOutVertically(tween(150)) { -it / 2 } +
+                                            fadeOut(tween(150))
+                                        val enterBack = slideInVertically(tween(150)) { -it / 2 } +
+                                            fadeIn(tween(150))
+                                        val exitBack = slideOutVertically(tween(150)) { it / 2 } +
+                                            fadeOut(tween(150))
+                                        if (forward) enter.togetherWith(exit) else enterBack.togetherWith(exitBack)
+                                    }
+                                },
+                                label = "pageSubtitle"
+                            ) { (page, total) ->
+                                Text(
+                                    text = "第 $page / $total 页",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        lineHeight = 11.sp,
+                                        fontFeatureSettings = "tnum",
+                                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }

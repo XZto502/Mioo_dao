@@ -785,7 +785,24 @@ class ThreadViewModel @Inject constructor(
 
     fun togglePoOnly() {
         _listState.update { it.copy(showPoOnly = !it.showPoOnly) }
-        loadThreadDetails()
+        // 原地切换数据源：保留旧列表直到新数据整体替换——先清空 displayItems 会在
+        // AMOLED 纯黑背景上闪整屏黑帧。落点与新视图分页对齐：第 1 页顶部
+        //（Po 视图分页与普通视图不同，续读页码没有意义）。
+        currentPage = 1
+        isLastPage = false
+        rawPosts = emptyList()
+        stickyResumeIndex = 0
+        resumeScrollSeeded = false
+        _listState.update {
+            it.copy(
+                isLastPage = false,
+                currentPage = 1,
+                startPage = 1,
+                pendingScrollIndex = null,
+                prependAnchorCount = null
+            )
+        }
+        loadPage(page = 1, mode = LoadMode.REPLACE)
     }
 
     fun toggleShowImagesOnly() {
