@@ -55,6 +55,10 @@ import androidx.compose.foundation.rememberScrollState
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextRange
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -341,20 +345,25 @@ fun ThreadScreen(
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
                         )
                     } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 上下双行：页码放副标题行，不再与主标题争抢横向宽度
+                    Column(verticalArrangement = Arrangement.Center) {
                         Text(
                             text = listUi.thread?.title.effectiveTitle() ?: "详情",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 15.sp,
+                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                            ),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                            overflow = TextOverflow.Ellipsis
                         )
                         if (totalPages > 1) {
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "· ${currentScrollPage.value}/$totalPages",
+                                text = "第 ${currentScrollPage.value} / $totalPages 页",
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 12.sp,
-                                    fontFeatureSettings = "tnum"
+                                    fontSize = 10.sp,
+                                    lineHeight = 11.sp,
+                                    fontFeatureSettings = "tnum",
+                                    platformStyle = PlatformTextStyle(includeFontPadding = false)
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
@@ -389,10 +398,13 @@ fun ThreadScreen(
                             }
                         }
                     } else {
-                        IconButton(onClick = {
-                            isSearchMode = true
-                            searchFieldText = listUi.searchQuery
-                        }) {
+                        IconButton(
+                            onClick = {
+                                isSearchMode = true
+                                searchFieldText = listUi.searchQuery
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(Icons.Default.Search, contentDescription = "串内搜索")
                         }
                         if (totalPages > 1) {
@@ -753,7 +765,10 @@ private fun ThreadChromeActions(
     val context = LocalContext.current
 
     // 只看 Po：[HD]/[CC] 式线性徽章；高亮色只代表已激活的过滤/收藏状态
-    IconButton(onClick = { viewModel.togglePoOnly() }) {
+    IconButton(
+        onClick = { viewModel.togglePoOnly() },
+        modifier = Modifier.size(40.dp)
+    ) {
         Box(
             modifier = Modifier
                 .size(width = 22.dp, height = 18.dp)
@@ -775,13 +790,22 @@ private fun ThreadChromeActions(
         ) {
             Text(
                 text = "PO",
-                fontSize = 9.5.sp,
-                fontWeight = FontWeight.Bold,
                 color = if (showPoOnly) {
                     MaterialTheme.colorScheme.onPrimary
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                },
+                textAlign = TextAlign.Center,
+                style = TextStyle(
+                    fontSize = 9.5.sp,
+                    lineHeight = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Center,
+                        trim = LineHeightStyle.Trim.Both
+                    )
+                )
             )
         }
     }
@@ -789,20 +813,23 @@ private fun ThreadChromeActions(
     Box {
         // 已收藏 = 本地收藏 或 云端收藏夹成员（缓存）
         val bookmarked = chrome.isSubscribed || chrome.isCloudSubscribed
-        IconButton(onClick = {
-            when {
-                // 本地已收藏 → 直接取消本地收藏（原有行为）
-                chrome.isSubscribed -> viewModel.toggleBookmark(null) { msg ->
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        IconButton(
+            onClick = {
+                when {
+                    // 本地已收藏 → 直接取消本地收藏（原有行为）
+                    chrome.isSubscribed -> viewModel.toggleBookmark(null) { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                    // 仅云端收藏（或配置了云端文件夹）→ 打开菜单，供选择本地/云端操作
+                    chrome.isCloudSubscribed || chrome.feedFolders.isNotEmpty() ->
+                        onShowBookmarkMenuChange(true)
+                    else -> viewModel.toggleBookmark(null) { msg ->
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
                 }
-                // 仅云端收藏（或配置了云端文件夹）→ 打开菜单，供选择本地/云端操作
-                chrome.isCloudSubscribed || chrome.feedFolders.isNotEmpty() ->
-                    onShowBookmarkMenuChange(true)
-                else -> viewModel.toggleBookmark(null) { msg ->
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                }
-            }
-        }) {
+            },
+            modifier = Modifier.size(40.dp)
+        ) {
             Icon(
                 imageVector = if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                 contentDescription = if (bookmarked) "取消收藏" else "收藏",
@@ -853,7 +880,10 @@ private fun ThreadChromeActions(
     }
 
     Box {
-        IconButton(onClick = { onShowOverflowMenuChange(true) }) {
+        IconButton(
+            onClick = { onShowOverflowMenuChange(true) },
+            modifier = Modifier.size(40.dp)
+        ) {
             Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
         }
 
@@ -964,7 +994,10 @@ private fun ThreadPageJumpButton(
     var sliderPage by remember(expanded) { mutableStateOf(currentPage.toFloat()) }
 
     Box {
-        IconButton(onClick = { expanded = true }) {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(40.dp)
+        ) {
             Icon(
                 imageVector = Icons.Outlined.AutoStories,
                 contentDescription = "跳转页码",
