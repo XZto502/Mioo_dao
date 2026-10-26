@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -930,7 +931,11 @@ private fun Md3DropdownMenu(
                     color = menuBgColor,
                     shadowElevation = 6.dp,
                     border = BorderStroke(1.dp, menuBorderColor),
-                    modifier = modifier.widthIn(min = 120.dp)
+                    // Popup 的约束是全屏：fillMaxWidth 的胶囊项会把菜单撑满屏，
+                    // 用 IntrinsicSize.Max 收缩到最宽子项的自然宽度（= 之前 DropdownMenu 的 wrap 尺寸）
+                    modifier = modifier
+                        .widthIn(min = 120.dp)
+                        .width(IntrinsicSize.Max)
                 ) {
                     Column(
                         modifier = Modifier
