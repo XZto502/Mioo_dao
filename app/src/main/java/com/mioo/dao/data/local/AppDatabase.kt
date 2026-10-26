@@ -10,9 +10,10 @@ import androidx.room.RoomDatabase
         CacheEntity::class,
         ThreadProgressEntity::class,
         CloudFeedThreadEntity::class,
-        DraftEntity::class
+        DraftEntity::class,
+        OfflineThreadEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -21,4 +22,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun progressDao(): ProgressDao
     abstract fun cloudFeedDao(): CloudFeedDao
     abstract fun draftDao(): DraftDao
+    abstract fun offlineThreadDao(): OfflineThreadDao
 }

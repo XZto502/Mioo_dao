@@ -65,6 +65,9 @@ interface HistoryDao {
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun deleteBookmarkById(id: String)
 
+    @Query("DELETE FROM bookmarks")
+    suspend fun clearAllBookmarks()
+
     @Query("SELECT * FROM bookmarks ORDER BY timestamp DESC")
     fun getAllBookmarks(): Flow<List<BookmarkEntity>>
 

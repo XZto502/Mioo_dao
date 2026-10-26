@@ -17,6 +17,10 @@ interface CacheDao {
     @Query("DELETE FROM api_cache WHERE cacheKey = :cacheKey")
     suspend fun deleteCacheByKey(cacheKey: String)
 
+    /** 只清串详情离线 JSON（thread_<id>），保留板块/时间线/引用等常规 SWR 缓存。 */
+    @Query("DELETE FROM api_cache WHERE cacheKey LIKE 'thread_%'")
+    suspend fun deleteAllThreadCache()
+
     @Query("DELETE FROM api_cache")
     suspend fun clearAllCache()
 

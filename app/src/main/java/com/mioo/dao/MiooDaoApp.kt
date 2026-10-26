@@ -44,6 +44,7 @@ interface AppLateInitEntryPoint {
     fun database(): AppDatabase
     fun settingsRepository(): SettingsRepository
     fun subscriptionScheduler(): SubscriptionScheduler
+    fun threadRepository(): com.mioo.dao.data.repository.ThreadRepository
 }
 
 @HiltAndroidApp
@@ -143,6 +144,17 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
                     }
             }
         }
+        // 收藏 ⇒ 离线巡检：收藏页「已离线」标签直接吃离线列表，
+        // 存量与后续新星的收藏都在这里逐串补离线（repo 内部限速去重）。
+        appScope.launch {
+            kotlinx.coroutines.delay(5000)
+            runCatching {
+                EntryPointAccessors.fromApplication(
+                    this@MiooDaoApp,
+                    AppLateInitEntryPoint::class.java
+                ).threadRepository().startBookmarkOfflineSync()
+            }
+        }
     }
 
     override fun newImageLoader(): ImageLoader {
@@ -228,6 +240,11 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
             )
             .respectCacheHeaders(false)
             .components {
+                // 已离线串的图片：URL 命中本地离线文件时映射成 File（断网可看图）。
+                // 未命中的 URL 返回 null，照常走网络管线。
+                add(com.mioo.dao.utils.OfflineImageMapper(
+                    filesDir.resolve("offline_images")
+                ))
                 if (Build.VERSION.SDK_INT >= 28) {
                     add(ImageDecoderDecoder.Factory())
                 } else {
