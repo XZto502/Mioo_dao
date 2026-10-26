@@ -67,9 +67,27 @@ object DatabaseModule {
         }
     }
 
-    /** v8 adds the 已离线串 marker table (pages JSON stays in api_cache). */
+    /**
+     * v8 adds the 已离线串 marker table (pages JSON stays in api_cache).
+     * 迁移加固：v7 在存量设备上有两种历史形态——
+     * 1) 正式链 v7 = MIGRATION_6_7 产物（cloud_feed_threads 已带 replyCount，无 offline_threads）；
+     * 2) 2026-10-26 中间测试版的 v7 = 已建旧结构 offline_threads，且 cloud_feed_threads 缺 replyCount。
+     * 形态 2 的设备升上来时 6→7 不会重跑，这里用 PRAGMA 探测补列，并强制重建 offline_threads
+     * （旧结构列名完全不同，CREATE IF NOT EXISTS 会跳过导致校验崩溃；离线登记重建即可，串重新下载恢复）。
+     */
     private val MIGRATION_7_8 = object : Migration(7, 8) {
         override fun migrate(db: SupportSQLiteDatabase) {
+            val cloudColumns = mutableListOf<String>()
+            db.query("PRAGMA table_info(`cloud_feed_threads`)").use { cursor ->
+                val nameIdx = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) cloudColumns.add(cursor.getString(nameIdx))
+            }
+            if ("replyCount" !in cloudColumns) {
+                db.execSQL(
+                    "ALTER TABLE `cloud_feed_threads` ADD COLUMN `replyCount` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+            db.execSQL("DROP TABLE IF EXISTS `offline_threads`")
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS `offline_threads` (" +
                     "`threadId` TEXT NOT NULL PRIMARY KEY, " +
