@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Casino
@@ -74,6 +75,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ButtonDefaults
@@ -880,6 +882,8 @@ private fun ThreadChromeActions(
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
+    // 「删除离线缓存」二次确认（三点菜单触发）
+    var showRemoveOffline by remember { mutableStateOf(false) }
 
     // 只看 Po：[HD]/[CC] 式线性徽章；高亮色只代表已激活的过滤/收藏状态
     IconButton(
@@ -928,20 +932,23 @@ private fun ThreadChromeActions(
     }
 
     Box {
-        // 已收藏 = 本地收藏 或 云端收藏夹成员（缓存）
+        // 星标 = 已离线（本地收藏已并入离线下载）；已离线后星标仅亮着，点击无动作
         val bookmarked = chrome.isSubscribed || chrome.isCloudSubscribed
         IconButton(
             onClick = {
                 when {
-                    // 本地已收藏 → 直接取消本地收藏（原有行为）
-                    chrome.isSubscribed -> viewModel.toggleBookmark(null) { msg ->
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                    }
-                    // 仅云端收藏（或配置了云端文件夹）→ 打开菜单，供选择本地/云端操作
+                    chrome.isDownloading -> Unit
+                    // 配了云端收藏夹 → 菜单（云端操作）
                     chrome.isCloudSubscribed || chrome.feedFolders.isNotEmpty() ->
                         onShowBookmarkMenuChange(true)
-                    else -> viewModel.toggleBookmark(null) { msg ->
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    // 已离线 → 星标只是状态展示
+                    chrome.isOfflineSaved -> Unit
+                    // 未离线 → 星标即离线下载
+                    else -> {
+                        Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
+                        viewModel.downloadThread { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             },
@@ -949,7 +956,7 @@ private fun ThreadChromeActions(
         ) {
             Icon(
                 imageVector = if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                contentDescription = if (bookmarked) "取消收藏" else "收藏",
+                contentDescription = if (chrome.isOfflineSaved) "已离线收藏" else "离线下载本串",
                 tint = if (bookmarked) {
                     MaterialTheme.colorScheme.primary
                 } else {
@@ -973,15 +980,6 @@ private fun ThreadChromeActions(
                     }
                 )
             }
-            DropdownMenuItem(
-                text = { Text("本地收藏") },
-                onClick = {
-                    onShowBookmarkMenuChange(false)
-                    viewModel.toggleBookmark(null) { msg ->
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            )
             chrome.feedFolders.forEach { folder ->
                 DropdownMenuItem(
                     text = { Text(folder.name) },
@@ -1035,30 +1033,84 @@ private fun ThreadChromeActions(
                 }
             )
             androidx.compose.material3.HorizontalDivider()
-            DropdownMenuItem(
-                text = {
-                    if (chrome.isDownloading) {
-                        Text("正在下载...")
-                    } else {
-                        Text("离线下载本串")
-                    }
-                },
-                onClick = {
-                    onShowOverflowMenuChange(false)
-                    if (!chrome.isDownloading) {
+            when {
+                chrome.isDownloading -> DropdownMenuItem(
+                    text = { Text("正在下载…") },
+                    onClick = {},
+                    leadingIcon = {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                    },
+                    enabled = false
+                )
+                chrome.isOfflineSaved -> {
+                    DropdownMenuItem(
+                        text = { Text("更新离线缓存 (已保存)") },
+                        onClick = {
+                            onShowOverflowMenuChange(false)
+                            Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
+                            viewModel.downloadThread { msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.DownloadDone,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("删除离线缓存") },
+                        onClick = {
+                            onShowOverflowMenuChange(false)
+                            showRemoveOffline = true
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    )
+                }
+                else -> DropdownMenuItem(
+                    text = { Text("离线下载本串") },
+                    onClick = {
+                        onShowOverflowMenuChange(false)
                         Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
                         viewModel.downloadThread { msg ->
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                    }
+                )
+            }
+        }
+
+        if (showRemoveOffline) {
+            AlertDialog(
+                onDismissRequest = { showRemoveOffline = false },
+                title = { Text("删除离线缓存？") },
+                text = { Text("将移除本串的本地收藏与离线数据（含图片），不可恢复。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showRemoveOffline = false
+                        viewModel.removeOffline { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Text("删除", color = MaterialTheme.colorScheme.error)
                     }
                 },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = null
-                    )
-                },
-                enabled = !chrome.isDownloading
+                dismissButton = {
+                    TextButton(onClick = { showRemoveOffline = false }) {
+                        Text("取消")
+                    }
+                }
             )
         }
     }

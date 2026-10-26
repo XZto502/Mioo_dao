@@ -75,7 +75,9 @@ data class ThreadChromeUiState(
     /** Thread lives in a 云端收藏夹 (cloud feed cache) — icon also lights up for it. */
     val isCloudSubscribed: Boolean = false,
     val feedFolders: List<FeedFolder> = emptyList(),
-    val isDownloading: Boolean = false
+    val isDownloading: Boolean = false,
+    /** 本串已离线（offline_threads 有标记）——三点菜单显示「更新离线缓存 (已保存)」。 */
+    val isOfflineSaved: Boolean = false
 )
 
 /** Nested >>No.xxxx popup — isolated so open/close never invalidates the list. */
@@ -196,6 +198,13 @@ class ThreadViewModel @Inject constructor(
                         it.copy(isSubscribed = local, isCloudSubscribed = cloud)
                     }
                 }
+        }
+
+        viewModelScope.launch {
+            // 本串离线状态：下载完成/删除离线后三点菜单文案实时翻转
+            threadRepository.isThreadDownloaded(threadId).collect { downloaded ->
+                _chromeState.update { it.copy(isOfflineSaved = downloaded) }
+            }
         }
 
         viewModelScope.launch {
@@ -1111,10 +1120,18 @@ class ThreadViewModel @Inject constructor(
             threadRepository.downloadFullThread(threadId).collect { response ->
                 _chromeState.update { it.copy(isDownloading = false) }
                 when (response) {
-                    is XdResponse.Success -> onResult("下载完成，已加入本地收藏")
+                    is XdResponse.Success -> onResult("离线缓存已更新")
                     is XdResponse.Error -> onResult("下载失败: ${response.message}")
                 }
             }
+        }
+    }
+
+    /** 删除本串离线缓存（连带本地收藏与离线图片，收藏页「已离线」列表同步移除）。 */
+    fun removeOffline(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            threadRepository.deleteOfflineThread(threadId)
+            onResult("已删除离线缓存")
         }
     }
 
