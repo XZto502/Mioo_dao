@@ -170,12 +170,51 @@ object ImageDownloader {
     }
 
     private fun shareBytes(context: Context, bytes: ByteArray, filename: String, mime: String) {
+        // QQ 等应用对第三方 FileProvider（Android/data 私有目录）的 URI 会报"文件不存在"，
+        // Q+ 改走 MediaStore content URI 分享（各应用读取最稳）；分享后延迟清理，不污染相册。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/MiooDao")
+                // 写入期间对其他应用不可见，避免相册扫到半成品
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: run {
+                toastSync(context, "分享失败")
+                return
+            }
+            try {
+                resolver.openOutputStream(uri)?.use { output ->
+                    output.write(bytes)
+                    output.flush()
+                } ?: throw IllegalStateException("no stream")
+                resolver.update(
+                    uri,
+                    ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                    null,
+                    null
+                )
+            } catch (_: Exception) {
+                runCatching { resolver.delete(uri, null, null) }
+                toastSync(context, "分享失败")
+                return
+            }
+            startShare(context, uri, mime)
+            // 给接收方 3 分钟读取窗口，之后把这条临时分享记录从相册移除
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                runCatching { context.contentResolver.delete(uri, null, null) }
+            }, 3 * 60_000L)
+            return
+        }
+
+        // API 26-28：无 WRITE_EXTERNAL_STORAGE，走 FileProvider（external-files-path 已声明）
         val dir = File(context.getExternalFilesDir(null), "share")
         if (!dir.exists() && !dir.mkdirs()) {
             toastSync(context, "分享失败")
             return
         }
-        // 清掉半小时前的旧分享文件
         dir.listFiles()?.forEach { file ->
             if (file.lastModified() < System.currentTimeMillis() - 30 * 60_000L) file.delete()
         }
@@ -191,13 +230,23 @@ object ImageDownloader {
             "${context.packageName}.fileprovider",
             file
         )
+        startShare(context, uri, mime)
+    }
+
+    private fun startShare(context: Context, uri: Uri, mime: String) {
         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = mime
             putExtra(android.content.Intent.EXTRA_STREAM, uri)
             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val chooser = android.content.Intent.createChooser(send, "分享图片")
-            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        // chooser 上再挂 ClipData + 授权，确保所有目标应用都拿到读取权限
+        val chooser = android.content.Intent.createChooser(send, "分享图片").apply {
+            addFlags(
+                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            clipData = android.content.ClipData.newRawUri("share_image", uri)
+        }
         context.startActivity(chooser)
     }
 

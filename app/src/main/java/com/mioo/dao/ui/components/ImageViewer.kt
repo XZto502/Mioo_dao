@@ -878,22 +878,6 @@ private fun ZoomableImageContainer(
     val onZoomedChangedState = rememberUpdatedState(onZoomedChanged)
     val onTapDismissState = rememberUpdatedState(onTapDismiss)
 
-    // 旋转/镜像的平滑过渡；角度用连续累加值，避免 270°→0° 时动画倒转
-    val animatedRotation by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = transform.cumulativeRotation,
-        animationSpec = androidx.compose.animation.core.tween(220),
-        label = "viewerRotation"
-    )
-    val animatedFlipX by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (transform.flippedH) -1f else 1f,
-        animationSpec = androidx.compose.animation.core.tween(180),
-        label = "viewerFlipX"
-    )
-    val animatedFlipY by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (transform.flippedV) -1f else 1f,
-        animationSpec = androidx.compose.animation.core.tween(180),
-        label = "viewerFlipY"
-    )
     val isRotatedQuarter = transform.normalizedAngle == 90 || transform.normalizedAngle == 270
 
     // 上报高宽比（长图入口判断）
@@ -1083,9 +1067,10 @@ private fun ZoomableImageContainer(
                     if (isRotatedQuarter && iw > 0f && ih > 0f) {
                         base = min(size.width / ih, size.height / iw).coerceIn(0.25f, 3f)
                     }
-                    rotationZ = animatedRotation
-                    scaleX = safeScale * base * animatedFlipX
-                    scaleY = safeScale * base * animatedFlipY
+                    // 旋转/镜像直接生效，不做动画（用户指定）
+                    rotationZ = transform.cumulativeRotation
+                    scaleX = safeScale * base * (if (transform.flippedH) -1f else 1f)
+                    scaleY = safeScale * base * (if (transform.flippedV) -1f else 1f)
                     translationX = if (offsetX.isFinite()) offsetX else 0f
                     translationY = if (offsetY.isFinite()) offsetY else 0f
                 }
