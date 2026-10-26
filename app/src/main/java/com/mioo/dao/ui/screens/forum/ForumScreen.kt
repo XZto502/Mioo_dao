@@ -400,23 +400,7 @@ fun ForumScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        val expanding = groupCollapsed
-                                        settingsViewModel.toggleForumGroupExpand(group.id)
-                                        // 展开靠底部的分类（生活/管理）时，把分类头连同新展开的子板块滚进可视区
-                                        if (expanding) {
-                                            drawerListState.layoutInfo.visibleItemsInfo
-                                                .firstOrNull { it.key == "header_${group.id}" }
-                                                ?.index
-                                                ?.let { headerIndex ->
-                                                    scope.launch {
-                                                        runCatching {
-                                                            drawerListState.animateScrollToItem(headerIndex)
-                                                        }
-                                                    }
-                                                }
-                                        }
-                                    }
+                                    .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
