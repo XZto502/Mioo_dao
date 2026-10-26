@@ -361,7 +361,7 @@ fun ImageViewer(
                         Text(
                             text = "定位楼层 ›",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF9BB8FF)
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -413,7 +413,7 @@ fun ImageViewer(
                         ViewerCircleButton(
                             icon = Icons.Outlined.Rotate90DegreesCcw,
                             contentDescription = "旋转与镜像",
-                            tint = if (transform.isTransformed) Color(0xFF9BB8FF) else Color.White,
+                            tint = if (transform.isTransformed) MaterialTheme.colorScheme.primary else Color.White,
                             badge = if (transform.normalizedAngle != 0) "${transform.normalizedAngle}°" else null,
                             onClick = {
                                 showSaucePanel = false
@@ -425,7 +425,7 @@ fun ImageViewer(
                         ViewerCircleButton(
                             icon = Icons.Outlined.SwapVert,
                             contentDescription = "条漫长图模式",
-                            tint = if (stripMode) Color(0xFF9BB8FF) else Color.White,
+                            tint = if (stripMode) MaterialTheme.colorScheme.primary else Color.White,
                             onClick = {
                                 showTransformPanel = false
                                 showSaucePanel = false
@@ -551,13 +551,13 @@ private fun ViewerCircleButton(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .background(Color(0xFF9BB8FF), CircleShape)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .padding(horizontal = 4.dp)
             ) {
                 Text(
                     text = badge,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Black,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -588,10 +588,13 @@ private fun TransformPanel(
                 Text(
                     text = "${angle}°",
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
-                    color = if (selected) Color.Black else Color.White,
+                    color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.White,
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(if (selected) Color(0xFF9BB8FF) else Color.White.copy(alpha = 0.08f))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.secondaryContainer
+                            else Color.White.copy(alpha = 0.08f)
+                        )
                         .clickable { onRotateTo(angle) }
                         .padding(horizontal = 14.dp, vertical = 7.dp)
                 )
@@ -635,13 +638,13 @@ private fun TransformToggleChip(
         style = MaterialTheme.typography.labelMedium.copy(
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
         ),
-        color = (if (selected) Color.Black else Color.White).copy(alpha = alpha),
+        color = (if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.White).copy(alpha = alpha),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         modifier = modifier
             .clip(RoundedCornerShape(50))
             .background(
                 when {
-                    selected -> Color(0xFF9BB8FF)
+                    selected -> MaterialTheme.colorScheme.secondaryContainer
                     else -> Color.White.copy(alpha = 0.08f)
                 }
             )
@@ -794,7 +797,7 @@ private fun AlbumGridSheet(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .border(2.dp, Color(0xFF9BB8FF), RoundedCornerShape(12.dp))
+                                    .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                             )
                         }
                     }
