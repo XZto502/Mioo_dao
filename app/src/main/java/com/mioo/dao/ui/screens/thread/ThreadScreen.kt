@@ -1590,11 +1590,6 @@ private fun ReportDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "将以新串发送到值班室，包含对 No.$targetNo 的引用",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 OutlinedTextField(
                     value = titleText,
                     onValueChange = { titleText = it },
