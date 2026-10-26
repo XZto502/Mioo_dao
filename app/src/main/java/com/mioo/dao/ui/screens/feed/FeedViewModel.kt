@@ -37,6 +37,9 @@ private const val REPLY_COUNT_ENRICH_LIMIT = 80
 @Immutable
 data class FeedUiState(
     val bookmarkedThreads: List<BookmarkEntity> = emptyList(),
+    /** 已离线串列表（按下载时间倒序）——「已离线」标签的主列表。 */
+    val offlineSummaries: List<com.mioo.dao.data.local.OfflineThreadSummary> = emptyList(),
+    /** 尚未离线完成的本地收藏（后台巡检补齐中），排在离线列表后展示。 */
     val localDisplayItems: List<BookmarkListItem> = emptyList(),
     val remoteThreads: List<Thread> = emptyList(),
     val remoteDisplayItems: List<ThreadListItem> = emptyList(),
@@ -44,7 +47,9 @@ data class FeedUiState(
     val remoteReplyCounts: Map<String, Int> = emptyMap(),
     val feedFolders: List<FeedFolder> = emptyList(),
     val isLoading: Boolean = false,
-    val selectedFolderId: String? = null
+    val selectedFolderId: String? = null,
+    /** 正在重新离线的串号（更新按钮转圈）。 */
+    val offlineUpdatingIds: Set<String> = emptySet()
 )
 
 @HiltViewModel
@@ -65,15 +70,22 @@ class FeedViewModel @Inject constructor(
     private var remoteEndReached = false
 
     init {
-        // Local bookmarks → prebuilt display items
+        // 「已离线」标签：离线串列表 + 尚未离线的存量收藏（后台巡检会逐串补齐）
         viewModelScope.launch {
-            threadRepository.getBookmarks().collect { bookmarks ->
+            combine(
+                threadRepository.getOfflineThreadSummaries(),
+                threadRepository.getBookmarks()
+            ) { summaries, bookmarks ->
+                val offlineIds = summaries.mapTo(HashSet()) { it.threadId }
+                summaries to bookmarks.filter { it.id !in offlineIds }
+            }.collect { (summaries, pending) ->
                 val items = withContext(Dispatchers.Default) {
-                    bookmarks.toBookmarkListItems()
+                    pending.toBookmarkListItems()
                 }
                 _uiState.update {
                     it.copy(
-                        bookmarkedThreads = bookmarks,
+                        bookmarkedThreads = pending,
+                        offlineSummaries = summaries,
                         localDisplayItems = items
                     )
                 }
@@ -252,6 +264,37 @@ class FeedViewModel @Inject constructor(
     fun unsubscribe(threadId: String) {
         viewModelScope.launch {
             threadRepository.removeBookmark(threadId)
+        }
+    }
+
+    /** 删除单个离线串（同时取消本地收藏、清离线 JSON 与图片）。 */
+    fun deleteOffline(threadId: String) {
+        viewModelScope.launch {
+            threadRepository.deleteOfflineThread(threadId)
+        }
+    }
+
+    /** 重新拉取最新页（复用整串离线下载，已缓存页/图按 key 覆盖或跳过）。 */
+    fun updateOffline(
+        summary: com.mioo.dao.data.local.OfflineThreadSummary,
+        onResult: (String) -> Unit
+    ) {
+        val id = summary.threadId
+        if (id in _uiState.value.offlineUpdatingIds) return
+        _uiState.update { it.copy(offlineUpdatingIds = it.offlineUpdatingIds + id) }
+        viewModelScope.launch {
+            try {
+                threadRepository.downloadFullThread(id).collect { response ->
+                    onResult(
+                        when (response) {
+                            is XdResponse.Success -> "离线缓存已更新"
+                            is XdResponse.Error -> "更新失败: ${response.message}"
+                        }
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(offlineUpdatingIds = it.offlineUpdatingIds - id) }
+            }
         }
     }
 
