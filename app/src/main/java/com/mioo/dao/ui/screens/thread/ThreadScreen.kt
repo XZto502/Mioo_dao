@@ -991,17 +991,6 @@ private fun Md3MenuPillItem(
     }
 }
 
-/** 菜单分组微标题（如「本地收藏夹」）。 */
-@Composable
-private fun Md3MenuSectionLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-    )
-}
-
 /**
  * Collects [ThreadViewModel.chromeUiState] so bookmark / download toggles do not
  * recompose the list body (which only watches [ThreadViewModel.listUiState]).
@@ -1119,7 +1108,6 @@ private fun ThreadChromeActions(
                     }
                 )
             }
-            Md3MenuSectionLabel("本地收藏夹")
             chrome.feedFolders.forEach { folder ->
                 val inFolder = folder.uuid in chrome.cloudFolderUuids
                 Md3MenuPillItem(
