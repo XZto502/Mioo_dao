@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -47,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,6 +63,7 @@ import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Send
@@ -70,12 +73,15 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ButtonDefaults
@@ -118,7 +124,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -160,6 +165,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -866,6 +872,137 @@ fun ThreadScreen(
 }
 
 /**
+ * M3 1.2.x 通用深邃圆角菜单容器。DropdownMenu 本体在 1.2 没有 shape/颜色参数，
+ * 用局部 MaterialTheme 覆写 surface / surfaceTint / shapes.extraSmall 实现。
+ * surfaceTint 置透明可关掉 1.2.x 默认 tonalElevation 叠 surfaceTint 的泛白灰雾；
+ * 底色与底部回复栏胶囊同源（深色炭黑 / 浅色清爽白）。
+ */
+@Composable
+private fun Md3DropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    offset: DpOffset = DpOffset(x = (-8).dp, y = 6.dp), // 默认向左偏移 8.dp 避免死贴屏幕右边框
+    cornerRadius: Dp = 18.dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    // 与底部回复栏胶囊保持一致的深邃炭黑/清爽浅白底色
+    val menuBgColor = if (isDark) Color(0xFF17191E) else Color(0xFFF6F7F9)
+    val menuBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
+
+    MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme.copy(
+            surface = menuBgColor,
+            surfaceTint = Color.Transparent, // 关键：彻底关闭 1.2.x 默认泛白发灰的 Tonal Elevation 雾气
+            // 容器色同时压到 surfaceContainer 系角色：1.2 菜单无论读取哪个容器角色都落在同一底色
+            surfaceContainer = menuBgColor,
+            surfaceContainerHigh = menuBgColor,
+            surfaceContainerHighest = menuBgColor
+        ),
+        shapes = MaterialTheme.shapes.copy(
+            extraSmall = RoundedCornerShape(cornerRadius)
+        )
+    ) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismissRequest,
+            offset = offset,
+            modifier = modifier.border(1.dp, menuBorderColor, RoundedCornerShape(cornerRadius))
+        ) {
+            // 原生 DropdownMenu 已自带上下 8.dp padding，此处 vertical 设为 0.dp 保证四边留白对称
+            Column(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                content = content
+            )
+        }
+    }
+}
+
+/**
+ * 紧凑胶囊菜单项：selected 填 secondaryContainer 底并加粗 + 尾部对号；destructive 为移除类
+ * 警示态（浅 errorContainer 底 + error 前景）；disabled 降透明度并禁点。
+ */
+@Composable
+private fun Md3MenuPillItem(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leadingIcon: ImageVector? = null,
+    selected: Boolean = false,
+    destructive: Boolean = false,
+    enabled: Boolean = true
+) {
+    val containerColor = when {
+        destructive -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        selected -> MaterialTheme.colorScheme.secondaryContainer
+        else -> Color.Transparent
+    }
+    val contentColor = when {
+        destructive -> MaterialTheme.colorScheme.error
+        selected -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val leadingTint = when {
+        destructive -> MaterialTheme.colorScheme.error
+        selected -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val alpha = if (enabled) 1f else 0.5f
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(12.dp),
+        color = containerColor,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            leadingIcon?.let { icon ->
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = leadingTint.copy(alpha = alpha)
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontSize = 13.5.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                ),
+                color = contentColor.copy(alpha = alpha)
+            )
+            if (selected) {
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = contentColor.copy(alpha = alpha)
+                )
+            }
+        }
+    }
+}
+
+/** 菜单分组微标题（如「本地收藏夹」）。 */
+@Composable
+private fun Md3MenuSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+    )
+}
+
+/**
  * Collects [ThreadViewModel.chromeUiState] so bookmark / download toggles do not
  * recompose the list body (which only watches [ThreadViewModel.listUiState]).
  */
@@ -965,13 +1102,15 @@ private fun ThreadChromeActions(
             )
         }
 
-        DropdownMenu(
+        Md3DropdownMenu(
             expanded = showBookmarkMenu,
             onDismissRequest = { onShowBookmarkMenuChange(false) }
         ) {
             if (chrome.isCloudSubscribed) {
-                DropdownMenuItem(
-                    text = { Text("从云端收藏夹移除") },
+                Md3MenuPillItem(
+                    label = "从云端收藏夹移除",
+                    leadingIcon = Icons.Outlined.CloudOff,
+                    destructive = true,
                     onClick = {
                         onShowBookmarkMenuChange(false)
                         viewModel.removeCloudSubscription { msg ->
@@ -980,9 +1119,13 @@ private fun ThreadChromeActions(
                     }
                 )
             }
+            Md3MenuSectionLabel("本地收藏夹")
             chrome.feedFolders.forEach { folder ->
-                DropdownMenuItem(
-                    text = { Text(folder.name) },
+                val inFolder = folder.uuid in chrome.cloudFolderUuids
+                Md3MenuPillItem(
+                    label = folder.name,
+                    leadingIcon = if (inFolder) Icons.Default.Folder else Icons.Outlined.Folder,
+                    selected = inFolder,
                     onClick = {
                         onShowBookmarkMenuChange(false)
                         viewModel.toggleBookmark(folder.uuid) { msg ->
@@ -1002,90 +1145,65 @@ private fun ThreadChromeActions(
             Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
         }
 
-        DropdownMenu(
+        Md3DropdownMenu(
             expanded = showOverflowMenu,
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
-            DropdownMenuItem(
-                text = { Text("分享") },
+            Md3MenuPillItem(
+                label = "分享",
+                leadingIcon = Icons.Outlined.Share,
                 onClick = {
                     onShowOverflowMenuChange(false)
                     onShare()
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Share, contentDescription = null)
                 }
             )
-            DropdownMenuItem(
-                text = { Text("只看图片") },
+            Md3MenuPillItem(
+                label = "只看图片",
+                leadingIcon = Icons.Outlined.Image,
+                selected = showImagesOnly,
                 onClick = {
                     onShowOverflowMenuChange(false)
                     viewModel.toggleShowImagesOnly()
-                },
-                leadingIcon = {
-                    if (showImagesOnly) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
                 }
             )
-            androidx.compose.material3.HorizontalDivider()
             when {
-                chrome.isDownloading -> DropdownMenuItem(
-                    text = { Text("正在下载…") },
-                    onClick = {},
-                    leadingIcon = {
-                        Icon(Icons.Default.Download, contentDescription = null)
-                    },
-                    enabled = false
+                chrome.isDownloading -> Md3MenuPillItem(
+                    label = "正在下载…",
+                    leadingIcon = Icons.Default.Download,
+                    enabled = false,
+                    onClick = {}
                 )
                 chrome.isOfflineSaved -> {
-                    DropdownMenuItem(
-                        text = { Text("更新离线缓存 (已保存)") },
+                    Md3MenuPillItem(
+                        label = "更新离线缓存 (已保存)",
+                        leadingIcon = Icons.Default.DownloadDone,
                         onClick = {
                             onShowOverflowMenuChange(false)
                             Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
                             viewModel.downloadThread { msg ->
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             }
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.DownloadDone,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
                         }
                     )
-                    DropdownMenuItem(
-                        text = { Text("删除离线缓存") },
+                    Md3MenuPillItem(
+                        label = "删除离线缓存",
+                        leadingIcon = Icons.Outlined.DeleteOutline,
+                        destructive = true,
                         onClick = {
                             onShowOverflowMenuChange(false)
                             showRemoveOffline = true
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Outlined.DeleteOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
                         }
                     )
                 }
-                else -> DropdownMenuItem(
-                    text = { Text("离线下载本串") },
+                else -> Md3MenuPillItem(
+                    label = "离线下载本串",
+                    leadingIcon = Icons.Default.Download,
                     onClick = {
                         onShowOverflowMenuChange(false)
                         Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
                         viewModel.downloadThread { msg ->
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Download, contentDescription = null)
                     }
                 )
             }

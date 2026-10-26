@@ -44,4 +44,8 @@ interface CloudFeedDao {
     /** 记录一次补抓到的回复总数；同一串可能在多个夹里，按 threadId 全量更新。 */
     @Query("UPDATE cloud_feed_threads SET replyCount = :count WHERE threadId = :tid")
     suspend fun updateReplyCount(tid: String, count: Int)
+
+    /** 响应式版 feedUuidsFor：收藏菜单按夹显示"已收藏进该夹"态。 */
+    @Query("SELECT feedUuid FROM cloud_feed_threads WHERE threadId = :tid")
+    fun observeFeedUuidsFor(tid: String): Flow<List<String>>
 }

@@ -77,7 +77,9 @@ data class ThreadChromeUiState(
     val feedFolders: List<FeedFolder> = emptyList(),
     val isDownloading: Boolean = false,
     /** 本串已离线（offline_threads 有标记）——三点菜单显示「更新离线缓存 (已保存)」。 */
-    val isOfflineSaved: Boolean = false
+    val isOfflineSaved: Boolean = false,
+    /** 本串已缓存所属的云端收藏夹 uuid 集合（收藏菜单按夹显示"已收藏进该夹"）。 */
+    val cloudFolderUuids: Set<String> = emptySet()
 )
 
 /** Nested >>No.xxxx popup — isolated so open/close never invalidates the list. */
@@ -204,6 +206,13 @@ class ThreadViewModel @Inject constructor(
             // 本串离线状态：下载完成/删除离线后三点菜单文案实时翻转
             threadRepository.isThreadDownloaded(threadId).collect { downloaded ->
                 _chromeState.update { it.copy(isOfflineSaved = downloaded) }
+            }
+        }
+
+        viewModelScope.launch {
+            // 本串已缓存所属的云端收藏夹：收藏菜单按夹显示"已收藏进该夹"态
+            threadRepository.observeCloudFolderUuids(threadId).collect { uuids ->
+                _chromeState.update { it.copy(cloudFolderUuids = uuids) }
             }
         }
 
