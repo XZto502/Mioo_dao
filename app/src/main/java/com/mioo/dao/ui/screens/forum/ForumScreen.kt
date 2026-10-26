@@ -10,6 +10,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -393,58 +400,80 @@ fun ForumScreen(
                         }
                     }
 
-                    // Normal Forum Groups
+                    // Normal Forum Groups — 每组一个 item，展开/收起整体做手风琴动画
                     uiState.forumGroups.forEach { group ->
-                        val groupCollapsed = !forumSettings.expandedForumGroups.contains(group.id)
-                        item(key = "header_${group.id}", contentType = "drawer_header") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = group.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = "${group.forums.size}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(end = 6.dp)
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ExpandMore,
-                                    contentDescription = if (groupCollapsed) "展开分类" else "收起分类",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        val groupExpanded = forumSettings.expandedForumGroups.contains(group.id)
+                        item(key = "group_${group.id}", contentType = "drawer_group") {
+                            Column {
+                                Row(
                                     modifier = Modifier
-                                        .size(18.dp)
-                                        .rotate(if (groupCollapsed) 0f else 180f)
-                                )
-                            }
-                        }
-                        if (!groupCollapsed) {
-                            items(group.forums, key = { "g${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
-                                val isPinned = forumSettings.pinnedForums.contains(forum.id)
-                                ForumDrawerItem(
-                                    name = forum.name,
-                                    isSelected = forum.id == viewModel.forumId,
-                                    showStar = isPinned,
-                                    starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                    onClick = { selectBoard(forum.id, forum.name) },
-                                    onLongClick = {
-                                        settingsViewModel.togglePinForum(forum.id)
-                                        Toast.makeText(
-                                            context,
-                                            if (isPinned) "已取消置顶" else "已将版块置顶",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        .fillMaxWidth()
+                                        .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = group.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${group.forums.size}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 6.dp)
+                                    )
+                                    val chevronRotation by animateFloatAsState(
+                                        targetValue = if (groupExpanded) 180f else 0f,
+                                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                                        label = "drawerChevron"
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ExpandMore,
+                                        contentDescription = if (groupExpanded) "收起分类" else "展开分类",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .rotate(chevronRotation)
+                                    )
+                                }
+                                // 收起时 AnimatedVisibility 不组合内容，抽屉的懒加载不受影响
+                                AnimatedVisibility(
+                                    visible = groupExpanded,
+                                    enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                                        expandVertically(
+                                            animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                            expandFrom = Alignment.Top
+                                        ),
+                                    exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
+                                        shrinkVertically(
+                                            animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                            shrinkTowards = Alignment.Top
+                                        )
+                                ) {
+                                    Column {
+                                        group.forums.forEach { forum ->
+                                            val isPinned = forumSettings.pinnedForums.contains(forum.id)
+                                            ForumDrawerItem(
+                                                name = forum.name,
+                                                isSelected = forum.id == viewModel.forumId,
+                                                showStar = isPinned,
+                                                starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                                onClick = { selectBoard(forum.id, forum.name) },
+                                                onLongClick = {
+                                                    settingsViewModel.togglePinForum(forum.id)
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (isPinned) "已取消置顶" else "已将版块置顶",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            )
+                                        }
                                     }
-                                )
+                                }
                             }
                         }
                     }
