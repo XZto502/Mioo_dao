@@ -123,7 +123,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -872,17 +871,18 @@ fun ThreadScreen(
 }
 
 /**
- * M3 1.2.x 通用深邃圆角菜单容器。DropdownMenu 本体在 1.2 没有 shape/颜色参数，
- * 用局部 MaterialTheme 覆写 surface / surfaceTint / shapes.extraSmall 实现。
- * surfaceTint 置透明可关掉 1.2.x 默认 tonalElevation 叠 surfaceTint 的泛白灰雾；
- * 底色与底部回复栏胶囊同源（深色炭黑 / 浅色清爽白）。
+ * M3 1.2.x 兼容的 18dp 圆角胶囊菜单容器。
+ * 原生 DropdownMenu 的落点由 provider 按窗口钳制：右缘图标下的窄菜单会被推到
+ * 屏幕边上，看起来"错位"。这里改用自绘 Popup 确定性定位——菜单挂在锚点图标
+ * 正下方、右缘与图标右缘对齐（与官方版行为一致），进出场与饼干菜单同款缩放淡入。
+ * 底色/描边直接给 Surface，无需再主题覆写。
  */
 @Composable
 private fun Md3DropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
-    offset: DpOffset = DpOffset(x = (-8).dp, y = 6.dp), // 默认向左偏移 8.dp 避免死贴屏幕右边框
+    offsetY: Dp = 6.dp,
     cornerRadius: Dp = 18.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -890,32 +890,58 @@ private fun Md3DropdownMenu(
     // 与底部回复栏胶囊保持一致的深邃炭黑/清爽浅白底色
     val menuBgColor = if (isDark) Color(0xFF17191E) else Color(0xFFF6F7F9)
     val menuBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
-
-    MaterialTheme(
-        colorScheme = MaterialTheme.colorScheme.copy(
-            surface = menuBgColor,
-            surfaceTint = Color.Transparent, // 关键：彻底关闭 1.2.x 默认泛白发灰的 Tonal Elevation 雾气
-            // 容器色同时压到 surfaceContainer 系角色：1.2 菜单无论读取哪个容器角色都落在同一底色
-            surfaceContainer = menuBgColor,
-            surfaceContainerHigh = menuBgColor,
-            surfaceContainerHighest = menuBgColor
-        ),
-        shapes = MaterialTheme.shapes.copy(
-            extraSmall = RoundedCornerShape(cornerRadius)
-        )
-    ) {
-        DropdownMenu(
-            expanded = expanded,
+    // 菜单挂载状态：收起动画播完才卸载 Popup（isIdle 前不能走 if）
+    val menuState = remember { MutableTransitionState(false) }
+    menuState.targetState = expanded
+    if (menuState.currentState || menuState.targetState || !menuState.isIdle) {
+        val density = LocalDensity.current
+        // 锚点 IconButton 固定 40dp：菜单顶边 = 图标底边 + offsetY
+        val topRightOffset = IntOffset(0, with(density) { (40.dp + offsetY).roundToPx() })
+        Popup(
+            alignment = Alignment.TopEnd,
+            offset = topRightOffset,
             onDismissRequest = onDismissRequest,
-            offset = offset,
-            modifier = modifier.border(1.dp, menuBorderColor, RoundedCornerShape(cornerRadius))
+            properties = PopupProperties(focusable = true)
         ) {
-            // 原生 DropdownMenu 已自带上下 8.dp padding，此处 vertical 设为 0.dp 保证四边留白对称
-            Column(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 0.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                content = content
-            )
+            val reducedMotion = isReducedMotionEnabled()
+            AnimatedVisibility(
+                visibleState = menuState,
+                enter = if (reducedMotion) {
+                    EnterTransition.None
+                } else {
+                    scaleIn(
+                        initialScale = 0.9f,
+                        animationSpec = tween(160),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    ) + fadeIn(tween(120))
+                },
+                exit = if (reducedMotion) {
+                    ExitTransition.None
+                } else {
+                    scaleOut(
+                        targetScale = 0.94f,
+                        animationSpec = tween(140),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    ) + fadeOut(tween(120))
+                }
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(cornerRadius),
+                    color = menuBgColor,
+                    shadowElevation = 6.dp,
+                    border = BorderStroke(1.dp, menuBorderColor),
+                    modifier = modifier.widthIn(min = 120.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 6.dp)
+                            .heightIn(max = 340.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        content = content
+                    )
+                }
+            }
         }
     }
 }
