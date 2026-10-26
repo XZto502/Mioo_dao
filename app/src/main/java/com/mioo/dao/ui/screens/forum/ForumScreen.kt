@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -160,6 +161,8 @@ fun ForumScreen(
     onColdStartContentReady: () -> Unit = {},
     /** 底部 dock 栏下沉进度 0f(可见)→1f(隐藏)；发串按钮随之向内缩小淡出。 */
     dockSinkFraction: () -> Float = { 0f },
+    /** 抽屉打开/正在打开时上报主框架：悬浮 dock 滑出屏幕让位。 */
+    onDrawerOpenChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -216,6 +219,10 @@ fun ForumScreen(
     val drawerBlocksMainList =
         drawerState.currentValue != DrawerValue.Closed ||
             drawerState.targetValue != DrawerValue.Closed
+
+    // 打开中（含手势拖过阈值）→ 主框架把悬浮 dock 滑出屏幕，避免压在抽屉上拦截点击
+    val drawerOverDock = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open
+    LaunchedEffect(drawerOverDock) { onDrawerOpenChange(drawerOverDock) }
 
     val pullToRefreshState = rememberPullToRefreshState()
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
@@ -339,10 +346,15 @@ fun ForumScreen(
                 }
                 LazyColumn(
                     state = drawerListState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .navigationBarsPadding(),
-                    contentPadding = PaddingValues(12.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    // 底部垫出悬浮 dock 的遮挡区：末尾板块（版务/百脑汇）能滑出底栏之上
+                    contentPadding = PaddingValues(
+                        top = 8.dp,
+                        bottom = WindowInsets.navigationBars.asPaddingValues()
+                            .calculateBottomPadding() + 112.dp,
+                        start = 12.dp,
+                        end = 12.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (pinnedForumsList.isNotEmpty()) {
@@ -388,7 +400,23 @@ fun ForumScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
+                                    .clickable {
+                                        val expanding = groupCollapsed
+                                        settingsViewModel.toggleForumGroupExpand(group.id)
+                                        // 展开靠底部的分类（生活/管理）时，把分类头连同新展开的子板块滚进可视区
+                                        if (expanding) {
+                                            drawerListState.layoutInfo.visibleItemsInfo
+                                                .firstOrNull { it.key == "header_${group.id}" }
+                                                ?.index
+                                                ?.let { headerIndex ->
+                                                    scope.launch {
+                                                        runCatching {
+                                                            drawerListState.animateScrollToItem(headerIndex)
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                    }
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {

@@ -2,8 +2,13 @@ package com.mioo.dao.ui.navigation
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.navigation.NavBackStackEntry
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -174,6 +179,8 @@ fun MiooDaoNavGraph(
     }
 
     val showBottomBar = currentRoute == Screen.Home.route
+    // 切换板块抽屉打开/正在打开时收起悬浮 dock：不遮抽屉、不拦点击
+    var forumDrawerOpen by remember { mutableStateOf(false) }
     // Scroll the feed downward (finger up) and the tab capsule slides off the bottom.
     // A short reverse drag, or hitting the top, brings it back.
     var bottomBarVisible by remember { mutableStateOf(true) }
@@ -239,51 +246,58 @@ fun MiooDaoNavGraph(
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                // Outer box draws into the gesture nav area so the 小白条 is immersive;
-                // capsule itself stays above the system inset.
-                // offset (not graphicsLayer) moves the touch target with the slide.
-                val slideFraction = bottomBarSlide.value
-                val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
-                Box(
-                    modifier = Modifier
-                        .onSizeChanged { bottomBarHeightPx = it.height }
-                        .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
+                AnimatedVisibility(
+                    visible = !forumDrawerOpen,
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut()
                 ) {
-                    NavigationBar(
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        containerColor = DaoTheme.colors.glassNavBar,
-                        tonalElevation = 0.dp,
+                    // Outer box draws into the gesture nav area so the 小白条 is immersive;
+                    // capsule itself stays above the system inset.
+                    // offset (not graphicsLayer) moves the touch target with the slide.
+                    val slideFraction = bottomBarSlide.value
+                    val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
+                    Box(
                         modifier = Modifier
+                            .onSizeChanged { bottomBarHeightPx = it.height }
+                            .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
                             .fillMaxWidth()
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-                            .border(
-                                width = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-                            )
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        bottomBarItems.forEach { (index, icon, label) ->
-                            NavigationBarItem(
-                                icon = { Icon(icon, contentDescription = label) },
-                                label = { Text(label) },
-                                selected = tabPagerState.targetPage == index,
-                                onClick = {
-                                    if (tabPagerState.targetPage == index) return@NavigationBarItem
-                                    tabScope.launch {
-                                        if (reducedMotion) {
-                                            tabPagerState.scrollToPage(index)
-                                        } else {
-                                            tabPagerState.animateScrollToPage(
-                                                page = index,
-                                                animationSpec = MiooMotion.tabPagerSpring()
-                                            )
+                        NavigationBar(
+                            windowInsets = WindowInsets(0, 0, 0, 0),
+                            containerColor = DaoTheme.colors.glassNavBar,
+                            tonalElevation = 0.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                                .border(
+                                    width = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                                )
+                        ) {
+                            bottomBarItems.forEach { (index, icon, label) ->
+                                NavigationBarItem(
+                                    icon = { Icon(icon, contentDescription = label) },
+                                    label = { Text(label) },
+                                    selected = tabPagerState.targetPage == index,
+                                    onClick = {
+                                        if (tabPagerState.targetPage == index) return@NavigationBarItem
+                                        tabScope.launch {
+                                            if (reducedMotion) {
+                                                tabPagerState.scrollToPage(index)
+                                            } else {
+                                                tabPagerState.animateScrollToPage(
+                                                    page = index,
+                                                    animationSpec = MiooMotion.tabPagerSpring()
+                                                )
+                                            }
                                         }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -314,6 +328,7 @@ fun MiooDaoNavGraph(
                     onNavigateToThread = navigateToThread,
                     onColdStartContentReady = onColdStartContentReady,
                     dockSinkFraction = { bottomBarSlide.value },
+                    onForumDrawerOpenChange = { forumDrawerOpen = it },
                     onNavigateToSettings = {
                         navController.navigate(Screen.SettingsDetail.route)
                     },
@@ -413,6 +428,7 @@ private fun MainTabs(
     onNavigateToThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float = { 0f },
+    onForumDrawerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToDrafts: () -> Unit,
@@ -434,7 +450,8 @@ private fun MainTabs(
                         viewModel = viewModel,
                         onNavigateToThread = onNavigateToThread,
                         onColdStartContentReady = onColdStartContentReady,
-                        dockSinkFraction = dockSinkFraction
+                        dockSinkFraction = dockSinkFraction,
+                        onDrawerOpenChange = onForumDrawerOpenChange
                     )
                 }
                 1 -> {
