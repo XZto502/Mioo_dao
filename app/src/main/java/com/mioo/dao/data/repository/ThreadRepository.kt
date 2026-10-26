@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -117,6 +118,9 @@ interface ThreadRepository {
 
     /** Cloud-feed membership cache: is this thread in any known 云端收藏夹? */
     fun isInCloudFeed(tid: String): Flow<Boolean>
+
+    /** 该串已缓存所属的云端收藏夹 uuid 集合（收藏菜单按夹显示"已收藏进该夹"态）。 */
+    fun observeCloudFolderUuids(tid: String): Flow<Set<String>>
 
     /** Remove [tid] from every cloud feed it is cached under. Emits removed count. */
     fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>>
@@ -835,6 +839,9 @@ class ThreadRepositoryImpl @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     override fun isInCloudFeed(tid: String): Flow<Boolean> = cloudFeedDao.isMember(tid)
+
+    override fun observeCloudFolderUuids(tid: String): Flow<Set<String>> =
+        cloudFeedDao.observeFeedUuidsFor(tid).map { it.toSet() }
 
     // --- 发言草稿箱 ---
 
