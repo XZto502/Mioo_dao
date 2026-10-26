@@ -184,6 +184,7 @@ import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
+import com.mioo.dao.ui.components.ViewerImage
 import com.mioo.dao.ui.components.IslandImage
 import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
@@ -813,13 +814,50 @@ fun ThreadScreen(
                 }
                 list.distinct()
             }
+            // 带楼层元数据的看图条目：九宫格标注 + 底部「定位楼层」
+            val imageMeta = remember(listUi.displayItems, listUi.mainPostData, listUi.thread) {
+                val list = mutableListOf<ViewerImage>()
+                listUi.mainPostData?.imageUrl?.let { url ->
+                    list.add(
+                        ViewerImage(
+                            url = url,
+                            postId = listUi.thread?.idStr,
+                            snippet = listUi.thread?.content?.let(::plainTextSnippet)
+                        )
+                    )
+                }
+                listUi.displayItems.forEach { item ->
+                    item.postData.imageUrl?.let { url ->
+                        list.add(ViewerImage(url = url, postId = item.idStr, snippet = plainTextSnippet(item.rawContent)))
+                    }
+                }
+                list.distinctBy { it.url }
+            }
 
             // Image Viewer Overlay
             activeImageUrl?.let { imageUrl ->
                 ImageViewer(
                     initialImageUrl = imageUrl,
                     imageUrls = imageUrls,
-                    onDismiss = { activeImageUrl = null }
+                    imageMeta = imageMeta,
+                    onDismiss = { activeImageUrl = null },
+                    onLocateFloor = { postId ->
+                        activeImageUrl = null
+                        val mainId = listUi.thread?.idStr
+                        val replyIdx = listUi.displayItems.indexOfFirst { it.idStr == postId }
+                        val index = when {
+                            postId == mainId && listUi.startPage <= 1 -> 0
+                            replyIdx >= 0 -> replyIdx + if (listUi.startPage <= 1) 1 else 0
+                            else -> -1
+                        }
+                        if (index >= 0) {
+                            scope.launch {
+                                listState.animateScrollToItem(index)
+                            }
+                        } else {
+                            Toast.makeText(context, "该楼层不在已加载的页里，翻到对应页再定位", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 )
             }
 
@@ -989,6 +1027,19 @@ private fun Md3MenuPillItem(
             }
         }
     }
+}
+
+/** 看图器楼层摘要：剥标签/实体后取前 48 字。 */
+private fun plainTextSnippet(html: String): String {
+    if (html.isBlank()) return ""
+    var text = html.replace(Regex("<[^>]*>"), " ")
+    for ((entity, ch) in listOf(
+        "&nbsp;" to " ", "&gt;" to ">", "&lt;" to "<",
+        "&amp;" to "&", "&quot;" to "\"", "&#39;" to "'"
+    )) {
+        text = text.replace(entity, ch)
+    }
+    return text.replace(Regex("\\s+"), " ").trim().take(48)
 }
 
 /**

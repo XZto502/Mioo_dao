@@ -37,44 +37,52 @@ object ImageDownloader {
         imageUrl: String,
         scope: CoroutineScope
     ) {
+        downloadImageTransformed(context, imageUrl, 0, false, false, scope)
+    }
+
+    /**
+     * 保存图片（可选几何变换）：有旋转/镜像时经 [android.graphics.Matrix] 生成变换后的
+     * Bitmap 再入相册，用户把倒立图/反字梗图转正后存下来的就是转正效果；
+     * 无变换时保留 GIF/PNG/WEBP 原格式直存。
+     */
+    fun downloadImageTransformed(
+        context: Context,
+        imageUrl: String,
+        rotationDegrees: Int,
+        flipX: Boolean,
+        flipY: Boolean,
+        scope: CoroutineScope
+    ) {
         val appContext = context.applicationContext
+        val transformed = rotationDegrees % 360 != 0 || flipX || flipY
         Toast.makeText(appContext, "正在开始保存图片...", Toast.LENGTH_SHORT).show()
 
         scope.launch(Dispatchers.IO) {
             try {
-                val request = Request.Builder().url(imageUrl).build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        toast(appContext, "图片下载失败")
-                        return@launch
-                    }
-                    val body = response.body
-                    if (body == null) {
-                        toast(appContext, "图片下载失败")
-                        return@launch
-                    }
-                    val bytes = readCapped(body.byteStream(), MAX_BYTES)
-                    if (bytes == null) {
-                        toast(appContext, "图片太大，无法保存")
-                        return@launch
-                    }
+                val bytes = fetchBytes(imageUrl) ?: run {
+                    toast(appContext, "图片下载失败")
+                    return@launch
+                }
+                if (!transformed) {
                     val sniffed = sniffImage(bytes)
-                    val saved = if (sniffed != null) {
+                    if (sniffed != null) {
                         val (ext, mime) = sniffed
-                        saveBytes(appContext, bytes, "mioo_image_${System.currentTimeMillis()}.$ext", mime)
-                    } else {
-                        val bitmap = decodeBounded(bytes)
-                        if (bitmap == null) {
-                            toast(appContext, "图片转换失败")
-                            return@launch
-                        }
-                        try {
-                            saveBitmap(appContext, bitmap, "mioo_image_${System.currentTimeMillis()}.jpg")
-                        } finally {
-                            bitmap.recycle()
-                        }
+                        val saved = saveBytes(appContext, bytes, "mioo_image_${System.currentTimeMillis()}.$ext", mime)
+                        toast(appContext, if (saved != null) "图片已成功保存到相册" else "保存失败")
+                        return@launch
                     }
+                }
+                val src = decodeBounded(bytes) ?: run {
+                    toast(appContext, "图片转换失败")
+                    return@launch
+                }
+                val bitmap = transformBitmap(src, rotationDegrees, flipX, flipY)
+                try {
+                    val saved = saveBitmap(appContext, bitmap, "mioo_image_${System.currentTimeMillis()}.jpg")
                     toast(appContext, if (saved != null) "图片已成功保存到相册" else "保存失败")
+                } finally {
+                    if (bitmap !== src) bitmap.recycle()
+                    src.recycle()
                 }
             } catch (_: OutOfMemoryError) {
                 toast(appContext, "图片太大，无法保存")
@@ -82,6 +90,115 @@ object ImageDownloader {
                 toast(appContext, "保存失败")
             }
         }
+    }
+
+    /**
+     * 分享图片（可选几何变换）：写入应用外部专属 share 目录（file_paths 已覆盖），
+     * 经 FileProvider 发 ACTION_SEND。无变换且为原格式时分享原文件。
+     */
+    fun shareImageTransformed(
+        context: Context,
+        imageUrl: String,
+        rotationDegrees: Int,
+        flipX: Boolean,
+        flipY: Boolean,
+        scope: CoroutineScope
+    ) {
+        val appContext = context.applicationContext
+        val transformed = rotationDegrees % 360 != 0 || flipX || flipY
+        Toast.makeText(appContext, "正在准备分享...", Toast.LENGTH_SHORT).show()
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val bytes = fetchBytes(imageUrl) ?: run {
+                    toast(appContext, "图片下载失败")
+                    return@launch
+                }
+                val stamp = System.currentTimeMillis()
+                if (!transformed) {
+                    val sniffed = sniffImage(bytes)
+                    if (sniffed != null) {
+                        val (ext, mime) = sniffed
+                        shareBytes(appContext, bytes, "mioo_share_$stamp.$ext", mime)
+                        return@launch
+                    }
+                }
+                val src = decodeBounded(bytes) ?: run {
+                    toast(appContext, "图片转换失败")
+                    return@launch
+                }
+                val bitmap = transformBitmap(src, rotationDegrees, flipX, flipY)
+                try {
+                    val out = ByteArrayOutputStream()
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)) {
+                        toast(appContext, "图片转换失败")
+                        return@launch
+                    }
+                    shareBytes(appContext, out.toByteArray(), "mioo_share_$stamp.jpg", "image/jpeg")
+                } finally {
+                    if (bitmap !== src) bitmap.recycle()
+                    src.recycle()
+                }
+            } catch (_: OutOfMemoryError) {
+                toast(appContext, "图片太大，无法分享")
+            } catch (_: Exception) {
+                toast(appContext, "分享失败")
+            }
+        }
+    }
+
+    private suspend fun fetchBytes(imageUrl: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url(imageUrl).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body ?: return@withContext null
+                readCapped(body.byteStream(), MAX_BYTES)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 按 [rotationDegrees]/镜像合成新 Bitmap；无变换时原样返回 [src]（调用方按引用判等回收）。 */
+    private fun transformBitmap(src: Bitmap, rotationDegrees: Int, flipX: Boolean, flipY: Boolean): Bitmap {
+        if (rotationDegrees % 360 == 0 && !flipX && !flipY) return src
+        val matrix = android.graphics.Matrix()
+        matrix.postScale(if (flipX) -1f else 1f, if (flipY) -1f else 1f)
+        if (rotationDegrees % 360 != 0) matrix.postRotate(rotationDegrees.toFloat())
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
+    }
+
+    private fun shareBytes(context: Context, bytes: ByteArray, filename: String, mime: String) {
+        val dir = File(context.getExternalFilesDir(null), "share")
+        if (!dir.exists() && !dir.mkdirs()) {
+            toastSync(context, "分享失败")
+            return
+        }
+        // 清掉半小时前的旧分享文件
+        dir.listFiles()?.forEach { file ->
+            if (file.lastModified() < System.currentTimeMillis() - 30 * 60_000L) file.delete()
+        }
+        val file = File(dir, filename)
+        try {
+            file.writeBytes(bytes)
+        } catch (_: Exception) {
+            toastSync(context, "分享失败")
+            return
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = android.content.Intent.createChooser(send, "分享图片")
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
     }
 
     private fun readCapped(stream: java.io.InputStream, maxBytes: Int): ByteArray? {
@@ -220,6 +337,13 @@ object ImageDownloader {
 
     private suspend fun toast(context: Context, message: String) {
         withContext(Dispatchers.Main) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 非协程上下文（如 shareBytes）用的主线程 Toast。 */
+    private fun toastSync(context: Context, message: String) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
