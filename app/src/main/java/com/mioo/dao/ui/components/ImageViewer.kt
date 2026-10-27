@@ -250,9 +250,9 @@ fun ImageViewer(
     ) {
         // Black viewer: light (white) system icons, no opaque nav strip.
         ImmersiveDialogEffect(lightAppearance = false)
-        // 部分 ROM 上 Dialog 内容不铺进导航条 inset 区，底部会露出底下的串内容——
-        // 断言窗口全屏并把导航区涂成不透明黑（看图器本身纯黑，手势条白点照常显示）。
-        // 该监听注册在 ImmersiveDialogEffect 的透明重申之后，每次布局都最后执行、保证黑色生效。
+        // 看图器纯黑不随主题：浅色主题下 Dialog 窗口背景是浅色，透明系统栏后面露出的
+        // 就是它——窗口背景直接涂黑，两条系统栏也在每次布局时强制黑色（本监听注册在
+        // ImmersiveDialogEffect 的透明重申之后，保证最后执行）。
         val viewerView = LocalView.current
         DisposableEffect(viewerView) {
             val window = viewerView.findDialogWindow()
@@ -260,9 +260,14 @@ fun ImageViewer(
                 android.view.WindowManager.LayoutParams.MATCH_PARENT,
                 android.view.WindowManager.LayoutParams.MATCH_PARENT
             )
+            window?.setBackgroundDrawable(
+                android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK)
+            )
             val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                viewerView.findDialogWindow()?.navigationBarColor =
-                    android.graphics.Color.BLACK
+                viewerView.findDialogWindow()?.let { w ->
+                    w.statusBarColor = android.graphics.Color.BLACK
+                    w.navigationBarColor = android.graphics.Color.BLACK
+                }
             }
             val decor = window?.decorView
             decor?.viewTreeObserver?.addOnGlobalLayoutListener(listener)
