@@ -901,7 +901,12 @@ fun ThreadScreen(
     if (showDiceRuleMenu) {
         Dialog(
             onDismissRequest = { showDiceRuleMenu = false },
-            properties = immersiveDialogProperties(dismissOnClickOutside = true)
+            // usePlatformDefaultWidth=false 必须显式给：默认 true 时 Dialog 窗口只有
+            // 屏幕中间一条，scrim 的 fillMaxSize 盖不满全屏（四周漏出底下的串）
+            properties = immersiveDialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnClickOutside = true
+            )
         ) {
             Box(
                 modifier = Modifier
