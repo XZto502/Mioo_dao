@@ -52,6 +52,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
         val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
         val KEY_GLASS_EFFECT_ENABLED = booleanPreferencesKey("glass_effect_enabled")
+        val KEY_DICE_BADGES_ENABLED = booleanPreferencesKey("dice_badges_enabled")
         val KEY_CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
         /** last-notified replyCount snapshot for X-island feed/bookmark poll: "tid:count,tid:count" */
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
@@ -547,6 +548,24 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveGlassEffectEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_GLASS_EFFECT_ENABLED] = enabled
+        }
+    }
+
+    val diceBadgesEnabledFlow: Flow<Boolean> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_DICE_BADGES_ENABLED] ?: true
+        }
+
+    suspend fun saveDiceBadgesEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_DICE_BADGES_ENABLED] = enabled
         }
     }
 

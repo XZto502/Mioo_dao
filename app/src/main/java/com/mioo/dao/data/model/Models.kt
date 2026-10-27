@@ -47,6 +47,8 @@ data class UserSettings(
     val draftBoxEnabled: Boolean = true,
     /** 引用自动显示：关闭后串内页回复正文不再内嵌展开引用卡片，仅保留可点击链接。 */
     val quoteAutoDisplayEnabled: Boolean = true,
+    /** 跑团/安科骰点高亮：关闭后串正文不渲染骰子胶囊徽章。 */
+    val diceBadgesEnabled: Boolean = true,
     /** 省流量模式：列表图片不自动加载，点击单张加载。 */
     val dataSaverEnabled: Boolean = false
 )

@@ -39,7 +39,8 @@ data class DiceBadgeSpec(
     val token: DiceRollToken,
     val tier: DiceTier
 ) {
-    val badgeText: String get() = "🎲 ${token.result} (${token.min}-${token.max})"
+    /** 胶囊文本 = 原文完整内容（出目 + 原区间），如 `96[1,100]`。 */
+    val badgeText: String get() = "${token.result}[${token.min},${token.max}]"
 }
 
 object DiceRoll {

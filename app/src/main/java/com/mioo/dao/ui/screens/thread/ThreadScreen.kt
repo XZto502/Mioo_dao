@@ -551,7 +551,8 @@ fun ThreadScreen(
         containerColor = Color.Transparent
     ) { paddingValues ->
         CompositionLocalProvider(
-            LocalDicePreset provides dicePreset,
+            // 设置里的骰点高亮开关：关闭时不向渲染层下发规则（正文恢复纯文本）
+            LocalDicePreset provides if (threadSettings.diceBadgesEnabled) dicePreset else null,
             LocalDiceRuleMenu provides { showDiceRuleMenu = true }
         ) {
         Box(

@@ -122,7 +122,11 @@ class SettingsRepository @Inject constructor(
             draftBoxEnabled = draftBoxEnabled,
             quoteAutoDisplayEnabled = quoteAutoDisplay
         )
-    }.stateIn(
+    }
+        .combine(settingsDataStore.diceBadgesEnabledFlow) { settings, diceBadgesEnabled ->
+            settings.copy(diceBadgesEnabled = diceBadgesEnabled)
+        }
+        .stateIn(
         scope = repositoryScope,
         started = SharingStarted.Eagerly,
         initialValue = UserSettings()
@@ -149,6 +153,12 @@ class SettingsRepository @Inject constructor(
     fun updateGlassEffectEnabled(enabled: Boolean) {
         repositoryScope.launch {
             settingsDataStore.saveGlassEffectEnabled(enabled)
+        }
+    }
+
+    fun updateDiceBadgesEnabled(enabled: Boolean) {
+        repositoryScope.launch {
+            settingsDataStore.saveDiceBadgesEnabled(enabled)
         }
     }
 

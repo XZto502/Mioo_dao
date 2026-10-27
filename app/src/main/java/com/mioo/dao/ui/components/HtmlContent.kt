@@ -7,10 +7,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -286,7 +293,7 @@ private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx:
         val id = "dice_${ctx.nextId++}"
         ctx.badges.add(DiceBadgeSpec(id = id, token = m.token, tier = tier))
         val start = length
-        appendInlineContent(id, "🎲")
+        appendInlineContent(id, m.token.result.toString())
         addStringAnnotation(tag = "DICE_CLICK", annotation = id, start = start, end = length)
         last = m.end
     }
@@ -528,7 +535,7 @@ fun HtmlContent(
     )
 }
 
-/** 骰点胶囊本体：20dp 高、6dp 圆角、tnum 等宽数字，四档配色。 */
+/** 骰点胶囊本体：20dp 高、6dp 圆角、骰子矢量图标 + 原文完整内容（出目[起,止]），四档配色。 */
 @Composable
 private fun DiceBadge(spec: DiceBadgeSpec) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -554,7 +561,7 @@ private fun DiceBadge(spec: DiceBadgeSpec) {
             MaterialTheme.colorScheme.error
         )
     }
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(6.dp))
@@ -567,8 +574,16 @@ private fun DiceBadge(spec: DiceBadgeSpec) {
                 }
             )
             .padding(horizontal = 4.dp),
-        contentAlignment = Alignment.Center
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
     ) {
+        Icon(
+            imageVector = Icons.Default.Casino,
+            contentDescription = null,
+            modifier = Modifier.size(11.dp),
+            tint = fg
+        )
+        Spacer(modifier = Modifier.padding(horizontal = 2.dp))
         Text(
             text = spec.badgeText,
             fontSize = 12.5.sp,

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FormatLineSpacing
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.FontDownload
@@ -683,6 +684,49 @@ fun SettingsScreen(
                     androidx.compose.material3.Switch(
                         checked = settings.glassEffectEnabled,
                         onCheckedChange = { viewModel.updateGlassEffectEnabled(it) }
+                    )
+                }
+            }
+        }
+
+        // 骰点高亮（跑团/安科）
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Casino, contentDescription = "骰点高亮")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "骰点高亮（跑团/安科）",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDiceBadgesEnabled(!settings.diceBadgesEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.diceBadgesEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.diceBadgesEnabled,
+                        onCheckedChange = { viewModel.updateDiceBadgesEnabled(it) }
                     )
                 }
             }
