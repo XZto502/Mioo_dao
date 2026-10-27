@@ -58,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -82,11 +83,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.findDialogWindow
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.utils.QrDetector
 import coil.compose.AsyncImage
@@ -153,10 +156,9 @@ fun ImageViewer(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Freeze the page list for the life of this dialog. Thread pagination keeps
-    // rebuilding imageUrls behind the viewer; a pageCount change mid-fling throws
-    // inside PagerState.
-    val pages = remember {
+    // 页面列表不再完全冻结：打开时的索引保持稳定（防 PagerState 滑动中变更页数崩溃），
+    // 但串继续加载出的新图在非滑动状态下只追加到尾部，划到底还能继续往后划
+    val initialPages = remember {
         val raw: List<ViewerImage> = if (imageMeta.isNotEmpty()) {
             imageMeta
         } else {
@@ -167,6 +169,17 @@ fun ImageViewer(
         }
         raw.filter { it.url.isNotBlank() }.distinctBy { it.url }
     }
+    var pages by remember { mutableStateOf(initialPages) }
+    val incomingPages = rememberUpdatedState(
+        if (imageMeta.isNotEmpty()) {
+            imageMeta.filter { it.url.isNotBlank() }.distinctBy { it.url }
+        } else {
+            (if (imageUrls.isNotEmpty()) imageUrls else listOf(initialImageUrl))
+                .filter { it.isNotBlank() }
+                .distinct()
+                .map { ViewerImage(url = it) }
+        }
+    )
     if (pages.isEmpty()) {
         LaunchedEffect(Unit) { onDismiss() }
         return
@@ -178,6 +191,14 @@ fun ImageViewer(
     }
 
     val pagerState = rememberPagerState(initialPage = initialPage) { pages.size }
+    // 串继续加载出的新图：仅在非滑动状态下追加（滑动中变更页数会让 PagerState 抛异常）
+    LaunchedEffect(incomingPages.value, pagerState.isScrollInProgress) {
+        if (pagerState.isScrollInProgress) return@LaunchedEffect
+        val incoming = incomingPages.value
+        val known = pages.mapTo(HashSet(pages.size)) { it.url }
+        val additions = incoming.filter { it.url !in known }
+        if (additions.isNotEmpty()) pages = pages + additions
+    }
     // Boolean only: continuous scale floats must not recompose the pager shell every frame
     var isZoomed by remember { mutableStateOf(false) }
     // 几何变换：切页即重置回初始正视图（规格要求）
@@ -225,6 +246,28 @@ fun ImageViewer(
     ) {
         // Black viewer: light (white) system icons, no opaque nav strip.
         ImmersiveDialogEffect(lightAppearance = false)
+        // 部分 ROM 上 Dialog 内容不铺进导航条 inset 区，底部会露出底下的串内容——
+        // 断言窗口全屏并把导航区涂成不透明黑（看图器本身纯黑，手势条白点照常显示）。
+        // 该监听注册在 ImmersiveDialogEffect 的透明重申之后，每次布局都最后执行、保证黑色生效。
+        val viewerView = LocalView.current
+        DisposableEffect(viewerView) {
+            val window = viewerView.findDialogWindow()
+            window?.setLayout(
+                android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                android.view.WindowManager.LayoutParams.MATCH_PARENT
+            )
+            val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                viewerView.findDialogWindow()?.navigationBarColor =
+                    android.graphics.Color.BLACK
+            }
+            val decor = window?.decorView
+            decor?.viewTreeObserver?.addOnGlobalLayoutListener(listener)
+            onDispose {
+                decor?.viewTreeObserver?.let { observer ->
+                    if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
+                }
+            }
+        }
         Box(
             modifier = modifier
                 .fillMaxSize()
