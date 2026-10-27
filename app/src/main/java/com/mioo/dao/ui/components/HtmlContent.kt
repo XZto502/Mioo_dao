@@ -2,23 +2,37 @@ package com.mioo.dao.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -26,6 +40,12 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.mioo.dao.utils.DiceBadgeSpec
+import com.mioo.dao.utils.DiceRulePreset
+import com.mioo.dao.utils.DiceRoll
+import com.mioo.dao.utils.DiceTier
 import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
@@ -117,15 +137,20 @@ fun String.stripRemainingHtmlTags(): String {
 
 /**
  * Parsed X-Island HTML comments into a styled Compose AnnotatedString.
+ * [dicePreset] 非空时扫描正文骰点并生成内联胶囊占位（智能/安科/CoC/DND 判定见 DiceRoll）。
  */
 fun parseHtmlToAnnotatedString(
     html: String,
     quoteLinkColor: Color,
     defaultGreenColor: Color = Color(0xFF789922),
-    darkTheme: Boolean = false
-): AnnotatedString {
-    return buildAnnotatedString {
-        val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
+    darkTheme: Boolean = false,
+    dicePreset: DiceRulePreset? = null
+): ParsedContent {
+    val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
+    // 智能模式的语义嗅探基于整楼纯文本（安科楼层的叙述与骰点通常同楼）；
+    // 骰点命中时把整楼纯文本作为 nearbyText 传给判定器
+    val ctx = dicePreset?.let { DiceParseCtx(preset = it, fullPlain = cleaned.stripRemainingHtmlTags()) }
+    val annotated = buildAnnotatedString {
         val matcher = HTML_PATTERN.matcher(cleaned)
 
         var lastIndex = 0
@@ -133,7 +158,8 @@ fun parseHtmlToAnnotatedString(
             appendRichText(
                 text = cleaned.substring(lastIndex, matcher.start()),
                 baseColor = null,
-                quoteLinkColor = quoteLinkColor
+                quoteLinkColor = quoteLinkColor,
+                ctx = ctx
             )
 
             val fontColorHex = matcher.group(1)
@@ -149,7 +175,7 @@ fun parseHtmlToAnnotatedString(
                 val color = runCatching {
                     Color(android.graphics.Color.parseColor(fontColorHex))
                 }.getOrDefault(defaultGreenColor).forNight(darkTheme)
-                appendRichText(fontText, color, quoteLinkColor)
+                appendRichText(fontText, color, quoteLinkColor, ctx)
             } else if (spanColor != null && spanText != null) {
                 val color = when (spanColor.trim().lowercase()) {
                     "green" -> Color(0xFF789922)
@@ -159,7 +185,7 @@ fun parseHtmlToAnnotatedString(
                         Color(android.graphics.Color.parseColor(spanColor.trim()))
                     }.getOrDefault(defaultGreenColor)
                 }.forNight(darkTheme)
-                appendRichText(spanText, color, quoteLinkColor)
+                appendRichText(spanText, color, quoteLinkColor, ctx)
             } else if (linkUrl != null && linkText != null) {
                 appendLink(linkText.stripRemainingHtmlTags(), linkUrl)
             } else if (fullQuote != null && postId != null) {
@@ -170,10 +196,26 @@ fun parseHtmlToAnnotatedString(
         }
 
         if (lastIndex < cleaned.length) {
-            appendRichText(cleaned.substring(lastIndex), null, quoteLinkColor)
+            appendRichText(cleaned.substring(lastIndex), null, quoteLinkColor, ctx)
         }
     }
+    return ParsedContent(annotated = annotated, diceBadges = ctx?.badges ?: emptyList())
 }
+
+/** 一次解析里的骰点判定上下文（仅 dicePreset 非空时创建）。 */
+private class DiceParseCtx(
+    val preset: DiceRulePreset,
+    val fullPlain: String
+) {
+    var nextId: Int = 0
+    val badges: MutableList<DiceBadgeSpec> = mutableListOf()
+}
+
+/** 解析产物：样式化文本 + 骰点胶囊（无骰点时 badges 为空）。 */
+data class ParsedContent(
+    val annotated: AnnotatedString,
+    val diceBadges: List<DiceBadgeSpec>
+)
 
 private val INNER_PATTERN = Pattern.compile(
     "(?:<a\\s+href=\"([^\"]+)\"[^>]*>(.*?)</a>)|(>>(?:No\\.)?(\\d+))",
@@ -203,12 +245,13 @@ private fun Color.relativeLuminance(): Float {
 private fun AnnotatedString.Builder.appendRichText(
     text: String,
     baseColor: Color?,
-    quoteLinkColor: Color
+    quoteLinkColor: Color,
+    ctx: DiceParseCtx? = null
 ) {
     val matcher = INNER_PATTERN.matcher(text)
     var last = 0
     while (matcher.find()) {
-        appendPlain(text.substring(last, matcher.start()), baseColor)
+        appendPlain(text.substring(last, matcher.start()), baseColor, ctx)
         val linkUrl = matcher.group(1)
         val linkText = matcher.group(2)
         val fullQuote = matcher.group(3)
@@ -220,12 +263,37 @@ private fun AnnotatedString.Builder.appendRichText(
         }
         last = matcher.end()
     }
-    appendPlain(text.substring(last), baseColor)
+    appendPlain(text.substring(last), baseColor, ctx)
 }
 
-private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?) {
+private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx: DiceParseCtx? = null) {
     val plain = raw.stripRemainingHtmlTags()
     if (plain.isEmpty()) return
+    if (ctx == null) {
+        appendStyledPlain(plain, color)
+        return
+    }
+    // 骰点扫描：`1[1,2]` / `1d100=57` → 内联胶囊占位 + 点击注解
+    val matches = DiceRoll.findTokens(plain)
+    if (matches.isEmpty()) {
+        appendStyledPlain(plain, color)
+        return
+    }
+    var last = 0
+    for (m in matches) {
+        if (m.start > last) appendStyledPlain(plain.substring(last, m.start), color)
+        val tier = DiceRoll.judge(ctx.preset, m.token, ctx.fullPlain)
+        val id = "dice_${ctx.nextId++}"
+        ctx.badges.add(DiceBadgeSpec(id = id, token = m.token, tier = tier))
+        val start = length
+        appendInlineContent(id, "🎲")
+        addStringAnnotation(tag = "DICE_CLICK", annotation = id, start = start, end = length)
+        last = m.end
+    }
+    if (last < plain.length) appendStyledPlain(plain.substring(last), color)
+}
+
+private fun AnnotatedString.Builder.appendStyledPlain(plain: String, color: Color?) {
     val start = length
     append(plain)
     if (color != null) addStyle(SpanStyle(color = color), start, length)
@@ -266,24 +334,30 @@ private fun AnnotatedString.Builder.appendQuote(
     addStringAnnotation(tag = "QUOTE_CLICK", annotation = postId, start = start, end = length)
 }
 
-/** Cache key includes night mode so lifted font colors do not stick across theme changes. */
-private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val darkTheme: Boolean)
+/** Cache key includes night mode so lifted font colors do not stick across theme changes.
+ *  骰点规则参与键：同一楼在不同规则下胶囊配色不同。 */
+private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val darkTheme: Boolean, val dicePreset: String)
 
 /**
  * Shared HTML → AnnotatedString cache. Safe for background pre-warm and UI lookup.
  * Synchronized put/get — prewarm runs on Default while composition reads on main.
  */
 object HtmlParseCache {
-    private val cache = android.util.LruCache<HtmlCacheKey, AnnotatedString>(600)
+    private val cache = android.util.LruCache<HtmlCacheKey, ParsedContent>(600)
     private val lock = Any()
 
-    fun getOrParse(html: String, quoteLinkColor: Color, darkTheme: Boolean = false): AnnotatedString {
+    fun getOrParse(
+        html: String,
+        quoteLinkColor: Color,
+        darkTheme: Boolean = false,
+        dicePreset: DiceRulePreset? = null
+    ): ParsedContent {
         val colorArgb = quoteLinkColor.toArgb()
-        val key = HtmlCacheKey(html, colorArgb, darkTheme)
+        val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
         synchronized(lock) {
             cache.get(key)?.let { return it }
         }
-        val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme)
+        val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
         synchronized(lock) {
             cache.put(key, parsed)
         }
@@ -295,15 +369,20 @@ object HtmlParseCache {
      * Call from [Dispatchers.Default] / [Dispatchers.IO].
      * Skips blanks and already-cached keys; no-op when list empty.
      */
-    fun prewarm(htmlList: Collection<String>, quoteLinkColor: Color, darkTheme: Boolean = false) {
+    fun prewarm(
+        htmlList: Collection<String>,
+        quoteLinkColor: Color,
+        darkTheme: Boolean = false,
+        dicePreset: DiceRulePreset? = null
+    ) {
         if (htmlList.isEmpty()) return
         val colorArgb = quoteLinkColor.toArgb()
         for (html in htmlList) {
             if (html.isBlank()) continue
-            val key = HtmlCacheKey(html, colorArgb, darkTheme)
+            val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
             val hit = synchronized(lock) { cache.get(key) != null }
             if (hit) continue
-            val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme)
+            val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
             synchronized(lock) {
                 cache.put(key, parsed)
             }
@@ -314,6 +393,16 @@ object HtmlParseCache {
 /** Stable no-op — avoids allocating a new lambda every list-row composition. */
 private val NoOpOnTextLayout: (TextLayoutResult) -> Unit = {}
 
+/** 串级骰点高亮规则：ThreadScreen 提供，其余界面为 null（不做骰点处理）。 */
+val LocalDicePreset = compositionLocalOf<DiceRulePreset?> { null }
+
+/** 点击任意骰子胶囊时回调（ThreadScreen 弹出规则切换微菜单）。 */
+val LocalDiceRuleMenu = compositionLocalOf<(() -> Unit)?> { null }
+
+/**
+ * 帖子正文渲染：HTML → AnnotatedString + 引用/链接/骰点胶囊交互。
+ * 骰点胶囊仅在 [LocalDicePreset] 有值时启用；点击经 [LocalDiceRuleMenu] 上抛。
+ */
 @Composable
 fun HtmlContent(
     html: String,
@@ -334,9 +423,11 @@ fun HtmlContent(
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     val quoteColorArgb = quoteLinkColor.toArgb()
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val annotatedString = remember(html, quoteColorArgb, darkTheme) {
-        HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme)
+    val dicePreset = LocalDicePreset.current
+    val parsed = remember(html, quoteColorArgb, darkTheme, dicePreset) {
+        HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme, dicePreset)
     }
+    val annotatedString = parsed.annotated
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
     var layoutResult by remember(enableGestures) {
@@ -345,6 +436,32 @@ fun HtmlContent(
 
     val surfaceColor = MaterialTheme.colorScheme.onSurface
     val mergedStyle = remember(style, surfaceColor) { style.copy(color = surfaceColor) }
+
+    // 骰点胶囊的内联渲染：宽度按徽章文本实测（TextMeasurer），高度 20dp
+    val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = LocalDensity.current
+    val inlineContent = remember(parsed.diceBadges, mergedStyle, textMeasurer, density) {
+        if (parsed.diceBadges.isEmpty()) {
+            emptyMap()
+        } else {
+            parsed.diceBadges.associate { spec ->
+                spec.id to InlineTextContent(
+                    placeholder = Placeholder(
+                        width = with(density) {
+                            textMeasurer.measure(
+                                text = androidx.compose.ui.text.AnnotatedString(spec.badgeText),
+                                style = TextStyle(fontSize = 12.5.sp, fontFeatureSettings = "tnum")
+                            ).size.width.toSp()
+                        },
+                        height = with(density) { 20.dp.toSp() },
+                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
+                    )
+                ) {
+                    DiceBadge(spec)
+                }
+            }
+        }
+    }
 
     val textModifier = if (!enableGestures) {
         modifier
@@ -363,6 +480,7 @@ fun HtmlContent(
         val onTextClickState = rememberUpdatedState(onTextClick)
         val onLongClickState = rememberUpdatedState(onLongClick)
         val finalLinkClickState = rememberUpdatedState(finalLinkClick)
+        val onDiceClickState = rememberUpdatedState(LocalDiceRuleMenu.current)
 
         modifier.pointerInput(annotatedString) {
             detectTapGestures(
@@ -375,8 +493,12 @@ fun HtmlContent(
                         val linkAnnotation = annotatedString.getStringAnnotations(
                             tag = "LINK_CLICK", start = offset, end = offset
                         ).firstOrNull()
+                        val diceAnnotation = annotatedString.getStringAnnotations(
+                            tag = "DICE_CLICK", start = offset, end = offset
+                        ).firstOrNull()
 
                         when {
+                            diceAnnotation != null -> onDiceClickState.value?.invoke()
                             quoteAnnotation != null -> onQuoteClickState.value(quoteAnnotation.item)
                             linkAnnotation != null -> finalLinkClickState.value(linkAnnotation.item)
                             else -> onTextClickState.value?.invoke()
@@ -396,6 +518,7 @@ fun HtmlContent(
         style = mergedStyle,
         maxLines = maxLines,
         overflow = overflow,
+        inlineContent = inlineContent,
         // List mode: stable no-op (no layoutResult write → no per-measure recomposition).
         onTextLayout = if (enableGestures) {
             { layoutResult = it }
@@ -403,4 +526,56 @@ fun HtmlContent(
             NoOpOnTextLayout
         }
     )
+}
+
+/** 骰点胶囊本体：20dp 高、6dp 圆角、tnum 等宽数字，四档配色。 */
+@Composable
+private fun DiceBadge(spec: DiceBadgeSpec) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val (bg, fg, borderColor) = when (spec.tier) {
+        DiceTier.NORMAL -> Triple(
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+            MaterialTheme.colorScheme.onSecondaryContainer,
+            null
+        )
+        DiceTier.EXTREME_VALUE -> Triple(
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+            MaterialTheme.colorScheme.primary
+        )
+        DiceTier.CRITICAL_SUCCESS -> if (darkTheme) {
+            Triple(Color(0xFF3D2E00), Color(0xFFFFCA28), Color(0xFFFFCA28))
+        } else {
+            Triple(Color(0xFFFFECB3), Color(0xFFB26A00), Color(0xFFB26A00))
+        }
+        DiceTier.CRITICAL_FAILURE -> Triple(
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
+            MaterialTheme.colorScheme.error
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .then(
+                if (borderColor != null) {
+                    Modifier.border(1.dp, borderColor, RoundedCornerShape(6.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = spec.badgeText,
+            fontSize = 12.5.sp,
+            style = TextStyle(fontFeatureSettings = "tnum"),
+            fontWeight = if (spec.tier == DiceTier.NORMAL) FontWeight.Normal else FontWeight.Bold,
+            color = fg,
+            maxLines = 1
+        )
+    }
 }

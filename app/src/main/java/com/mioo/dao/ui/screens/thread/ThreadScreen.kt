@@ -192,6 +192,11 @@ import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
+import com.mioo.dao.ui.components.LocalDicePreset
+import com.mioo.dao.ui.components.LocalDiceRuleMenu
+import com.mioo.dao.utils.DiceRulePreset
+import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -256,6 +261,9 @@ fun ThreadScreen(
     // Local text field value — do not write listUi on every keystroke
     var searchFieldText by remember { mutableStateOf("") }
     var showOverflowMenu by remember { mutableStateOf(false) }
+    // 骰点高亮规则：按串记忆；点任意骰子胶囊弹出切换微菜单
+    val dicePreset by viewModel.dicePreset.collectAsState()
+    var showDiceRuleMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val emptyLambda = remember { {} }
@@ -542,6 +550,10 @@ fun ThreadScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Color.Transparent
     ) { paddingValues ->
+        CompositionLocalProvider(
+            LocalDicePreset provides dicePreset,
+            LocalDiceRuleMenu provides { showDiceRuleMenu = true }
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -868,6 +880,7 @@ fun ThreadScreen(
                 onNavigateToThread = onNavigateToThread
             )
         }
+        }
     }
 
     // Page Jump Dialog
@@ -881,6 +894,30 @@ fun ThreadScreen(
                 showPageJumpDialog = false
             }
         )
+    }
+
+    // 骰点规则切换微菜单：点串内任意骰子胶囊弹出，整串胶囊实时换色
+    if (showDiceRuleMenu) {
+        Dialog(
+            onDismissRequest = { showDiceRuleMenu = false },
+            properties = immersiveDialogProperties(dismissOnClickOutside = true)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable { showDiceRuleMenu = false },
+                contentAlignment = Alignment.Center
+            ) {
+                DiceRuleMenuPanel(
+                    current = dicePreset,
+                    onSelect = {
+                        viewModel.setDicePreset(it)
+                        showDiceRuleMenu = false
+                    }
+                )
+            }
+        }
     }
 
     // 串内举报：饼干取值复用传给 ReplyInputBar 的同一组值（串级覆盖优先，其次全局选中）
@@ -1071,6 +1108,46 @@ private fun plainTextSnippet(html: String): String {
         text = text.replace(entity, ch)
     }
     return text.replace(Regex("\\s+"), " ").trim().take(48)
+}
+
+/** 本串骰点规则切换微菜单（点任意骰子胶囊弹出；选中项胶囊高亮 + 对号）。 */
+@Composable
+private fun DiceRuleMenuPanel(
+    current: DiceRulePreset,
+    onSelect: (DiceRulePreset) -> Unit
+) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = if (isDark) Color(0xFF17191E) else Color(0xFFF6F7F9),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)),
+        shadowElevation = 6.dp,
+        modifier = Modifier
+            .padding(horizontal = 40.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { }
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "本串骰子高亮规则",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 10.dp, bottom = 2.dp)
+            )
+            DiceRulePreset.entries.forEach { preset ->
+                Md3MenuPillItem(
+                    label = "${preset.label} (${preset.desc})",
+                    selected = preset == current,
+                    onClick = { onSelect(preset) }
+                )
+            }
+        }
+    }
 }
 
 /**

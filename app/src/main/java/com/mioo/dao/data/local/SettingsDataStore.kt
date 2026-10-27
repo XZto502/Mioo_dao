@@ -44,6 +44,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_BLOCKED_KEYWORDS = stringPreferencesKey("blocked_keywords")
         val KEY_THREAD_DRAFTS = stringPreferencesKey("thread_drafts")
         val KEY_THREAD_COOKIE_MAP = stringPreferencesKey("thread_cookie_map")
+        val KEY_THREAD_DICE_PRESETS = stringPreferencesKey("thread_dice_presets")
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
         val KEY_DRAFTS_MIGRATED = booleanPreferencesKey("drafts_migrated")
         val KEY_SMART_PRELOAD_MODE = stringPreferencesKey("smart_preload_mode")
@@ -830,6 +831,44 @@ class SettingsDataStore(private val context: Context) {
                 keyList.forEach { jsonObject.remove(it) }
             }
             preferences[KEY_THREAD_COOKIE_MAP] = jsonObject.toString()
+        }
+    }
+
+    /** 串 → 骰点高亮规则（存枚举名；未设置过的串返回 null，调用方回退 SMART_NEUTRAL）。 */
+    suspend fun getThreadDicePreset(threadId: String): com.mioo.dao.utils.DiceRulePreset? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val jsonStr = context.dataStore.data.first()[KEY_THREAD_DICE_PRESETS] ?: return@withContext null
+            try {
+                org.json.JSONObject(jsonStr).optString(threadId, "").takeIf { it.isNotEmpty() }
+                    ?.let { name ->
+                        runCatching { com.mioo.dao.utils.DiceRulePreset.valueOf(name) }.getOrNull()
+                    }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    suspend fun saveThreadDicePreset(threadId: String, preset: com.mioo.dao.utils.DiceRulePreset) {
+        context.dataStore.edit { preferences ->
+            val jsonStr = preferences[KEY_THREAD_DICE_PRESETS] ?: ""
+            val jsonObject = if (jsonStr.isNotEmpty()) {
+                try {
+                    org.json.JSONObject(jsonStr)
+                } catch (_: Exception) {
+                    org.json.JSONObject()
+                }
+            } else {
+                org.json.JSONObject()
+            }
+            jsonObject.put(threadId, preset.name)
+            // 防无限膨胀：超 500 条时丢掉最早插入的 100 条
+            if (jsonObject.length() > 500) {
+                val keyList = mutableListOf<String>()
+                val keys = jsonObject.keys()
+                while (keys.hasNext() && keyList.size < 100) keyList.add(keys.next())
+                keyList.forEach { jsonObject.remove(it) }
+            }
+            preferences[KEY_THREAD_DICE_PRESETS] = jsonObject.toString()
         }
     }
 

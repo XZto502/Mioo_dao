@@ -257,6 +257,16 @@ class SettingsRepository @Inject constructor(
     suspend fun getThreadCookie(threadId: String): String? =
         settingsDataStore.getThreadCookie(threadId)
 
+    /** 串 → 骰点高亮规则（null = 未设置，调用方回退智能模式）。 */
+    suspend fun getThreadDicePreset(threadId: String): com.mioo.dao.utils.DiceRulePreset? =
+        settingsDataStore.getThreadDicePreset(threadId)
+
+    fun saveThreadDicePreset(threadId: String, preset: com.mioo.dao.utils.DiceRulePreset) {
+        repositoryScope.launch {
+            settingsDataStore.saveThreadDicePreset(threadId, preset)
+        }
+    }
+
     fun saveThreadCookie(threadId: String, cookie: String) {
         repositoryScope.launch {
             settingsDataStore.saveThreadCookie(threadId, cookie)

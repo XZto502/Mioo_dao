@@ -18,6 +18,7 @@ import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReplyDisplayItem
 import com.mioo.dao.ui.components.decodeHtmlEntities
 import com.mioo.dao.ui.components.toPostData
+import com.mioo.dao.utils.DiceRulePreset
 import com.mioo.dao.utils.KeywordMatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -127,8 +128,20 @@ class ThreadViewModel @Inject constructor(
     private val _threadCookieIndex = MutableStateFlow<Int?>(null)
     val threadCookieIndex: StateFlow<Int?> = _threadCookieIndex.asStateFlow()
 
+    /** 本串的骰点高亮规则（默认智能中立；按串记忆，点击骰子胶囊可切换）。 */
+    private val _dicePreset = MutableStateFlow(DiceRulePreset.SMART_NEUTRAL)
+    val dicePreset: StateFlow<DiceRulePreset> = _dicePreset.asStateFlow()
+
     fun selectThreadCookie(index: Int) {
         _threadCookieIndex.value = index
+    }
+
+    /** 切换本串骰点规则并持久化（整串胶囊颜色实时刷新）。 */
+    fun setDicePreset(preset: DiceRulePreset) {
+        _dicePreset.value = preset
+        viewModelScope.launch {
+            settingsRepository.saveThreadDicePreset(threadId, preset)
+        }
     }
 
     /**
@@ -251,6 +264,12 @@ class ThreadViewModel @Inject constructor(
             val remembered = settingsRepository.getThreadCookie(threadId) ?: return@launch
             val idx = settingsRepository.settings.value.cookiesList.indexOf(remembered)
             if (idx >= 0) _threadCookieIndex.value = idx
+        }
+
+        // 本串骰点规则：按串记忆，未设置过的串回退智能中立
+        viewModelScope.launch {
+            _dicePreset.value = settingsRepository.getThreadDicePreset(threadId)
+                ?: DiceRulePreset.SMART_NEUTRAL
         }
 
         loadThreadDetails()
