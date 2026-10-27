@@ -1,10 +1,13 @@
 package com.mioo.dao.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +28,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -44,13 +48,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
-import androidx.compose.material.icons.outlined.Flip
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.ImageSearch
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Rotate90DegreesCcw
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,6 +92,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.findDialogWindow
@@ -442,72 +448,102 @@ fun ImageViewer(
                 }
             }
 
-            // 底部悬浮控制栏：变换 / 长图 / 识图 / 分享
+            // 底部悬浮工具栏：胶囊底座（变换 / 长图 / 识图 / 分享）
             if (!stripMode) {
-                Row(
+                Surface(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
                         .padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    shape = CircleShape,
+                    color = Color(0xFF16181D).copy(alpha = 0.92f),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    )
                 ) {
-                    Box {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box {
+                            ViewerCircleButton(
+                                icon = Icons.Outlined.Rotate90DegreesCcw,
+                                contentDescription = "旋转与镜像",
+                                containerColor = if (showTransformPanel || transform.isTransformed) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    Color.Transparent
+                                },
+                                tint = if (showTransformPanel || transform.isTransformed) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    Color.White
+                                },
+                                badge = if (transform.normalizedAngle != 0) "${transform.normalizedAngle}°" else null,
+                                onClick = {
+                                    showSaucePanel = false
+                                    showTransformPanel = !showTransformPanel
+                                }
+                            )
+                        }
+                        if (currentRatio > STRIP_RATIO_THRESHOLD) {
+                            ViewerCircleButton(
+                                icon = Icons.Outlined.UnfoldMore,
+                                contentDescription = "条漫长图模式",
+                                containerColor = Color.Transparent,
+                                onClick = {
+                                    showTransformPanel = false
+                                    showSaucePanel = false
+                                    stripMode = true
+                                }
+                            )
+                        }
                         ViewerCircleButton(
-                            icon = Icons.Outlined.Rotate90DegreesCcw,
-                            contentDescription = "旋转与镜像",
-                            tint = if (transform.isTransformed) MaterialTheme.colorScheme.primary else Color.White,
-                            badge = if (transform.normalizedAngle != 0) "${transform.normalizedAngle}°" else null,
-                            onClick = {
-                                showSaucePanel = false
-                                showTransformPanel = !showTransformPanel
-                            }
-                        )
-                    }
-                    if (currentRatio > STRIP_RATIO_THRESHOLD) {
-                        ViewerCircleButton(
-                            icon = Icons.Outlined.SwapVert,
-                            contentDescription = "条漫长图模式",
-                            tint = if (stripMode) MaterialTheme.colorScheme.primary else Color.White,
+                            icon = Icons.Outlined.ImageSearch,
+                            contentDescription = "以图搜源",
+                            containerColor = if (showSaucePanel) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                Color.Transparent
+                            },
+                            tint = if (showSaucePanel) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                Color.White
+                            },
                             onClick = {
                                 showTransformPanel = false
-                                showSaucePanel = false
-                                stripMode = true
+                                showSaucePanel = !showSaucePanel
+                            }
+                        )
+                        ViewerCircleButton(
+                            icon = Icons.Outlined.Share,
+                            contentDescription = "分享图片",
+                            containerColor = Color.Transparent,
+                            onClick = {
+                                if (currentUrl.isNotBlank()) {
+                                    com.mioo.dao.utils.ImageDownloader.shareImageTransformed(
+                                        context = context,
+                                        imageUrl = currentUrl,
+                                        rotationDegrees = transform.normalizedAngle,
+                                        flipX = transform.flippedH,
+                                        flipY = transform.flippedV,
+                                        scope = scope
+                                    )
+                                }
                             }
                         )
                     }
-                    ViewerCircleButton(
-                        icon = Icons.Outlined.ImageSearch,
-                        contentDescription = "以图搜源",
-                        onClick = {
-                            showTransformPanel = false
-                            showSaucePanel = !showSaucePanel
-                        }
-                    )
-                    ViewerCircleButton(
-                        icon = Icons.Outlined.Share,
-                        contentDescription = "分享图片",
-                        onClick = {
-                            if (currentUrl.isNotBlank()) {
-                                com.mioo.dao.utils.ImageDownloader.shareImageTransformed(
-                                    context = context,
-                                    imageUrl = currentUrl,
-                                    rotationDegrees = transform.normalizedAngle,
-                                    flipX = transform.flippedH,
-                                    flipY = transform.flippedV,
-                                    scope = scope
-                                )
-                            }
-                        }
-                    )
                 }
             }
 
             // 双排变换面板（第一排角度分段胶囊，第二排镜像/复原）
             AnimatedVisibility(
                 visible = showTransformPanel && !stripMode,
-                enter = fadeIn() + slideInVertically { it / 3 },
-                exit = fadeOut() + slideOutVertically { it / 3 },
+                enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
+                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -568,7 +604,7 @@ fun ImageViewer(
     }
 }
 
-/** 圆形半透明工具按钮；[badge] 用于显示当前旋转角度。 */
+/** 圆形工具按钮；[containerColor] 为底座色（胶囊底座内默认透明），[badge] 显示当前旋转角度。 */
 @Composable
 private fun ViewerCircleButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -576,13 +612,13 @@ private fun ViewerCircleButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = Color.White,
+    containerColor: Color = Color.Black.copy(alpha = 0.6f),
     badge: String? = null
 ) {
     Box(modifier = modifier) {
         IconButton(
             onClick = onClick,
-            modifier = Modifier
-                .background(Color.Black.copy(alpha = 0.6f), shape = CircleShape)
+            modifier = Modifier.background(containerColor, shape = CircleShape)
         ) {
             Icon(
                 imageVector = icon,
@@ -608,7 +644,7 @@ private fun ViewerCircleButton(
     }
 }
 
-/** 双排变换面板：0°/90°/180°/270° 分段胶囊 + 水平/垂直镜像 + 一键复原。 */
+/** 双排变换面板：一体式分段胶囊轨（0°/90°/180°/270°）+ 矢量图标镜像/复原按钮。 */
 @Composable
 private fun TransformPanel(
     transform: ViewerTransform,
@@ -620,44 +656,72 @@ private fun TransformPanel(
 ) {
     Column(
         modifier = Modifier
-            .background(ViewerSurfaceColor, RoundedCornerShape(20.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 20.dp) // 面板外边距：避免撑满全屏
+            .fillMaxWidth()
+            .background(ViewerSurfaceColor, RoundedCornerShape(22.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(22.dp))
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(0, 90, 180, 270).forEach { angle ->
-                val selected = transform.normalizedAngle == angle
-                Text(
-                    text = "${angle}°",
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
-                    color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.White,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.secondaryContainer
-                            else Color.White.copy(alpha = 0.08f)
+        // 第一排：等宽一体式分段胶囊轨（四项 weight 均分，右缘不再留缺口）
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(38.dp),
+            shape = CircleShape,
+            color = Color(0xFF101216)
+        ) {
+            Row(modifier = Modifier.fillMaxSize().padding(3.dp)) {
+                listOf(0, 90, 180, 270).forEach { angle ->
+                    val selected = transform.normalizedAngle == angle
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(CircleShape)
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.secondaryContainer
+                                else Color.Transparent
+                            )
+                            .clickable { onRotateTo(angle) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "${angle}°",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontFeatureSettings = "tnum",
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            ),
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
-                        .clickable { onRotateTo(angle) }
-                        .padding(horizontal = 14.dp, vertical = 7.dp)
-                )
+                    }
+                }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            TransformToggleChip(
-                label = "⇄ 水平镜像",
+        // 第二排：矢量图标 + 文字的镜像/复原按钮
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TransformActionButton(
+                icon = Icons.Default.SwapHoriz,
+                label = "水平镜像",
                 selected = transform.flippedH,
                 onClick = onFlipH,
                 modifier = Modifier.weight(1f)
             )
-            TransformToggleChip(
-                label = "⇅ 垂直镜像",
+            TransformActionButton(
+                icon = Icons.Default.SwapVert,
+                label = "垂直镜像",
                 selected = transform.flippedV,
                 onClick = onFlipV,
                 modifier = Modifier.weight(1f)
             )
-            TransformToggleChip(
-                label = "⟲ 复原",
+            TransformActionButton(
+                icon = Icons.Default.Refresh,
+                iconSize = 15.dp,
+                label = "复原",
                 selected = false,
                 enabled = canReset,
                 onClick = onReset,
@@ -667,33 +731,50 @@ private fun TransformPanel(
     }
 }
 
+/** 变换面板的第二排按钮：选中填 secondaryContainer，未选中深灰底；禁用整钮降透明度。 */
 @Composable
-private fun TransformToggleChip(
+private fun TransformActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    iconSize: androidx.compose.ui.unit.Dp = 16.dp,
     enabled: Boolean = true
 ) {
-    val alpha = if (enabled) 1f else 0.4f
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelMedium.copy(
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-        ),
-        color = (if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.White).copy(alpha = alpha),
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    val alpha = if (enabled) 1f else 0.38f
+    Row(
         modifier = modifier
-            .clip(RoundedCornerShape(50))
+            .height(38.dp)
+            .clip(CircleShape)
             .background(
                 when {
                     selected -> MaterialTheme.colorScheme.secondaryContainer
-                    else -> Color.White.copy(alpha = 0.08f)
+                    else -> Color(0xFF22252C)
                 }
             )
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 7.dp)
-    )
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(iconSize),
+            tint = (if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.White)
+                .copy(alpha = alpha)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = label,
+            fontSize = 12.5.sp,
+            maxLines = 1,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = (if (selected) MaterialTheme.colorScheme.onSecondaryContainer else Color.White)
+                .copy(alpha = alpha)
+        )
+    }
 }
 
 /** 识图源面板：SauceNAO / Ascii2d / Yandex。 */
