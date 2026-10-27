@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.components.BookmarkListItem
 import com.mioo.dao.ui.components.HtmlParseCache
+import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
@@ -62,8 +63,11 @@ import kotlinx.coroutines.withContext
 fun FeedScreen(
     viewModel: FeedViewModel,
     onNavigateToThread: (threadId: String) -> Unit,
+    onImageViewerOpenChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var activeImageUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
     val uiState by viewModel.uiState.collectAsState()
     // Survive navigate → thread → back (and tab switches with restoreState).
     val listState = rememberSaveable(uiState.selectedFolderId, saver = LazyListState.Saver) {
@@ -128,6 +132,7 @@ fun FeedScreen(
         }
     }
 
+    Box(modifier = modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -304,6 +309,7 @@ fun FeedScreen(
                                     item = item,
                                     onNavigateToThread = onNavigateToThread,
                                     onUnsubscribe = { viewModel.unsubscribe(item.id) },
+                                    onImageClick = { activeImageUrl = it },
                                     emptyStringLambda = emptyStringLambda
                                 )
                             }
@@ -322,6 +328,7 @@ fun FeedScreen(
                                     onUnsubscribe = {
                                         viewModel.unsubscribeRemote(folderId, item.idStr)
                                     },
+                                    onImageClick = { activeImageUrl = it },
                                     emptyStringLambda = emptyStringLambda
                                 )
                             }
@@ -331,8 +338,14 @@ fun FeedScreen(
             }
         }
     }
+    activeImageUrl?.let { imageUrl ->
+        ImageViewer(
+            imageUrl = imageUrl,
+            onDismiss = { activeImageUrl = null }
+        )
+    }
+    }
 }
-
 @Composable
 private fun OfflineFeedRow(
     summary: com.mioo.dao.data.local.OfflineThreadSummary,
@@ -358,6 +371,7 @@ private fun LocalBookmarkRow(
     item: BookmarkListItem,
     onNavigateToThread: (String) -> Unit,
     onUnsubscribe: () -> Unit,
+    onImageClick: (String) -> Unit,
     emptyStringLambda: (String) -> Unit
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
@@ -369,7 +383,7 @@ private fun LocalBookmarkRow(
             replyCount = item.replyCount,
             onThreadClick = onClick,
             onQuoteClick = emptyStringLambda,
-            onImageClick = emptyStringLambda,
+            onImageClick = onImageClick,
             onLongClick = { confirmDelete = true }
         )
         if (item.newReplyCount > 0) {
@@ -404,6 +418,7 @@ private fun RemoteBookmarkRow(
     item: ThreadListItem,
     onNavigateToThread: (String) -> Unit,
     onUnsubscribe: () -> Unit,
+    onImageClick: (String) -> Unit,
     emptyStringLambda: (String) -> Unit
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
@@ -414,7 +429,7 @@ private fun RemoteBookmarkRow(
         replyCount = item.replyCount,
         onThreadClick = onClick,
         onQuoteClick = emptyStringLambda,
-        onImageClick = emptyStringLambda,
+        onImageClick = onImageClick,
         onLongClick = { confirmDelete = true }
     )
     if (confirmDelete) {

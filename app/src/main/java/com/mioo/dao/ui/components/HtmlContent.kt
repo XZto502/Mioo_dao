@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Casino
@@ -43,17 +45,19 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.mioo.dao.utils.DiceBadgeSpec
+import com.mioo.dao.utils.DiceLevel
 import com.mioo.dao.utils.DiceRulePreset
 import com.mioo.dao.utils.DiceRoll
-import com.mioo.dao.utils.DiceTier
 import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
@@ -145,7 +149,7 @@ fun String.stripRemainingHtmlTags(): String {
 
 /**
  * Parsed X-Island HTML comments into a styled Compose AnnotatedString.
- * [dicePreset] 非空时扫描正文骰点并生成内联胶囊占位（智能/安科/CoC/DND 判定见 DiceRoll）。
+ * [dicePreset] 非空时扫描正文骰点并生成内联胶囊。默认纯色；安科/CoC 才上金/红。
  */
 fun parseHtmlToAnnotatedString(
     html: String,
@@ -287,12 +291,12 @@ private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx:
     var last = 0
     for (m in matches) {
         if (m.start > last) appendStyledPlain(plain.substring(last, m.start), color)
-        val tier = DiceRoll.judge(ctx.preset, m.token)
+        val level = DiceRoll.judge(ctx.preset, m.token)
         val id = "dice_${ctx.nextId++}"
-        ctx.badges.add(DiceBadgeSpec(id = id, token = m.token, tier = tier))
+        ctx.badges.add(DiceBadgeSpec(id = id, token = m.token, level = level))
         val start = length
         appendInlineContent(id, m.token.result.toString())
-        addStringAnnotation(tag = "DICE_CLICK", annotation = id, start = start, end = length)
+        addStringAnnotation(tag = "DICE_CLICK", annotation = "dice", start = start, end = length)
         last = m.end
     }
     if (last < plain.length) appendStyledPlain(plain.substring(last), color)
@@ -442,26 +446,19 @@ fun HtmlContent(
     val surfaceColor = MaterialTheme.colorScheme.onSurface
     val mergedStyle = remember(style, surfaceColor) { style.copy(color = surfaceColor) }
 
-    // 骰点胶囊的内联渲染：宽度按徽章文本实测（TextMeasurer），高度 20dp
-    val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
-    val density = LocalDensity.current
-    val inlineContent = remember(parsed.diceBadges, mergedStyle, textMeasurer, density) {
+    // 宽度按完整文案的字符数留余量，规则和深浅色都进 key，切换后立刻重画
+    val inlineContent = remember(html, dicePreset, darkTheme, parsed.diceBadges) {
         if (parsed.diceBadges.isEmpty()) {
             emptyMap()
         } else {
             parsed.diceBadges.associate { spec ->
+                val displayText = spec.badgeText
+                val dynamicWidthEm = (2.6f + displayText.length * 0.68f).em
                 spec.id to InlineTextContent(
                     placeholder = Placeholder(
-                        // 文本实测宽 + 图标/内边距/余量（约 30dp），防止胶囊被占位宽度截断
-                        width = with(density) {
-                            val textWidth = textMeasurer.measure(
-                                text = androidx.compose.ui.text.AnnotatedString(spec.badgeText),
-                                style = TextStyle(fontSize = 12.5.sp, fontFeatureSettings = "tnum")
-                            ).size.width
-                            (textWidth + 30.dp.toPx()).toSp()
-                        },
-                        height = with(density) { 20.dp.toSp() },
-                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
+                        width = dynamicWidthEm,
+                        height = 1.5.em,
+                        placeholderVerticalAlign = PlaceholderVerticalAlign.Center
                     )
                 ) {
                     DiceBadge(spec)
@@ -535,66 +532,83 @@ fun HtmlContent(
     )
 }
 
-/** 骰点胶囊本体：20dp 高、6dp 圆角、骰子矢量图标 + 原文完整内容（出目[起,止]），四档配色。 */
+/** 骰点胶囊：13dp 矢量骰子 + 完整 `出目 [起,止]`。整枚可点，打开本串规则菜单。 */
 @Composable
 private fun DiceBadge(spec: DiceBadgeSpec) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    // 胶囊整枚可点（点击命中不依赖占位文本宽度，修"时开时不开"）
     val onBadgeClick = LocalDiceRuleMenu.current
-    val (bg, fg, borderColor) = when (spec.tier) {
-        DiceTier.NORMAL -> Triple(
-            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
-            MaterialTheme.colorScheme.onSecondaryContainer,
-            null
-        )
-        DiceTier.EXTREME_VALUE -> Triple(
-            MaterialTheme.colorScheme.primaryContainer,
-            MaterialTheme.colorScheme.onPrimaryContainer,
-            MaterialTheme.colorScheme.primary
-        )
-        DiceTier.CRITICAL_SUCCESS -> if (darkTheme) {
-            Triple(Color(0xFF3D2E00), Color(0xFFFFCA28), Color(0xFFFFCA28))
-        } else {
-            Triple(Color(0xFFFFECB3), Color(0xFFB26A00), Color(0xFFB26A00))
-        }
-        DiceTier.CRITICAL_FAILURE -> Triple(
-            MaterialTheme.colorScheme.errorContainer,
-            MaterialTheme.colorScheme.onErrorContainer,
-            MaterialTheme.colorScheme.error
-        )
-    }
+    val normalBg = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
+    val normalFg = MaterialTheme.colorScheme.onSecondaryContainer
+    val colors = diceBadgeColors(spec.level, darkTheme, normalBg, normalFg)
     Row(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxHeight()
             .clip(RoundedCornerShape(6.dp))
-            .background(bg)
+            .background(colors.background)
             .then(
-                if (borderColor != null) {
-                    Modifier.border(1.dp, borderColor, RoundedCornerShape(6.dp))
+                if (colors.border != null) {
+                    Modifier.border(1.dp, colors.border, RoundedCornerShape(6.dp))
                 } else {
                     Modifier
                 }
             )
-            // 整枚胶囊可点（点击命中不依赖占位文本宽度，修"时开时不开"）
             .clickable { onBadgeClick?.invoke() }
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Default.Casino,
             contentDescription = null,
-            modifier = Modifier.size(11.dp),
-            tint = fg
+            modifier = Modifier.size(13.dp),
+            tint = colors.foreground
         )
-        Spacer(modifier = Modifier.padding(horizontal = 2.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = spec.badgeText,
-            fontSize = 12.5.sp,
-            style = TextStyle(fontFeatureSettings = "tnum"),
-            fontWeight = if (spec.tier == DiceTier.NORMAL) FontWeight.Normal else FontWeight.Bold,
-            color = fg,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Visible,
+            style = TextStyle(
+                fontSize = 12.5.sp,
+                fontFeatureSettings = "tnum",
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                fontWeight = colors.weight,
+                color = colors.foreground
+            )
         )
+    }
+}
+
+private data class DiceBadgeColors(
+    val background: Color,
+    val foreground: Color,
+    val border: Color?,
+    val weight: FontWeight
+)
+
+/** 普通档沿用现有 secondaryContainer；金/红只在用户选了安科或 CoC 且出目到极值时出现。 */
+private fun diceBadgeColors(
+    level: DiceLevel,
+    darkTheme: Boolean,
+    normalBg: Color,
+    normalFg: Color
+): DiceBadgeColors {
+    return when (level) {
+        DiceLevel.NORMAL -> DiceBadgeColors(
+            background = normalBg,
+            foreground = normalFg,
+            border = null,
+            weight = FontWeight.Normal
+        )
+        DiceLevel.CRITICAL_GOOD -> if (darkTheme) {
+            DiceBadgeColors(Color(0xFF423000), Color(0xFFFFD54F), Color(0xFFFFC107), FontWeight.ExtraBold)
+        } else {
+            DiceBadgeColors(Color(0xFFFFF0C2), Color(0xFFB26A00), Color(0xFFFFC107), FontWeight.ExtraBold)
+        }
+        DiceLevel.CRITICAL_BAD -> if (darkTheme) {
+            DiceBadgeColors(Color(0xFF4A1218), Color(0xFFFF8A80), Color(0xFFFF5252), FontWeight.ExtraBold)
+        } else {
+            DiceBadgeColors(Color(0xFFFFDAD6), Color(0xFFB3261E), Color(0xFFFF5252), FontWeight.ExtraBold)
+        }
     }
 }

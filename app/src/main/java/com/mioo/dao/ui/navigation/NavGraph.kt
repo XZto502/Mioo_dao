@@ -181,6 +181,8 @@ fun MiooDaoNavGraph(
     val showBottomBar = currentRoute == Screen.Home.route
     // 切换板块抽屉打开/正在打开时收起悬浮 dock：不遮抽屉、不拦点击
     var forumDrawerOpen by remember { mutableStateOf(false) }
+    // 大图查看器打开时收起悬浮 dock：不遮查看器底部药丸、不拦点击
+    var isImageViewerOpen by remember { mutableStateOf(false) }
     // Scroll the feed downward (finger up) and the tab capsule slides off the bottom.
     // A short reverse drag, or hitting the top, brings it back.
     var bottomBarVisible by remember { mutableStateOf(true) }
@@ -248,7 +250,7 @@ fun MiooDaoNavGraph(
             if (showBottomBar) {
                 // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
                 AnimatedVisibility(
-                    visible = !forumDrawerOpen,
+                    visible = !forumDrawerOpen && !isImageViewerOpen,
                     enter = slideInVertically { it } + fadeIn(),
                     exit = slideOutVertically { it } + fadeOut()
                 ) {
@@ -329,6 +331,7 @@ fun MiooDaoNavGraph(
                     onColdStartContentReady = onColdStartContentReady,
                     dockSinkFraction = { bottomBarSlide.value },
                     onForumDrawerOpenChange = { forumDrawerOpen = it },
+                    onImageViewerOpenChange = { isImageViewerOpen = it },
                     onNavigateToSettings = {
                         navController.navigate(Screen.SettingsDetail.route)
                     },
@@ -429,6 +432,7 @@ private fun MainTabs(
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float = { 0f },
     onForumDrawerOpenChange: (Boolean) -> Unit = {},
+    onImageViewerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToDrafts: () -> Unit,
@@ -451,14 +455,16 @@ private fun MainTabs(
                         onNavigateToThread = onNavigateToThread,
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = dockSinkFraction,
-                        onDrawerOpenChange = onForumDrawerOpenChange
+                        onDrawerOpenChange = onForumDrawerOpenChange,
+                        onImageViewerOpenChange = onImageViewerOpenChange
                     )
                 }
                 1 -> {
                     val viewModel: FeedViewModel = hiltViewModel()
                     FeedScreen(
                         viewModel = viewModel,
-                        onNavigateToThread = onNavigateToThread
+                        onNavigateToThread = onNavigateToThread,
+                        onImageViewerOpenChange = onImageViewerOpenChange
                     )
                 }
                 else -> {

@@ -174,7 +174,7 @@ fun ThreadCard(
 
                 // Date
                 Text(
-                    text = postData.createdAt,
+                    text = remember(postData.createdAt) { formatPostTime(postData.createdAt) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )

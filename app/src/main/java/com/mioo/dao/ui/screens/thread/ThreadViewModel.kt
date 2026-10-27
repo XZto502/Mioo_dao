@@ -128,8 +128,8 @@ class ThreadViewModel @Inject constructor(
     private val _threadCookieIndex = MutableStateFlow<Int?>(null)
     val threadCookieIndex: StateFlow<Int?> = _threadCookieIndex.asStateFlow()
 
-    /** 本串的骰点高亮规则（默认仅高亮；按串记忆，点击骰子胶囊可切换）。 */
-    private val _dicePreset = MutableStateFlow(DiceRulePreset.HIGHLIGHT_ONLY)
+    /** 本串的骰点规则（默认纯色；按串记忆）。 */
+    private val _dicePreset = MutableStateFlow(DiceRulePreset.NEUTRAL_DEFAULT)
     val dicePreset: StateFlow<DiceRulePreset> = _dicePreset.asStateFlow()
 
     fun selectThreadCookie(index: Int) {
@@ -266,10 +266,10 @@ class ThreadViewModel @Inject constructor(
             if (idx >= 0) _threadCookieIndex.value = idx
         }
 
-        // 本串骰点规则：按串记忆，未设置过的串回退"仅高亮"
+        // 本串骰点规则：按串记忆，未设置过的串回退默认纯色
         viewModelScope.launch {
             _dicePreset.value = settingsRepository.getThreadDicePreset(threadId)
-                ?: DiceRulePreset.HIGHLIGHT_ONLY
+                ?: DiceRulePreset.NEUTRAL_DEFAULT
         }
 
         loadThreadDetails()

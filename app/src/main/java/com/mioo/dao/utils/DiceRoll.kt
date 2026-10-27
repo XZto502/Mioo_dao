@@ -1,23 +1,35 @@
 package com.mioo.dao.utils
 
 /**
- * 跑团/安科骰点高亮的判定体系。
+ * 跑团/安科骰点徽章。
  *
- * X岛骰子机制（用户确认）：回复里插入 `[起,止]`（如 [1,100]），岛方掷骰后输出样例为
- * **`1[1,2]`** —— 出目数字直接前缀在原区间前。因此正文里的骰点形如 `96[1,100]`
- * （出目 96、区间 1-100），result/min/max 三元组完整。另有 PO 红字 `XdY=结果` 格式。
+ * X 岛原文是 `<b>2<small>[0,9]</small></b>`，剥标签后为 `2[0,9]`：出目在前，区间在后。
  */
-enum class DiceRulePreset(val label: String, val desc: String) {
-    HIGHLIGHT_ONLY("仅高亮", "默认"),
-    ANKO_HIGH_GOOD("安科规则", "d100 大数优"),
-    COC_LOW_GOOD("CoC 规则", "d100 小数优"),
-    DND_D20("DND 规则", "d20 极值")
+enum class DiceRulePreset(
+    val label: String,
+    val desc: String,
+    val shortLabel: String,
+    val menuLabel: String
+) {
+    NEUTRAL_DEFAULT("默认纯色", "不标金/红", "默认纯色", "默认纯色"),
+    ANKO_HIGH_GOOD("安科规则", "大数优", "安科(大优)", "安科规则(大数优)"),
+    COC_LOW_GOOD("CoC规则", "小数优", "CoC(小优)", "CoC规则(小数优)");
+
+    companion object {
+        /** 旧存档里的智能识别 / 仅高亮 / DND 都归到默认纯色。 */
+        fun fromStored(name: String): DiceRulePreset? = when (name) {
+            "NEUTRAL_DEFAULT", "HIGHLIGHT_ONLY", "SMART_NEUTRAL", "DND_D20" -> NEUTRAL_DEFAULT
+            "ANKO_HIGH_GOOD" -> ANKO_HIGH_GOOD
+            "COC_LOW_GOOD" -> COC_LOW_GOOD
+            else -> null
+        }
+    }
 }
 
-/** 骰点胶囊的高亮档位。 */
-enum class DiceTier { NORMAL, EXTREME_VALUE, CRITICAL_SUCCESS, CRITICAL_FAILURE }
+/** 胶囊配色档。默认纯色下全部是 [NORMAL]。 */
+enum class DiceLevel { NORMAL, CRITICAL_GOOD, CRITICAL_BAD }
 
-/** 一枚骰子出目：result 出目；min/max 区间（真实下限，[0,1] 型为 0）。 */
+/** 一枚骰子出目：result 出目；min/max 区间。 */
 data class DiceRollToken(
     val result: Int,
     val min: Int,
@@ -37,19 +49,26 @@ data class DiceRollMatch(
 data class DiceBadgeSpec(
     val id: String,
     val token: DiceRollToken,
-    val tier: DiceTier
+    val level: DiceLevel
 ) {
-    /** 胶囊文本 = 原文完整内容（出目 + 原区间），如 `96[1,100]`。 */
-    val badgeText: String get() = "${token.result}[${token.min},${token.max}]"
+    /** 胶囊完整文本，如 `2 [0,9]`、`98 [1,100]`。 */
+    val badgeText: String get() = "${token.result} [${token.min},${token.max}]"
 }
 
 object DiceRoll {
 
-    /** 岛方掷骰输出：出目前缀原区间，如 `1[1,2]`、`96[1,100]`。 */
-    private val DICE_PATTERN = Regex("(\\d{1,4})\\[(\\d{1,4})\\s*,\\s*(\\d{1,4})\\]")
+    /** 出目前缀区间：`2[0,9]`、`98[1,100]`，允许数字与括号间的空白。 */
+    private val DICE_PATTERN = Regex("(\\d+)\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\]")
 
     /** PO 红字骰点格式：`1d100=57`（允许全角等号/冒号）。 */
     private val XDY_PATTERN = Regex("(\\d{1,2})d(\\d{1,4})\\s*[=＝:]\\s*(\\d{1,4})", RegexOption.IGNORE_CASE)
+
+    private val TAGS = Regex("<[^>]+>")
+
+    fun containsDice(html: String): Boolean {
+        if (html.isEmpty() || !html.any { it.isDigit() }) return false
+        return findTokens(html.replace(TAGS, "")).isNotEmpty()
+    }
 
     /** 找出一段纯文本里的全部骰点（按位置排序，重叠去重）。 */
     fun findTokens(text: String): List<DiceRollMatch> {
@@ -57,22 +76,22 @@ object DiceRoll {
         data class Raw(val token: DiceRollToken, val start: Int, val end: Int)
         val raw = mutableListOf<Raw>()
         for (m in DICE_PATTERN.findAll(text)) {
-            val result = m.groupValues[1].toInt()
-            val min = m.groupValues[2].toInt()
-            val max = m.groupValues[3].toInt()
+            val result = m.groupValues[1].toIntOrNull() ?: continue
+            val min = m.groupValues[2].toIntOrNull() ?: continue
+            val max = m.groupValues[3].toIntOrNull() ?: continue
             if (max < min || result < min || result > max) continue
             raw.add(Raw(DiceRollToken(result, min, max), m.range.first, m.range.last + 1))
         }
         for (m in XDY_PATTERN.findAll(text)) {
-            val faces = m.groupValues[2].toInt()
-            val result = m.groupValues[3].toInt()
+            val faces = m.groupValues[2].toIntOrNull() ?: continue
+            val result = m.groupValues[3].toIntOrNull() ?: continue
             if (faces <= 0 || result < 1 || result > faces) continue
             raw.add(Raw(DiceRollToken(result, 1, faces), m.range.first, m.range.last + 1))
         }
         val result = mutableListOf<DiceRollMatch>()
         var lastEnd = -1
         for (m in raw.sortedBy { it.start }) {
-            if (m.start < lastEnd) continue // 与前一骰点重叠（如 XdY 命中已被区间覆盖）
+            if (m.start < lastEnd) continue
             result.add(DiceRollMatch(m.token, m.start, m.end))
             lastEnd = m.end
         }
@@ -80,31 +99,33 @@ object DiceRoll {
     }
 
     /**
-     * 按规则判定档位。
+     * 默认纯色一律 [DiceLevel.NORMAL]。
+     * 只有用户改成安科或 CoC 后，极值才返回金/红。
      */
-    fun judge(preset: DiceRulePreset, token: DiceRollToken): DiceTier {
-        val onBoundary = token.result == token.max || token.result == token.min
+    fun judge(preset: DiceRulePreset, token: DiceRollToken): DiceLevel {
+        val span = token.max - token.min
+        if (preset == DiceRulePreset.NEUTRAL_DEFAULT || span <= 0) return DiceLevel.NORMAL
+        val highThreshold: Int
+        val lowThreshold: Int
+        if (span >= 19) {
+            highThreshold = token.max - (span * 0.05f).toInt()
+            lowThreshold = token.min + (span * 0.05f).toInt()
+        } else {
+            highThreshold = token.max
+            lowThreshold = token.min
+        }
         return when (preset) {
-            // 默认态：只做中性高亮，不判吉凶（大成功/大失败特殊渲染仅在选定规则后出现）
-            DiceRulePreset.HIGHLIGHT_ONLY -> DiceTier.NORMAL
             DiceRulePreset.ANKO_HIGH_GOOD -> when {
-                token.max == 100 && token.result >= 96 -> DiceTier.CRITICAL_SUCCESS
-                token.max == 100 && token.result <= 5 -> DiceTier.CRITICAL_FAILURE
-                token.span in 1..2 && onBoundary -> DiceTier.EXTREME_VALUE
-                else -> DiceTier.NORMAL
+                token.result >= highThreshold -> DiceLevel.CRITICAL_GOOD
+                token.result <= lowThreshold -> DiceLevel.CRITICAL_BAD
+                else -> DiceLevel.NORMAL
             }
             DiceRulePreset.COC_LOW_GOOD -> when {
-                token.max == 100 && token.result <= 5 -> DiceTier.CRITICAL_SUCCESS
-                token.max == 100 && token.result >= 96 -> DiceTier.CRITICAL_FAILURE
-                token.span in 1..2 && onBoundary -> DiceTier.EXTREME_VALUE
-                else -> DiceTier.NORMAL
+                token.result <= lowThreshold -> DiceLevel.CRITICAL_GOOD
+                token.result >= highThreshold -> DiceLevel.CRITICAL_BAD
+                else -> DiceLevel.NORMAL
             }
-            DiceRulePreset.DND_D20 -> when {
-                token.max == 20 && token.result == 20 -> DiceTier.CRITICAL_SUCCESS
-                token.max == 20 && token.result == 1 -> DiceTier.CRITICAL_FAILURE
-                token.span in 1..2 && onBoundary -> DiceTier.EXTREME_VALUE
-                else -> DiceTier.NORMAL
-            }
+            DiceRulePreset.NEUTRAL_DEFAULT -> DiceLevel.NORMAL
         }
     }
 }

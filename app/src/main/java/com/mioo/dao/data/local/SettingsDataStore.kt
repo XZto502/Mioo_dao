@@ -853,15 +853,13 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    /** 串 → 骰点高亮规则（存枚举名；未设置过的串返回 null，调用方回退 SMART_NEUTRAL）。 */
+    /** 串 → 骰点规则（存枚举名；未设置过返回 null，调用方回退默认纯色）。 */
     suspend fun getThreadDicePreset(threadId: String): com.mioo.dao.utils.DiceRulePreset? =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val jsonStr = context.dataStore.data.first()[KEY_THREAD_DICE_PRESETS] ?: return@withContext null
             try {
                 org.json.JSONObject(jsonStr).optString(threadId, "").takeIf { it.isNotEmpty() }
-                    ?.let { name ->
-                        runCatching { com.mioo.dao.utils.DiceRulePreset.valueOf(name) }.getOrNull()
-                    }
+                    ?.let { name -> com.mioo.dao.utils.DiceRulePreset.fromStored(name) }
             } catch (_: Exception) {
                 null
             }

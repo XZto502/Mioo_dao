@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.settings
 
+import com.mioo.dao.ui.components.formatPostTime
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -163,7 +165,7 @@ fun HistoryScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = item.now,
+                                text = formatPostTime(item.now),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )

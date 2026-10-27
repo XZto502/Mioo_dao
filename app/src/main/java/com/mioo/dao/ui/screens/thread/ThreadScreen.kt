@@ -340,23 +340,24 @@ fun ThreadScreen(
         "${listUi.displayItems.size}:${listUi.displayItems.firstOrNull()?.id}:" +
             "${listUi.displayItems.lastOrNull()?.id}:${listUi.mainPostData?.content?.length ?: 0}"
     }
-    LaunchedEffect(threadPrewarmSig, quoteLinkColor) {
+    val prewarmDicePreset = if (threadSettings.diceBadgesEnabled) dicePreset else null
+    LaunchedEffect(threadPrewarmSig, quoteLinkColor, prewarmDicePreset) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         val bodies = listUi.displayItems.map { it.postData.content }
         // Head only on open — bulk of the page is warmed by settle-scroll effect below
         val head = listOfNotNull(listUi.mainPostData?.content) + bodies.take(10)
         withContext(Dispatchers.Default) {
-            HtmlParseCache.prewarm(head, quoteLinkColor, prewarmDarkTheme)
+            HtmlParseCache.prewarm(head, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset)
         }
         delay(350)
         // Cap bulk warm so long threads don't burn Default while user is already scrolling
         withContext(Dispatchers.Default) {
-            HtmlParseCache.prewarm(bodies.take(20), quoteLinkColor, prewarmDarkTheme)
+            HtmlParseCache.prewarm(bodies.take(20), quoteLinkColor, prewarmDarkTheme, prewarmDicePreset)
         }
     }
 
     // Settled-scroll near-viewport warm only (no mid-fling restart)
-    LaunchedEffect(listState, listUi.displayItems, quoteLinkColor) {
+    LaunchedEffect(listState, listUi.displayItems, quoteLinkColor, prewarmDicePreset) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         snapshotFlow {
             listState.isScrollInProgress to listState.firstVisibleItemIndex
@@ -368,7 +369,7 @@ fun ThreadScreen(
                 val near = bodies.drop((focus - 1).coerceAtLeast(0)).take(10)
                 if (near.isEmpty()) return@collect
                 withContext(Dispatchers.Default) {
-                    HtmlParseCache.prewarm(near, quoteLinkColor, prewarmDarkTheme)
+                    HtmlParseCache.prewarm(near, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset)
                 }
             }
     }
@@ -387,6 +388,7 @@ fun ThreadScreen(
         viewModel.updateSearchQuery(searchFieldText)
     }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -526,7 +528,9 @@ fun ThreadScreen(
                             showBookmarkMenu = showBookmarkMenu,
                             onShowBookmarkMenuChange = { showBookmarkMenu = it },
                             showOverflowMenu = showOverflowMenu,
-                            onShowOverflowMenuChange = { showOverflowMenu = it }
+                            onShowOverflowMenuChange = { showOverflowMenu = it },
+                            diceRuleLabel = "骰子规则: ${dicePreset.shortLabel}",
+                            onOpenDiceRule = { showDiceRuleMenu = true }
                         )
                     }
                 },
@@ -704,6 +708,11 @@ fun ThreadScreen(
                                         scope.launch {
                                             com.mioo.dao.utils.ShareCardUtil.sharePostCard(context, mainPostData)
                                         }
+                                    },
+                                    onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(mainThread.content)) {
+                                        { showDiceRuleMenu = true }
+                                    } else {
+                                        null
                                     }
                                 )
                             }
@@ -753,7 +762,8 @@ fun ThreadScreen(
                                 settingsViewModel.addBlockedUser(item.userHash)
                             },
                             onFreeCopy = { freeCopyText = item.rawContent },
-                            onReport = { reportTargetNo = item.idStr }
+                            onReport = { reportTargetNo = item.idStr },
+                            onOpenDiceRule = { showDiceRuleMenu = true }
                         )
                     }
 
@@ -819,61 +829,6 @@ fun ThreadScreen(
                 )
             }
 
-            val imageUrls = remember(listUi.displayItems, listUi.mainPostData) {
-                val list = mutableListOf<String>()
-                listUi.mainPostData?.imageUrl?.let { list.add(it) }
-                listUi.displayItems.forEach { item ->
-                    item.postData.imageUrl?.let { list.add(it) }
-                }
-                list.distinct()
-            }
-            // 带楼层元数据的看图条目：九宫格标注 + 底部「定位楼层」
-            val imageMeta = remember(listUi.displayItems, listUi.mainPostData, listUi.thread) {
-                val list = mutableListOf<ViewerImage>()
-                listUi.mainPostData?.imageUrl?.let { url ->
-                    list.add(
-                        ViewerImage(
-                            url = url,
-                            postId = listUi.thread?.idStr,
-                            snippet = listUi.thread?.content?.let(::plainTextSnippet)
-                        )
-                    )
-                }
-                listUi.displayItems.forEach { item ->
-                    item.postData.imageUrl?.let { url ->
-                        list.add(ViewerImage(url = url, postId = item.idStr, snippet = plainTextSnippet(item.rawContent)))
-                    }
-                }
-                list.distinctBy { it.url }
-            }
-
-            // Image Viewer Overlay
-            activeImageUrl?.let { imageUrl ->
-                ImageViewer(
-                    initialImageUrl = imageUrl,
-                    imageUrls = imageUrls,
-                    imageMeta = imageMeta,
-                    onDismiss = { activeImageUrl = null },
-                    onLocateFloor = { postId ->
-                        activeImageUrl = null
-                        val mainId = listUi.thread?.idStr
-                        val replyIdx = listUi.displayItems.indexOfFirst { it.idStr == postId }
-                        val index = when {
-                            postId == mainId && listUi.startPage <= 1 -> 0
-                            replyIdx >= 0 -> replyIdx + if (listUi.startPage <= 1) 1 else 0
-                            else -> -1
-                        }
-                        if (index >= 0) {
-                            scope.launch {
-                                listState.animateScrollToItem(index)
-                            }
-                        } else {
-                            Toast.makeText(context, "该楼层不在已加载的页里，翻到对应页再定位", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                )
-            }
-
             // Own collector: open/close ref never invalidates the LazyColumn parent
             ThreadRefPopupHost(
                 viewModel = viewModel,
@@ -882,6 +837,57 @@ fun ThreadScreen(
             )
         }
         }
+    }
+
+    val viewerImages by remember(listUi.displayItems, listUi.mainPostData, listUi.thread) {
+        derivedStateOf {
+            val list = mutableListOf<ViewerImage>()
+            listUi.mainPostData?.imageUrl?.let { url ->
+                list.add(
+                    ViewerImage(
+                        url = url,
+                        postId = listUi.thread?.idStr,
+                        snippet = listUi.thread?.content?.let(::plainTextSnippet)
+                    )
+                )
+            }
+            listUi.displayItems.forEach { item ->
+                item.postData.imageUrl?.let { url ->
+                    list.add(
+                        ViewerImage(
+                            url = url,
+                            postId = item.idStr,
+                            snippet = plainTextSnippet(item.rawContent)
+                        )
+                    )
+                }
+            }
+            list.distinctBy { it.url }
+        }
+    }
+    activeImageUrl?.let { imageUrl ->
+        ImageViewer(
+            initialImageUrl = imageUrl,
+            imageMeta = viewerImages,
+            onDismiss = { activeImageUrl = null },
+            onRequestMorePages = { viewModel.loadNextPage() },
+            onLocateFloor = { postId ->
+                activeImageUrl = null
+                val mainId = listUi.thread?.idStr
+                val replyIdx = listUi.displayItems.indexOfFirst { it.idStr == postId }
+                val index = when {
+                    postId == mainId && listUi.startPage <= 1 -> 0
+                    replyIdx >= 0 -> replyIdx + if (listUi.startPage <= 1) 1 else 0
+                    else -> -1
+                }
+                if (index >= 0) {
+                    scope.launch { listState.animateScrollToItem(index) }
+                } else {
+                    Toast.makeText(context, "该楼层不在已加载的页里，翻到对应页再定位", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
     }
 
     // Page Jump Dialog
@@ -897,33 +903,36 @@ fun ThreadScreen(
         )
     }
 
-    // 骰点规则切换微菜单：点串内任意骰子胶囊弹出，整串胶囊实时换色
+    // 与回复栏骰娘同一套 AlertDialog：系统 dim 盖住整屏（含顶栏和底栏），不要自绘半屏遮罩。
     if (showDiceRuleMenu) {
-        Dialog(
+        AlertDialog(
             onDismissRequest = { showDiceRuleMenu = false },
-            // usePlatformDefaultWidth=false 必须显式给：默认 true 时 Dialog 窗口只有
-            // 屏幕中间一条，scrim 的 fillMaxSize 盖不满全屏（四周漏出底下的串）
-            properties = immersiveDialogProperties(
-                usePlatformDefaultWidth = false,
-                dismissOnClickOutside = true
-            )
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .clickable { showDiceRuleMenu = false },
-                contentAlignment = Alignment.Center
-            ) {
-                DiceRuleMenuPanel(
-                    current = dicePreset,
-                    onSelect = {
-                        viewModel.setDicePreset(it)
-                        showDiceRuleMenu = false
+            properties = immersiveDialogProperties(),
+            title = {
+                ImmersiveDialogEffect()
+                Text("本串骰子规则")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DiceRulePreset.entries.forEach { preset ->
+                        Md3MenuPillItem(
+                            label = preset.menuLabel,
+                            leadingIcon = Icons.Default.Casino,
+                            selected = preset == dicePreset,
+                            onClick = {
+                                viewModel.setDicePreset(preset)
+                                showDiceRuleMenu = false
+                            }
+                        )
                     }
-                )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDiceRuleMenu = false }) {
+                    Text("取消")
+                }
             }
-        }
+        )
     }
 
     // 串内举报：饼干取值复用传给 ReplyInputBar 的同一组值（串级覆盖优先，其次全局选中）
@@ -1116,46 +1125,6 @@ private fun plainTextSnippet(html: String): String {
     return text.replace(Regex("\\s+"), " ").trim().take(48)
 }
 
-/** 本串骰点规则切换微菜单（点任意骰子胶囊弹出；选中项胶囊高亮 + 对号）。 */
-@Composable
-private fun DiceRuleMenuPanel(
-    current: DiceRulePreset,
-    onSelect: (DiceRulePreset) -> Unit
-) {
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (isDark) Color(0xFF17191E) else Color(0xFFF6F7F9),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)),
-        shadowElevation = 6.dp,
-        modifier = Modifier
-            .padding(horizontal = 40.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { }
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = "本串骰子高亮规则",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 10.dp, bottom = 2.dp)
-            )
-            DiceRulePreset.entries.forEach { preset ->
-                Md3MenuPillItem(
-                    label = "${preset.label} (${preset.desc})",
-                    selected = preset == current,
-                    onClick = { onSelect(preset) }
-                )
-            }
-        }
-    }
-}
-
 /**
  * Collects [ThreadViewModel.chromeUiState] so bookmark / download toggles do not
  * recompose the list body (which only watches [ThreadViewModel.listUiState]).
@@ -1169,7 +1138,9 @@ private fun ThreadChromeActions(
     showBookmarkMenu: Boolean,
     onShowBookmarkMenuChange: (Boolean) -> Unit,
     showOverflowMenu: Boolean,
-    onShowOverflowMenuChange: (Boolean) -> Unit
+    onShowOverflowMenuChange: (Boolean) -> Unit,
+    diceRuleLabel: String,
+    onOpenDiceRule: () -> Unit
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
@@ -1308,6 +1279,14 @@ private fun ThreadChromeActions(
                 onClick = {
                     onShowOverflowMenuChange(false)
                     onShare()
+                }
+            )
+            Md3MenuPillItem(
+                label = diceRuleLabel,
+                leadingIcon = Icons.Default.Casino,
+                onClick = {
+                    onShowOverflowMenuChange(false)
+                    onOpenDiceRule()
                 }
             )
             Md3MenuPillItem(
@@ -1759,7 +1738,8 @@ private fun ThreadReplyRow(
     onBlockThread: () -> Unit,
     onBlockUser: () -> Unit,
     onFreeCopy: () -> Unit,
-    onReport: () -> Unit
+    onReport: () -> Unit,
+    onOpenDiceRule: () -> Unit
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
     val quotedReplies = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1808,6 +1788,11 @@ private fun ThreadReplyRow(
                 rowScope.launch {
                     com.mioo.dao.utils.ShareCardUtil.sharePostCard(rowContext, item.postData)
                 }
+            },
+            onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(item.rawContent)) {
+                onOpenDiceRule
+            } else {
+                null
             }
         )
     }
@@ -1835,7 +1820,8 @@ private fun PostActionDialog(
     onReport: () -> Unit,
     blockThreadLabel: String,
     blockUserLabel: String,
-    onShareCard: (() -> Unit)? = null
+    onShareCard: (() -> Unit)? = null,
+    onSwitchDiceRule: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1849,6 +1835,12 @@ private fun PostActionDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (onSwitchDiceRule != null) {
+                    TextButton(
+                        onClick = { onSwitchDiceRule(); onDismiss() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("切换本串骰子规则") }
+                }
                 TextButton(
                     onClick = { onQuote(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()

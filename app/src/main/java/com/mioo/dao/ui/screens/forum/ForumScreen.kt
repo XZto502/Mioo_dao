@@ -170,6 +170,7 @@ fun ForumScreen(
     dockSinkFraction: () -> Float = { 0f },
     /** 抽屉打开/正在打开时上报主框架：悬浮 dock 滑出屏幕让位。 */
     onDrawerOpenChange: (Boolean) -> Unit = {},
+    onImageViewerOpenChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -230,6 +231,7 @@ fun ForumScreen(
     // 打开中（含手势拖过阈值）→ 主框架把悬浮 dock 滑出屏幕，避免压在抽屉上拦截点击
     val drawerOverDock = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open
     LaunchedEffect(drawerOverDock) { onDrawerOpenChange(drawerOverDock) }
+    LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
 
     val pullToRefreshState = rememberPullToRefreshState()
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
@@ -303,6 +305,7 @@ fun ForumScreen(
         scope.launch { drawerState.close() }
     }
 
+    Box(Modifier.fillMaxSize()) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -721,6 +724,7 @@ fun ForumScreen(
             imageUrl = imageUrl,
             onDismiss = { activeImageUrl = null }
         )
+    }
     }
 }
 
