@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.mioo.dao.ui.theme.isActivitySystemBarsOverridden
 import kotlinx.coroutines.delay
 
 
@@ -282,6 +283,7 @@ fun MiooDaoTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
+            if (isActivitySystemBarsOverridden) return@SideEffect
             val window = (view.context as Activity).window
             val transparent = Color.Transparent.toArgb()
             window.statusBarColor = transparent

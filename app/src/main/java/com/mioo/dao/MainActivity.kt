@@ -42,6 +42,7 @@ import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooDaoTheme
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.installImmersiveBarGuard
+import com.mioo.dao.ui.theme.isActivitySystemBarsOverridden
 import com.mioo.dao.ui.theme.removeImmersiveBarGuard
 import com.mioo.dao.utils.ThreadLinkParser
 import com.mioo.dao.utils.UpdatePromptController
@@ -155,7 +156,9 @@ class MainActivity : ComponentActivity() {
 
             // Keep system bars immersive when app theme changes (not only system UI mode).
             SideEffect {
-                applyImmersiveSystemBars(darkTheme)
+                if (!isActivitySystemBarsOverridden) {
+                    applyImmersiveSystemBars(darkTheme)
+                }
             }
 
             val pendingThreadId by pendingThreadIdState

@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.BlackActivitySystemBarsEffect
 import com.mioo.dao.ui.theme.findDialogWindow
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.utils.QrDetector
@@ -250,9 +251,8 @@ fun ImageViewer(
     ) {
         // Black viewer: light (white) system icons, no opaque nav strip.
         ImmersiveDialogEffect(lightAppearance = false)
-        // 看图器纯黑不随主题：浅色主题下 Dialog 窗口背景是浅色，透明系统栏后面露出的
-        // 就是它——窗口背景直接涂黑，两条系统栏也在每次布局时强制黑色（本监听注册在
-        // ImmersiveDialogEffect 的透明重申之后，保证最后执行）。
+        // 宿主 Activity 窗口的两条系统栏涂黑，关闭时自动恢复（解决浅色主题下 Dialog 未覆盖 inset 露浅色条带）
+        BlackActivitySystemBarsEffect()
         val viewerView = LocalView.current
         DisposableEffect(viewerView) {
             val window = viewerView.findDialogWindow()
@@ -263,19 +263,7 @@ fun ImageViewer(
             window?.setBackgroundDrawable(
                 android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK)
             )
-            val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                viewerView.findDialogWindow()?.let { w ->
-                    w.statusBarColor = android.graphics.Color.BLACK
-                    w.navigationBarColor = android.graphics.Color.BLACK
-                }
-            }
-            val decor = window?.decorView
-            decor?.viewTreeObserver?.addOnGlobalLayoutListener(listener)
-            onDispose {
-                decor?.viewTreeObserver?.let { observer ->
-                    if (observer.isAlive) observer.removeOnGlobalLayoutListener(listener)
-                }
-            }
+            onDispose { }
         }
         Box(
             modifier = modifier

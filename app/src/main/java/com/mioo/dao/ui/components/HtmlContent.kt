@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
@@ -154,9 +155,7 @@ fun parseHtmlToAnnotatedString(
     dicePreset: DiceRulePreset? = null
 ): ParsedContent {
     val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
-    // 智能模式的语义嗅探基于整楼纯文本（安科楼层的叙述与骰点通常同楼）；
-    // 骰点命中时把整楼纯文本作为 nearbyText 传给判定器
-    val ctx = dicePreset?.let { DiceParseCtx(preset = it, fullPlain = cleaned.stripRemainingHtmlTags()) }
+    val ctx = dicePreset?.let { DiceParseCtx(preset = it) }
     val annotated = buildAnnotatedString {
         val matcher = HTML_PATTERN.matcher(cleaned)
 
@@ -211,8 +210,7 @@ fun parseHtmlToAnnotatedString(
 
 /** 一次解析里的骰点判定上下文（仅 dicePreset 非空时创建）。 */
 private class DiceParseCtx(
-    val preset: DiceRulePreset,
-    val fullPlain: String
+    val preset: DiceRulePreset
 ) {
     var nextId: Int = 0
     val badges: MutableList<DiceBadgeSpec> = mutableListOf()
@@ -289,7 +287,7 @@ private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx:
     var last = 0
     for (m in matches) {
         if (m.start > last) appendStyledPlain(plain.substring(last, m.start), color)
-        val tier = DiceRoll.judge(ctx.preset, m.token, ctx.fullPlain)
+        val tier = DiceRoll.judge(ctx.preset, m.token)
         val id = "dice_${ctx.nextId++}"
         ctx.badges.add(DiceBadgeSpec(id = id, token = m.token, tier = tier))
         val start = length
@@ -454,11 +452,13 @@ fun HtmlContent(
             parsed.diceBadges.associate { spec ->
                 spec.id to InlineTextContent(
                     placeholder = Placeholder(
+                        // 文本实测宽 + 图标/内边距/余量（约 30dp），防止胶囊被占位宽度截断
                         width = with(density) {
-                            textMeasurer.measure(
+                            val textWidth = textMeasurer.measure(
                                 text = androidx.compose.ui.text.AnnotatedString(spec.badgeText),
                                 style = TextStyle(fontSize = 12.5.sp, fontFeatureSettings = "tnum")
-                            ).size.width.toSp()
+                            ).size.width
+                            (textWidth + 30.dp.toPx()).toSp()
                         },
                         height = with(density) { 20.dp.toSp() },
                         placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
@@ -539,6 +539,8 @@ fun HtmlContent(
 @Composable
 private fun DiceBadge(spec: DiceBadgeSpec) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    // 胶囊整枚可点（点击命中不依赖占位文本宽度，修"时开时不开"）
+    val onBadgeClick = LocalDiceRuleMenu.current
     val (bg, fg, borderColor) = when (spec.tier) {
         DiceTier.NORMAL -> Triple(
             MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
@@ -573,6 +575,8 @@ private fun DiceBadge(spec: DiceBadgeSpec) {
                     Modifier
                 }
             )
+            // 整枚胶囊可点（点击命中不依赖占位文本宽度，修"时开时不开"）
+            .clickable { onBadgeClick?.invoke() }
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center

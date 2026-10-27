@@ -8,7 +8,7 @@ package com.mioo.dao.utils
  * （出目 96、区间 1-100），result/min/max 三元组完整。另有 PO 红字 `XdY=结果` 格式。
  */
 enum class DiceRulePreset(val label: String, val desc: String) {
-    SMART_NEUTRAL("智能识别", "根据正文语境"),
+    HIGHLIGHT_ONLY("仅高亮", "默认"),
     ANKO_HIGH_GOOD("安科规则", "d100 大数优"),
     COC_LOW_GOOD("CoC 规则", "d100 小数优"),
     DND_D20("DND 规则", "d20 极值")
@@ -51,16 +51,6 @@ object DiceRoll {
     /** PO 红字骰点格式：`1d100=57`（允许全角等号/冒号）。 */
     private val XDY_PATTERN = Regex("(\\d{1,2})d(\\d{1,4})\\s*[=＝:]\\s*(\\d{1,4})", RegexOption.IGNORE_CASE)
 
-    /** 智能嗅探的成功词（命中且无否定语才判大成功）。 */
-    private val SUCCESS_WORDS = listOf("大成功", "极难成功", "极限成功")
-    private val SUCCESS_NEGATIONS = listOf("没有大成功", "不算大成功", "并非大成功", "不是大成功")
-
-    /** 整楼纯文本的语义嗅探：命中大成功（无否定）/ 大失败。 */
-    fun sniff(text: String): Pair<Boolean, Boolean> = Pair(
-        SUCCESS_WORDS.any { text.contains(it) } && SUCCESS_NEGATIONS.none { text.contains(it) },
-        text.contains("大失败")
-    )
-
     /** 找出一段纯文本里的全部骰点（按位置排序，重叠去重）。 */
     fun findTokens(text: String): List<DiceRollMatch> {
         if (!text.any { it.isDigit() }) return emptyList()
@@ -90,17 +80,13 @@ object DiceRoll {
     }
 
     /**
-     * 按规则判定档位。[nearbyText] 为骰点附近的正文片段（智能模式语义嗅探用）。
+     * 按规则判定档位。
      */
-    fun judge(preset: DiceRulePreset, token: DiceRollToken, nearbyText: String): DiceTier {
+    fun judge(preset: DiceRulePreset, token: DiceRollToken): DiceTier {
         val onBoundary = token.result == token.max || token.result == token.min
         return when (preset) {
-            DiceRulePreset.SMART_NEUTRAL -> when {
-                sniff(nearbyText).first -> DiceTier.CRITICAL_SUCCESS
-                sniff(nearbyText).second -> DiceTier.CRITICAL_FAILURE
-                token.span >= 10 && onBoundary -> DiceTier.EXTREME_VALUE
-                else -> DiceTier.NORMAL
-            }
+            // 默认态：只做中性高亮，不判吉凶（大成功/大失败特殊渲染仅在选定规则后出现）
+            DiceRulePreset.HIGHLIGHT_ONLY -> DiceTier.NORMAL
             DiceRulePreset.ANKO_HIGH_GOOD -> when {
                 token.max == 100 && token.result >= 96 -> DiceTier.CRITICAL_SUCCESS
                 token.max == 100 && token.result <= 5 -> DiceTier.CRITICAL_FAILURE
