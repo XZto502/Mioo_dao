@@ -195,6 +195,13 @@ fun ForumScreen(
     // True for a short window after board switch — pause prefetch/prewarm during swap
     var boardSwitchQuiet by remember { mutableStateOf(false) }
 
+    suspend fun refreshFromTop() {
+        if (listState.layoutInfo.totalItemsCount > 0) {
+            listState.scrollToItem(0)
+        }
+        viewModel.refresh()
+    }
+
     // Splash: also release on empty/error so we never hang without content
     var coldStartNotified by remember { mutableStateOf(false) }
     LaunchedEffect(
@@ -241,7 +248,7 @@ fun ForumScreen(
     // User pull: fire refresh only when the VM is not already refreshing.
     LaunchedEffect(pullToRefreshState.isRefreshing) {
         if (pullToRefreshState.isRefreshing && !uiState.isRefreshing) {
-            viewModel.refresh()
+            refreshFromTop()
         }
     }
     // Drive the pull indicator from VM state (one-way after user or toolbar starts refresh).
@@ -278,6 +285,7 @@ fun ForumScreen(
     LaunchedEffect(currentForumId) {
         if (currentForumId != previousForumId.value) {
             boardSwitchQuiet = true
+            listState.scrollToItem(0)
             previousForumId.value = currentForumId
             delay(160)
             boardSwitchQuiet = false
@@ -518,13 +526,7 @@ fun ForumScreen(
                     actions = {
                         IconButton(
                             onClick = {
-                                // Scroll to top only if the list currently has items; never block refresh.
-                                if (listState.layoutInfo.totalItemsCount > 0) {
-                                    scope.launch {
-                                        runCatching { listState.scrollToItem(0) }
-                                    }
-                                }
-                                viewModel.refresh()
+                                scope.launch { refreshFromTop() }
                             },
                             enabled = !uiState.isRefreshing
                         ) {
