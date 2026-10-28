@@ -85,14 +85,11 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.layout.boundsInWindow
@@ -101,8 +98,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -142,7 +137,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -1614,111 +1608,6 @@ private fun ThreadPageJumpButton(
     }
 }
 
-@Composable
-fun PageNavigator(
-    currentPage: Int,
-    totalPages: Int,
-    onPrevPage: () -> Unit,
-    onNextPage: () -> Unit,
-    onJumpClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        TextButton(
-            onClick = onPrevPage,
-            enabled = currentPage > 1
-        ) {
-            Text("< 上一页", style = MaterialTheme.typography.labelMedium)
-        }
-
-        OutlinedButton(
-            onClick = onJumpClick,
-            shape = RoundedCornerShape(16.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-            modifier = Modifier.padding(horizontal = 8.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.primary
-            ),
-            border = BorderStroke(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-            )
-        ) {
-            Text(
-                text = "$currentPage / $totalPages",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        TextButton(
-            onClick = onNextPage,
-            enabled = currentPage < totalPages
-        ) {
-            Text("下一页 >", style = MaterialTheme.typography.labelMedium)
-        }
-    }
-}
-
-@Composable
-fun PageJumpDialog(
-    currentPage: Int,
-    totalPages: Int,
-    onDismiss: () -> Unit,
-    onJump: (Int) -> Unit
-) {
-    var inputText by remember { mutableStateOf("") }
-
-    fun confirmJump() {
-        val target = inputText.toIntOrNull()
-        if (target != null && target in 1..totalPages) {
-            onJump(target)
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        properties = immersiveDialogProperties(),
-        title = {
-            ImmersiveDialogEffect()
-            Text("跳转页码")
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Manual input
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { newValue ->
-                        inputText = newValue.filter { it.isDigit() }
-                    },
-                    label = { Text("页码 (1 - $totalPages)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { confirmJump() }),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { confirmJump() },
-                enabled = inputText.isNotEmpty() && inputText.toIntOrNull()?.let { it in 1..totalPages } == true
-            ) {
-                Text("跳转")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
 
 /**
  * Single reply row: only recomposes when this item's data or its observed quote keys change.
