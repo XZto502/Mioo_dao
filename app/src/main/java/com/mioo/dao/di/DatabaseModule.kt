@@ -58,6 +58,53 @@ object DatabaseModule {
         }
     }
 
+    /** v7 caches the reply count per cloud-feed thread (feed API 不返回回复数，需补抓缓存). */
+    private val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `cloud_feed_threads` ADD COLUMN `replyCount` INTEGER NOT NULL DEFAULT 0"
+            )
+        }
+    }
+
+    /**
+     * v8 adds the 已离线串 marker table (pages JSON stays in api_cache).
+     * 迁移加固：v7 在存量设备上有两种历史形态——
+     * 1) 正式链 v7 = MIGRATION_6_7 产物（cloud_feed_threads 已带 replyCount，无 offline_threads）；
+     * 2) 2026-10-26 中间测试版的 v7 = 已建旧结构 offline_threads，且 cloud_feed_threads 缺 replyCount。
+     * 形态 2 的设备升上来时 6→7 不会重跑，这里用 PRAGMA 探测补列，并强制重建 offline_threads
+     * （旧结构列名完全不同，CREATE IF NOT EXISTS 会跳过导致校验崩溃；离线登记重建即可，串重新下载恢复）。
+     */
+    private val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            val cloudColumns = mutableListOf<String>()
+            db.query("PRAGMA table_info(`cloud_feed_threads`)").use { cursor ->
+                val nameIdx = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) cloudColumns.add(cursor.getString(nameIdx))
+            }
+            if ("replyCount" !in cloudColumns) {
+                db.execSQL(
+                    "ALTER TABLE `cloud_feed_threads` ADD COLUMN `replyCount` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+            db.execSQL("DROP TABLE IF EXISTS `offline_threads`")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `offline_threads` (" +
+                    "`threadId` TEXT NOT NULL PRIMARY KEY, " +
+                    "`title` TEXT, " +
+                    "`contentSummary` TEXT NOT NULL, " +
+                    "`poUserHash` TEXT NOT NULL, " +
+                    "`fid` TEXT, " +
+                    "`forumName` TEXT NOT NULL, " +
+                    "`replyCount` INTEGER NOT NULL, " +
+                    "`imageFilesJson` TEXT NOT NULL, " +
+                    "`imageBytes` INTEGER NOT NULL, " +
+                    "`coverFile` TEXT, " +
+                    "`downloadedAt` INTEGER NOT NULL)"
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -72,7 +119,7 @@ object DatabaseModule {
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
             // 侧载分发下用户可能回滚安装旧版：降级重建好过访问 DB 即崩溃循环
             .fallbackToDestructiveMigrationOnDowngrade()
-            .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())
@@ -107,6 +154,12 @@ object DatabaseModule {
     @Singleton
     fun provideDraftDao(database: AppDatabase): com.mioo.dao.data.local.DraftDao {
         return database.draftDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideOfflineThreadDao(database: AppDatabase): com.mioo.dao.data.local.OfflineThreadDao {
+        return database.offlineThreadDao()
     }
 
     @Provides

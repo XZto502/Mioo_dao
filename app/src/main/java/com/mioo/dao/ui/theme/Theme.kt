@@ -167,33 +167,9 @@ private val DarkGreenColorScheme = darkColorScheme(
     onSurfaceVariant = DarkOnSurfaceVariant
 )
 
-// AMOLED 纯黑：深色下背景/表面纯黑省电；浅色模式退回经典色板
-private val LightAmoledColorScheme = LightColorScheme
+// AMOLED 纯黑：深色下背景/表面纯黑省电，其余颜色跟随动态取色；
+// 浅色模式退回经典色板（选择入口也仅在深色模式下出现）
 
-private val DarkAmoledColorScheme = darkColorScheme(
-    primary = DarkPrimary,
-    onPrimary = DarkOnPrimary,
-    primaryContainer = DarkPrimaryContainer,
-    onPrimaryContainer = DarkOnPrimaryContainer,
-    secondary = DarkSecondary,
-    onSecondary = DarkOnSecondary,
-    secondaryContainer = DarkSecondaryContainer,
-    onSecondaryContainer = DarkOnSecondaryContainer,
-    tertiary = DarkTertiary,
-    onTertiary = DarkOnTertiary,
-    tertiaryContainer = DarkTertiaryContainer,
-    onTertiaryContainer = DarkOnTertiaryContainer,
-    error = DarkError,
-    onError = DarkOnError,
-    errorContainer = DarkErrorContainer,
-    onBackground = DarkOnBackground,
-    background = Color(0xFF000000),
-    surface = Color(0xFF000000),
-    onSurface = DarkOnSurface,
-    surfaceVariant = Color(0xFF1A1A1E),
-    onSurfaceVariant = DarkOnSurfaceVariant,
-    outline = DarkOutline
-)
 
 @Composable
 fun MiooDaoTheme(
@@ -228,7 +204,23 @@ fun MiooDaoTheme(
         "green" -> {
             if (darkTheme) DarkGreenColorScheme else LightGreenColorScheme
         }
-        "amoled" -> { if (darkTheme) DarkAmoledColorScheme else LightAmoledColorScheme }
+        "amoled" -> {
+            if (darkTheme) {
+                // 纯黑：动态取色为基底（低版本回退经典深色），仅把背景/表面压成纯黑
+                val base = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    dynamicDarkColorScheme(LocalContext.current)
+                } else {
+                    DarkColorScheme
+                }
+                base.copy(
+                    background = Color(0xFF000000),
+                    surface = Color(0xFF000000),
+                    surfaceVariant = Color(0xFF1A1A1E)
+                )
+            } else {
+                LightColorScheme
+            }
+        }
         else -> {
             if (darkTheme) DarkColorScheme else LightColorScheme
         }

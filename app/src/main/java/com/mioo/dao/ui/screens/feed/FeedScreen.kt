@@ -72,6 +72,10 @@ fun FeedScreen(
     val scope = rememberCoroutineScope()
     val emptyStringLambda = remember { { _: String -> } }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
+    // 长按/删除按钮弹出的离线串删除确认
+    var pendingOfflineDelete by remember {
+        mutableStateOf<com.mioo.dao.data.local.OfflineThreadSummary?>(null)
+    }
 
     // 订阅操作失败等一次性错误提示
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -79,6 +83,30 @@ fun FeedScreen(
         viewModel.errorEvents.collect { msg ->
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
         }
+    }
+
+    // 已离线串删除确认（卡片删除按钮触发）
+    pendingOfflineDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingOfflineDelete = null },
+            properties = immersiveDialogProperties(),
+            title = { ImmersiveDialogEffect(); Text("删除离线缓存？") },
+            text = {
+                Text(
+                    text = "将移除 No.${target.threadId} 的本地收藏与离线数据（含图片，" +
+                        com.mioo.dao.ui.screens.offline.formatOfflineBytes(target.totalBytes) + "），不可恢复。"
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    pendingOfflineDelete = null
+                    viewModel.deleteOffline(target.threadId)
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingOfflineDelete = null }) { Text("取消") }
+            }
+        )
     }
 
     // Pre-parse HTML for currently visible feed list
@@ -142,7 +170,7 @@ fun FeedScreen(
                 androidx.compose.material3.Tab(
                     selected = uiState.selectedFolderId == null,
                     onClick = { viewModel.selectFolder(null) },
-                    text = { Text("本地收藏") }
+                    text = { Text("已离线") }
                 )
                 uiState.feedFolders.forEach { folder ->
                     androidx.compose.material3.Tab(
@@ -163,7 +191,9 @@ fun FeedScreen(
                         CircularProgressIndicator()
                     }
                 }
-                uiState.selectedFolderId == null && uiState.localDisplayItems.isEmpty() -> {
+                uiState.selectedFolderId == null &&
+                    uiState.offlineSummaries.isEmpty() &&
+                    uiState.localDisplayItems.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -174,13 +204,13 @@ fun FeedScreen(
                             modifier = Modifier.padding(24.dp)
                         ) {
                             Text(
-                                text = "暂无本地收藏",
+                                text = "暂无离线串",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "在帖子内点击星星图标即可收藏到本地。",
+                                text = "在串详情页点星标或右上角「⋮ → 离线下载本串」即可离线保存。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -245,6 +275,25 @@ fun FeedScreen(
                     ) {
                         if (uiState.selectedFolderId == null) {
                             items(
+                                items = uiState.offlineSummaries,
+                                key = { "o_${it.threadId}" },
+                                contentType = { "offline_thread" }
+                            ) { summary ->
+                                OfflineFeedRow(
+                                    summary = summary,
+                                    isUpdating = summary.threadId in uiState.offlineUpdatingIds,
+                                    onNavigateToThread = onNavigateToThread,
+                                    onUpdate = {
+                                        viewModel.updateOffline(summary) { msg ->
+                                            android.widget.Toast.makeText(
+                                                context, msg, android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    onDelete = { pendingOfflineDelete = summary }
+                                )
+                            }
+                            items(
                                 items = uiState.localDisplayItems,
                                 key = { it.id },
                                 contentType = { item ->
@@ -285,6 +334,26 @@ fun FeedScreen(
 }
 
 @Composable
+private fun OfflineFeedRow(
+    summary: com.mioo.dao.data.local.OfflineThreadSummary,
+    isUpdating: Boolean,
+    onNavigateToThread: (String) -> Unit,
+    onUpdate: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val offlineImageDir = remember { java.io.File(context.filesDir, "offline_images") }
+    com.mioo.dao.ui.screens.offline.OfflineThreadCard(
+        summary = summary,
+        isUpdating = isUpdating,
+        offlineImageDir = offlineImageDir,
+        onClick = { onNavigateToThread(summary.threadId) },
+        onUpdate = onUpdate,
+        onDelete = onDelete
+    )
+}
+
+@Composable
 private fun LocalBookmarkRow(
     item: BookmarkListItem,
     onNavigateToThread: (String) -> Unit,
@@ -297,7 +366,7 @@ private fun LocalBookmarkRow(
     Box {
         ThreadCard(
             postData = item.postData,
-            replyCount = 0,
+            replyCount = item.replyCount,
             onThreadClick = onClick,
             onQuoteClick = emptyStringLambda,
             onImageClick = emptyStringLambda,

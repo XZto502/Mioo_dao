@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.1.2",
-  "name": "v1.1.2",
-  "body": "专注修 bug 的一版：\n\n- 搜索引擎芯片只负责切换，不再误跳浏览器；全站搜索入口唯一化\n- 订阅夹大修：续读的串正确写入浏览历史、长按才可取消订阅（不再误触）、下滑加载全部订阅串（不止 10 条）、删除失败有提示\n- 回复/发串成功后自动收起键盘；附件图片可点开全屏预览\n\n从 v1.1.1 直接升级，数据无需迁移",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.2",
+  "tag_name": "v1.1.3",
+  "name": "v1.1.3",
+  "body": "喵岛 v1.1.3 带来离线阅读与多项体验优化：\n\n- 新增整串离线保存：可下载整串内容和图片，在收藏页查看、更新或删除离线串；本地收藏也会在后台逐步同步为离线内容。\n- 支持从具体楼层发起举报，自动引用目标楼层，并可选择饼干发送至值班室。\n- 看图体验升级：双击可按触点放大，放大后拖动限制在图片边界内；修复缩略图切换错位及带日期目录图片加载问题。\n- 优化长串阅读、页码跳转、翻页与 PO 查看过程，减少切换时的空白闪屏并改善加载反馈。\n- 优化板块抽屉和顶栏胶囊菜单的动画、定位与宽度。\n- 统一发串、回复和举报的饼干选择体验，改善发串输入栏与键盘/表情面板的配合。\n- 修复订阅串回复数显示，并优化 AMOLED 配色与系统主题切换。\n- 加固本地数据库升级兼容性，升级时自动迁移数据。",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.3",
   "assets": [
     {
       "name": "app-release.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.2/app-release.apk",
-      "size": 5069473
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.3/app-release.apk",
+      "size": 5108581
     }
   ]
 }

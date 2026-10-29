@@ -166,7 +166,12 @@ class BackupRepository @Inject constructor(
             settingsDataStore.saveCookiesList(cookies)
             settingsDataStore.saveCookieNotes(parseCookieNotes(root.optJSONObject("cookieNotes")))
             val auth = root.optString("authCookie", "")
-            if (auth.isNotBlank()) settingsDataStore.saveAuthCookie(auth)
+            if (auth.isNotBlank()) {
+                settingsDataStore.saveAuthCookie(auth)
+            } else if (cookies.isNotEmpty()) {
+                // 未带鉴权饼干：默认跟随第一块导入的饼干
+                settingsDataStore.saveAuthCookie(cookies.first())
+            }
             if (cookies.isNotEmpty()) {
                 val selected = root.optInt("selectedCookieIndex", 0)
                     .coerceIn(0, cookies.size - 1)
@@ -189,7 +194,12 @@ class BackupRepository @Inject constructor(
             settingsDataStore.saveCookiesList(cookies)
             settingsDataStore.saveCookieNotes(parseCookieNotes(obj.optJSONObject("cookieNotes")))
             val auth = obj.optString("authCookie", "")
-            if (auth.isNotBlank()) settingsDataStore.saveAuthCookie(auth)
+            if (auth.isNotBlank()) {
+                settingsDataStore.saveAuthCookie(auth)
+            } else if (cookies.isNotEmpty()) {
+                // 未带鉴权饼干：默认跟随第一块导入的饼干
+                settingsDataStore.saveAuthCookie(cookies.first())
+            }
             if (cookies.isNotEmpty()) {
                 val selected = obj.optInt("selectedCookieIndex", 0)
                     .coerceIn(0, cookies.size - 1)

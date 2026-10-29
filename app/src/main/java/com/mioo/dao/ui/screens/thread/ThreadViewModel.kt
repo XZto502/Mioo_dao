@@ -75,7 +75,11 @@ data class ThreadChromeUiState(
     /** Thread lives in a 云端收藏夹 (cloud feed cache) — icon also lights up for it. */
     val isCloudSubscribed: Boolean = false,
     val feedFolders: List<FeedFolder> = emptyList(),
-    val isDownloading: Boolean = false
+    val isDownloading: Boolean = false,
+    /** 本串已离线（offline_threads 有标记）——三点菜单显示「更新离线缓存 (已保存)」。 */
+    val isOfflineSaved: Boolean = false,
+    /** 本串已缓存所属的云端收藏夹 uuid 集合（收藏菜单按夹显示"已收藏进该夹"）。 */
+    val cloudFolderUuids: Set<String> = emptySet()
 )
 
 /** Nested >>No.xxxx popup — isolated so open/close never invalidates the list. */
@@ -142,6 +146,7 @@ class ThreadViewModel @Inject constructor(
         private const val MAX_NETWORK_QUOTES_PER_PAGE = 10
         private val QUOTE_ID_PATTERN: Pattern = Pattern.compile(">>(?:No\\.)?(\\d+)")
         private const val MAX_FILTERED_SKIPS = 4
+        private const val REPORT_BOARD_FID = "18" // 值班室
     }
 
     private var currentPage = 1
@@ -195,6 +200,20 @@ class ThreadViewModel @Inject constructor(
                         it.copy(isSubscribed = local, isCloudSubscribed = cloud)
                     }
                 }
+        }
+
+        viewModelScope.launch {
+            // 本串离线状态：下载完成/删除离线后三点菜单文案实时翻转
+            threadRepository.isThreadDownloaded(threadId).collect { downloaded ->
+                _chromeState.update { it.copy(isOfflineSaved = downloaded) }
+            }
+        }
+
+        viewModelScope.launch {
+            // 本串已缓存所属的云端收藏夹：收藏菜单按夹显示"已收藏进该夹"态
+            threadRepository.observeCloudFolderUuids(threadId).collect { uuids ->
+                _chromeState.update { it.copy(cloudFolderUuids = uuids) }
+            }
         }
 
         viewModelScope.launch {
@@ -321,7 +340,8 @@ class ThreadViewModel @Inject constructor(
         resumeScrollSeeded = false
         _listState.update {
             it.copy(
-                displayItems = emptyList(),
+                // 不清空 displayItems：旧页内容保留到新页数据整体替换（SWR 同款行为），
+                // 清空会在 AMOLED 纯黑背景上闪黑帧。落顶由 stickyResumeIndex 种子完成。
                 isLastPage = false,
                 currentPage = page,
                 startPage = page,
@@ -785,7 +805,24 @@ class ThreadViewModel @Inject constructor(
 
     fun togglePoOnly() {
         _listState.update { it.copy(showPoOnly = !it.showPoOnly) }
-        loadThreadDetails()
+        // 原地切换数据源：保留旧列表直到新数据整体替换——先清空 displayItems 会在
+        // AMOLED 纯黑背景上闪整屏黑帧。落点与新视图分页对齐：第 1 页顶部
+        //（Po 视图分页与普通视图不同，续读页码没有意义）。
+        currentPage = 1
+        isLastPage = false
+        rawPosts = emptyList()
+        stickyResumeIndex = 0
+        resumeScrollSeeded = false
+        _listState.update {
+            it.copy(
+                isLastPage = false,
+                currentPage = 1,
+                startPage = 1,
+                pendingScrollIndex = null,
+                prependAnchorCount = null
+            )
+        }
+        loadPage(page = 1, mode = LoadMode.REPLACE)
     }
 
     fun toggleShowImagesOnly() {
@@ -985,6 +1022,30 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 串内举报：把对被举报楼层的引用作为新串发到值班室（fid=18）。
+     * 独立发串链路：不写历史、不存草稿、不碰 DraftPrefillBus / saveNewThreadDraft，
+     * 避免污染正常发串的草稿链路。
+     */
+    fun submitReport(title: String, content: String, cookie: String?, onResult: (success: Boolean, errorMessage: String?) -> Unit) {
+        viewModelScope.launch {
+            threadRepository.doPostThread(
+                fid = REPORT_BOARD_FID,
+                title = title.ifBlank { "举报" },
+                name = null,
+                email = null,
+                content = content,
+                imageFile = null,
+                cookie = cookie
+            ).collect { response ->
+                when (response) {
+                    is XdResponse.Success -> onResult(true, null)
+                    is XdResponse.Error -> onResult(false, response.message)
+                }
+            }
+        }
+    }
+
     private val refBackStack = ArrayDeque<String>()
 
     fun showRefPopup(postId: String) {
@@ -1068,10 +1129,18 @@ class ThreadViewModel @Inject constructor(
             threadRepository.downloadFullThread(threadId).collect { response ->
                 _chromeState.update { it.copy(isDownloading = false) }
                 when (response) {
-                    is XdResponse.Success -> onResult("下载完成，已加入本地收藏")
+                    is XdResponse.Success -> onResult("离线缓存已更新")
                     is XdResponse.Error -> onResult("下载失败: ${response.message}")
                 }
             }
+        }
+    }
+
+    /** 删除本串离线缓存（连带本地收藏与离线图片，收藏页「已离线」列表同步移除）。 */
+    fun removeOffline(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            threadRepository.deleteOfflineThread(threadId)
+            onResult("已删除离线缓存")
         }
     }
 

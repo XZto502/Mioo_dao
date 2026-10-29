@@ -10,7 +10,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,6 +30,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,7 +60,6 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Casino
-import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Face
@@ -65,8 +71,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
@@ -120,9 +124,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
@@ -131,7 +137,6 @@ import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
-import com.mioo.dao.ui.components.imePaddingAndNavigationBars
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
@@ -151,6 +156,8 @@ import kotlinx.coroutines.withContext
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.mutableIntStateOf
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -161,6 +168,8 @@ fun ForumScreen(
     onColdStartContentReady: () -> Unit = {},
     /** 底部 dock 栏下沉进度 0f(可见)→1f(隐藏)；发串按钮随之向内缩小淡出。 */
     dockSinkFraction: () -> Float = { 0f },
+    /** 抽屉打开/正在打开时上报主框架：悬浮 dock 滑出屏幕让位。 */
+    onDrawerOpenChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -217,6 +226,10 @@ fun ForumScreen(
     val drawerBlocksMainList =
         drawerState.currentValue != DrawerValue.Closed ||
             drawerState.targetValue != DrawerValue.Closed
+
+    // 打开中（含手势拖过阈值）→ 主框架把悬浮 dock 滑出屏幕，避免压在抽屉上拦截点击
+    val drawerOverDock = drawerState.isOpen || drawerState.targetValue == DrawerValue.Open
+    LaunchedEffect(drawerOverDock) { onDrawerOpenChange(drawerOverDock) }
 
     val pullToRefreshState = rememberPullToRefreshState()
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
@@ -340,10 +353,15 @@ fun ForumScreen(
                 }
                 LazyColumn(
                     state = drawerListState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .navigationBarsPadding(),
-                    contentPadding = PaddingValues(12.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    // 底部垫出悬浮 dock 的遮挡区：末尾板块（版务/百脑汇）能滑出底栏之上
+                    contentPadding = PaddingValues(
+                        top = 8.dp,
+                        bottom = WindowInsets.navigationBars.asPaddingValues()
+                            .calculateBottomPadding() + 112.dp,
+                        start = 12.dp,
+                        end = 12.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (pinnedForumsList.isNotEmpty()) {
@@ -382,58 +400,80 @@ fun ForumScreen(
                         }
                     }
 
-                    // Normal Forum Groups
+                    // Normal Forum Groups — 每组一个 item，展开/收起整体做手风琴动画
                     uiState.forumGroups.forEach { group ->
-                        val groupCollapsed = !forumSettings.expandedForumGroups.contains(group.id)
-                        item(key = "header_${group.id}", contentType = "drawer_header") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = group.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = "${group.forums.size}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(end = 6.dp)
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ExpandMore,
-                                    contentDescription = if (groupCollapsed) "展开分类" else "收起分类",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        val groupExpanded = forumSettings.expandedForumGroups.contains(group.id)
+                        item(key = "group_${group.id}", contentType = "drawer_group") {
+                            Column {
+                                Row(
                                     modifier = Modifier
-                                        .size(18.dp)
-                                        .rotate(if (groupCollapsed) 0f else 180f)
-                                )
-                            }
-                        }
-                        if (!groupCollapsed) {
-                            items(group.forums, key = { "g${group.id}_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
-                                val isPinned = forumSettings.pinnedForums.contains(forum.id)
-                                ForumDrawerItem(
-                                    name = forum.name,
-                                    isSelected = forum.id == viewModel.forumId,
-                                    showStar = isPinned,
-                                    starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                    onClick = { selectBoard(forum.id, forum.name) },
-                                    onLongClick = {
-                                        settingsViewModel.togglePinForum(forum.id)
-                                        Toast.makeText(
-                                            context,
-                                            if (isPinned) "已取消置顶" else "已将版块置顶",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        .fillMaxWidth()
+                                        .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = group.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${group.forums.size}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 6.dp)
+                                    )
+                                    val chevronRotation by animateFloatAsState(
+                                        targetValue = if (groupExpanded) 180f else 0f,
+                                        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                                        label = "drawerChevron"
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ExpandMore,
+                                        contentDescription = if (groupExpanded) "收起分类" else "展开分类",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .rotate(chevronRotation)
+                                    )
+                                }
+                                // 收起时 AnimatedVisibility 不组合内容，抽屉的懒加载不受影响
+                                AnimatedVisibility(
+                                    visible = groupExpanded,
+                                    enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                                        expandVertically(
+                                            animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                            expandFrom = Alignment.Top
+                                        ),
+                                    exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
+                                        shrinkVertically(
+                                            animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                            shrinkTowards = Alignment.Top
+                                        )
+                                ) {
+                                    Column {
+                                        group.forums.forEach { forum ->
+                                            val isPinned = forumSettings.pinnedForums.contains(forum.id)
+                                            ForumDrawerItem(
+                                                name = forum.name,
+                                                isSelected = forum.id == viewModel.forumId,
+                                                showStar = isPinned,
+                                                starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                                onClick = { selectBoard(forum.id, forum.name) },
+                                                onLongClick = {
+                                                    settingsViewModel.togglePinForum(forum.id)
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (isPinned) "已取消置顶" else "已将版块置顶",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            )
+                                        }
                                     }
-                                )
+                                }
                             }
                         }
                     }
@@ -615,7 +655,15 @@ fun ForumScreen(
     }
 
     if (showCreateDialog) {
+        // 与串内回复栏同源：键盘/导航条高度在 Activity 窗口里量取。
+        // Dialog 窗口在这台设备上收不到 ime insets、可见区兜底也不收缩，
+        // 槽位如果用对话框自己量到的 0，底栏就会被键盘整个盖住。
+        val density = LocalDensity.current
+        val imeBottomPx = rememberEffectiveImeBottomPx()
+        val navBottomPx = WindowInsets.navigationBars.getBottom(density)
         CreateThreadDialog(
+            imeBottomPx = imeBottomPx,
+            navBottomPx = navBottomPx,
             cookies = forumSettings.cookiesList,
             selectedCookieIndex = forumSettings.selectedCookieIndex,
             boardName = uiState.currentForumName,
@@ -1046,6 +1094,9 @@ private fun ForumThreadRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateThreadDialog(
+    // 由 Activity 窗口量取后传入（Dialog 窗口在部分设备上拿不到 ime insets）
+    imeBottomPx: Int,
+    navBottomPx: Int,
     cookies: List<String>,
     selectedCookieIndex: Int,
     boardName: String = "",
@@ -1167,6 +1218,17 @@ fun CreateThreadDialog(
         val context = LocalContext.current
         ImmersiveDialogEffect(lightAppearance = !isDark)
 
+        // 宿主 Activity 是 adjustNothing，但 Dialog 窗口有独立的 softInputMode：
+        // 部分 OEM 默认让对话框 adjustResize → 内容被系统先顶一次，底栏的
+        // imePaddingAndNavigationBars 再垫一次 = 双倍抬升，整个栏"飞"到键盘上方。
+        // 显式钉死 ADJUST_NOTHING，抬升只由底栏自己的 inset 逻辑负责。
+        val dialogWindow = (dialogView.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            dialogWindow?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            )
+        }
+
         val hideSystemIme = remember(dialogView, context, keyboardController, focusManager) {
             {
                 focusManager.clearFocus(force = true)
@@ -1205,16 +1267,31 @@ fun CreateThreadDialog(
             }
         }
 
-        // 系统键盘再次抬起 → 关闭颜文字 / 骰娘面板（含 insets 失派发设备的兜底）。
-        // 阈值与对话框抬升(imePaddingAndNavigationBars 的 ime>nav)一致，避免中间区间弹跳
-        val imeBottomPx = rememberEffectiveImeBottomPx()
-        val navBottomPx = WindowInsets.navigationBars.getBottom(density)
-        val imeCoversNav = imeBottomPx > navBottomPx
-        LaunchedEffect(imeCoversNav) {
-            if (!imeCoversNav) return@LaunchedEffect
-            if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
-            if (kaomojiExpanded) kaomojiExpanded = false
+        // 【共享底部高度槽位】与串内回复栏同款：底部总占位恒取 max(键盘, 导航条, 面板)，
+        // 绝不相加——键盘升起时槽位只在几个值之间平滑取大，玻璃由槽位顶起，杜绝双计飞栏。
+        // ime/nav 高度由 Activity 窗口量取后经参数传入，见 CreateThreadDialog 调用处注释。
+        var rememberedImeHeightPx by remember { mutableIntStateOf(0) }
+        val defaultPanelHeightPx = with(density) { 280.dp.roundToPx() }
+        // 面板高度跟随用户键盘实际高度（键盘升过一次后记录），否则兜底 280dp
+        val targetPanelHeightPx =
+            if (rememberedImeHeightPx > navBottomPx) rememberedImeHeightPx else defaultPanelHeightPx
+        val isKeyboardRising = imeBottomPx > navBottomPx + with(density) { 40.dp.roundToPx() }
+        LaunchedEffect(imeBottomPx, isKeyboardRising) {
+            if (imeBottomPx > rememberedImeHeightPx) {
+                rememberedImeHeightPx = imeBottomPx
+            }
+            // 键盘主动升起 → 同帧关面板（单一动画源）。尊重刚点开面板后的 450ms 窗口：
+            // 从键盘态点开面板会先 hideSystemIme，键盘下落动画期间同样为 true，
+            // 无窗口会把刚打开的面板立刻关掉。
+            if (isKeyboardRising) {
+                if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
+                if (kaomojiExpanded) kaomojiExpanded = false
+            }
         }
+        // 【核心】底部总占位 = max(键盘, 面板)，绝不相加
+        val bottomSlotHeightPx =
+            if (kaomojiExpanded) maxOf(imeBottomPx, targetPanelHeightPx) else maxOf(imeBottomPx, navBottomPx)
+        val bottomSlotHeightDp = with(density) { bottomSlotHeightPx.toDp() }
 
         SideEffect {
             val window = dialogView.findDialogWindow() ?: return@SideEffect
@@ -1312,17 +1389,13 @@ fun CreateThreadDialog(
                     )
                 },
                 bottomBar = {
+                    // 与串内回复栏同款：玻璃 Surface 不挂任何 ime modifier，
+                    // 由内容下方的共享槽位把控件顶起来，玻璃始终铺到屏幕底无断层
                     Surface(
                         color = glassBottom,
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .imePaddingAndNavigationBars()
-                            // 键盘态再多留 56dp：各输入法候选词条/工具条高度不一
-                            //（实测 Gboard ~40px、带工具条的中输入法可达 150px+），
-                            // 固定余量保证工具栏永远在键盘可视区上方（无键盘态不生效）
-                            .padding(bottom = if (imeCoversNav) 56.dp else 0.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth()
@@ -1338,69 +1411,15 @@ fun CreateThreadDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 if (cookies.isNotEmpty()) {
-                                    Box {
-                                        OutlinedButton(
-                                            onClick = { cookieMenuExpanded = true },
-                                            contentPadding = PaddingValues(
-                                                horizontal = 12.dp,
-                                                vertical = 6.dp
-                                            ),
-                                            shape = RoundedCornerShape(20.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Cookie,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            val currentCookie =
-                                                cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
-                                            val displayName = parseCookieName(currentCookie)
-                                            Text(
-                                                text = if (displayName.length > 8) {
-                                                    displayName.take(8) + "…"
-                                                } else {
-                                                    displayName
-                                                },
-                                                style = MaterialTheme.typography.labelLarge,
-                                                maxLines = 1
-                                            )
-                                        }
-                                        DropdownMenu(
-                                            expanded = cookieMenuExpanded,
-                                            onDismissRequest = { cookieMenuExpanded = false }
-                                        ) {
-                                            cookies.forEachIndexed { index, cookie ->
-                                                val isSelected = index == selectedCookieIndex
-                                                val displayName = parseCookieName(cookie)
-                                                DropdownMenuItem(
-                                                    text = {
-                                                        Text(
-                                                            text = if (displayName.length > 8) {
-                                                                displayName.take(8) + "…"
-                                                            } else {
-                                                                displayName
-                                                            },
-                                                            fontWeight = if (isSelected) {
-                                                                FontWeight.Bold
-                                                            } else {
-                                                                FontWeight.Normal
-                                                            },
-                                                            color = if (isSelected) {
-                                                                colorScheme.primary
-                                                            } else {
-                                                                colorScheme.onSurface
-                                                            }
-                                                        )
-                                                    },
-                                                    onClick = {
-                                                        onCookieSelect(index)
-                                                        cookieMenuExpanded = false
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
+                                    // 与串内回复栏/举报对话框同一套饼干选择器：
+                                    // 40dp 胶囊 + 自绘弹出菜单（贴锚点、四边 8dp、缩放淡出）
+                                    CookieSelector(
+                                        cookies = cookies,
+                                        selectedIndex = selectedCookieIndex,
+                                        expanded = cookieMenuExpanded,
+                                        onExpandedChange = { cookieMenuExpanded = it },
+                                        onSelect = onCookieSelect
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.weight(1f))
@@ -1418,25 +1437,27 @@ fun CreateThreadDialog(
                                 )
                             }
 
-                            // 骰子/颜文字共用固定高度面板：切换只交叉淡入，高度不变（防工具栏弹跳）。
-                            // visible 绑定 !imeCoversNav：与对话框抬升同帧消失，杜绝晚一帧的 ime+面板叠加
-                            val panelReducedMotion = isReducedMotionEnabled()
-                            AnimatedVisibility(
-                                visible = kaomojiExpanded && !imeCoversNav,
-                                enter = MiooMotion.softExpandEnter(panelReducedMotion),
-                                exit = if (imeCoversNav) ExitTransition.None else MiooMotion.softExpandExit(panelReducedMotion)
+                            // 【共享底部槽位】max(键盘, 面板)，绝不相加。面板开时直接填充槽位
+                            // （无收起动画，高度变化完全由槽位驱动 = 单一动画源，杜绝 ime+面板叠加过冲）。
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(bottomSlotHeightDp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(220.dp)
-                                ) {
-                                    KaomojiQuickPanel(
-                                        onInsert = { insertAtCursor(it) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        heightDp = 220
-                                    )
-                                }
+                            if (kaomojiExpanded) {
+                                KaomojiQuickPanel(
+                                    onInsert = { insertAtCursor(it) },
+                                    // 对话框里 navigationBarsPadding 可能拿不到值，
+                                    // 用 Activity 量取的导航条高度显式垫底
+                                    modifier = Modifier.padding(
+                                        bottom = with(density) { navBottomPx.toDp() }
+                                    ),
+                                    heightDp = with(density) {
+                                        (bottomSlotHeightPx - navBottomPx).coerceAtLeast(0)
+                                            .toDp().value.roundToInt()
+                                    }
+                                )
+                            }
                             }
                         }
                     }
@@ -1645,22 +1666,6 @@ fun CreateThreadDialog(
                 TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") }
             }
         )
-    }
-}
-
-private fun parseCookieName(cookie: String): String {
-    return try {
-        if (cookie.startsWith("{")) {
-            val json = org.json.JSONObject(cookie)
-            var name = json.optString("name", "")
-            if (name.isEmpty()) name = json.optString("cookie", "")
-            if (name.isEmpty()) name = json.optString("userhash", cookie)
-            name
-        } else {
-            cookie
-        }
-    } catch (e: Exception) {
-        cookie
     }
 }
 

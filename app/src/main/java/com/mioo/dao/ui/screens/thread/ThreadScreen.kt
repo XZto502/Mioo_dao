@@ -1,15 +1,36 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,33 +38,51 @@ import androidx.compose.foundation.layout.height
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ButtonDefaults
@@ -52,9 +91,22 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextRange
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,21 +114,23 @@ import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -111,7 +165,12 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import android.widget.Toast
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.model.Reply
@@ -125,8 +184,6 @@ import com.mioo.dao.ui.components.ReplyCard
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
-import android.content.ClipData
-import android.content.ClipboardManager
 import com.mioo.dao.ui.components.IslandImage
 import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
@@ -188,7 +245,12 @@ fun ThreadScreen(
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
+    // 串内举报：目标楼层 id（该楼自身），null = 对话框关闭
+    var reportTargetNo by remember { mutableStateOf<String?>(null) }
+    // 提交状态放屏幕层：失败留在对话框时可再次点发送重试
+    var isReportSubmitting by remember { mutableStateOf(false) }
     var showPageJumpDialog by remember { mutableStateOf(false) }
+    var showJumpBubble by remember { mutableStateOf(false) }
     var isSearchMode by remember { mutableStateOf(false) }
     // Local text field value — do not write listUi on every keystroke
     var searchFieldText by remember { mutableStateOf("") }
@@ -339,12 +401,53 @@ fun ThreadScreen(
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
                         )
                     } else {
+                    // 上下双行：页码放副标题行，不再与主标题争抢横向宽度
+                    Column(verticalArrangement = Arrangement.Center) {
                         Text(
                             text = listUi.thread?.title.effectiveTitle() ?: "详情",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 15.sp,
+                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        if (totalPages > 1) {
+                            AnimatedContent(
+                                targetState = currentScrollPage.value to totalPages,
+                                transitionSpec = {
+                                    if (reducedMotion) {
+                                        fadeIn(tween(1)) togetherWith fadeOut(tween(1))
+                                    } else {
+                                        val forward = targetState.first >= initialState.first
+                                        val enter = slideInVertically(tween(280)) { it / 2 } +
+                                            fadeIn(tween(280))
+                                        val exit = slideOutVertically(tween(280)) { -it / 2 } +
+                                            fadeOut(tween(280))
+                                        val enterBack = slideInVertically(tween(280)) { -it / 2 } +
+                                            fadeIn(tween(280))
+                                        val exitBack = slideOutVertically(tween(280)) { it / 2 } +
+                                            fadeOut(tween(280))
+                                        if (forward) enter.togetherWith(exit) else enterBack.togetherWith(exitBack)
+                                    }
+                                },
+                                label = "pageSubtitle"
+                            ) { (page, total) ->
+                                Text(
+                                    text = "第 $page / $total 页",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        lineHeight = 11.sp,
+                                        fontFeatureSettings = "tnum",
+                                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
+                }
                 },
                 navigationIcon = {
                     if (isSearchMode) {
@@ -372,38 +475,45 @@ fun ThreadScreen(
                             }
                         }
                     } else {
-                        IconButton(onClick = {
-                            isSearchMode = true
-                            searchFieldText = listUi.searchQuery
-                        }) {
+                        IconButton(
+                            onClick = {
+                                isSearchMode = true
+                                searchFieldText = listUi.searchQuery
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(Icons.Default.Search, contentDescription = "串内搜索")
                         }
-                        IconButton(onClick = {
-                            val tid = viewModel.threadId
-                            val link = XdWebSearch.threadUrl(tid)
-                            val title = listUi.thread?.title.effectiveTitle() ?: "No.$tid"
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, title)
-                                putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
-                            }
-                            context.startActivity(Intent.createChooser(send, "分享串"))
-                        }) {
-                            Icon(Icons.Default.Share, contentDescription = "分享")
-                        }
                         if (totalPages > 1) {
-                            ThreadPageIndicatorButton(
-                                listState = listState,
-                                listStartPage = listStartPage,
+                            ThreadPageJumpButton(
                                 totalPages = totalPages,
-                                onClick = { showPageJumpDialog = true }
+                                currentPage = currentScrollPage.value,
+                                expanded = showJumpBubble,
+                                onExpandedChange = { showJumpBubble = it },
+                                onJumpToPage = { viewModel.jumpToPage(it) },
+                                onOpenInputDialog = {
+                                    showJumpBubble = false
+                                    showPageJumpDialog = true
+                                }
                             )
                         }
-                        // Chrome (bookmark / folders / download) collected inside — not listUi
+                        // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
                         ThreadChromeActions(
                             viewModel = viewModel,
                             showPoOnly = listUi.showPoOnly,
                             showImagesOnly = listUi.showImagesOnly,
+                            onShare = {
+                                val tid = viewModel.threadId
+                                // 分享统一用主站域名
+                                val link = XdWebSearch.threadUrlAlt(tid)
+                                val title = listUi.thread?.title.effectiveTitle() ?: "No.$tid"
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, title)
+                                    putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
+                                }
+                                context.startActivity(Intent.createChooser(send, "分享串"))
+                            },
                             showBookmarkMenu = showBookmarkMenu,
                             onShowBookmarkMenuChange = { showBookmarkMenu = it },
                             showOverflowMenu = showOverflowMenu,
@@ -575,7 +685,7 @@ fun ThreadScreen(
                                     },
                                     blockThreadLabel = "屏蔽此串 (No.${mainThread.idStr})",
                                     blockUserLabel = "屏蔽该饼干 (ID: ${mainThread.userHash})",
-                                    onReport = { copyThreadReportLink(context, mainThread.idStr) },
+                                    onReport = { reportTargetNo = mainThread.idStr },
                                     onShareCard = {
                                         scope.launch {
                                             com.mioo.dao.utils.ShareCardUtil.sharePostCard(context, mainPostData)
@@ -628,7 +738,8 @@ fun ThreadScreen(
                             onBlockUser = {
                                 settingsViewModel.addBlockedUser(item.userHash)
                             },
-                            onFreeCopy = { freeCopyText = item.rawContent }
+                            onFreeCopy = { freeCopyText = item.rawContent },
+                            onReport = { reportTargetNo = item.idStr }
                         )
                     }
 
@@ -668,6 +779,23 @@ fun ThreadScreen(
                         }
                     }
                 }
+            }
+
+            // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）
+            AnimatedVisibility(
+                visible = showJumpBubble,
+                enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(120)),
+                exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(120)),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { showJumpBubble = false }
+                )
             }
 
             freeCopyText?.let { text ->
@@ -716,6 +844,182 @@ fun ThreadScreen(
             }
         )
     }
+
+    // 串内举报：饼干取值复用传给 ReplyInputBar 的同一组值（串级覆盖优先，其次全局选中）
+    reportTargetNo?.let { target ->
+        ReportDialog(
+            cookies = threadSettings.cookiesList,
+            selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
+                ?.takeIf { it < threadSettings.cookiesList.size }
+                ?: threadSettings.selectedCookieIndex,
+            targetNo = target,
+            isSubmitting = isReportSubmitting,
+            onDismiss = { reportTargetNo = null },
+            onSubmit = { title, content, cookie ->
+                isReportSubmitting = true
+                viewModel.submitReport(title, content, cookie) { success, errorMessage ->
+                    isReportSubmitting = false
+                    if (success) {
+                        Toast.makeText(context, "已发到值班室，感谢反馈", Toast.LENGTH_SHORT).show()
+                        reportTargetNo = null
+                    } else {
+                        Toast.makeText(context, errorMessage ?: "举报发送失败", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        )
+    }
+}
+
+/**
+ * M3 1.2.x 兼容的 18dp 圆角胶囊菜单容器。
+ * 原生 DropdownMenu 的落点由 provider 按窗口钳制：右缘图标下的窄菜单会被推到
+ * 屏幕边上，看起来"错位"。这里改用自绘 Popup 确定性定位——菜单挂在锚点图标
+ * 正下方、右缘与图标右缘对齐（与官方版行为一致），进出场与饼干菜单同款缩放淡入。
+ * 底色/描边直接给 Surface，无需再主题覆写。
+ */
+@Composable
+private fun Md3DropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    offsetY: Dp = 6.dp,
+    cornerRadius: Dp = 18.dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    // 与底部回复栏胶囊保持一致的深邃炭黑/清爽浅白底色
+    val menuBgColor = if (isDark) Color(0xFF17191E) else Color(0xFFF6F7F9)
+    val menuBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
+    // 菜单挂载状态：收起动画播完才卸载 Popup（isIdle 前不能走 if）
+    val menuState = remember { MutableTransitionState(false) }
+    menuState.targetState = expanded
+    if (menuState.currentState || menuState.targetState || !menuState.isIdle) {
+        val density = LocalDensity.current
+        // 锚点 IconButton 固定 40dp：菜单顶边 = 图标底边 + offsetY
+        val topRightOffset = IntOffset(0, with(density) { (40.dp + offsetY).roundToPx() })
+        Popup(
+            alignment = Alignment.TopEnd,
+            offset = topRightOffset,
+            onDismissRequest = onDismissRequest,
+            properties = PopupProperties(focusable = true)
+        ) {
+            val reducedMotion = isReducedMotionEnabled()
+            AnimatedVisibility(
+                visibleState = menuState,
+                enter = if (reducedMotion) {
+                    EnterTransition.None
+                } else {
+                    scaleIn(
+                        initialScale = 0.9f,
+                        animationSpec = tween(160),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    ) + fadeIn(tween(120))
+                },
+                exit = if (reducedMotion) {
+                    ExitTransition.None
+                } else {
+                    scaleOut(
+                        targetScale = 0.94f,
+                        animationSpec = tween(140),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    ) + fadeOut(tween(120))
+                }
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(cornerRadius),
+                    color = menuBgColor,
+                    shadowElevation = 6.dp,
+                    border = BorderStroke(1.dp, menuBorderColor),
+                    // Popup 的约束是全屏：fillMaxWidth 的胶囊项会把菜单撑满屏，
+                    // 用 IntrinsicSize.Max 收缩到最宽子项的自然宽度（= 之前 DropdownMenu 的 wrap 尺寸）
+                    modifier = modifier
+                        .widthIn(min = 120.dp)
+                        .width(IntrinsicSize.Max)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 6.dp)
+                            .heightIn(max = 340.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        content = content
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 紧凑胶囊菜单项：selected 填 secondaryContainer 底并加粗 + 尾部对号；destructive 为移除类
+ * 警示态（浅 errorContainer 底 + error 前景）；disabled 降透明度并禁点。
+ */
+@Composable
+private fun Md3MenuPillItem(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leadingIcon: ImageVector? = null,
+    selected: Boolean = false,
+    destructive: Boolean = false,
+    enabled: Boolean = true
+) {
+    val containerColor = when {
+        destructive -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        selected -> MaterialTheme.colorScheme.secondaryContainer
+        else -> Color.Transparent
+    }
+    val contentColor = when {
+        destructive -> MaterialTheme.colorScheme.error
+        selected -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val leadingTint = when {
+        destructive -> MaterialTheme.colorScheme.error
+        selected -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val alpha = if (enabled) 1f else 0.5f
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(12.dp),
+        color = containerColor,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            leadingIcon?.let { icon ->
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = leadingTint.copy(alpha = alpha)
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontSize = 13.5.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                ),
+                color = contentColor.copy(alpha = alpha)
+            )
+            if (selected) {
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = contentColor.copy(alpha = alpha)
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -727,6 +1031,7 @@ private fun ThreadChromeActions(
     viewModel: ThreadViewModel,
     showPoOnly: Boolean,
     showImagesOnly: Boolean,
+    onShare: () -> Unit,
     showBookmarkMenu: Boolean,
     onShowBookmarkMenuChange: (Boolean) -> Unit,
     showOverflowMenu: Boolean,
@@ -734,27 +1039,81 @@ private fun ThreadChromeActions(
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
+    // 「删除离线缓存」二次确认（三点菜单触发）
+    var showRemoveOffline by remember { mutableStateOf(false) }
+
+    // 只看 Po：[HD]/[CC] 式线性徽章；高亮色只代表已激活的过滤/收藏状态
+    IconButton(
+        onClick = { viewModel.togglePoOnly() },
+        modifier = Modifier.size(40.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 22.dp, height = 18.dp)
+                .then(
+                    if (showPoOnly) {
+                        Modifier.background(
+                            MaterialTheme.colorScheme.primary,
+                            RoundedCornerShape(4.dp)
+                        )
+                    } else {
+                        Modifier.border(
+                            1.8.dp,
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                            RoundedCornerShape(4.dp)
+                        )
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "PO",
+                color = if (showPoOnly) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                textAlign = TextAlign.Center,
+                style = TextStyle(
+                    fontSize = 9.5.sp,
+                    lineHeight = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Center,
+                        trim = LineHeightStyle.Trim.Both
+                    )
+                )
+            )
+        }
+    }
 
     Box {
-        // 已收藏 = 本地收藏 或 云端收藏夹成员（缓存）
+        // 星标 = 已离线（本地收藏已并入离线下载）；已离线后星标仅亮着，点击无动作
         val bookmarked = chrome.isSubscribed || chrome.isCloudSubscribed
-        IconButton(onClick = {
-            when {
-                // 本地已收藏 → 直接取消本地收藏（原有行为）
-                chrome.isSubscribed -> viewModel.toggleBookmark(null) { msg ->
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        IconButton(
+            onClick = {
+                when {
+                    chrome.isDownloading -> Unit
+                    // 配了云端收藏夹 → 菜单（云端操作）
+                    chrome.isCloudSubscribed || chrome.feedFolders.isNotEmpty() ->
+                        onShowBookmarkMenuChange(true)
+                    // 已离线 → 星标只是状态展示
+                    chrome.isOfflineSaved -> Unit
+                    // 未离线 → 星标即离线下载
+                    else -> {
+                        Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
+                        viewModel.downloadThread { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
-                // 仅云端收藏（或配置了云端文件夹）→ 打开菜单，供选择本地/云端操作
-                chrome.isCloudSubscribed || chrome.feedFolders.isNotEmpty() ->
-                    onShowBookmarkMenuChange(true)
-                else -> viewModel.toggleBookmark(null) { msg ->
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                }
-            }
-        }) {
+            },
+            modifier = Modifier.size(40.dp)
+        ) {
             Icon(
                 imageVector = if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                contentDescription = if (bookmarked) "取消收藏" else "收藏",
+                contentDescription = if (chrome.isOfflineSaved) "已离线收藏" else "离线下载本串",
                 tint = if (bookmarked) {
                     MaterialTheme.colorScheme.primary
                 } else {
@@ -763,13 +1122,15 @@ private fun ThreadChromeActions(
             )
         }
 
-        DropdownMenu(
+        Md3DropdownMenu(
             expanded = showBookmarkMenu,
             onDismissRequest = { onShowBookmarkMenuChange(false) }
         ) {
             if (chrome.isCloudSubscribed) {
-                DropdownMenuItem(
-                    text = { Text("从云端收藏夹移除") },
+                Md3MenuPillItem(
+                    label = "从云端收藏夹移除",
+                    leadingIcon = Icons.Outlined.CloudOff,
+                    destructive = true,
                     onClick = {
                         onShowBookmarkMenuChange(false)
                         viewModel.removeCloudSubscription { msg ->
@@ -778,18 +1139,12 @@ private fun ThreadChromeActions(
                     }
                 )
             }
-            DropdownMenuItem(
-                text = { Text("本地收藏") },
-                onClick = {
-                    onShowBookmarkMenuChange(false)
-                    viewModel.toggleBookmark(null) { msg ->
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            )
             chrome.feedFolders.forEach { folder ->
-                DropdownMenuItem(
-                    text = { Text(folder.name) },
+                val inFolder = folder.uuid in chrome.cloudFolderUuids
+                Md3MenuPillItem(
+                    label = folder.name,
+                    leadingIcon = if (inFolder) Icons.Default.Folder else Icons.Outlined.Folder,
+                    selected = inFolder,
                     onClick = {
                         onShowBookmarkMenuChange(false)
                         viewModel.toggleBookmark(folder.uuid) { msg ->
@@ -802,71 +1157,97 @@ private fun ThreadChromeActions(
     }
 
     Box {
-        IconButton(onClick = { onShowOverflowMenuChange(true) }) {
+        IconButton(
+            onClick = { onShowOverflowMenuChange(true) },
+            modifier = Modifier.size(40.dp)
+        ) {
             Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
         }
 
-        DropdownMenu(
+        Md3DropdownMenu(
             expanded = showOverflowMenu,
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
-            DropdownMenuItem(
-                text = { Text("只看 PO") },
+            Md3MenuPillItem(
+                label = "分享",
+                leadingIcon = Icons.Outlined.Share,
                 onClick = {
                     onShowOverflowMenuChange(false)
-                    viewModel.togglePoOnly()
-                },
-                leadingIcon = {
-                    if (showPoOnly) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    onShare()
                 }
             )
-            DropdownMenuItem(
-                text = { Text("只看图片") },
+            Md3MenuPillItem(
+                label = "只看图片",
+                leadingIcon = Icons.Outlined.Image,
+                selected = showImagesOnly,
                 onClick = {
                     onShowOverflowMenuChange(false)
                     viewModel.toggleShowImagesOnly()
-                },
-                leadingIcon = {
-                    if (showImagesOnly) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
                 }
             )
-            androidx.compose.material3.HorizontalDivider()
-            DropdownMenuItem(
-                text = {
-                    if (chrome.isDownloading) {
-                        Text("正在下载...")
-                    } else {
-                        Text("离线下载本串")
-                    }
-                },
-                onClick = {
-                    onShowOverflowMenuChange(false)
-                    if (!chrome.isDownloading) {
+            when {
+                chrome.isDownloading -> Md3MenuPillItem(
+                    label = "正在下载…",
+                    leadingIcon = Icons.Default.Download,
+                    enabled = false,
+                    onClick = {}
+                )
+                chrome.isOfflineSaved -> {
+                    Md3MenuPillItem(
+                        label = "更新离线缓存 (已保存)",
+                        leadingIcon = Icons.Default.DownloadDone,
+                        onClick = {
+                            onShowOverflowMenuChange(false)
+                            Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
+                            viewModel.downloadThread { msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                    Md3MenuPillItem(
+                        label = "删除离线缓存",
+                        leadingIcon = Icons.Outlined.DeleteOutline,
+                        destructive = true,
+                        onClick = {
+                            onShowOverflowMenuChange(false)
+                            showRemoveOffline = true
+                        }
+                    )
+                }
+                else -> Md3MenuPillItem(
+                    label = "离线下载本串",
+                    leadingIcon = Icons.Default.Download,
+                    onClick = {
+                        onShowOverflowMenuChange(false)
                         Toast.makeText(context, "正在下载该串至本地...", Toast.LENGTH_SHORT).show()
                         viewModel.downloadThread { msg ->
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
                     }
+                )
+            }
+        }
+
+        if (showRemoveOffline) {
+            AlertDialog(
+                onDismissRequest = { showRemoveOffline = false },
+                title = { Text("删除离线缓存？") },
+                text = { Text("将移除本串的本地收藏与离线数据（含图片），不可恢复。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showRemoveOffline = false
+                        viewModel.removeOffline { msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Text("删除", color = MaterialTheme.colorScheme.error)
+                    }
                 },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = null
-                    )
-                },
-                enabled = !chrome.isDownloading
+                dismissButton = {
+                    TextButton(onClick = { showRemoveOffline = false }) {
+                        Text("取消")
+                    }
+                }
             )
         }
     }
@@ -904,55 +1285,218 @@ private fun ThreadRefPopupHost(
 }
 
 /**
- * Isolated page chip — reading [LazyListState.firstVisibleItemIndex] here only
- * recomposes this button, not the thread LazyColumn / Scaffold body.
+ * 跳页入口：24dp 图标与搜索/收藏图标同基线；点击弹出滑块快捷跳页气泡。
+ * 当前页常驻展示在顶栏 title 侧（currentScrollPage），不在此处堆叠文字。
  */
 @Composable
-private fun ThreadPageIndicatorButton(
-    listState: LazyListState,
-    listStartPage: Int,
+private fun ThreadPageJumpButton(
     totalPages: Int,
-    onClick: () -> Unit
+    currentPage: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onJumpToPage: (Int) -> Unit,
+    onOpenInputDialog: () -> Unit
 ) {
-    val page by remember(listStartPage, totalPages) {
-        derivedStateOf {
-            val firstVisibleIndex = listState.firstVisibleItemIndex
-            val raw = if (firstVisibleIndex <= 0) {
-                listStartPage
-            } else {
-                val replyIndex = firstVisibleIndex - 1
-                listStartPage + (replyIndex / 19)
-            }
-            raw.coerceIn(1, totalPages.coerceAtLeast(1))
-        }
+    // 拖动预览页码；每次打开气泡时重置为当前页
+    var sliderPage by remember { mutableStateOf(1f) }
+    var anchorBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    // 气泡进出场状态：关闭（点空白/返回/跳页）时保持 Popup 在组合里播完退场动画再卸载。
+    // targetState 必须在组合期同步赋值——放进 LaunchedEffect 会晚一帧，重开时
+    // currentState 残留 true 导致首帧满透明度闪现
+    val bubbleVisible = remember { MutableTransitionState(false) }
+    bubbleVisible.targetState = expanded
+    val keepComposed = expanded || bubbleVisible.currentState != expanded
+    LaunchedEffect(expanded) {
+        if (expanded) sliderPage = currentPage.toFloat()
     }
-    OutlinedButton(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        modifier = Modifier.padding(end = 4.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.primary
-        ),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-        )
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+    val previewPage = sliderPage.toInt().coerceIn(1, totalPages.coerceAtLeast(1))
+    val reducedMotion = isReducedMotionEnabled()
+    BackHandler(enabled = expanded) { onExpandedChange(false) }
+
+    Box(modifier = Modifier.size(40.dp)) {
+        IconButton(
+            onClick = { onExpandedChange(!expanded) },
+            modifier = Modifier
+                .size(40.dp)
+                .onGloballyPositioned { anchorBounds = it.boundsInWindow() }
         ) {
             Icon(
-                imageVector = Icons.Default.MenuBook,
+                imageVector = Icons.Outlined.AutoStories,
                 contentDescription = "跳转页码",
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(24.dp),
+                tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
             )
-            Text(
-                text = "$page/$totalPages",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
-            )
+        }
+
+        // Popup 独立窗口：不会被顶栏裁剪；位置按图标窗口坐标精确计算——
+        // 右缘贴屏幕右边距、顶边在图标下方 8dp（与最初 DropdownMenu 的落点一致）
+        if (keepComposed) {
+            val density = LocalDensity.current
+            val bounds = anchorBounds
+            val marginPx = with(density) { 12.dp.roundToPx() }
+            val bubbleWidthPx = with(density) { 244.dp.roundToPx() }
+            val gapPx = with(density) { 8.dp.roundToPx() }
+            val windowWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
+            val desiredLeft = windowWidthPx - marginPx - bubbleWidthPx
+            val desiredTop = (bounds?.bottom?.toInt() ?: 0) + gapPx
+            val anchorOffset = if (bounds != null) {
+                IntOffset(desiredLeft - bounds.left.toInt(), desiredTop - bounds.top.toInt())
+            } else {
+                IntOffset.Zero
+            }
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = anchorOffset,
+                onDismissRequest = { onExpandedChange(false) },
+                properties = PopupProperties(focusable = true)
+            ) {
+                AnimatedVisibility(
+                    visibleState = bubbleVisible,
+                    enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(180)) + scaleIn(
+                        initialScale = 0.9f,
+                        animationSpec = tween(180),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    ),
+                    exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(180)) + scaleOut(
+                        targetScale = 0.9f,
+                        animationSpec = tween(180),
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    )
+                ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = 6.dp,
+                modifier = Modifier.width(244.dp)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    // 第 1 行：步进器 + 可点击页码胶囊（点胶囊 = 精确输入）
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(1)
+                                sliderPage = 1f
+                            },
+                            enabled = currentPage > 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.FirstPage, contentDescription = "首页", modifier = Modifier.size(18.dp))
+                        }
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(currentPage - 1)
+                                sliderPage = (currentPage - 1).toFloat()
+                            },
+                            enabled = currentPage > 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一页", modifier = Modifier.size(18.dp))
+                        }
+                        val highlight = previewPage != currentPage
+                        Surface(
+                            shape = CircleShape,
+                            color = if (highlight) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                            onClick = {
+                                onExpandedChange(false)
+                                onOpenInputDialog()
+                            },
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp)
+                            ) {
+                                AnimatedContent(
+                                    targetState = previewPage,
+                                    transitionSpec = {
+                                        if (reducedMotion) {
+                                            fadeIn(tween(1)) togetherWith fadeOut(tween(1))
+                                        } else {
+                                            val forward = targetState >= initialState
+                                            val enter = slideInVertically(tween(180)) { it / 2 } + fadeIn(tween(180))
+                                            val exit = slideOutVertically(tween(180)) { -it / 2 } + fadeOut(tween(180))
+                                            val enterBack = slideInVertically(tween(180)) { -it / 2 } + fadeIn(tween(180))
+                                            val exitBack = slideOutVertically(tween(180)) { it / 2 } + fadeOut(tween(180))
+                                            if (forward) enter.togetherWith(exit) else enterBack.togetherWith(exitBack)
+                                        }
+                                    },
+                                    label = "capsulePage"
+                                ) { page ->
+                                    Text(
+                                        text = "$page/$totalPages",
+                                        style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (highlight) {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "手动输入页码",
+                                    modifier = Modifier.size(11.dp),
+                                    tint = if (highlight) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                        }
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(currentPage + 1)
+                                sliderPage = (currentPage + 1).toFloat()
+                            },
+                            enabled = currentPage < totalPages,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一页", modifier = Modifier.size(18.dp))
+                        }
+                        FilledTonalIconButton(
+                            onClick = {
+                                onJumpToPage(totalPages)
+                                sliderPage = totalPages.toFloat()
+                            },
+                            enabled = currentPage < totalPages,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.LastPage, contentDescription = "末页", modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    // 第 2 行：紧凑滑块（拖动预览，松手跳页并收起）
+                    Slider(
+                        value = sliderPage,
+                        onValueChange = { sliderPage = it },
+                    onValueChangeFinished = {
+                        onExpandedChange(false)
+                        val target = sliderPage.toInt().coerceIn(1, totalPages)
+                        if (target != currentPage) {
+                            onJumpToPage(target)
+                        }
+                    },
+                        valueRange = 1f..totalPages.toFloat().coerceAtLeast(1f),
+                        steps = if (totalPages in 3..20) totalPages - 2 else 0,
+                        modifier = Modifier.height(32.dp)
+                    )
+                }
+            }
+                }
+            }
         }
     }
 }
@@ -1017,6 +1561,13 @@ fun PageJumpDialog(
 ) {
     var inputText by remember { mutableStateOf("") }
 
+    fun confirmJump() {
+        val target = inputText.toIntOrNull()
+        if (target != null && target in 1..totalPages) {
+            onJump(target)
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = immersiveDialogProperties(),
@@ -1026,41 +1577,6 @@ fun PageJumpDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Quick buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextButton(
-                        onClick = { onJump(1) },
-                        enabled = currentPage > 1,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("首页", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(
-                        onClick = { onJump(currentPage - 1) },
-                        enabled = currentPage > 1,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("上一页", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(
-                        onClick = { onJump(currentPage + 1) },
-                        enabled = currentPage < totalPages,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("下一页", style = MaterialTheme.typography.labelMedium)
-                    }
-                    TextButton(
-                        onClick = { onJump(totalPages) },
-                        enabled = currentPage < totalPages,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("末页", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-
                 // Manual input
                 OutlinedTextField(
                     value = inputText,
@@ -1068,6 +1584,8 @@ fun PageJumpDialog(
                         inputText = newValue.filter { it.isDigit() }
                     },
                     label = { Text("页码 (1 - $totalPages)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { confirmJump() }),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1075,12 +1593,7 @@ fun PageJumpDialog(
         },
         confirmButton = {
             Button(
-                onClick = {
-                    val page = inputText.toIntOrNull()
-                    if (page != null && page in 1..totalPages) {
-                        onJump(page)
-                    }
-                },
+                onClick = { confirmJump() },
                 enabled = inputText.isNotEmpty() && inputText.toIntOrNull()?.let { it in 1..totalPages } == true
             ) {
                 Text("跳转")
@@ -1092,27 +1605,6 @@ fun PageJumpDialog(
             }
         }
     )
-}
-
-/**
- * Extract a human-readable display name from a cookie JSON string.
- * Returns the "name" field if available, otherwise falls back to "cookie" or "userhash".
- * Returns the raw cookie string if it's not valid JSON.
- */
-fun parseCookieName(cookie: String): String {
-    return try {
-        if (cookie.startsWith("{")) {
-            val json = org.json.JSONObject(cookie)
-            var name = json.optString("name", "")
-            if (name.isEmpty()) name = json.optString("cookie", "")
-            if (name.isEmpty()) name = json.optString("userhash", cookie)
-            name
-        } else {
-            cookie
-        }
-    } catch (e: Exception) {
-        cookie
-    }
 }
 
 /**
@@ -1132,7 +1624,8 @@ private fun ThreadReplyRow(
     onRequestQuote: () -> Unit,
     onBlockThread: () -> Unit,
     onBlockUser: () -> Unit,
-    onFreeCopy: () -> Unit
+    onFreeCopy: () -> Unit,
+    onReport: () -> Unit
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
     val quotedReplies = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1176,7 +1669,7 @@ private fun ThreadReplyRow(
             onCopy = onFreeCopy,
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
             blockUserLabel = "屏蔽该饼干 (ID: ${item.userHash})",
-            onReport = { copyThreadReportLink(rowContext, currentThreadId) },
+            onReport = onReport,
             onShareCard = {
                 rowScope.launch {
                     com.mioo.dao.utils.ShareCardUtil.sharePostCard(rowContext, item.postData)
@@ -1255,6 +1748,74 @@ private fun PostActionDialog(
             }
         },
         confirmButton = {}
+    )
+}
+
+/**
+ * 串内举报对话框：把 >>No.<被举报楼层> 的引用 + 说明文字作为新串发到值班室（fid=18）。
+ */
+@Composable
+private fun ReportDialog(
+    cookies: List<String>,
+    selectedCookieIndex: Int,
+    targetNo: String,
+    isSubmitting: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (title: String, content: String, cookie: String?) -> Unit
+) {
+    var titleText by remember { mutableStateOf("") }
+    // 预填对被举报楼层的引用；换目标楼层时重置预填内容
+    var contentText by remember(targetNo) { mutableStateOf(">>No.$targetNo\n") }
+    // 对话框局部饼干选择：不改串级/全局选中
+    var reportCookieIndex by remember(selectedCookieIndex) { mutableIntStateOf(selectedCookieIndex) }
+    var cookieMenuExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = immersiveDialogProperties(),
+        title = {
+            ImmersiveDialogEffect()
+            Text("举报")
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = titleText,
+                    onValueChange = { titleText = it },
+                    label = { Text("标题") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = contentText,
+                    onValueChange = { contentText = it },
+                    label = { Text("内容") },
+                    minLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // Cookie selector
+                CookieSelector(
+                    cookies = cookies,
+                    selectedIndex = reportCookieIndex,
+                    expanded = cookieMenuExpanded,
+                    onExpandedChange = { cookieMenuExpanded = it },
+                    onSelect = { reportCookieIndex = it }
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(titleText, contentText, cookies.getOrNull(reportCookieIndex)) },
+                enabled = contentText.isNotBlank() && !isSubmitting
+            ) {
+                Text("发送")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
     )
 }
 
@@ -1396,8 +1957,9 @@ fun ReplyInputArea(
     LaunchedEffect(isReplying) {
         if (wasReplying && !isReplying && replyError == null) {
             attachedImageUri = null
-            // 发送成功后收起输入法
+            // 发送成功后收起输入法与颜文字面板
             hideSystemIme()
+            if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
         }
         wasReplying = isReplying
     }
@@ -1547,43 +2109,13 @@ fun ReplyInputArea(
                 }
 
                 // Cookie selector
-                val currentCookie = cookies.getOrNull(selectedCookieIndex) ?: "选择饼干"
-                val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
-                val displayText = if (displayName.length > 8) displayName.take(8) + "..." else displayName
-
-                Box {
-                    OutlinedButton(
-                        onClick = { cookieMenuExpanded = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text(displayText, style = MaterialTheme.typography.labelLarge)
-                    }
-                    DropdownMenu(
-                        expanded = cookieMenuExpanded,
-                        onDismissRequest = { cookieMenuExpanded = false }
-                    ) {
-                        cookies.forEachIndexed { index, cookie ->
-                            val isSelected = index == selectedCookieIndex
-                            val itemDisplayName = remember(cookie) { parseCookieName(cookie) }
-                            val itemDisplayText = if (itemDisplayName.length > 8) itemDisplayName.take(8) + "..." else itemDisplayName
-                            
-                            DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        text = itemDisplayText,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    ) 
-                                },
-                                onClick = {
-                                    onCookieSelect(index)
-                                    cookieMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+                CookieSelector(
+                    cookies = cookies,
+                    selectedIndex = selectedCookieIndex,
+                    expanded = cookieMenuExpanded,
+                    onExpandedChange = { cookieMenuExpanded = it },
+                    onSelect = onCookieSelect
+                )
 
                 Spacer(modifier = Modifier.weight(1f))
 
@@ -1695,11 +2227,4 @@ fun ReplyInputArea(
             }
         }
     }
-}
-
-private fun copyThreadReportLink(context: android.content.Context, threadId: String) {
-    val url = "https://www.nmbxd.com/t/$threadId"
-    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("mioodao-report", url))
-    Toast.makeText(context, "已复制串链接，可到网页版举报该串", Toast.LENGTH_LONG).show()
 }

@@ -38,7 +38,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -68,7 +71,8 @@ interface ThreadRepository {
         name: String?,
         email: String?,
         content: String,
-        imageFile: File?
+        imageFile: File?,
+        cookie: String? = null
     ): Flow<XdResponse<String>>
 
     fun doReplyThread(
@@ -115,8 +119,20 @@ interface ThreadRepository {
     /** Cloud-feed membership cache: is this thread in any known 云端收藏夹? */
     fun isInCloudFeed(tid: String): Flow<Boolean>
 
+    /** 该串已缓存所属的云端收藏夹 uuid 集合（收藏菜单按夹显示"已收藏进该夹"态）。 */
+    fun observeCloudFolderUuids(tid: String): Flow<Set<String>>
+
     /** Remove [tid] from every cloud feed it is cached under. Emits removed count. */
     fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>>
+
+    /** 该夹内已缓存的回复数（threadId → count，仅含 >0 的已知值）。 */
+    suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int>
+
+    /**
+     * 补抓一个云端订阅串的回复总数并写入缓存。
+     * feed 接口不返回回复数，只能按串抓第 1 页；失败返回 null。
+     */
+    suspend fun refreshCloudFeedReplyCount(tid: String): Int?
 
     // 发言草稿箱 (draft box): reply drafts keyed by thread, post drafts keyed by board.
     fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>>
@@ -134,6 +150,26 @@ interface ThreadRepository {
     fun smartPreloadThreads(threads: List<Thread>)
     fun downloadFullThread(tid: String): Flow<XdResponse<Unit>>
     fun checkLatestRelease(): Flow<XdResponse<GithubRelease>>
+
+    // 已离线串 (offline threads)
+    /** 管理页列表：按下载时间倒序，体积含离线图片。 */
+    fun getOfflineThreadSummaries(): Flow<List<com.mioo.dao.data.local.OfflineThreadSummary>>
+
+    /** 串详情页三点菜单的「已离线」状态。 */
+    fun isThreadDownloaded(threadId: String): Flow<Boolean>
+
+    /** 删除单个离线串：标记行 + 离线 JSON + 仅属于该串的离线图片，并同步取消本地收藏。 */
+    suspend fun deleteOfflineThread(threadId: String)
+
+    /** 清空全部离线串并释放空间（含对应本地收藏；不动板块/时间线等常规 SWR 缓存）。 */
+    suspend fun clearAllOfflineThreads()
+
+    /**
+     * 后台巡检：本地收藏 ⇒ 已离线。
+     * 收藏页「已离线」标签直接展示离线串，星标新增的收藏由本巡检逐串补离线下载
+     * （限速 2s/串），保证「收藏 = 已离线」同一批串。进程级单例循环。
+     */
+    fun startBookmarkOfflineSync()
 }
 
 @Singleton
@@ -145,6 +181,8 @@ class ThreadRepositoryImpl @Inject constructor(
     private val progressDao: ProgressDao,
     private val cloudFeedDao: com.mioo.dao.data.local.CloudFeedDao,
     private val draftDao: com.mioo.dao.data.local.DraftDao,
+    private val offlineThreadDao: com.mioo.dao.data.local.OfflineThreadDao,
+    private val forumRepository: ForumRepository,
     private val settingsDataStore: SettingsDataStore,
     @ApplicationContext private val context: Context,
     private val moshi: com.squareup.moshi.Moshi
@@ -192,6 +230,8 @@ class ThreadRepositoryImpl @Inject constructor(
     private val threadListAdapter = moshi.adapter<List<Thread>>(threadListType)
     private val threadAdapter = moshi.adapter(Thread::class.java)
     private val replyAdapter = moshi.adapter(Reply::class.java)
+    private val stringListAdapter =
+        moshi.adapter<List<String>>(Types.newParameterizedType(List::class.java, String::class.java))
     private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -412,7 +452,8 @@ class ThreadRepositoryImpl @Inject constructor(
         name: String?,
         email: String?,
         content: String,
-        imageFile: File?
+        imageFile: File?,
+        cookie: String?
     ): Flow<XdResponse<String>> = flow {
         try {
             val fidBody = fid.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -423,7 +464,7 @@ class ThreadRepositoryImpl @Inject constructor(
 
             val imagePart = imageFile?.asImagePart()
 
-            val response = apiService.doPostThread(fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
+            val response = apiService.doPostThread(cookie, fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
             emit(interpretForumWriteResponse(response.string()))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -799,6 +840,9 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override fun isInCloudFeed(tid: String): Flow<Boolean> = cloudFeedDao.isMember(tid)
 
+    override fun observeCloudFolderUuids(tid: String): Flow<Set<String>> =
+        cloudFeedDao.observeFeedUuidsFor(tid).map { it.toSet() }
+
     // --- 发言草稿箱 ---
 
     /** In-process mirror of the DataStore one-time flag. */
@@ -940,6 +984,30 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    override suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int> =
+        withContext(Dispatchers.IO) {
+            try {
+                cloudFeedDao.getThreadsForFeed(uuid)
+                    .mapNotNull { entity ->
+                        entity.replyCount.takeIf { it > 0 }?.let { entity.threadId to it }
+                    }
+                    .toMap()
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
+
+    override suspend fun refreshCloudFeedReplyCount(tid: String): Int? =
+        withContext(Dispatchers.IO) {
+            try {
+                val count = fetchThread(tid, 1).replyCount?.takeIf { it > 0 } ?: return@withContext null
+                cloudFeedDao.updateReplyCount(tid, count)
+                count
+            } catch (_: Exception) {
+                null
+            }
+        }
+
     override fun clearCache(): Flow<XdResponse<Unit>> = flow {
         try {
             cacheDao.clearAllCache()
@@ -1041,6 +1109,12 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * 离线下载整串：逐页 JSON 落 api_cache（SWR 断网可直接渲染），
+     * 配图落 filesDir/offline_images（Coil 渲染时本地优先），
+     * 最后写 offline_threads 标记。重复调用即「更新离线」——
+     * 已有页/图按 key 覆盖或跳过，只补新增。
+     */
     override fun downloadFullThread(tid: String): Flow<XdResponse<Unit>> = flow {
         try {
             val page1 = fetchThread(tid, 1)
@@ -1052,6 +1126,8 @@ class ThreadRepositoryImpl @Inject constructor(
 
             val totalReplies = page1.replyCount ?: 0
             val repliesPage1Size = page1.replies?.size ?: 0
+            val allPosts = ArrayList<Reply>()
+            allPosts.addAll(page1.replies.orEmpty())
 
             if (totalReplies > repliesPage1Size && repliesPage1Size > 0) {
                 val pageSize = repliesPage1Size
@@ -1062,16 +1138,182 @@ class ThreadRepositoryImpl @Inject constructor(
                         val threadPage = fetchThread(tid, page)
                         val jsonPage = threadAdapter.toJson(threadPage)
                         cacheDao.insertCache(CacheEntity("thread_$tid", page, jsonPage))
+                        allPosts.addAll(threadPage.replies.orEmpty())
                         delay(300)
                     } catch (_: Exception) {
                     }
                 }
             }
+
+            // 离线图片：主楼优先的封面 + 各楼配图（缩略图优先，缺缩略图回落原图）
+            val imageUrls = LinkedHashSet<String>()
+            page1.imageUrl?.let(imageUrls::add)
+            for (post in allPosts) post.imageUrl?.let(imageUrls::add)
+
+            val imageFiles = LinkedHashSet<String>()
+            var imageBytes = 0L
+            val offlineRoot = com.mioo.dao.utils.OfflineImageStore.dir(context)
+            var processed = 0
+            for (url in imageUrls) {
+                currentCoroutineContext().ensureActive()
+                if (processed >= com.mioo.dao.utils.OfflineImageStore.MAX_IMAGES_PER_THREAD) break
+                processed++
+                val saved = com.mioo.dao.utils.OfflineImageStore.ensureDownloaded(offlineRoot, url)
+                if (saved != null) {
+                    imageFiles.add(
+                        com.mioo.dao.utils.OfflineImageStore.sanitizeFilename(
+                            com.mioo.dao.utils.OfflineImageStore.islandImageName(url) ?: continue
+                        )
+                    )
+                    imageBytes += saved.second
+                }
+                delay(60)
+            }
+
+            offlineThreadDao.upsert(
+                com.mioo.dao.data.local.OfflineThreadEntity(
+                    threadId = tid,
+                    title = page1.title?.takeIf { it.isNotBlank() && it.trim() != "无标题" },
+                    contentSummary = plainSummary(page1.content),
+                    poUserHash = page1.userHash,
+                    fid = page1.fidStr,
+                    forumName = lookupForumName(page1.fidStr),
+                    replyCount = totalReplies,
+                    imageFilesJson = stringListAdapter.toJson(imageFiles.toList()),
+                    imageBytes = imageBytes,
+                    coverFile = imageFiles.firstOrNull(),
+                    downloadedAt = System.currentTimeMillis()
+                )
+            )
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
         }
     }.flowOn(Dispatchers.IO)
+
+    // --- 已离线串 ---
+
+    override fun getOfflineThreadSummaries(): Flow<List<com.mioo.dao.data.local.OfflineThreadSummary>> =
+        offlineThreadDao.observeSummaries()
+
+    override fun isThreadDownloaded(threadId: String): Flow<Boolean> =
+        offlineThreadDao.observeDownloaded(threadId)
+
+    override suspend fun deleteOfflineThread(threadId: String) = withContext(Dispatchers.IO) {
+        val entity = offlineThreadDao.get(threadId)
+        offlineThreadDao.delete(threadId)
+        cacheDao.deleteCacheByKey("thread_$threadId")
+        historyDao.deleteBookmarkById(threadId)
+        if (entity != null) {
+            val own = runCatching { stringListAdapter.fromJson(entity.imageFilesJson) }
+                .getOrNull().orEmpty().toSet()
+            val stillReferenced = offlineThreadDao.getAllOnce()
+                .flatMap { other ->
+                    runCatching { stringListAdapter.fromJson(other.imageFilesJson) }
+                        .getOrNull().orEmpty()
+                }
+                .toSet()
+            com.mioo.dao.utils.OfflineImageStore.deleteFiles(
+                com.mioo.dao.utils.OfflineImageStore.dir(context),
+                own - stillReferenced
+            )
+        }
+    }
+
+    override suspend fun clearAllOfflineThreads() = withContext(Dispatchers.IO) {
+        offlineThreadDao.clear()
+        cacheDao.deleteAllThreadCache()
+        historyDao.clearAllBookmarks()
+        com.mioo.dao.utils.OfflineImageStore.deleteAll(
+            com.mioo.dao.utils.OfflineImageStore.dir(context)
+        )
+    }
+
+    /** 收藏 ⇒ 离线巡检的失败退避：同串失败两次后本轮进程内跳过（已删除/风控串）。 */
+    private val offlineSyncFailures = HashMap<String, Int>()
+
+    @Volatile
+    private var offlineSyncRunning = false
+
+    override fun startBookmarkOfflineSync() {
+        if (offlineSyncRunning) return
+        offlineSyncRunning = true
+        preloadScope.launch {
+            try {
+                while (true) {
+                    val bookmarks = historyDao.getAllBookmarks().first()
+                    val offlineIds = offlineThreadDao.getAllOnce()
+                        .mapTo(HashSet()) { it.threadId }
+                    val pending = bookmarks.filter { it.id !in offlineIds }
+                    if (pending.isEmpty()) {
+                        // 全部离线后低频巡检，兜住之后新星的收藏
+                        delay(15_000)
+                        continue
+                    }
+                    var attempts = 0
+                    for (bookmark in pending) {
+                        if ((offlineSyncFailures[bookmark.id] ?: 0) >= 2) continue
+                        val response = try {
+                            downloadFullThread(bookmark.id).first()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            XdResponse.Error(message = "network")
+                        }
+                        if (response is XdResponse.Error) {
+                            offlineSyncFailures[bookmark.id] =
+                                (offlineSyncFailures[bookmark.id] ?: 0) + 1
+                        }
+                        delay(2_000)
+                        attempts++
+                    }
+                    // 本轮一个都没试（全部处于失败退避）→ 长睡，别空转扫库
+                    delay(if (attempts == 0) 60_000 else 3_000)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (com.mioo.dao.BuildConfig.DEBUG) {
+                    android.util.Log.e("ThreadRepo", "bookmark offline sync stopped", e)
+                }
+            } finally {
+                offlineSyncRunning = false
+            }
+        }
+    }
+
+    /** fid → 板块名。列表在线抓一次后内存缓存；离线/失败退化为「板块 <fid>」。 */
+    private val forumNameCache = LinkedHashMap<String, String>()
+
+    private suspend fun lookupForumName(fid: String?): String {
+        if (fid.isNullOrBlank()) return "板块"
+        forumNameCache[fid]?.let { return it }
+        runCatching {
+            forumRepository.getForumList().first().let { response ->
+                if (response is XdResponse.Success) {
+                    response.data.forEach { group ->
+                        group.forums.forEach { forum -> forumNameCache[forum.id] = forum.name }
+                    }
+                }
+            }
+        }
+        return forumNameCache[fid] ?: "板块 $fid"
+    }
+
+    /** 主楼正文纯文本摘要（去标签/实体、压空白、截断），离线列表与角标用。 */
+    private fun plainSummary(html: String, maxLen: Int = 300): String {
+        val plain = html
+            .replace(Regex("(?i)<br\\s*/?>"), " ")
+            .replace(HTML_OR_NEWLINE, " ")
+            .replace("&gt;", ">")
+            .replace("&lt;", "<")
+            .replace("&quot;", "\"")
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return if (plain.length > maxLen) plain.take(maxLen) + "…" else plain
+    }
 
     override fun checkLatestRelease(): Flow<XdResponse<GithubRelease>> = flow {
         var lastError: Exception? = null
