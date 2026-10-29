@@ -39,6 +39,8 @@ data class ForumUiState(
     val currentForumName: String = "时间线",
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
+    val completedRefreshGeneration: Long = 0L,
+    val completedRefreshForumId: String? = null,
     val isLastPage: Boolean = false,
     val errorMessage: String? = null,
     val emptyHint: String? = null
@@ -68,6 +70,7 @@ class ForumViewModel @Inject constructor(
     private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
     /** Pages skipped because every row was hidden by block rules. Caps auto-follow. */
     private var blockedPageSkips = 0
+    private var refreshGeneration = 0L
 
     companion object {
         private const val MAX_BLOCKED_PAGE_SKIPS = 6
@@ -319,6 +322,7 @@ class ForumViewModel @Inject constructor(
 
     fun refresh() {
         val requestForumId = forumId
+        val requestGeneration = ++refreshGeneration
         currentPage = 1
         blockedPageSkips = 0
         // Keep existing threads visible while refreshing so only the top pull indicator
@@ -421,12 +425,23 @@ class ForumViewModel @Inject constructor(
                     if (handoffBlocked) {
                         blockedPageSkips = 1
                         _uiState.update {
-                            it.copy(isRefreshing = false, isLoading = true, emptyHint = null)
+                            it.copy(
+                                isRefreshing = false,
+                                isLoading = true,
+                                emptyHint = null,
+                                completedRefreshGeneration = requestGeneration,
+                                completedRefreshForumId = requestForumId
+                            )
                         }
                         loadNextPage(fromAutoSkip = true)
                     } else {
                         _uiState.update {
-                            it.copy(isRefreshing = false, isLoading = false)
+                            it.copy(
+                                isRefreshing = false,
+                                isLoading = false,
+                                completedRefreshGeneration = requestGeneration,
+                                completedRefreshForumId = requestForumId
+                            )
                         }
                     }
                 }

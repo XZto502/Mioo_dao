@@ -153,6 +153,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
@@ -190,6 +191,7 @@ fun ForumScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val emptyStringLambda = remember { { _: String -> } }
+    var handledRefreshGeneration by rememberSaveable(currentForumId) { mutableStateOf(0L) }
 
     val previousForumId = rememberSaveable { mutableStateOf(currentForumId) }
     // True for a short window after board switch — pause prefetch/prewarm during swap
@@ -260,6 +262,22 @@ fun ForumScreen(
         } else if (pullToRefreshState.isRefreshing) {
             pullToRefreshState.endRefresh()
         }
+    }
+
+    // A refreshed page may insert new keyed rows before the old visible item.
+    // Scroll after the final page-1 emission is applied, not only before requesting it.
+    LaunchedEffect(
+        uiState.completedRefreshGeneration,
+        uiState.completedRefreshForumId,
+        currentForumId
+    ) {
+        val generation = uiState.completedRefreshGeneration
+        if (uiState.completedRefreshForumId != currentForumId || generation <= handledRefreshGeneration) {
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        listState.scrollToItem(0)
+        handledRefreshGeneration = generation
     }
 
     // Paging via snapshotFlow — does not recompose the whole screen on every scroll frame
