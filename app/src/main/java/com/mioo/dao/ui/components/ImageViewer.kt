@@ -76,6 +76,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
@@ -357,12 +358,36 @@ fun ImageViewer(
     val panelOpen = showTransformPanel || showSauceMenu
     val hasAnyTransform = transform.isTransformed || zoomed
 
-    BackHandler(enabled = true) { onDismiss() }
+    val openProgress = remember { Animatable(0f) }
+    var isClosing by remember { mutableStateOf(false) }
+    val dismissCallback by rememberUpdatedState(onDismiss)
+    LaunchedEffect(Unit) {
+        openProgress.animateTo(1f, if (reducedMotion) snap() else tween(230, easing = FastOutSlowInEasing))
+    }
+    fun triggerSmoothClose(afterClose: () -> Unit = {}) {
+        if (isClosing) return
+        isClosing = true
+        scope.launch {
+            openProgress.animateTo(0f, if (reducedMotion) snap() else tween(180, easing = FastOutLinearInEasing))
+            dismissCallback()
+            afterClose()
+        }
+    }
+
+    BackHandler(enabled = true) { triggerSmoothClose() }
     ViewerBarsEffect(lightCanvas = lightCanvas)
     Box(
         modifier = modifier
             .fillMaxSize()
             .zIndex(100f)
+            .pointerInput(isClosing) {
+                if (!isClosing) return@pointerInput
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -376,12 +401,13 @@ fun ImageViewer(
     ) {
             ViewerCanvas(
                 color = palette.canvas,
-                alpha = backgroundAlpha
+                alpha = backgroundAlpha,
+                openProgress = openProgress.asState()
             )
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = !lockPager,
+                userScrollEnabled = !lockPager && !isClosing,
                 beyondBoundsPageCount = 0,
                 key = { currentImages.getOrNull(it)?.url ?: it }
             ) { pageIndex ->
@@ -398,6 +424,8 @@ fun ImageViewer(
                         isActive = pagerState.currentPage == pageIndex,
                         scrimColor = palette.icon,
                         backgroundAlpha = backgroundAlpha,
+                        openProgress = openProgress.asState(),
+                        isClosing = isClosing,
                         onZoomed = { zoomed = it },
                         onPagerLocked = { lockPager = it },
                         onRatio = { if (pagerState.currentPage == pageIndex) currentRatio = it },
@@ -410,7 +438,7 @@ fun ImageViewer(
                                 showControls = !showControls
                             }
                         },
-                        onDismiss = onDismiss
+                        onDismiss = { triggerSmoothClose() }
                     )
                 }
             }
@@ -422,7 +450,13 @@ fun ImageViewer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = backgroundAlpha.floatValue }
+                    .graphicsLayer {
+                        val dragProgress = ((1f - backgroundAlpha.floatValue) / 0.85f).coerceIn(0f, 1f)
+                        val controlsAlpha = ((openProgress.value - 0.25f) / 0.75f).coerceIn(0f, 1f) *
+                            (1f - dragProgress * 2f).coerceIn(0f, 1f)
+                        alpha = controlsAlpha
+                        translationY = if (reducedMotion) 0f else (1f - controlsAlpha) * 12.dp.toPx()
+                    }
             ) {
                 AnimatedVisibility(
                     visible = showControls,
@@ -432,7 +466,7 @@ fun ImageViewer(
                 ) {
                     ViewerTopBar(
                         palette = palette,
-                        onClose = onDismiss
+                        onClose = { triggerSmoothClose() }
                     )
                 }
 
@@ -509,7 +543,9 @@ fun ImageViewer(
                             postId = currentMeta?.postId.orEmpty(),
                             snippet = currentMeta?.snippet,
                             onLocate = {
-                                currentMeta?.postId?.let(onLocateFloor)
+                                currentMeta?.postId?.let { postId ->
+                                    triggerSmoothClose { onLocateFloor(postId) }
+                                }
                             }
                         )
                     }
@@ -591,9 +627,10 @@ fun ImageViewer(
 @Composable
 private fun ViewerCanvas(
     color: Color,
-    alpha: MutableFloatState
+    alpha: MutableFloatState,
+    openProgress: State<Float>
 ) {
-    val fade = alpha.floatValue.coerceIn(0f, 1f)
+    val fade = (openProgress.value * alpha.floatValue).coerceIn(0f, 1f)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -668,6 +705,8 @@ private fun ZoomablePage(
     isActive: Boolean,
     scrimColor: Color,
     backgroundAlpha: MutableFloatState,
+    openProgress: State<Float>,
+    isClosing: Boolean,
     onZoomed: (Boolean) -> Unit,
     onPagerLocked: (Boolean) -> Unit,
     onRatio: (Float) -> Unit,
@@ -684,11 +723,15 @@ private fun ZoomablePage(
     val offsetY = remember(imageUrl) { mutableFloatStateOf(0f) }
     val dismissY = remember(imageUrl) { mutableFloatStateOf(0f) }
     val dismissScale = remember(imageUrl) { mutableFloatStateOf(1f) }
+    var closingFromDrag by remember(imageUrl) { mutableStateOf(false) }
     val animScope = rememberCoroutineScope()
     val motionJob = remember(imageUrl) { mutableStateOf<Job?>(null) }
     fun spawnMotion(block: suspend CoroutineScope.() -> Unit) {
         motionJob.value?.cancel()
         motionJob.value = animScope.launch(block = block)
+    }
+    LaunchedEffect(isClosing) {
+        if (isClosing) motionJob.value?.cancel()
     }
     var loading by remember(imageUrl) { mutableStateOf(true) }
     var failed by remember(imageUrl) { mutableStateOf(false) }
@@ -792,8 +835,10 @@ private fun ZoomablePage(
         modifier = Modifier
             .fillMaxSize()
             .clipToBounds()
+            .graphicsLayer { alpha = openProgress.value }
             .onSizeChanged { containerSize.value = it }
-            .pointerInput(imageUrl) {
+            .pointerInput(imageUrl, isClosing) {
+                if (isClosing) return@pointerInput
                 detectTapGestures(
                     onTap = {
                         latest.value.onToggleChrome()
@@ -842,7 +887,8 @@ private fun ZoomablePage(
                     }
                 )
             }
-            .pointerInput(imageUrl) {
+            .pointerInput(imageUrl, isClosing) {
+                if (isClosing) return@pointerInput
                 detectViewerGestures(
                     zoom = zoom,
                     offsetX = offsetX,
@@ -857,9 +903,13 @@ private fun ZoomablePage(
                     onZoomed = { latest.value.onZoomed(it) },
                     onPagerLocked = { latest.value.onPagerLocked(it) },
                     onStripBroken = { latest.value.onStripBroken() },
-                    onDismiss = { latest.value.onDismiss() },
+                    onDismiss = {
+                        closingFromDrag = true
+                        latest.value.onDismiss()
+                    },
                     hapticView = hapticView,
                     animScope = animScope,
+                    onMotionStarted = { motionJob.value = it },
                     onCancelMotion = { motionJob.value?.cancel() }
                 )
             }
@@ -869,8 +919,17 @@ private fun ZoomablePage(
                 .fillMaxSize()
                 .graphicsLayer {
                     translationX = offsetX.value
-                    translationY = offsetY.value + dismissY.value
-                    val scale = zoom.value * dismissScale.value
+                    val progress = openProgress.value
+                    val exitScale = if (reducedMotion) 1f else if (closingFromDrag) {
+                        0.88f + 0.12f * progress
+                    } else {
+                        0.86f + 0.14f * progress
+                    }
+                    translationY = offsetY.value + dismissY.value +
+                        if (reducedMotion || closingFromDrag) 0f else (1f - progress) * 18.dp.toPx()
+                    shape = RoundedCornerShape(if (reducedMotion) 0.dp else ((1f - progress) * 16f).dp)
+                    clip = true
+                    val scale = zoom.value * dismissScale.value * exitScale
                     scaleX = scale
                     scaleY = scale
                 },
@@ -976,6 +1035,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
     onDismiss: () -> Unit,
     hapticView: View,
     animScope: CoroutineScope,
+    onMotionStarted: (Job) -> Unit,
     onCancelMotion: () -> Unit
 ) {
     val touchSlop = viewConfiguration.touchSlop
@@ -1076,30 +1136,22 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                 val y = dismissY.value
                 val flung = velocity.y * y > 0f && abs(velocity.y) > fling
                 if (abs(y) >= dismissThreshold || flung) {
-                    val dir = if (y >= 0f) 1f else -1f
-                    val target = dir * size.height.coerceAtLeast(1).toFloat()
-                    animScope.launch {
-                        coroutineScope {
-                            launch { dismissY.animateTo(target, tween(180)) }
-                            launch { dismissScale.animateTo(0.65f, tween(180)) }
-                            launch { backgroundAlpha.animateTo(0f, tween(180)) }
-                        }
-                        onDismiss()
-                    }
+                    // Preserve the release pose; the viewer owns the exit lifetime.
+                    onDismiss()
                 } else {
-                    animScope.launch {
+                    onMotionStarted(animScope.launch {
                         coroutineScope {
                             launch { dismissY.animateTo(0f, spring()) }
                             launch { dismissScale.animateTo(1f, spring()) }
                             launch { backgroundAlpha.animateTo(1f, spring()) }
                         }
                         onPagerLocked(zoom.value > 1.01f)
-                    }
+                    })
                 }
             }
             4 -> {
                 if (zoom.value < 1.02f) {
-                    animScope.launch {
+                    onMotionStarted(animScope.launch {
                         coroutineScope {
                             launch { zoom.animateTo(1f, spring()) }
                             launch { offsetX.animateTo(0f, spring()) }
@@ -1107,7 +1159,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                         }
                         onZoomed(false)
                         onPagerLocked(false)
-                    }
+                    })
                 }
             }
         }
