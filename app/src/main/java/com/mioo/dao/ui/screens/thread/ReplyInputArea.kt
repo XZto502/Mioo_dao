@@ -233,7 +233,7 @@ fun ReplyInputArea(
         color = DaoTheme.colors.glassNavBar,
         tonalElevation = 0.dp,
         // Measure full content inside AnimatedVisibility, not its animated outer bounds.
-        // The list retains this end inset while the composer slides out and back in.
+        // Use the full height to reveal the composer before the reader reaches the end.
         modifier = Modifier.fillMaxWidth().onSizeChanged { onContentHeightChanged(it.height) }
     ) {
         Column(
