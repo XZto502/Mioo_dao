@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -141,6 +142,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import com.mioo.dao.ui.theme.readingTextStyle
+import com.mioo.dao.ui.theme.readingBackground
+import com.mioo.dao.ui.theme.readingTopBarColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -393,8 +398,7 @@ fun ThreadScreen(
                     Column(verticalArrangement = Arrangement.Center) {
                         Text(
                             text = listUi.thread?.title.effectiveTitle() ?: "详情",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontSize = 15.sp,
+                            style = readingTextStyle(16.5f, 22f, FontWeight.SemiBold).copy(
                                 platformStyle = PlatformTextStyle(includeFontPadding = false)
                             ),
                             maxLines = 1,
@@ -512,7 +516,7 @@ fun ThreadScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = DaoTheme.colors.glassTopBar
+                    containerColor = readingTopBarColor()
                 )
             )
         },
@@ -520,6 +524,7 @@ fun ThreadScreen(
             // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
             ReplyInputBar(
                 viewModel = viewModel,
+                listState = listState,
                 cookies = threadSettings.cookiesList,
                 selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
                     ?.takeIf { it < threadSettings.cookiesList.size }
@@ -529,7 +534,7 @@ fun ThreadScreen(
         },
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = Color.Transparent
+        containerColor = readingBackground()
     ) { paddingValues ->
         CompositionLocalProvider(
             // 设置里的骰点高亮开关：关闭时不向渲染层下发规则（正文恢复纯文本）
@@ -647,7 +652,7 @@ fun ThreadScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                     contentPadding = PaddingValues(
                         start = 8.dp,
                         end = 8.dp,
@@ -703,22 +708,33 @@ fun ThreadScreen(
                                 onLongClick = { showBlockDialog = true },
                                 // 详情页主楼：完整正文 + 引用链接可点（列表预览才截断/关手势）
                                 contentMaxLines = Int.MAX_VALUE,
-                                enableHtmlGestures = true
+                                enableHtmlGestures = true,
+                                shape = readingGroupShape(false,
+                                    mainThread.userHash.isNotBlank() &&
+                                        displayItems.firstOrNull()?.userHash == mainThread.userHash)
                             )
                         }
                     }
 
-                    items(
+                    itemsIndexed(
                         items = displayItems,
-                        key = { it.id },
-                        contentType = { item ->
+                        key = { _, item -> item.id },
+                        contentType = { _, item ->
                             // Finer slots improve Lazy reuse for quote-heavy replies
                             val q = if (item.quoteIds.isNotEmpty()) "q" else "n"
                             val i = if (item.hasImage) "i" else "t"
                             "reply_${q}_$i"
                         }
-                    ) { item ->
+                    ) { index, item ->
+                        val previousHash = displayItems.getOrNull(index - 1)?.userHash
+                            ?: mainThread?.userHash?.takeIf { listUi.startPage <= 1 }
+                        val joinsPrevious = item.userHash.isNotBlank() && item.userHash == previousHash
+                        val joinsNext = item.userHash.isNotBlank() &&
+                            item.userHash == displayItems.getOrNull(index + 1)?.userHash
+                        val hasPrevious = index > 0 || (mainThread != null && listUi.startPage <= 1)
                         ThreadReplyRow(
+                            modifier = Modifier.padding(top = if (!hasPrevious) 0.dp else if (joinsPrevious) 3.dp else 8.dp),
+                            shape = readingGroupShape(joinsPrevious, joinsNext),
                             item = item,
                             quoteCache = quoteCache,
                             inlineQuotesEnabled = threadSettings.quoteAutoDisplayEnabled,
@@ -1611,7 +1627,9 @@ private fun ThreadReplyRow(
     onBlockUser: () -> Unit,
     onFreeCopy: () -> Unit,
     onReport: () -> Unit,
-    onOpenDiceRule: () -> Unit
+    onOpenDiceRule: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
     val quotedReplies = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1670,6 +1688,8 @@ private fun ThreadReplyRow(
     }
 
     ReplyCard(
+        modifier = modifier,
+        shape = shape,
         postData = item.postData,
         onQuoteClick = onQuoteClick,
         onImageClick = onImageClick,
@@ -1824,12 +1844,46 @@ private fun ReportDialog(
 @Composable
 private fun ReplyInputBar(
     viewModel: ThreadViewModel,
+    listState: LazyListState,
     cookies: List<String>,
     selectedCookieIndex: Int,
     onCookieSelect: (Int) -> Unit
 ) {
     val composerState by viewModel.composerState.collectAsState()
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    var scrollingDown by remember(listState) { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        var previousIndex = listState.firstVisibleItemIndex
+        var previousOffset = listState.firstVisibleItemScrollOffset
+        var userScroll = false
+        var wasDragging = false
+        snapshotFlow {
+            Triple(listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset,
+                listState.isScrollInProgress, dragged to listState.canScrollForward)
+        }.collect { (position, scrolling, gesture) ->
+            val (dragging, canScrollForward) = gesture
+            if (dragging && !wasDragging) userScroll = true
+            // Latch the reveal at the end: composer height changes must not hide it again.
+            if (!canScrollForward) {
+                scrollingDown = false
+                userScroll = false
+            }
+            if (scrolling && userScroll) {
+                if (position.first != previousIndex) scrollingDown = position.first > previousIndex
+                else if (kotlin.math.abs(position.second - previousOffset) > 2)
+                    scrollingDown = position.second > previousOffset
+            }
+            if (!scrolling && !dragging) userScroll = false
+            previousIndex = position.first
+            previousOffset = position.second
+            wasDragging = dragging
+        }
+    }
+    val hideWhenReading by remember(listState) {
+        derivedStateOf { scrollingDown && listState.canScrollForward }
+    }
     ReplyInputArea(
+        hideWhenReading = hideWhenReading,
         replyText = composerState.replyText,
         quotedPostNo = composerState.quotedPostNo,
         cookies = cookies,
@@ -1846,3 +1900,10 @@ private fun ReplyInputBar(
         }
     )
 }
+
+private fun readingGroupShape(joinsPrevious: Boolean, joinsNext: Boolean) = RoundedCornerShape(
+    topStart = if (joinsPrevious) 6.dp else 16.dp,
+    topEnd = if (joinsPrevious) 6.dp else 16.dp,
+    bottomStart = if (joinsNext) 6.dp else 16.dp,
+    bottomEnd = if (joinsNext) 6.dp else 16.dp
+)

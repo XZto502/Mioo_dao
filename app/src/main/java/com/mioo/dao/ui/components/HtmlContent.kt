@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.ParagraphStyle
+import com.mioo.dao.ui.theme.readingBodyStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -62,6 +64,10 @@ import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
 private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>")
+private val PARAGRAPH_BREAKS = Regex("\\n[ \\t]*(?:\\n[ \\t]*)+")
+private val KAOMOJI_PATTERN = Regex("""\([^()\n]{1,32}\)|\|[^|\n]{1,16}\)""")
+private val KAOMOJI_FACE_MARKS = Regex("[ﾟ∀。´ヮゝωДдಠ益ಥ╥≧≦]")
+private val KAOMOJI_PROSE = Regex("[\u3400-\u9fffA-Za-z0-9]")
 private val HTML_PATTERN = Pattern.compile(
     "(?:<font\\s+color=\"([^\"]+)\"[^>]*>(.*?)</font>)|" +
         "(?:<span\\s+style=\"[^\"]*color:\\s*([^;\"]+)[^\"]*\"[^>]*>(.*?)</span>)|" +
@@ -159,6 +165,7 @@ fun parseHtmlToAnnotatedString(
     dicePreset: DiceRulePreset? = null
 ): ParsedContent {
     val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
+        .replace("\r\n", "\n").replace(PARAGRAPH_BREAKS, "\n\n")
     val ctx = dicePreset?.let { DiceParseCtx(preset = it) }
     val annotated = buildAnnotatedString {
         val matcher = HTML_PATTERN.matcher(cleaned)
@@ -275,8 +282,28 @@ private fun AnnotatedString.Builder.appendRichText(
     appendPlain(text.substring(last), baseColor, ctx)
 }
 
+// Join face punctuation as well as spaces: Unicode line breaking may split either.
+internal fun protectReadingKaomoji(text: String): String {
+    return KAOMOJI_PATTERN.replace(text) { match ->
+        if (KAOMOJI_FACE_MARKS.containsMatchIn(match.value) && !KAOMOJI_PROSE.containsMatchIn(match.value))
+            match.value.replace(' ', '\u00A0').codePoints().toArray()
+                .joinToString("\u2060") { String(Character.toChars(it)) }
+        else match.value
+    }
+}
+
+internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString =
+    buildAnnotatedString {
+        append(this@withReadingParagraphGaps)
+        Regex("\n\n").findAll(this@withReadingParagraphGaps.text).forEach { gap ->
+            val start = gap.range.first + 1
+            addStyle(ParagraphStyle(lineHeight = (8f * scale).sp), start, start + 1)
+            addStyle(SpanStyle(fontSize = (6f * scale).sp), start, start + 1)
+        }
+    }
+
 private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx: DiceParseCtx? = null) {
-    val plain = raw.stripRemainingHtmlTags()
+    val plain = protectReadingKaomoji(raw.stripRemainingHtmlTags())
     if (plain.isEmpty()) return
     if (ctx == null) {
         appendStyledPlain(plain, color)
@@ -436,15 +463,20 @@ fun HtmlContent(
     val parsed = remember(html, quoteColorArgb, darkTheme, dicePreset) {
         HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme, dicePreset)
     }
-    val annotatedString = parsed.annotated
+    val paragraphScale = MaterialTheme.typography.bodyMedium.lineHeight.value / 20f
+    val annotatedString = remember(parsed.annotated, paragraphScale) {
+        parsed.annotated.withReadingParagraphGaps(paragraphScale)
+    }
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
     var layoutResult by remember(enableGestures) {
         mutableStateOf<TextLayoutResult?>(null)
     }
 
-    val surfaceColor = MaterialTheme.colorScheme.onSurface
-    val mergedStyle = remember(style, surfaceColor) { style.copy(color = surfaceColor) }
+    val surfaceColor = readingBodyStyle().color
+    val mergedStyle = remember(style, surfaceColor) {
+        if (style.color == Color.Unspecified) style.copy(color = surfaceColor) else style
+    }
 
     // 宽度按完整文案的字符数留余量，规则和深浅色都进 key，切换后立刻重画
     val inlineContent = remember(html, dicePreset, darkTheme, parsed.diceBadges) {

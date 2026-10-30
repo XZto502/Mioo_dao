@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,7 +23,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -36,6 +34,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mioo.dao.ui.theme.readingBodyStyle
+import com.mioo.dao.ui.theme.readingMetaStyle
+import com.mioo.dao.ui.theme.readingTextStyle
+import com.mioo.dao.ui.theme.readingCardColor
+import com.mioo.dao.ui.theme.readingCardBorder
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.graphicsPressScale
@@ -62,17 +65,17 @@ fun ThreadCard(
      */
     enablePressScale: Boolean = false,
     /** When false, skip thumbnail (cold-start: defer decode until list settles). */
-    showImage: Boolean = true
+    showImage: Boolean = true,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val daoColors = DaoTheme.colors
-    val outline = colorScheme.outlineVariant.copy(alpha = 0.3f)
-    val border = remember(outline) { BorderStroke(0.5.dp, outline) }
+    val border = readingCardBorder()
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
-    val cardColors = CardDefaults.cardColors(containerColor = daoColors.threadCardBg)
+    val cardColors = CardDefaults.cardColors(containerColor = readingCardColor())
     val cardElevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    val cardShape = MaterialTheme.shapes.medium
-    val bodyStyle = MaterialTheme.typography.bodyMedium
+    val cardShape = shape
+    val bodyStyle = readingBodyStyle()
     val interactionSource = remember { MutableInteractionSource() }
     // Dense list default: skip press animation subscriptions entirely (enablePressScale=false)
     val cardModifier = if (enablePressScale) {
@@ -134,10 +137,7 @@ fun ThreadCard(
                 }
                 Text(
                     text = postData.userId,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    ),
+                    style = readingTextStyle(12f, 16f, FontWeight.Medium),
                     color = idTextColor,
                     modifier = Modifier
                         .background(idBgColor, shape = RoundedCornerShape(4.dp))
@@ -149,10 +149,10 @@ fun ThreadCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "PO",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
+                        style = readingTextStyle(10.5f, 14f, FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier
-                            .background(DaoTheme.colors.po, shape = RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f), shape = RoundedCornerShape(4.dp))
                             .padding(horizontal = 4.dp, vertical = 2.dp)
                     )
                 }
@@ -175,8 +175,8 @@ fun ThreadCard(
                 // Date
                 Text(
                     text = remember(postData.createdAt) { formatPostTime(postData.createdAt) },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    style = readingMetaStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -184,8 +184,8 @@ fun ThreadCard(
                 // Post ID
                 Text(
                     text = "No.${postData.id}",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = readingMetaStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
 

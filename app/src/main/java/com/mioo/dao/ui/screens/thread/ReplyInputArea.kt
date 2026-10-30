@@ -4,6 +4,12 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -82,12 +88,21 @@ fun ReplyInputArea(
     onCookieSelect: (Int) -> Unit,
     onReplyTextChange: (String) -> Unit,
     onCancelQuote: () -> Unit,
-    onSend: (java.io.File?) -> Unit
+    onSend: (java.io.File?) -> Unit,
+    hideWhenReading: Boolean = false
 ) {
+    var isInputFocused by remember { mutableStateOf(false) }
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
     var showDiceDialog by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var isPickingImage by remember { mutableStateOf(false) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        isPickingImage = false
+        if (uri != null) attachedImageUri = uri
+    }
     var previewAttachedUri by remember { mutableStateOf<Uri?>(null) }
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
     val context = LocalContext.current
@@ -199,6 +214,19 @@ fun ReplyInputArea(
     // 毛玻璃贴屏幕物理底边，由内容下方的共享槽位把控件顶起来：
     // 无键盘无面板时槽位 = 导航条高度（与现在贴导航条一致）；
     // 键盘/面板谁高用谁，玻璃始终铺到屏幕底无断层。
+    val reducedComposerMotion = isReducedMotionEnabled()
+    val keepVisible = isInputFocused || replyText.isNotEmpty() || attachedImageUri != null ||
+        quotedPostNo != null || isReplying || toolPanelOpen || cookieMenuExpanded ||
+        showDiceDialog || previewAttachedUri != null || isKeyboardRising || isPickingImage
+    AnimatedVisibility(
+        visible = !hideWhenReading || keepVisible,
+        enter = if (reducedComposerMotion) fadeIn(MiooMotion.tweenOut(1)) else
+            slideInVertically(MiooMotion.tweenOut()) { it } + fadeIn(MiooMotion.tweenOut()) +
+                expandVertically(MiooMotion.tweenOut(), expandFrom = Alignment.Bottom),
+        exit = if (reducedComposerMotion) fadeOut(MiooMotion.tweenExit(1)) else
+            slideOutVertically(MiooMotion.tweenExit()) { it } + fadeOut(MiooMotion.tweenExit()) +
+                shrinkVertically(MiooMotion.tweenExit(), shrinkTowards = Alignment.Bottom)
+    ) {
     Surface(
         color = DaoTheme.colors.glassNavBar,
         tonalElevation = 0.dp,
@@ -303,6 +331,7 @@ fun ReplyInputArea(
                     modifier = Modifier
                         .fillMaxWidth()
                         .onFocusChanged { focusState ->
+                            isInputFocused = focusState.isFocused
                             if (focusState.isFocused) {
                                 closeToolPanels()
                             }
@@ -324,12 +353,6 @@ fun ReplyInputArea(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val imagePickerLauncher = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.GetContent()
-                    ) { uri: Uri? ->
-                        attachedImageUri = uri
-                    }
-
                     // Cookie selector
                     CookieSelector(
                         cookies = cookies,
@@ -357,6 +380,7 @@ fun ReplyInputArea(
                         },
                         onImageClick = {
                             closeToolPanels()
+                            isPickingImage = true
                             imagePickerLauncher.launch("image/*")
                         }
                     )
@@ -416,6 +440,8 @@ fun ReplyInputArea(
             }
         }
     }
+
+    } // AnimatedVisibility: composer state stays mounted above.
 
     if (showDiceDialog) {
         DiceDialog(

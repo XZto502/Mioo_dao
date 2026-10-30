@@ -140,6 +140,8 @@ import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.toFile
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
+import com.mioo.dao.ui.theme.readingBackground
+import com.mioo.dao.ui.theme.readingTopBarColor
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.findDialogWindow
@@ -552,7 +554,7 @@ fun ForumScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = DaoTheme.colors.glassTopBar
+                        containerColor = readingTopBarColor()
                     )
                 )
             },
@@ -590,7 +592,7 @@ fun ForumScreen(
             },
             modifier = modifier,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = Color.Transparent
+            containerColor = readingBackground()
         ) { paddingValues ->
             Box(
                 modifier = Modifier
@@ -1336,7 +1338,7 @@ fun CreateThreadDialog(
         ) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
-                containerColor = Color.Transparent,
+                containerColor = readingBackground(),
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
                     TopAppBar(
