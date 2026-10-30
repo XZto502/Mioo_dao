@@ -221,11 +221,11 @@ fun ReplyInputArea(
     AnimatedVisibility(
         visible = !hideWhenReading || keepVisible,
         enter = if (reducedComposerMotion) fadeIn(MiooMotion.tweenOut(1)) else
-            slideInVertically(MiooMotion.tweenOut()) { it } + fadeIn(MiooMotion.tweenOut()) +
-                expandVertically(MiooMotion.tweenOut(), expandFrom = Alignment.Bottom),
+            slideInVertically(MiooMotion.bottomBarTween()) { it } + fadeIn(MiooMotion.bottomBarTween()) +
+                expandVertically(MiooMotion.bottomBarTween(), expandFrom = Alignment.Bottom),
         exit = if (reducedComposerMotion) fadeOut(MiooMotion.tweenExit(1)) else
-            slideOutVertically(MiooMotion.tweenExit()) { it } + fadeOut(MiooMotion.tweenExit()) +
-                shrinkVertically(MiooMotion.tweenExit(), shrinkTowards = Alignment.Bottom)
+            slideOutVertically(MiooMotion.bottomBarTween()) { it } + fadeOut(MiooMotion.bottomBarTween()) +
+                shrinkVertically(MiooMotion.bottomBarTween(), shrinkTowards = Alignment.Bottom)
     ) {
     Surface(
         color = DaoTheme.colors.glassNavBar,

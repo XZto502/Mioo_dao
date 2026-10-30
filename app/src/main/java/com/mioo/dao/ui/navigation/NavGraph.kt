@@ -11,7 +11,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.navigation.NavBackStackEntry
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -234,7 +233,7 @@ fun MiooDaoNavGraph(
     // 260ms EaseOut dumped the travel into the first frames. 560ms felt slow.
     // 340ms FastOutSlowIn keeps the slide visible without dragging.
     val bottomBarSlideSpec = remember {
-        tween<Float>(durationMillis = 340, easing = FastOutSlowInEasing)
+        MiooMotion.bottomBarTween<Float>()
     }
     LaunchedEffect(bottomBarVisible, reducedMotion) {
         val target = if (bottomBarVisible) 0f else 1f
