@@ -44,7 +44,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
@@ -204,6 +203,10 @@ fun ThreadScreen(
     // Recreate list state when thread content first appears so continue-reading can
     // open at the saved index (no paint-at-top then scrollToItem hitch).
     val hasThreadContent = listUi.thread != null
+    val composerHeightPx = remember(viewModel.threadId) { mutableIntStateOf(0) }
+    val onComposerHeightChanged = remember(composerHeightPx) {
+        { height: Int -> composerHeightPx.intValue = height }
+    }
     val listState = remember(viewModel.threadId, hasThreadContent) {
         // pendingScrollIndex 的索引模型：0=OP、1..=回复；跳到第2页及以上时 OP 不占位
         val seeded = (listUi.pendingScrollIndex ?: 0).coerceAtLeast(0)
@@ -526,6 +529,7 @@ fun ThreadScreen(
             ReplyInputBar(
                 viewModel = viewModel,
                 listState = listState,
+                onContentHeightChanged = onComposerHeightChanged,
                 cookies = threadSettings.cookiesList,
                 selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
                     ?.takeIf { it < threadSettings.cookiesList.size }
@@ -650,30 +654,10 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
-                // Scaffold's animated bottom bar changes content padding, not the list viewport.
-                // Keep an already reached end above the composer as its measured height grows.
-                // Read measured padding so compensation follows the same layout frame, including
-                // IME/quote-panel growth. Scrolling away or appending posts releases this anchor.
-                LaunchedEffect(listState) {
-                    var previousPadding = listState.layoutInfo.afterContentPadding
-                    var previousCount = listState.layoutInfo.totalItemsCount
-                    var wasAtEnd = !listState.canScrollForward
-                    snapshotFlow {
-                        Triple(listState.layoutInfo.afterContentPadding,
-                            listState.layoutInfo.totalItemsCount, listState.canScrollForward)
-                    }.collect { (padding, count, canScrollForward) ->
-                        val growth = padding - previousPadding
-                        if (wasAtEnd && growth > 0 && count > 0 && count == previousCount) {
-                            listState.scrollBy(growth.toFloat())
-                            wasAtEnd = !listState.canScrollForward
-                        } else {
-                            wasAtEnd = !canScrollForward
-                        }
-                        previousPadding = padding
-                        previousCount = count
-                    }
-                }
-
+                // Reserve the full composer height at the end, even while it is hidden.
+                // Only end padding is reserved: the scrolling viewport still fills the screen.
+                // Reveal no longer changes the scroll range or interrupts a fling with scrollBy.
+                val composerEndInset = with(LocalDensity.current) { composerHeightPx.intValue.toDp() }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -682,7 +666,7 @@ fun ThreadScreen(
                         start = 8.dp,
                         end = 8.dp,
                         top = paddingValues.calculateTopPadding() + 8.dp,
-                        bottom = paddingValues.calculateBottomPadding() + 16.dp
+                        bottom = maxOf(composerEndInset, paddingValues.calculateBottomPadding()) + 16.dp
                     )
                 ) {
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
@@ -1870,6 +1854,7 @@ private fun ReportDialog(
 private fun ReplyInputBar(
     viewModel: ThreadViewModel,
     listState: LazyListState,
+    onContentHeightChanged: (Int) -> Unit,
     cookies: List<String>,
     selectedCookieIndex: Int,
     onCookieSelect: (Int) -> Unit
@@ -1908,6 +1893,7 @@ private fun ReplyInputBar(
         derivedStateOf { scrollingDown && listState.canScrollForward }
     }
     ReplyInputArea(
+        onContentHeightChanged = onContentHeightChanged,
         hideWhenReading = hideWhenReading,
         replyText = composerState.replyText,
         quotedPostNo = composerState.quotedPostNo,

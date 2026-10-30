@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -89,7 +90,8 @@ fun ReplyInputArea(
     onReplyTextChange: (String) -> Unit,
     onCancelQuote: () -> Unit,
     onSend: (java.io.File?) -> Unit,
-    hideWhenReading: Boolean = false
+    hideWhenReading: Boolean = false,
+    onContentHeightChanged: (Int) -> Unit = {}
 ) {
     var isInputFocused by remember { mutableStateOf(false) }
     var cookieMenuExpanded by remember { mutableStateOf(false) }
@@ -230,7 +232,9 @@ fun ReplyInputArea(
     Surface(
         color = DaoTheme.colors.glassNavBar,
         tonalElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
+        // Measure full content inside AnimatedVisibility, not its animated outer bounds.
+        // The list retains this end inset while the composer slides out and back in.
+        modifier = Modifier.fillMaxWidth().onSizeChanged { onContentHeightChanged(it.height) }
     ) {
         Column(
             modifier = Modifier.fillMaxWidth()
