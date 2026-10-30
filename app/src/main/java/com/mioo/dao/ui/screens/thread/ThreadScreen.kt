@@ -142,7 +142,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import com.mioo.dao.ui.theme.readingTextStyle
 import com.mioo.dao.ui.theme.readingBackground
 import com.mioo.dao.ui.theme.readingTopBarColor
@@ -524,7 +523,6 @@ fun ThreadScreen(
             // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
             ReplyInputBar(
                 viewModel = viewModel,
-                listState = listState,
                 cookies = threadSettings.cookiesList,
                 selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
                     ?.takeIf { it < threadSettings.cookiesList.size }
@@ -649,7 +647,7 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
-                // Resize the viewport with the composer; no hidden footer or scroll correction.
+                // Keep the list viewport above the always-visible composer, with only a small end gap.
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().padding(bottom = paddingValues.calculateBottomPadding()),
@@ -1845,65 +1843,12 @@ private fun ReportDialog(
 @Composable
 private fun ReplyInputBar(
     viewModel: ThreadViewModel,
-    listState: LazyListState,
     cookies: List<String>,
     selectedCookieIndex: Int,
     onCookieSelect: (Int) -> Unit
 ) {
     val composerState by viewModel.composerState.collectAsState()
-    val dragged by listState.interactionSource.collectIsDraggedAsState()
-    var composerHeightPx by remember(listState) { mutableIntStateOf(0) }
-    val endBufferPx = with(LocalDensity.current) { 64.dp.toPx() }
-    var nearEnd by remember(listState) { mutableStateOf(false) }
-    var scrollingDown by remember(listState) { mutableStateOf(false) }
-    LaunchedEffect(listState, endBufferPx) {
-        var previousCount = 0
-        snapshotFlow {
-            val layout = listState.layoutInfo
-            val last = layout.visibleItemsInfo.lastOrNull()?.takeIf { it.index == layout.totalItemsCount - 1 }
-            ThreadEndObservation(layout.totalItemsCount,
-                last?.let { it.offset + it.size - layout.viewportEndOffset },
-                composerHeightPx, dragged && !scrollingDown)
-        }.collect { observation ->
-            nearEnd = shouldRevealThreadComposer(
-                wasNearEnd = nearEnd && observation.count == previousCount,
-                observation = observation, bufferPx = endBufferPx)
-            previousCount = observation.count
-        }
-    }
-    LaunchedEffect(listState) {
-        var previousIndex = listState.firstVisibleItemIndex
-        var previousOffset = listState.firstVisibleItemScrollOffset
-        var userScroll = false
-        var wasDragging = false
-        snapshotFlow {
-            Triple(listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset,
-                listState.isScrollInProgress, dragged to listState.canScrollForward)
-        }.collect { (position, scrolling, gesture) ->
-            val (dragging, canScrollForward) = gesture
-            if (dragging && !wasDragging) userScroll = true
-            // Latch the reveal at the end: composer height changes must not hide it again.
-            if (!canScrollForward) {
-                scrollingDown = false
-                userScroll = false
-            }
-            if (scrolling && userScroll) {
-                if (position.first != previousIndex) scrollingDown = position.first > previousIndex
-                else if (kotlin.math.abs(position.second - previousOffset) > 2)
-                    scrollingDown = position.second > previousOffset
-            }
-            if (!scrolling && !dragging) userScroll = false
-            previousIndex = position.first
-            previousOffset = position.second
-            wasDragging = dragging
-        }
-    }
-    val hideWhenReading by remember(listState) {
-        derivedStateOf { scrollingDown && !nearEnd && listState.canScrollForward }
-    }
     ReplyInputArea(
-        onContentHeightChanged = { composerHeightPx = it },
-        hideWhenReading = hideWhenReading,
         replyText = composerState.replyText,
         quotedPostNo = composerState.quotedPostNo,
         cookies = cookies,
