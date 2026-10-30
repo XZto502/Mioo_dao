@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
@@ -647,6 +648,30 @@ fun ThreadScreen(
                 }
                 val onViewThreadClick = remember(onNavigateToThread) {
                     { tid: String -> onNavigateToThread(tid) }
+                }
+
+                // Scaffold's animated bottom bar changes content padding, not the list viewport.
+                // Keep an already reached end above the composer as its measured height grows.
+                // Read measured padding so compensation follows the same layout frame, including
+                // IME/quote-panel growth. Scrolling away or appending posts releases this anchor.
+                LaunchedEffect(listState) {
+                    var previousPadding = listState.layoutInfo.afterContentPadding
+                    var previousCount = listState.layoutInfo.totalItemsCount
+                    var wasAtEnd = !listState.canScrollForward
+                    snapshotFlow {
+                        Triple(listState.layoutInfo.afterContentPadding,
+                            listState.layoutInfo.totalItemsCount, listState.canScrollForward)
+                    }.collect { (padding, count, canScrollForward) ->
+                        val growth = padding - previousPadding
+                        if (wasAtEnd && growth > 0 && count > 0 && count == previousCount) {
+                            listState.scrollBy(growth.toFloat())
+                            wasAtEnd = !listState.canScrollForward
+                        } else {
+                            wasAtEnd = !canScrollForward
+                        }
+                        previousPadding = padding
+                        previousCount = count
+                    }
                 }
 
                 LazyColumn(
