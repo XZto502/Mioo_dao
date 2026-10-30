@@ -647,16 +647,17 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
-                // Keep the list viewport above the always-visible composer, with only a small end gap.
+                // Draw the list behind the translucent composer; end padding still lets the
+                // final post scroll fully above it without clipping away the glass backdrop.
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize().padding(bottom = paddingValues.calculateBottomPadding()),
+                    modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                     contentPadding = PaddingValues(
                         start = 8.dp,
                         end = 8.dp,
                         top = paddingValues.calculateTopPadding() + 8.dp,
-                        bottom = 16.dp
+                        bottom = paddingValues.calculateBottomPadding() + 16.dp
                     )
                 ) {
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
