@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -52,6 +54,7 @@ import com.mioo.dao.ui.theme.readingCardColor
 import com.mioo.dao.ui.theme.readingCardBorder
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import com.mioo.dao.ui.theme.graphicsPressScale
 import com.mioo.dao.ui.theme.rememberPressScale
 
@@ -290,13 +293,22 @@ fun QuotedPostBox(
 
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     var expanded by rememberSaveable(quote.id) { mutableStateOf(false) }
+    val reducedMotion = isReducedMotionEnabled()
+    val toggleExpanded = { expanded = !expanded }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = MiooMotion.tweenOut(if (reducedMotion) 0 else MiooMotion.DurationSmall),
+        label = "quoteExpansionArrow"
+    )
     Surface(
         modifier = modifier.fillMaxWidth().combinedClickable(
-            onClick = { expanded = !expanded }, onLongClick = onLongClick),
+            onClick = toggleExpanded, onLongClick = onLongClick),
         shape = RoundedCornerShape(8.dp),
         color = if (isDark) Color(0xFF1A1D24) else Color(0xFFF1F3F6)
     ) {
-        Row(Modifier.height(IntrinsicSize.Min).padding(10.dp)) {
+        Row(Modifier.animateContentSize(
+            animationSpec = MiooMotion.tweenOut(if (reducedMotion) 0 else MiooMotion.DurationSmall)
+        ).height(IntrinsicSize.Min).padding(10.dp)) {
             Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)))
             Spacer(Modifier.width(9.dp))
@@ -307,7 +319,7 @@ fun QuotedPostBox(
                     Icon(Icons.Default.ExpandMore,
                         contentDescription = if (expanded) "收起引用" else "展开引用",
                         tint = quoteColor,
-                        modifier = Modifier.size(18.dp).rotate(if (expanded) 180f else 0f))
+                        modifier = Modifier.size(18.dp).rotate(arrowRotation))
                 }
                 if (!expanded) {
                     Text(remember(quote.content) { quotePreviewPlain(quote.content) },
@@ -326,6 +338,7 @@ fun QuotedPostBox(
                     if (quote.isSage) Text("已SAGE", color = DaoTheme.colors.sageTag,
                         style = readingQuoteStyle())
                     HtmlContent(html = quote.content, onQuoteClick = onQuoteClick,
+                        onTextClick = toggleExpanded,
                         onLongClick = onLongClick, style = readingQuoteStyle(),
                         modifier = Modifier.fillMaxWidth())
                     quote.imageUrl?.let { imageUrl ->
