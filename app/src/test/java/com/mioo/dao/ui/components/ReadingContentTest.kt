@@ -32,11 +32,11 @@ class ReadingContentTest {
             PostContentBlock.Text(">>No.99<br>after")), blocks)
     }
 
-    @Test fun repeatedBreaksBecomeEightSpGapsWithoutMovingLinkAnnotations() {
+    @Test fun repeatedBreaksBecomeTwelveSpGapsWithoutMovingLinkAnnotations() {
         val annotated = parse("甲<br><br><br>乙\n\n\n<a href=\"https://example.com\">链接</a>")
             .withReadingParagraphGaps(1f)
         assertEquals("甲\n\n乙\n\n链接", annotated.text)
-        assertEquals(listOf(8.sp, 8.sp), annotated.paragraphStyles.map { it.item.lineHeight })
+        assertEquals(listOf(12.sp, 12.sp), annotated.paragraphStyles.map { it.item.lineHeight })
         val link = annotated.getStringAnnotations("LINK_CLICK", 0, annotated.length).single()
         assertEquals("链接", annotated.text.substring(link.start, link.end))
         assertEquals(6, link.start)
@@ -45,7 +45,7 @@ class ReadingContentTest {
     @Test fun paragraphGapsRespectReadingScaleAndSingleBreaksStaySingle() {
         val annotated = parse("甲\n乙\n\n丙").withReadingParagraphGaps(1.25f)
         assertEquals("甲\n乙\n\n丙", annotated.text)
-        assertEquals(10.sp, annotated.paragraphStyles.single().item.lineHeight)
+        assertEquals(15.sp, annotated.paragraphStyles.single().item.lineHeight)
     }
 
     @Test fun facesProtectSpacesAndPunctuationButOrdinaryParenthesesStayUnchanged() {
@@ -67,6 +67,6 @@ class ReadingContentTest {
         val quote = annotated.getStringAnnotations("QUOTE_CLICK", 0, annotated.length).single()
         assertEquals(">>No.22", annotated.text.substring(quote.start, quote.end))
         assertEquals("22", quote.item)
-        assertEquals(8.sp, annotated.paragraphStyles.single().item.lineHeight)
+        assertEquals(12.sp, annotated.paragraphStyles.single().item.lineHeight)
     }
 }

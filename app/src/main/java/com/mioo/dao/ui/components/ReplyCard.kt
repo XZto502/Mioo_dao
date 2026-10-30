@@ -3,6 +3,7 @@ package com.mioo.dao.ui.components
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -119,93 +120,11 @@ fun ReplyCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            // Header Row (User ID, badges, timestamp, reply ID)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // User ID tag
-                val idBgColor = when {
-                    postData.isAdmin -> DaoTheme.colors.admin.copy(alpha = 0.15f)
-                    postData.isPo -> DaoTheme.colors.po.copy(alpha = 0.15f)
-                    else -> MaterialTheme.colorScheme.surfaceVariant
-                }
-                val idTextColor = when {
-                    postData.isAdmin -> DaoTheme.colors.admin
-                    postData.isPo -> DaoTheme.colors.po
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
+            ReadingPostHeader(postData)
 
-                Text(
-                    text = postData.userId,
-                    style = readingTextStyle(12f, 16f, FontWeight.Medium),
-                    color = idTextColor,
-                    modifier = Modifier
-                        .background(idBgColor, shape = RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-
-                // PO Badge
-                if (postData.isPo) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "PO",
-                        style = readingTextStyle(10.5f, 14f, FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f), shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Admin Badge
-                if (postData.isAdmin) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "ADMIN",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(DaoTheme.colors.admin, shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Sage Badge
-                if (postData.isSage) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "SAGE",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(DaoTheme.colors.sage, shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Date/Time
-                Text(
-                    text = remember(postData.createdAt) { formatPostTime(postData.createdAt) },
-                    style = readingMetaStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Reply ID number
-                Text(
-                    text = "No.${postData.id}",
-                    style = readingMetaStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Reply Subject (highly rare but possible in some formats)
             if (!postData.title.isNullOrBlank()) {
@@ -226,7 +145,7 @@ fun ReplyCard(
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 contentBlocks.forEach { block ->
                     when (block) {
@@ -262,7 +181,8 @@ fun ReplyCard(
                 Box(
                     modifier = Modifier
                         .size(100.dp)
-                        .clip(MaterialTheme.shapes.medium)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
                         .clickable { onImageClick(imageUrl) }
                 ) {
                     ListThumbAsyncImage(
@@ -304,39 +224,29 @@ fun QuotedPostBox(
         modifier = modifier.fillMaxWidth().combinedClickable(
             onClick = toggleExpanded, onLongClick = onLongClick),
         shape = RoundedCornerShape(8.dp),
-        color = if (isDark) Color(0xFF1A1D24) else Color(0xFFF1F3F6)
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.05f else 0.035f)
     ) {
         Row(Modifier.animateContentSize(
             animationSpec = MiooMotion.tweenOut(if (reducedMotion) 0 else MiooMotion.DurationSmall)
-        ).height(IntrinsicSize.Min).padding(10.dp)) {
-            Box(Modifier.width(3.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)))
+        ).height(IntrinsicSize.Min).padding(horizontal = 12.dp, vertical = 9.dp)) {
+            Box(Modifier.width(2.5.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)))
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("No.${quote.id}", style = readingMetaStyle(), color = quoteColor,
+                    Text("No.${quote.id}", style = readingTextStyle(11f, 16f).copy(fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         modifier = Modifier.weight(1f))
                     Icon(Icons.Default.ExpandMore,
                         contentDescription = if (expanded) "收起引用" else "展开引用",
-                        tint = quoteColor,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         modifier = Modifier.size(18.dp).rotate(arrowRotation))
                 }
                 if (!expanded) {
                     Text(remember(quote.content) { quotePreviewPlain(quote.content) },
                         style = readingQuoteStyle(), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(quote.userId, style = readingTextStyle(12f, 16f, FontWeight.Medium))
-                        if (quote.isPo) {
-                            Spacer(Modifier.width(6.dp))
-                            Text("PO", style = readingTextStyle(10.5f, 14f, FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer,
-                                    RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
-                        }
-                    }
-                    if (quote.isSage) Text("已SAGE", color = DaoTheme.colors.sageTag,
-                        style = readingQuoteStyle())
+                    ReadingIdentity(quote)
                     HtmlContent(html = quote.content, onQuoteClick = onQuoteClick,
                         onTextClick = toggleExpanded,
                         onLongClick = onLongClick, style = readingQuoteStyle(),
@@ -344,7 +254,8 @@ fun QuotedPostBox(
                     quote.imageUrl?.let { imageUrl ->
                         ListThumbAsyncImage(imageUrl = imageUrl, contentDescription = "引用图片",
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(120.dp).clip(MaterialTheme.shapes.medium)
+                            modifier = Modifier.size(120.dp).clip(RoundedCornerShape(10.dp))
+                                .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
                                 .clickable { onImageClick(imageUrl) })
                     }
                     val target = quote.resto

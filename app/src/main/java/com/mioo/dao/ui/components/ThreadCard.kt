@@ -1,5 +1,6 @@
 package com.mioo.dao.ui.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,8 +69,6 @@ fun ThreadCard(
     showImage: Boolean = true,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
 ) {
-    val colorScheme = MaterialTheme.colorScheme
-    val daoColors = DaoTheme.colors
     val border = readingCardBorder()
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
     val cardColors = CardDefaults.cardColors(containerColor = readingCardColor())
@@ -113,81 +112,9 @@ fun ThreadCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            // Header Row (User ID, Date, Post ID)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // User ID tag — remember colors per role so list fling doesn't re-alloc
-                val idBgColor = remember(postData.isAdmin, postData.isPo, colorScheme.surfaceVariant, daoColors.admin, daoColors.po) {
-                    when {
-                        postData.isAdmin -> daoColors.admin.copy(alpha = 0.15f)
-                        postData.isPo -> daoColors.po.copy(alpha = 0.15f)
-                        else -> colorScheme.surfaceVariant
-                    }
-                }
-                val idTextColor = remember(postData.isAdmin, postData.isPo, colorScheme.onSurfaceVariant, daoColors.admin, daoColors.po) {
-                    when {
-                        postData.isAdmin -> daoColors.admin
-                        postData.isPo -> daoColors.po
-                        else -> colorScheme.onSurfaceVariant
-                    }
-                }
-                Text(
-                    text = postData.userId,
-                    style = readingTextStyle(12f, 16f, FontWeight.Medium),
-                    color = idTextColor,
-                    modifier = Modifier
-                        .background(idBgColor, shape = RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-
-                // PO Tag
-                if (postData.isPo) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "PO",
-                        style = readingTextStyle(10.5f, 14f, FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f), shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Admin Tag
-                if (postData.isAdmin) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "ADMIN",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(DaoTheme.colors.admin, shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Date
-                Text(
-                    text = remember(postData.createdAt) { formatPostTime(postData.createdAt) },
-                    style = readingMetaStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Post ID
-                Text(
-                    text = "No.${postData.id}",
-                    style = readingMetaStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-            }
+            ReadingPostHeader(postData)
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -219,11 +146,12 @@ fun ThreadCard(
             // Attached Image Thumbnail (optional — off during cold first frames)
             if (showImage) {
                 postData.imageUrl?.let { imageUrl ->
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Box(
                         modifier = Modifier
                             .size(120.dp)
-                            .clip(MaterialTheme.shapes.medium)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
                             .clickable { onImageClick(imageUrl) }
                     ) {
                         ListThumbAsyncImage(

@@ -297,7 +297,7 @@ internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedSt
         append(this@withReadingParagraphGaps)
         Regex("\n\n").findAll(this@withReadingParagraphGaps.text).forEach { gap ->
             val start = gap.range.first + 1
-            addStyle(ParagraphStyle(lineHeight = (8f * scale).sp), start, start + 1)
+            addStyle(ParagraphStyle(lineHeight = (12f * scale).sp), start, start + 1)
             addStyle(SpanStyle(fontSize = (6f * scale).sp), start, start + 1)
         }
     }
@@ -331,7 +331,7 @@ private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx:
 
 private fun AnnotatedString.Builder.appendStyledPlain(plain: String, color: Color?) {
     val start = length
-    append(plain)
+    append(withReadingOpticalSpacing(plain))
     if (color != null) addStyle(SpanStyle(color = color), start, length)
 }
 

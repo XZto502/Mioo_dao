@@ -44,7 +44,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -652,11 +651,11 @@ fun ThreadScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(
-                        start = 8.dp,
-                        end = 8.dp,
-                        top = paddingValues.calculateTopPadding() + 8.dp,
+                        start = 12.dp,
+                        end = 12.dp,
+                        top = paddingValues.calculateTopPadding() + 12.dp,
                         bottom = paddingValues.calculateBottomPadding() + 16.dp
                     )
                 ) {
@@ -708,33 +707,22 @@ fun ThreadScreen(
                                 onLongClick = { showBlockDialog = true },
                                 // 详情页主楼：完整正文 + 引用链接可点（列表预览才截断/关手势）
                                 contentMaxLines = Int.MAX_VALUE,
-                                enableHtmlGestures = true,
-                                shape = readingGroupShape(false,
-                                    mainThread.userHash.isNotBlank() &&
-                                        displayItems.firstOrNull()?.userHash == mainThread.userHash)
+                                enableHtmlGestures = true
                             )
                         }
                     }
 
-                    itemsIndexed(
+                    items(
                         items = displayItems,
-                        key = { _, item -> item.id },
-                        contentType = { _, item ->
+                        key = { it.id },
+                        contentType = { item ->
                             // Finer slots improve Lazy reuse for quote-heavy replies
                             val q = if (item.quoteIds.isNotEmpty()) "q" else "n"
                             val i = if (item.hasImage) "i" else "t"
                             "reply_${q}_$i"
                         }
-                    ) { index, item ->
-                        val previousHash = displayItems.getOrNull(index - 1)?.userHash
-                            ?: mainThread?.userHash?.takeIf { listUi.startPage <= 1 }
-                        val joinsPrevious = item.userHash.isNotBlank() && item.userHash == previousHash
-                        val joinsNext = item.userHash.isNotBlank() &&
-                            item.userHash == displayItems.getOrNull(index + 1)?.userHash
-                        val hasPrevious = index > 0 || (mainThread != null && listUi.startPage <= 1)
+                    ) { item ->
                         ThreadReplyRow(
-                            modifier = Modifier.padding(top = if (!hasPrevious) 0.dp else if (joinsPrevious) 3.dp else 8.dp),
-                            shape = readingGroupShape(joinsPrevious, joinsNext),
                             item = item,
                             quoteCache = quoteCache,
                             inlineQuotesEnabled = threadSettings.quoteAutoDisplayEnabled,
@@ -1627,9 +1615,7 @@ private fun ThreadReplyRow(
     onBlockUser: () -> Unit,
     onFreeCopy: () -> Unit,
     onReport: () -> Unit,
-    onOpenDiceRule: () -> Unit,
-    modifier: Modifier = Modifier,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
+    onOpenDiceRule: () -> Unit
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
     val quotedReplies = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1688,8 +1674,6 @@ private fun ThreadReplyRow(
     }
 
     ReplyCard(
-        modifier = modifier,
-        shape = shape,
         postData = item.postData,
         onQuoteClick = onQuoteClick,
         onImageClick = onImageClick,
@@ -1866,10 +1850,3 @@ private fun ReplyInputBar(
         }
     )
 }
-
-private fun readingGroupShape(joinsPrevious: Boolean, joinsNext: Boolean) = RoundedCornerShape(
-    topStart = if (joinsPrevious) 6.dp else 16.dp,
-    topEnd = if (joinsPrevious) 6.dp else 16.dp,
-    bottomStart = if (joinsNext) 6.dp else 16.dp,
-    bottomEnd = if (joinsNext) 6.dp else 16.dp
-)

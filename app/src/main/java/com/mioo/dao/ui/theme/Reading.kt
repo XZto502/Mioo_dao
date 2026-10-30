@@ -20,13 +20,14 @@ fun readingTextStyle(size: Float, height: Float, weight: FontWeight = FontWeight
 }
 
 @Composable
-fun readingBodyStyle() = readingTextStyle(15f, 23f).copy(
+fun readingBodyStyle() = readingTextStyle(15f, 23.5f).copy(
+    letterSpacing = 0.25.sp,
     color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
         Color(0xFFE3E6EA) else Color(0xFF242629))
 
 @Composable
 fun readingQuoteStyle() = readingTextStyle(13.5f, 19.5f).copy(
-    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f))
+    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
 
 @Composable
 fun readingMetaStyle() = readingTextStyle(11.5f, 16f).copy(fontFeatureSettings = "tnum")

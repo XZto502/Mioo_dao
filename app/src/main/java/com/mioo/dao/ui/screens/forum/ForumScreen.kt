@@ -975,11 +975,11 @@ private fun ForumThreadListPane(
         state = listState,
         userScrollEnabled = userScrollEnabled,
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(
-            start = 8.dp,
-            end = 8.dp,
-            top = 8.dp,
+            start = 12.dp,
+            end = 12.dp,
+            top = 12.dp,
             bottom = 100.dp
         )
     ) {
