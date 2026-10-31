@@ -56,6 +56,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
         /** last-notified replyCount snapshot for X-island feed/bookmark poll: "tid:count,tid:count" */
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
+        val KEY_SHARE_CARD_BRANDING = booleanPreferencesKey("show_share_card_branding")
         val KEY_DRAFT_BOX_ENABLED = booleanPreferencesKey("draft_box_enabled")
         val KEY_QUOTE_AUTO_DISPLAY = booleanPreferencesKey("quote_auto_display")
         val KEY_DATA_SAVER_ENABLED = booleanPreferencesKey("data_saver_enabled")
@@ -472,6 +473,14 @@ class SettingsDataStore(private val context: Context) {
                 preferences[KEY_CACHE_LIMIT_MB] ?: ImageCacheLimit.DEFAULT_MB
             )
         }
+
+    val showShareCardBrandingFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_SHARE_CARD_BRANDING] ?: true }
+
+    suspend fun setShowShareCardBranding(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_SHARE_CARD_BRANDING] = enabled }
+    }
 
     val draftBoxEnabledFlow: Flow<Boolean> = context.dataStore.data
         .catch { exception ->

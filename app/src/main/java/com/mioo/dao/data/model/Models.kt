@@ -50,6 +50,7 @@ data class UserSettings(
     /** 跑团/安科骰点高亮：关闭后串正文不渲染骰子胶囊徽章。 */
     val diceBadgesEnabled: Boolean = true,
     /** 省流量模式：列表图片不自动加载，点击单张加载。 */
+    val showShareCardBranding: Boolean = true,
     val dataSaverEnabled: Boolean = false
 )
 

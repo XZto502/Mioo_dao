@@ -232,6 +232,7 @@ fun ThreadScreen(
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
     // 串内举报：目标楼层 id（该楼自身），null = 对话框关闭
+    var sharePostId by remember { mutableStateOf<String?>(null) }
     var reportTargetNo by remember { mutableStateOf<String?>(null) }
     // 提交状态放屏幕层：失败留在对话框时可再次点发送重试
     var isReportSubmitting by remember { mutableStateOf(false) }
@@ -493,16 +494,7 @@ fun ThreadScreen(
                             showPoOnly = listUi.showPoOnly,
                             showImagesOnly = listUi.showImagesOnly,
                             onShare = {
-                                val tid = viewModel.threadId
-                                // 分享统一用主站域名
-                                val link = XdWebSearch.threadUrlAlt(tid)
-                                val title = listUi.thread?.title.effectiveTitle() ?: "No.$tid"
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, title)
-                                    putExtra(Intent.EXTRA_TEXT, "$title\n$link\nNo.$tid")
-                                }
-                                context.startActivity(Intent.createChooser(send, "分享串"))
+                                sharePostId = listUi.thread?.idStr
                             },
                             showBookmarkMenu = showBookmarkMenu,
                             onShowBookmarkMenuChange = { showBookmarkMenu = it },
@@ -514,7 +506,12 @@ fun ThreadScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = readingTopBarColor()
+                    containerColor = MaterialTheme.colorScheme.surface.copy(
+                        alpha = if (com.mioo.dao.ui.theme.LocalGlassEffectEnabled.current) 0.98f else 1f
+                    ),
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(
+                        alpha = if (com.mioo.dao.ui.theme.LocalGlassEffectEnabled.current) 0.98f else 1f
+                    )
                 )
             )
         },
@@ -686,9 +683,7 @@ fun ThreadScreen(
                                     blockUserLabel = "屏蔽该饼干 (ID: ${mainThread.userHash})",
                                     onReport = { reportTargetNo = mainThread.idStr },
                                     onShareCard = {
-                                        scope.launch {
-                                            com.mioo.dao.utils.ShareCardUtil.sharePostCard(context, mainPostData)
-                                        }
+                                        sharePostId = mainPostData.id
                                     },
                                     onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(mainThread.content)) {
                                         { showDiceRuleMenu = true }
@@ -744,6 +739,7 @@ fun ThreadScreen(
                             },
                             onFreeCopy = { freeCopyText = item.rawContent },
                             onReport = { reportTargetNo = item.idStr },
+                            onShareCard = { sharePostId = item.idStr },
                             onOpenDiceRule = { showDiceRuleMenu = true }
                         )
                     }
@@ -869,6 +865,22 @@ fun ThreadScreen(
             }
         )
     }
+    sharePostId?.let { initialId ->
+        val settings by settingsViewModel.settingsState.collectAsState()
+        val posts = remember(listUi.thread, listUi.displayItems) { viewModel.sharePosts() }
+        var board by remember { mutableStateOf("板块") }
+        LaunchedEffect(listUi.thread?.fidStr) { board = viewModel.shareForumName() }
+        com.mioo.dao.ui.components.PostShareCardDialog(
+            initialPostId = initialId, posts = posts, threadId = viewModel.threadId,
+            title = listUi.thread?.title.effectiveTitle() ?: "No.${viewModel.threadId}",
+            boardName = board, mainPost = posts.firstOrNull { it.id == viewModel.threadId },
+            resolveContexts = viewModel::loadShareContexts,
+            showBranding = settings.showShareCardBranding,
+            onBrandingChange = settingsViewModel::setShowShareCardBranding,
+            dicePreset = dicePreset, onDismiss = { sharePostId = null }
+        )
+    }
+
     }
 
     // Page Jump Dialog
@@ -1615,6 +1627,7 @@ private fun ThreadReplyRow(
     onBlockUser: () -> Unit,
     onFreeCopy: () -> Unit,
     onReport: () -> Unit,
+    onShareCard: () -> Unit,
     onOpenDiceRule: () -> Unit
 ) {
     // Per-key observation: filling quote X does not recompose rows that only need Y
@@ -1646,8 +1659,6 @@ private fun ThreadReplyRow(
         }
     }
 
-    val rowContext = LocalContext.current
-    val rowScope = rememberCoroutineScope()
     var showReplyBlockDialog by remember { mutableStateOf(false) }
     if (showReplyBlockDialog) {
         PostActionDialog(
@@ -1660,11 +1671,7 @@ private fun ThreadReplyRow(
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
             blockUserLabel = "屏蔽该饼干 (ID: ${item.userHash})",
             onReport = onReport,
-            onShareCard = {
-                rowScope.launch {
-                    com.mioo.dao.utils.ShareCardUtil.sharePostCard(rowContext, item.postData)
-                }
-            },
+            onShareCard = onShareCard,
             onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(item.rawContent)) {
                 onOpenDiceRule
             } else {
@@ -1725,7 +1732,11 @@ private fun PostActionDialog(
                     TextButton(
                         onClick = { onShareCard(); onDismiss() },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("分享为卡片") }
+                    ) {
+                        Icon(Icons.Outlined.Share, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("生成分享卡片")
+                    }
                 }
                 TextButton(
                     onClick = { onBlockThread(); onDismiss() },

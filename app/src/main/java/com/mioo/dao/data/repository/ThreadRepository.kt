@@ -59,6 +59,7 @@ data class BookmarkNewReply(
 )
 
 interface ThreadRepository {
+    suspend fun shareForumName(fid: String?): String
     fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>>
     fun getTimeline(id: String, page: Int): Flow<XdResponse<List<Thread>>>
     fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>>
@@ -1284,6 +1285,8 @@ class ThreadRepositoryImpl @Inject constructor(
 
     /** fid → 板块名。列表在线抓一次后内存缓存；离线/失败退化为「板块 <fid>」。 */
     private val forumNameCache = LinkedHashMap<String, String>()
+
+    override suspend fun shareForumName(fid: String?): String = lookupForumName(fid)
 
     private suspend fun lookupForumName(fid: String?): String {
         if (fid.isNullOrBlank()) return "板块"

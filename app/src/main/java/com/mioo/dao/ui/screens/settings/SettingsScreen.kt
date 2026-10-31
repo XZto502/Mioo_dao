@@ -528,6 +528,21 @@ fun SettingsScreen(
             }
         }
 
+        Spacer(Modifier.height(16.dp))
+        Card(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("分享卡片显示品牌水印", style = MaterialTheme.typography.titleSmall)
+                    Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = settings.showShareCardBranding,
+                    onCheckedChange = viewModel::setShowShareCardBranding)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+
         // 3. Dark Mode Toggle (显示模式)
         Card(
             modifier = Modifier.fillMaxWidth(),

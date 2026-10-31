@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -149,6 +150,34 @@ class ThreadViewModel @Inject constructor(
      * so filling quote A does not recompose the card that only needs quote B.
      */
     val quoteCache: SnapshotStateMap<String, Reply> = mutableStateMapOf()
+
+    fun sharePosts(): List<PostData> {
+        val thread = _listState.value.thread ?: return emptyList()
+        return (listOf(thread.toPostData().copy(isPo = true)) +
+            rawPosts.map { it.toPostData(it.userHash == thread.userHash) })
+            .distinctBy { it.id }.sortedBy { it.id.toLongOrNull() ?: 0L }
+    }
+
+    suspend fun shareForumName(): String = threadRepository.shareForumName(_listState.value.thread?.fidStr)
+
+    suspend fun loadShareContexts(posts: List<PostData>): Map<String, PostData> = coroutineScope {
+        val local = sharePosts().associateBy { it.id }
+        val main = local[threadId]
+        val ids = posts.flatMap { com.mioo.dao.ui.components.shareContextIds(it, main, true) }.distinct()
+        val semaphore = Semaphore(3)
+        val upstream = ids.filterNot { it in local }.map { id -> async {
+            semaphore.withPermit {
+                try {
+                    val reply = quoteCache[id] ?: kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                        (threadRepository.getRefPost(id).first() as? XdResponse.Success)?.data
+                    }
+                    reply?.let { id to it.toPostData(it.userHash == main?.userId) }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (_: Exception) { null }
+            }
+        } }.awaitAll().filterNotNull().toMap()
+        local + upstream
+    }
 
     companion object {
         private const val PAGE_SIZE = 19

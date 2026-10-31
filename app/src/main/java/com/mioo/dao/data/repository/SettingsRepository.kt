@@ -123,6 +123,9 @@ class SettingsRepository @Inject constructor(
             quoteAutoDisplayEnabled = quoteAutoDisplay
         )
     }
+        .combine(settingsDataStore.showShareCardBrandingFlow) { settings, branding ->
+            settings.copy(showShareCardBranding = branding)
+        }
         .combine(settingsDataStore.diceBadgesEnabledFlow) { settings, diceBadgesEnabled ->
             settings.copy(diceBadgesEnabled = diceBadgesEnabled)
         }
@@ -160,6 +163,10 @@ class SettingsRepository @Inject constructor(
         repositoryScope.launch {
             settingsDataStore.saveDiceBadgesEnabled(enabled)
         }
+    }
+
+    fun setShowShareCardBranding(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.setShowShareCardBranding(enabled) }
     }
 
     fun updateDraftBoxEnabled(enabled: Boolean) {

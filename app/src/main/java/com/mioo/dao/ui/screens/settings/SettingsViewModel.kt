@@ -341,6 +341,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateDiceBadgesEnabled(enabled)
     }
 
+    fun setShowShareCardBranding(enabled: Boolean) {
+        settingsRepository.setShowShareCardBranding(enabled)
+    }
+
     fun updateDraftBoxEnabled(enabled: Boolean) {
         settingsRepository.updateDraftBoxEnabled(enabled)
     }
