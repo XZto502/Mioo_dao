@@ -163,7 +163,7 @@ class ThreadViewModel @Inject constructor(
     suspend fun loadShareContexts(posts: List<PostData>): Map<String, PostData> = coroutineScope {
         val local = sharePosts().associateBy { it.id }
         val main = local[threadId]
-        val ids = posts.flatMap { com.mioo.dao.ui.components.shareContextIds(it, main, true) }.distinct()
+        val ids = posts.flatMap { com.mioo.dao.ui.components.shareContextIds(it, true) }.distinct()
         val semaphore = Semaphore(3)
         val upstream = ids.filterNot { it in local }.map { id -> async {
             semaphore.withPermit {

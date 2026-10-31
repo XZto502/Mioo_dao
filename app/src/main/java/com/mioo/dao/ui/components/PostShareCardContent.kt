@@ -28,11 +28,17 @@ enum class ShareCardTheme(val label: String) {
 
 internal val shareQuoteRegex = Regex("(?:&gt;&gt;|>>)(?:No\\.)?(\\d+)", RegexOption.IGNORE_CASE)
 
-internal fun shareContextIds(post: PostData, mainPost: PostData?, include: Boolean): List<String> {
+internal fun shareContextIds(post: PostData, include: Boolean): List<String> {
     if (!include) return emptyList()
     val references = shareQuoteRegex.findAll(post.content).map { it.groupValues[1] }.distinct().toList()
-    return references.ifEmpty { listOfNotNull(mainPost?.id?.takeUnless { it == post.id }) }
+    return references
 }
+
+internal fun shareContentBlocks(
+    post: PostData, contextPosts: Map<String, PostData>, include: Boolean
+): List<PostContentBlock> = if (include) {
+    ContentBlockSplitter.split(post.content, shareContextIds(post, true).mapNotNull { contextPosts[it] })
+} else listOf(PostContentBlock.Text(post.content))
 
 internal fun trimShareQuote(html: String): String = html.trim().replace(
     Regex("""^(?:\s|<br\s*/?>|&nbsp;)+|(?:\s|<br\s*/?>|&nbsp;)+$""", RegexOption.IGNORE_CASE), "").trim()
@@ -105,38 +111,37 @@ fun PostShareCardContent(
                                     color = palette.onSurfaceVariant.copy(alpha = 0.55f))
                             }
                             Spacer(Modifier.height(10.dp))
-                            val contextIds = shareContextIds(post, mainPost, includeContext)
-                            val resolved = contextIds.mapNotNull { contextPosts[it] }
-                            contextIds.forEach { id ->
-                                if (id in selectedIds) {
-                                    Text("↳ 回复 #$id", style = shareMeta(11f), color = palette.onSurfaceVariant)
-                                    Spacer(Modifier.height(8.dp))
-                                } else {
-                                    contextPosts[id]?.let { upstream ->
-                                        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
-                                            .background(palette.onSurface.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
-                                            .padding(10.dp)) {
-                                            Box(Modifier.width(3.dp).fillMaxHeight()
-                                                .background(palette.primary.copy(alpha = 0.45f), RoundedCornerShape(2.dp)))
-                                            Spacer(Modifier.width(8.dp))
-                                            Column(Modifier.weight(1f)) {
-                                                Text("No.$id", style = shareMeta(11f), color = palette.onSurfaceVariant)
-                                                HtmlContent(trimShareQuote(upstream.content), {}, style = TextStyle(fontSize = 13.sp,
-                                                    lineHeight = 19.sp, color = palette.onSurface.copy(alpha = 0.75f)),
-                                                    maxLines = 4, overflow = TextOverflow.Ellipsis, enableGestures = false)
+                            // Render the split stream in source order, including repeated references.
+                            val blocks = shareContentBlocks(post, contextPosts, includeContext)
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                blocks.forEach { block ->
+                                    when (block) {
+                                        is PostContentBlock.Text -> HtmlContent(block.html, {},
+                                            style = TextStyle(fontSize = 15.sp, lineHeight = 23.5.sp,
+                                                letterSpacing = 0.25.sp, fontWeight = FontWeight.Normal, color = palette.onSurface),
+                                            enableGestures = false, modifier = Modifier.fillMaxWidth())
+                                        is PostContentBlock.Quote -> {
+                                            val upstream = block.quote
+                                            if (upstream.id in selectedIds) {
+                                                Text("↳ 回复 #${upstream.id}", style = shareMeta(11f), color = palette.onSurfaceVariant)
+                                            } else {
+                                                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+                                                    .background(palette.onSurface.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+                                                    .padding(10.dp)) {
+                                                    Box(Modifier.width(3.dp).fillMaxHeight()
+                                                        .background(palette.primary.copy(alpha = 0.45f), RoundedCornerShape(2.dp)))
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text("No.${upstream.id}", style = shareMeta(11f), color = palette.onSurfaceVariant)
+                                                        HtmlContent(trimShareQuote(upstream.content), {}, style = TextStyle(fontSize = 13.sp,
+                                                            lineHeight = 19.sp, color = palette.onSurface.copy(alpha = 0.75f)),
+                                                            maxLines = 4, overflow = TextOverflow.Ellipsis, enableGestures = false)
+                                                    }
+                                                }
                                             }
                                         }
-                                        Spacer(Modifier.height(10.dp))
                                     }
                                 }
-                            }
-                            // Replace resolved labels only; missing reference bodies remain visible.
-                            val blocks = if (includeContext) ContentBlockSplitter.split(post.content, resolved) else
-                                listOf(PostContentBlock.Text(post.content))
-                            blocks.filterIsInstance<PostContentBlock.Text>().forEach { block ->
-                                HtmlContent(block.html, {}, style = TextStyle(fontSize = 15.sp, lineHeight = 23.5.sp,
-                                    letterSpacing = 0.25.sp, fontWeight = FontWeight.Normal, color = palette.onSurface),
-                                    enableGestures = false, modifier = Modifier.fillMaxWidth())
                             }
 
                             imageBitmaps[post.id]?.let { bitmap ->
