@@ -55,6 +55,7 @@ data class ThreadListUiState(
     val showPoOnly: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val nextPageError: String? = null,
     val isLastPage: Boolean = false,
     val currentPage: Int = 1,
     val startPage: Int = 1,
@@ -413,7 +414,7 @@ class ThreadViewModel @Inject constructor(
             _listState.update { it.copy(filterHint = null) }
         }
         val gen = ++loadGeneration
-        _listState.update { it.copy(isLoading = true) }
+        _listState.update { it.copy(isLoading = true, nextPageError = null) }
 
         viewModelScope.launch {
             val flow = if (_listState.value.showPoOnly) {
@@ -513,6 +514,7 @@ class ThreadViewModel @Inject constructor(
                                 displayItems = displayItems,
                                 isLoading = false,
                                 errorMessage = null,
+                                nextPageError = null,
                                 // PREPEND must not clobber bottom "last page" flag
                                 isLastPage = when (mode) {
                                     LoadMode.PREPEND -> state.isLastPage
@@ -592,6 +594,7 @@ class ThreadViewModel @Inject constructor(
                             it.copy(
                                 isLoading = false,
                                 errorMessage = if (rawPosts.isEmpty()) response.message else null,
+                                nextPageError = if (mode == LoadMode.APPEND) response.message else null,
                                 currentPage = if (mode == LoadMode.PREPEND) it.currentPage else page
                             )
                         }

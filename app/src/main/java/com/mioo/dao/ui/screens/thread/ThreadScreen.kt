@@ -853,7 +853,11 @@ fun ThreadScreen(
             initialImageUrl = imageUrl,
             imageMeta = viewerImages,
             onDismiss = { activeImageUrl = null },
-            onRequestMorePages = { viewModel.loadNextPage() },
+            onRequestMorePages = { viewModel.loadNextPage(resetFilterSkip = true) },
+            hasMorePages = !listUi.isLastPage,
+            isLoadingMore = listUi.isLoading,
+            loadedPage = listUi.currentPage,
+            pageLoadError = listUi.nextPageError,
             onLocateFloor = { postId ->
                 activeImageUrl = null
                 val mainId = listUi.thread?.idStr

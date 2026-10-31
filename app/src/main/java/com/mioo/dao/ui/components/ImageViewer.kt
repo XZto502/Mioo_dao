@@ -280,6 +280,10 @@ fun ImageViewer(
     onLocateFloor: (String) -> Unit = {},
     /** 婊戝埌宸插姞杞藉浘鐗囩殑鏈熬闄勮繎鏃讹紝璇峰閮ㄥ啀鎷変竴椤典覆鍐呭銆?*/
     onRequestMorePages: () -> Unit = {},
+    hasMorePages: Boolean = false,
+    isLoadingMore: Boolean = false,
+    loadedPage: Int = 0,
+    pageLoadError: String? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -309,13 +313,15 @@ fun ImageViewer(
         pageCount = { currentImages.size }
     )
     val requestMore by rememberUpdatedState(onRequestMorePages)
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage to currentImages.size }
-            .collect { (page, total) ->
-                if (total > 0 && page >= total - 2) {
-                    requestMore()
-                }
-            }
+    var requestedPage by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(pagerState.currentPage, currentImages.size, hasMorePages, isLoadingMore, loadedPage, pageLoadError) {
+        // A page without images still advances loadedPage. Keep searching until an image
+        // arrives or the thread ends; loading/error changes must also wake this effect.
+        if (shouldLoadViewerPage(pagerState.currentPage, currentImages.size, hasMorePages,
+                isLoadingMore, pageLoadError != null, loadedPage, requestedPage)) {
+            requestedPage = loadedPage
+            requestMore()
+        }
     }
 
     var transform by remember { mutableStateOf(ViewerTransform()) }
@@ -426,8 +432,8 @@ fun ImageViewer(
                         backgroundAlpha = backgroundAlpha,
                         openProgress = openProgress.asState(),
                         isClosing = isClosing,
-                        onZoomed = { zoomed = it },
-                        onPagerLocked = { lockPager = it },
+                        onZoomed = { if (pagerState.currentPage == pageIndex) zoomed = it },
+                        onPagerLocked = { if (pagerState.currentPage == pageIndex) lockPager = it },
                         onRatio = { if (pagerState.currentPage == pageIndex) currentRatio = it },
                         onStripBroken = { if (stripMode) stripMode = false },
                         onToggleChrome = {
@@ -442,6 +448,22 @@ fun ImageViewer(
                     )
                 }
             }
+            if (pagerState.currentPage >= currentImages.lastIndex && hasMorePages) {
+                Surface(color = palette.dockBg, shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp)) {
+                    if (isLoadingMore) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在查找后续图片", color = palette.icon)
+                        }
+                    } else if (pageLoadError != null) {
+                        Text("加载失败，点击重试", color = palette.icon,
+                            modifier = Modifier.clickable { requestedPage = loadedPage; requestMore() }.padding(12.dp))
+                    }
+                }
+            }
+
 
             val chromeFadeIn = if (reducedMotion) snap<Float>() else tween(durationMillis = 180, easing = LinearOutSlowInEasing)
             val chromeFadeOut = if (reducedMotion) snap<Float>() else tween(durationMillis = 140, easing = FastOutLinearInEasing)
@@ -837,8 +859,8 @@ private fun ZoomablePage(
             .clipToBounds()
             .graphicsLayer { alpha = openProgress.value }
             .onSizeChanged { containerSize.value = it }
-            .pointerInput(imageUrl, isClosing) {
-                if (isClosing) return@pointerInput
+            .pointerInput(imageUrl, isClosing, isActive) {
+                if (isClosing || !isActive) return@pointerInput
                 detectTapGestures(
                     onTap = {
                         latest.value.onToggleChrome()
@@ -887,8 +909,8 @@ private fun ZoomablePage(
                     }
                 )
             }
-            .pointerInput(imageUrl, isClosing) {
-                if (isClosing) return@pointerInput
+            .pointerInput(imageUrl, isClosing, isActive) {
+                if (isClosing || !isActive) return@pointerInput
                 detectViewerGestures(
                     zoom = zoom,
                     offsetX = offsetX,
@@ -1043,6 +1065,9 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
     val dismissThreshold = 120.dp.toPx()
     awaitEachGesture {
         onCancelMotion()
+        // A new touch can cancel a dismiss spring before its completion callback.
+        // Restore the actual horizontal bounds now instead of leaving the pager locked.
+        clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed, onPagerLocked)
         val tracker = VelocityTracker()
         var mode = 0
         var total = Offset.Zero
@@ -1139,6 +1164,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                     // Preserve the release pose; the viewer owns the exit lifetime.
                     onDismiss()
                 } else {
+                    clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed, onPagerLocked)
                     onMotionStarted(animScope.launch {
                         coroutineScope {
                             launch { dismissY.animateTo(0f, spring()) }
