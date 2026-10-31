@@ -454,14 +454,14 @@ class ThreadViewModel @Inject constructor(
                             LoadMode.REPLACE -> newPosts
                             LoadMode.PREPEND -> {
                                 val newIds = newPosts.mapTo(HashSet(newPosts.size)) { it.id }
-                                newPosts + rawPosts.filter { it.id !in newIds }
+                                (newPosts + rawPosts.filter { it.id !in newIds }).sortedBy { it.id }
                             }
                             LoadMode.APPEND -> {
                                 if (rawPosts.isEmpty()) {
                                     newPosts
                                 } else {
                                     val newIds = newPosts.mapTo(HashSet(newPosts.size)) { it.id }
-                                    rawPosts.filter { it.id !in newIds } + newPosts
+                                    (rawPosts.filter { it.id !in newIds } + newPosts).sortedBy { it.id }
                                 }
                             }
                         }
@@ -512,7 +512,9 @@ class ThreadViewModel @Inject constructor(
                                 thread = threadData,
                                 mainPostData = mainPostData,
                                 displayItems = displayItems,
-                                isLoading = false,
+                                // Cache is an interim result. Keep the request busy until
+                                // its network emission completes, or a new page can discard it.
+                                isLoading = true,
                                 errorMessage = null,
                                 nextPageError = null,
                                 // PREPEND must not clobber bottom "last page" flag
@@ -571,11 +573,11 @@ class ThreadViewModel @Inject constructor(
                         // Advance bottom cursor only for replace/append, not prepend
                         if (mode != LoadMode.PREPEND) {
                             lastRawCount = newPosts.size
-                            lastAddedVisible = when (mode) {
+                            lastAddedVisible = maxOf(lastAddedVisible, when (mode) {
                                 LoadMode.REPLACE -> displayItems.size
                                 LoadMode.APPEND -> (displayItems.size - prevDisplaySize).coerceAtLeast(0)
                                 LoadMode.PREPEND -> 1
-                            }
+                            })
                             lastIsLast = isLast
                             sawSuccess = true
                             if (newPosts.isNotEmpty() && !isLast) {
@@ -592,7 +594,7 @@ class ThreadViewModel @Inject constructor(
                         if (gen != loadGeneration) return@collect
                         _listState.update {
                             it.copy(
-                                isLoading = false,
+                                isLoading = true,
                                 errorMessage = if (rawPosts.isEmpty()) response.message else null,
                                 nextPageError = if (mode == LoadMode.APPEND) response.message else null,
                                 currentPage = if (mode == LoadMode.PREPEND) it.currentPage else page
@@ -601,7 +603,10 @@ class ThreadViewModel @Inject constructor(
                     }
                 }
             }
-            if (gen != loadGeneration || mode == LoadMode.PREPEND) return@launch
+            if (gen != loadGeneration) return@launch
+            // Release pagination only after every cache/network result has been applied.
+            _listState.update { it.copy(isLoading = false) }
+            if (mode == LoadMode.PREPEND) return@launch
             val blockedPage = sawSuccess && lastRawCount > 0 && lastAddedVisible <= 0
             val canChain = blockedPage && !lastIsLast && filteredSkips < MAX_FILTERED_SKIPS
             if (canChain) {
