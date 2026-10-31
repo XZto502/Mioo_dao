@@ -133,6 +133,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
@@ -198,17 +200,20 @@ fun ThreadScreen(
     val listUi by viewModel.listUiState.collectAsState()
     // Slice only cookies + blocked — ignore theme/font/preload churn
     val threadSettings by settingsViewModel.threadScreenSettings.collectAsState()
-    // Recreate list state when thread content first appears so continue-reading can
-    // open at the saved index (no paint-at-top then scrollToItem hitch).
+    // Navigation saves this per back-stack entry, including the pixel offset within a floor.
+    // Separate the loading/content slots so the first data load can seed continue-reading
+    // without replacing a restored content position when returning from another thread.
     val hasThreadContent = listUi.thread != null
-    val listState = remember(viewModel.threadId, hasThreadContent) {
-        // pendingScrollIndex 的索引模型：0=OP、1..=回复；跳到第2页及以上时 OP 不占位
-        val seeded = (listUi.pendingScrollIndex ?: 0).coerceAtLeast(0)
-        val lazyIndex = if (listUi.startPage > 1) (seeded - 1).coerceAtLeast(0) else seeded
-        LazyListState(
-            firstVisibleItemIndex = lazyIndex,
-            firstVisibleItemScrollOffset = 0
-        )
+    val listState = key(viewModel.threadId, hasThreadContent) {
+        rememberSaveable(saver = LazyListState.Saver) {
+            // pendingScrollIndex: 0=OP, 1..=replies; later pages omit the OP row.
+            val seeded = (listUi.pendingScrollIndex ?: 0).coerceAtLeast(0)
+            val lazyIndex = if (listUi.startPage > 1) (seeded - 1).coerceAtLeast(0) else seeded
+            LazyListState(
+                firstVisibleItemIndex = lazyIndex,
+                firstVisibleItemScrollOffset = 0
+            )
+        }
     }
     val quoteCache = viewModel.quoteCache
     // Must re-read startPage when it changes (e.g. prepend earlier pages after resume).
