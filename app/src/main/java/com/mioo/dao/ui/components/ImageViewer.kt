@@ -330,7 +330,6 @@ fun ImageViewer(
     var resetTick by remember { mutableIntStateOf(0) }
     var currentRatio by remember { mutableStateOf(1f) }
     var zoomed by remember { mutableStateOf(false) }
-    var lockPager by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var showTransformPanel by remember { mutableStateOf(false) }
     var showSauceMenu by remember { mutableStateOf(false) }
@@ -341,7 +340,6 @@ fun ImageViewer(
         transform = ViewerTransform()
         stripMode = false
         zoomed = false
-        lockPager = false
         showTransformPanel = false
         showSauceMenu = false
         currentRatio = 1f
@@ -394,16 +392,7 @@ fun ImageViewer(
                     }
                 }
             }
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Final)
-                        event.changes.forEach { change ->
-                            if (!change.isConsumed) change.consume()
-                        }
-                    }
-                }
-            }
+
     ) {
             ViewerCanvas(
                 color = palette.canvas,
@@ -413,7 +402,10 @@ fun ImageViewer(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = !lockPager && !isClosing,
+                // Keep the pager alive throughout a gesture. Image pan/pinch/dismiss handlers
+                // consume only the motion they own; toggling scrollEnabled mid-touch
+                // cancels the pager detector and can strand the next swipe.
+                userScrollEnabled = !isClosing,
                 beyondBoundsPageCount = 0,
                 key = { currentImages.getOrNull(it)?.url ?: it }
             ) { pageIndex ->
@@ -433,7 +425,6 @@ fun ImageViewer(
                         openProgress = openProgress.asState(),
                         isClosing = isClosing,
                         onZoomed = { if (pagerState.currentPage == pageIndex) zoomed = it },
-                        onPagerLocked = { if (pagerState.currentPage == pageIndex) lockPager = it },
                         onRatio = { if (pagerState.currentPage == pageIndex) currentRatio = it },
                         onStripBroken = { if (stripMode) stripMode = false },
                         onToggleChrome = {
@@ -730,7 +721,6 @@ private fun ZoomablePage(
     openProgress: State<Float>,
     isClosing: Boolean,
     onZoomed: (Boolean) -> Unit,
-    onPagerLocked: (Boolean) -> Unit,
     onRatio: (Float) -> Unit,
     onStripBroken: () -> Unit,
     onToggleChrome: () -> Unit,
@@ -776,7 +766,6 @@ private fun ZoomablePage(
             fit = fitRotationScale,
             isActive = isActive,
             onZoomed = onZoomed,
-            onPagerLocked = onPagerLocked,
             onStripBroken = onStripBroken,
             onToggleChrome = onToggleChrome,
             onDismiss = onDismiss
@@ -819,7 +808,6 @@ private fun ZoomablePage(
             launch { offsetY.animateTo(maxY, spring()) }
         }
         latest.value.onZoomed(z > 1.01f)
-        latest.value.onPagerLocked(false)
     }
 
     LaunchedEffect(resetTick) {
@@ -830,7 +818,6 @@ private fun ZoomablePage(
             launch { offsetY.animateTo(0f, spring()) }
         }
         latest.value.onZoomed(false)
-        latest.value.onPagerLocked(false)
     }
 
     val configuration = LocalConfiguration.current
@@ -877,7 +864,6 @@ private fun ZoomablePage(
                                     launch { offsetY.animateTo(0f, spring()) }
                                 }
                                 inputs.onZoomed(false)
-                                inputs.onPagerLocked(false)
                             }
                         } else {
                             val s1 = 2.5f
@@ -902,8 +888,6 @@ private fun ZoomablePage(
                                     launch { offsetY.animateTo(nextY, spring()) }
                                 }
                                 inputs.onZoomed(true)
-                                val atEdge = maxX <= 1f || nextX <= -maxX + 1f || nextX >= maxX - 1f
-                                inputs.onPagerLocked(!atEdge)
                             }
                         }
                     }
@@ -923,7 +907,6 @@ private fun ZoomablePage(
                     angle = { latest.value.angle },
                     fitScale = { latest.value.fit },
                     onZoomed = { latest.value.onZoomed(it) },
-                    onPagerLocked = { latest.value.onPagerLocked(it) },
                     onStripBroken = { latest.value.onStripBroken() },
                     onDismiss = {
                         closingFromDrag = true
@@ -1021,7 +1004,6 @@ private data class PageInputs(
     val fit: Float,
     val isActive: Boolean,
     val onZoomed: (Boolean) -> Unit,
-    val onPagerLocked: (Boolean) -> Unit,
     val onStripBroken: () -> Unit,
     val onToggleChrome: () -> Unit,
     val onDismiss: () -> Unit
@@ -1052,7 +1034,6 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
     angle: () -> Int,
     fitScale: () -> Float,
     onZoomed: (Boolean) -> Unit,
-    onPagerLocked: (Boolean) -> Unit,
     onStripBroken: () -> Unit,
     onDismiss: () -> Unit,
     hapticView: View,
@@ -1064,15 +1045,15 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
     val fling = android.view.ViewConfiguration.get(hapticView.context).scaledMinimumFlingVelocity.toFloat()
     val dismissThreshold = 120.dp.toPx()
     awaitEachGesture {
+        // Wait for the next real touch before cancelling a return/zoom animation.
+        // Cancelling before awaitFirstDown also cancels the animation just started on up.
+        val down = awaitFirstDown(requireUnconsumed = false)
         onCancelMotion()
-        // A new touch can cancel a dismiss spring before its completion callback.
-        // Restore the actual horizontal bounds now instead of leaving the pager locked.
-        clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed, onPagerLocked)
+        clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed)
         val tracker = VelocityTracker()
         var mode = 0
         var total = Offset.Zero
         var hapticFired = false
-        val down = awaitFirstDown(requireUnconsumed = false)
         tracker.addPointerInputChange(down)
         while (true) {
             val event = awaitPointerEvent()
@@ -1093,7 +1074,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                     offsetX.value += pan.x
                     offsetY.value += pan.y
                 }
-                clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed, onPagerLocked)
+                clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed)
                 if (dismissY.value != 0f) {
                     dismissY.value = 0f
                     dismissScale.value = 1f
@@ -1119,7 +1100,6 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
             when (mode) {
                 1 -> Unit
                 2 -> {
-                    onPagerLocked(true)
                     event.changes.forEach { if (it.pressed) it.consume() }
                     val y = dismissY.value + pan.y
                     dismissY.value = y
@@ -1141,15 +1121,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                     val pushingOut = (newX < -maxX && pan.x < 0f) || (newX > maxX && pan.x > 0f)
                     if (pushingOut && abs(pan.x) >= abs(pan.y)) {
                         offsetX.value = offsetX.value.coerceIn(-maxX, maxX)
-                        onPagerLocked(false)
                     } else {
                         offsetX.value = newX.coerceIn(-maxX, maxX)
                         offsetY.value = newY
                         onZoomed(true)
-                        val atEdge = maxX <= 1f ||
-                            offsetX.value <= -maxX + 1f ||
-                            offsetX.value >= maxX - 1f
-                        onPagerLocked(!atEdge)
                         event.changes.forEach { if (it.pressed) it.consume() }
                     }
                 }
@@ -1164,14 +1139,13 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                     // Preserve the release pose; the viewer owns the exit lifetime.
                     onDismiss()
                 } else {
-                    clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed, onPagerLocked)
+                    clampZoomOffsets(zoom, offsetX, offsetY, containerSize, intrinsicSize, angle, fitScale, onZoomed)
                     onMotionStarted(animScope.launch {
                         coroutineScope {
                             launch { dismissY.animateTo(0f, spring()) }
                             launch { dismissScale.animateTo(1f, spring()) }
                             launch { backgroundAlpha.animateTo(1f, spring()) }
                         }
-                        onPagerLocked(zoom.value > 1.01f)
                     })
                 }
             }
@@ -1184,7 +1158,6 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                             launch { offsetY.animateTo(0f, spring()) }
                         }
                         onZoomed(false)
-                        onPagerLocked(false)
                     })
                 }
             }
@@ -1201,22 +1174,18 @@ private fun clampZoomOffsets(
     angle: () -> Int,
     fitScale: () -> Float,
     onZoomed: (Boolean) -> Unit,
-    onPagerLocked: (Boolean) -> Unit
 ) {
     val z = zoom.value
     if (z <= 1.01f) {
         offsetX.value = 0f
         offsetY.value = 0f
         onZoomed(false)
-        onPagerLocked(false)
         return
     }
     val (maxX, maxY) = calculateBounds(containerSize(), intrinsicSize(), z, angle(), fitScale())
     offsetX.value = offsetX.value.coerceIn(-maxX, maxX)
     offsetY.value = offsetY.value.coerceIn(-maxY, maxY)
     onZoomed(true)
-    val atEdge = maxX <= 1f || offsetX.value <= -maxX + 1f || offsetX.value >= maxX - 1f
-    onPagerLocked(!atEdge)
 }
 
 @Composable
