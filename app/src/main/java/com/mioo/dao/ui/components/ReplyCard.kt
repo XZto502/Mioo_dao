@@ -4,7 +4,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -93,7 +92,7 @@ fun ReplyCard(
             .graphicsPressScale(pressScale)
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null,
                 onClick = onCardClick,
                 onLongClick = onCardLongClick
             )
@@ -102,7 +101,7 @@ fun ReplyCard(
             .fillMaxWidth()
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null,
                 onClick = onCardClick,
                 onLongClick = onCardLongClick
             )
@@ -183,7 +182,7 @@ fun ReplyCard(
                         .size(100.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                        .clickable { onImageClick(imageUrl) }
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) }
                 ) {
                     ListThumbAsyncImage(
                         imageUrl = imageUrl,
@@ -222,6 +221,7 @@ fun QuotedPostBox(
     )
     Surface(
         modifier = modifier.fillMaxWidth().combinedClickable(
+            interactionSource = remember { MutableInteractionSource() }, indication = null,
             onClick = toggleExpanded, onLongClick = onLongClick),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.05f else 0.035f)
@@ -256,13 +256,13 @@ fun QuotedPostBox(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.size(120.dp).clip(RoundedCornerShape(10.dp))
                                 .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                                .clickable { onImageClick(imageUrl) })
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) })
                     }
                     val target = quote.resto
                     if (!isDeleted && !target.isNullOrBlank() && target != "0" &&
                         target != "null" && target != currentThreadId) {
                         Text("跳转原串", style = readingMetaStyle(), color = quoteColor,
-                            modifier = Modifier.clickable { onViewThreadClick(target) }.padding(vertical = 4.dp))
+                            modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onViewThreadClick(target) }.padding(vertical = 4.dp))
                     }
                 }
             }

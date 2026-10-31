@@ -1,7 +1,6 @@
 package com.mioo.dao.ui.components
 
 import androidx.compose.foundation.border
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -60,9 +59,8 @@ fun ThreadCard(
     /** List cards let the parent Card handle gestures — skip HtmlContent pointerInput. */
     enableHtmlGestures: Boolean = false,
     /**
-     * Dense lists: skip press-scale animation (indication only) to cut per-row
+     * Dense lists: skip press-scale animation to cut per-row
      * animateFloatAsState / graphicsLayer cost during fling.
-     * (Emil: high-frequency list press — indication only, no scale animation.)
      */
     enablePressScale: Boolean = false,
     /** When false, skip thumbnail (cold-start: defer decode until list settles). */
@@ -88,7 +86,7 @@ fun ThreadCard(
             .graphicsPressScale(pressScale)
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null,
                 onClick = onThreadClick,
                 onLongClick = onLongClick
             )
@@ -97,7 +95,7 @@ fun ThreadCard(
             .fillMaxWidth()
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null,
                 onClick = onThreadClick,
                 onLongClick = onLongClick
             )
@@ -152,7 +150,7 @@ fun ThreadCard(
                             .size(120.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                            .clickable { onImageClick(imageUrl) }
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) }
                     ) {
                         ListThumbAsyncImage(
                             imageUrl = imageUrl,
@@ -166,7 +164,7 @@ fun ThreadCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Footer Row (Reply Count & Sage Status)
+            // Footer Row (Reply Count)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -194,17 +192,7 @@ fun ThreadCard(
                     )
                 }
 
-                if (postData.isSage) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "SAGE",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(DaoTheme.colors.sage, shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
+
             }
         }
     }
