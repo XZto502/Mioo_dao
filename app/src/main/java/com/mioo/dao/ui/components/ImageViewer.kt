@@ -284,6 +284,9 @@ fun ImageViewer(
     isLoadingMore: Boolean = false,
     loadedPage: Int = 0,
     pageLoadError: String? = null,
+    onRequestPreviousPages: () -> Unit = {},
+    firstLoadedPage: Int = 1,
+    previousPageError: String? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -312,12 +315,21 @@ fun ImageViewer(
         initialPage = initialIndex.coerceIn(0, (currentImages.size - 1).coerceAtLeast(0)),
         pageCount = { currentImages.size }
     )
+    val requestPrevious by rememberUpdatedState(onRequestPreviousPages)
+    var requestedPreviousPage by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(pagerState.currentPage, currentImages.size, firstLoadedPage, isLoadingMore, previousPageError) {
+        if (shouldLoadPreviousViewerPage(pagerState.currentPage, currentImages.size,
+                firstLoadedPage, isLoadingMore, previousPageError != null, requestedPreviousPage)) {
+            requestedPreviousPage = firstLoadedPage
+            requestPrevious()
+        }
+    }
     val requestMore by rememberUpdatedState(onRequestMorePages)
     var requestedPage by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(pagerState.currentPage, currentImages.size, hasMorePages, isLoadingMore, loadedPage, pageLoadError) {
+    LaunchedEffect(pagerState.currentPage, currentImages.size, hasMorePages, isLoadingMore, loadedPage, pageLoadError, firstLoadedPage) {
         // A page without images still advances loadedPage. Keep searching until an image
         // arrives or the thread ends; loading/error changes must also wake this effect.
-        if (shouldLoadViewerPage(pagerState.currentPage, currentImages.size, hasMorePages,
+        if (!(firstLoadedPage > 1 && pagerState.currentPage <= 1) && shouldLoadViewerPage(pagerState.currentPage, currentImages.size, hasMorePages,
                 isLoadingMore, pageLoadError != null, loadedPage, requestedPage)) {
             requestedPage = loadedPage
             requestMore()
@@ -437,6 +449,14 @@ fun ImageViewer(
                         },
                         onDismiss = { triggerSmoothClose() }
                     )
+                }
+            }
+            if (pagerState.currentPage <= 1 && firstLoadedPage > 1 && (isLoadingMore || previousPageError != null)) {
+                Surface(color = palette.dockBg, shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.align(Alignment.CenterStart).padding(12.dp)) {
+                    Text(if (isLoadingMore) "正在查找前面的图片" else "加载失败，点击重试",
+                        color = palette.icon,
+                        modifier = Modifier.clickable(enabled = !isLoadingMore) { requestPrevious() }.padding(12.dp))
                 }
             }
             if (pagerState.currentPage >= currentImages.lastIndex && hasMorePages) {

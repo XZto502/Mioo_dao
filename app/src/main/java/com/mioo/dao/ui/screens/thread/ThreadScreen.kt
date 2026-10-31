@@ -822,10 +822,10 @@ fun ThreadScreen(
         }
     }
 
-    val viewerImages by remember(listUi.displayItems, listUi.mainPostData, listUi.thread) {
+    val viewerImages by remember(listUi.displayItems, listUi.mainPostData, listUi.thread, listUi.startPage) {
         derivedStateOf {
             val list = mutableListOf<ViewerImage>()
-            listUi.mainPostData?.imageUrl?.let { url ->
+            listUi.mainPostData?.imageUrl?.takeIf { listUi.startPage <= 1 }?.let { url ->
                 list.add(
                     ViewerImage(
                         url = url,
@@ -858,6 +858,12 @@ fun ThreadScreen(
             isLoadingMore = listUi.isLoading,
             loadedPage = listUi.currentPage,
             pageLoadError = listUi.nextPageError,
+            firstLoadedPage = listUi.startPage,
+            previousPageError = listUi.previousPageError,
+            onRequestPreviousPages = {
+                viewModel.allowPreviousLoad()
+                viewModel.loadPreviousPage()
+            },
             onLocateFloor = { postId ->
                 activeImageUrl = null
                 val mainId = listUi.thread?.idStr
