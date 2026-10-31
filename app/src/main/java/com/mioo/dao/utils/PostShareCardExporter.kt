@@ -25,6 +25,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.core.graphics.drawable.toBitmap
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import com.mioo.dao.ui.components.PostData
 import androidx.core.content.FileProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -44,6 +49,23 @@ object PostShareCardExporter {
         }
         return Bitmap.createBitmap(pixels, matrix.width, matrix.height, Bitmap.Config.ARGB_8888).asImageBitmap()
     }
+
+    /** Resolve software bitmaps before measuring either the preview or the export. */
+    suspend fun loadImages(context: Context, posts: List<PostData>): Map<String, ImageBitmap> =
+        withContext(Dispatchers.IO) {
+            posts.mapNotNull { post ->
+                val url = post.imageUrl?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val result = context.imageLoader.execute(ImageRequest.Builder(context).data(url)
+                    .allowHardware(false).size(1080, 1800).build())
+                check(result is SuccessResult) { "No.${post.id} 的附图加载失败，请重试" }
+                val drawable = result.drawable
+                val sourceWidth = drawable.intrinsicWidth.coerceAtLeast(1)
+                val sourceHeight = drawable.intrinsicHeight.coerceAtLeast(1)
+                val scale = minOf(1f, 1080f / sourceWidth, 4000f / sourceHeight)
+                post.id to drawable.toBitmap((sourceWidth * scale).toInt().coerceAtLeast(1),
+                    (sourceHeight * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888).asImageBitmap()
+            }.toMap()
+        }
 
     /** A separate attached composition is measured with unlimited height, never the preview viewport. */
     suspend fun render(

@@ -1,5 +1,8 @@
 package com.mioo.dao.ui.components
 
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -41,7 +44,8 @@ fun PostShareCardContent(
     showBranding: Boolean,
     contextPosts: Map<String, PostData>, mainPost: PostData?, qrBitmap: ImageBitmap?,
     dicePreset: DiceRulePreset? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    imageBitmaps: Map<String, ImageBitmap> = emptyMap()
 ) {
     val appColors = MaterialTheme.colorScheme
     val palette = when (cardTheme) {
@@ -135,6 +139,16 @@ fun PostShareCardContent(
                                     enableGestures = false, modifier = Modifier.fillMaxWidth())
                             }
 
+                            imageBitmaps[post.id]?.let { bitmap ->
+                                Spacer(Modifier.height(10.dp))
+                                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                    val height = (maxWidth.value * bitmap.height / bitmap.width).coerceAtMost(600f).dp
+                                    val shape = RoundedCornerShape(10.dp)
+                                    Image(bitmap, "No.${post.id} 附图", contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxWidth().height(height).clip(shape)
+                                            .border(0.5.dp, palette.onSurface.copy(alpha = 0.08f), shape))
+                                }
+                            }
                         }
                         if (showBranding) {
                             Spacer(Modifier.height(16.dp)); ShareDivider(); Spacer(Modifier.height(12.dp))

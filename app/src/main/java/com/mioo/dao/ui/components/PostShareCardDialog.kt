@@ -70,14 +70,16 @@ fun PostShareCardDialog(
     var preview by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var previewError by remember { mutableStateOf<String?>(null) }
     var previewLoading by remember { mutableStateOf(true) }
-    LaunchedEffect(selectedPosts, theme, hideCookie, includeContext, branding, contextPosts, boardName) {
+    var previewRetry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(previewRetry, selectedPosts, theme, hideCookie, includeContext, branding, contextPosts, boardName) {
         previewLoading = true
         previewError = null
         try {
+            val images = PostShareCardExporter.loadImages(context, selectedPosts)
             preview = PostShareCardExporter.render(context, parent) {
                 PostShareCardContent(selectedPosts, threadId, boardName, title, theme,
                     hideCookie, includeContext, branding, contextPosts, mainPost, qr,
-                    dicePreset, Modifier.width(360.dp))
+                    dicePreset, Modifier.width(360.dp), imageBitmaps = images)
             }
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (error: Exception) { previewError = error.message ?: "预览生成失败"
@@ -98,10 +100,11 @@ fun PostShareCardDialog(
         scope.launch {
             var bitmap: android.graphics.Bitmap? = null
             try {
+                val images = PostShareCardExporter.loadImages(context, exportPosts)
                 bitmap = PostShareCardExporter.render(context, parent) {
                     PostShareCardContent(exportPosts, threadId, boardName, title, exportTheme,
                         exportHide, exportContext, exportBranding, exportContexts,
-                        mainPost, qr, dicePreset, Modifier.width(360.dp))
+                        mainPost, qr, dicePreset, Modifier.width(360.dp), imageBitmaps = images)
                 }
                 val savedUri = PostShareCardExporter.saveToAlbum(context, bitmap)
                 Toast.makeText(context, "已保存至 Pictures/MiooDao", Toast.LENGTH_LONG).show()
@@ -164,7 +167,9 @@ fun PostShareCardDialog(
                         modifier = Modifier.fillMaxWidth().aspectRatio(bitmap.width.toFloat() / bitmap.height))
                 }
                 if (previewLoading || includeContext && contextLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                previewError?.let { Text(it, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
+                previewError?.let { message ->
+                    TextButton(onClick = { previewRetry++ }) { Text("$message · 点击重试", color = MaterialTheme.colorScheme.error) }
+                }
             }
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
