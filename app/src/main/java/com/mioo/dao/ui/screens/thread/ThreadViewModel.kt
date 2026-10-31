@@ -436,6 +436,11 @@ class ThreadViewModel @Inject constructor(
                 when (response) {
                     is XdResponse.Success -> {
                         val threadData = response.data
+                        if (threadData.idStr != threadId) {
+                            android.util.Log.e("ThreadPaging", "Rejected thread ${threadData.idStr}; expected $threadId on page $page")
+                            _listState.update { it.copy(isLoading = false, errorMessage = "返回的串内容不匹配，请重试") }
+                            return@collect
+                        }
                         val newPosts = threadData.replies ?: emptyList()
                         val replyCount = threadData.replyCount ?: 0
                         val totalPagesVal =

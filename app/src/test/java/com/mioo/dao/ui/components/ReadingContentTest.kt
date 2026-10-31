@@ -69,4 +69,11 @@ class ReadingContentTest {
         assertEquals("22", quote.item)
         assertEquals(12.sp, annotated.paragraphStyles.single().item.lineHeight)
     }
+    @Test fun serverHtmlSourceNewlinesDoNotDoubleSubmittedLineBreaks() {
+        assertEquals("甲\n乙", parse("甲<br />\r\n乙").text)
+        assertEquals("甲\n乙", parse("甲<br>\n乙").text)
+        assertEquals("甲\n\n乙", parse("甲<br>\n<br>\n乙").text)
+        assertEquals("甲\n乙", parse("甲\n乙").text)
+    }
+
 }

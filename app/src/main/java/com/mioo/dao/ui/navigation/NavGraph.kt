@@ -409,9 +409,9 @@ fun MiooDaoNavGraph(
                 arguments = listOf(
                     navArgument("threadId") { type = NavType.StringType }
                 ),
-            ) { _ ->
+            ) { entry ->
                 PageBackdrop {
-                    val viewModel: ThreadViewModel = hiltViewModel()
+                    val viewModel: ThreadViewModel = hiltViewModel(entry)
                     ThreadScreen(
                         viewModel = viewModel,
                         onBackClick = { navController.popBackStack() },

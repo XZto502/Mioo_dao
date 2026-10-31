@@ -63,7 +63,7 @@ import com.mioo.dao.utils.DiceRoll
 import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
-private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>")
+private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>[ \\t]*(?:\\r\\n|\\r|\\n)?")
 private val PARAGRAPH_BREAKS = Regex("\\n[ \\t]*(?:\\n[ \\t]*)+")
 private val KAOMOJI_PATTERN = Regex("""\([^()\n]{1,32}\)|\|[^|\n]{1,16}\)""")
 private val KAOMOJI_FACE_MARKS = Regex("[ﾟ∀。´ヮゝωДдಠ益ಥ╥≧≦]")
