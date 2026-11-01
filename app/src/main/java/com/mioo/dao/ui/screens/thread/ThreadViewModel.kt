@@ -22,6 +22,7 @@ import com.mioo.dao.utils.DiceRulePreset
 import com.mioo.dao.utils.KeywordMatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -404,6 +406,64 @@ class ThreadViewModel @Inject constructor(
     }
 
     private enum class LoadMode { REPLACE, APPEND, PREPEND }
+
+    /** 原地刷新已加载页：不清空列表、不重新播种滚动位置、不删除阅读历史。 */
+    fun refreshThread(onResult: (String) -> Unit) {
+        val before = _listState.value
+        if (before.isLoading || before.thread == null) return
+        val gen = ++loadGeneration
+        val start = before.startPage
+        val end = before.currentPage.coerceAtLeast(start)
+        _listState.update { it.copy(isLoading = true) }
+        viewModelScope.launch {
+            try {
+                val pages = mutableListOf<Thread>()
+                for (page in start..end) {
+                    val flow = if (before.showPoOnly) {
+                        threadRepository.getPoDetail(threadId, page)
+                    } else {
+                        threadRepository.getThreadDetail(threadId, page)
+                    }
+                    // 等缓存与网络收敛后再整体提交，避免刷新过程中列表反复替换。
+                    val response = flow.last()
+                    if (gen != loadGeneration) return@launch
+                    when (response) {
+                        is XdResponse.Success -> {
+                            check(response.data.idStr == threadId) { "返回的串内容不匹配" }
+                            pages += response.data
+                        }
+                        is XdResponse.Error -> error(response.message)
+                    }
+                }
+                val thread = pages.last()
+                val posts = pages.flatMap { it.replies.orEmpty() }.distinctBy { it.id }.sortedBy { it.id }
+                val filter = _listState.value
+                val items = withContext(Dispatchers.Default) {
+                    buildDisplayItems(posts, thread.userHash, blockedUsers, keywordMatcher,
+                        filter.showImagesOnly, filter.searchQuery)
+                }
+                if (gen != loadGeneration) return@launch
+                rawPosts = posts
+                val total = ((thread.replyCount ?: 0) + PAGE_SIZE - 1) / PAGE_SIZE
+                isLastPage = thread.replies.isNullOrEmpty() || end >= total.coerceAtLeast(1)
+                currentPage = if (isLastPage) end else end + 1
+                _listState.update {
+                    it.copy(thread = thread, mainPostData = thread.toPostData(), displayItems = items,
+                        isLastPage = isLastPage, errorMessage = null, nextPageError = null,
+                        previousPageError = null)
+                }
+                seedLocalQuotes(posts, thread)
+                fetchQuotesForReplies(posts.takeLast(14))
+                onResult("已刷新，阅读位置已保留")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (gen == loadGeneration) onResult("刷新失败：${e.localizedMessage ?: "请重试"}")
+            } finally {
+                if (gen == loadGeneration) _listState.update { it.copy(isLoading = false) }
+            }
+        }
+    }
 
     /**
      * @param mode REPLACE: cache-then-network replace; APPEND: infinite scroll down;

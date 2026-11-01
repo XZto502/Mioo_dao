@@ -76,6 +76,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AutoStories
@@ -497,6 +498,16 @@ fun ThreadScreen(
                         // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
                         ThreadChromeActions(
                             viewModel = viewModel,
+                            isLoading = listUi.isLoading,
+                            onRefresh = {
+                                viewModel.saveReadingProgress(
+                                    page = currentScrollPage.value,
+                                    firstVisibleIndex = listState.firstVisibleItemIndex
+                                )
+                                viewModel.refreshThread { message ->
+                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             showPoOnly = listUi.showPoOnly,
                             showImagesOnly = listUi.showImagesOnly,
                             onShare = {
@@ -1141,6 +1152,8 @@ private fun plainTextSnippet(html: String): String {
 @Composable
 private fun ThreadChromeActions(
     viewModel: ThreadViewModel,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
     showPoOnly: Boolean,
     showImagesOnly: Boolean,
     onShare: () -> Unit,
@@ -1282,6 +1295,15 @@ private fun ThreadChromeActions(
             expanded = showOverflowMenu,
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
+            Md3MenuPillItem(
+                label = if (isLoading) "正在加载…" else "刷新",
+                leadingIcon = Icons.Default.Refresh,
+                enabled = !isLoading,
+                onClick = {
+                    onShowOverflowMenuChange(false)
+                    onRefresh()
+                }
+            )
             Md3MenuPillItem(
                 label = "分享",
                 leadingIcon = Icons.Outlined.Share,
