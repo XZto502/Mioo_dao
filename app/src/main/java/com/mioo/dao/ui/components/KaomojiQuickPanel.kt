@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,11 +35,11 @@ fun KaomojiQuickPanel(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalArrangement = Arrangement.Top
     ) {
-        items(
+        itemsIndexed(
             items = items,
-            key = { it.raw.hashCode() },
-            contentType = { "kaomoji" }
-        ) { item ->
+            key = { index, _ -> index },
+            contentType = { _, _ -> "kaomoji" }
+        ) { _, item ->
             TextButton(
                 onClick = { onInsert(item.raw) },
                 contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
