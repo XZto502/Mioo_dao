@@ -26,6 +26,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -213,9 +214,16 @@ fun QuotedPostBox(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     var expanded by rememberSaveable(quote.id) { mutableStateOf(false) }
     val reducedMotion = isReducedMotionEnabled()
-    val toggleExpanded = { expanded = !expanded }
+    LaunchedEffect(quote.id, quote.isQuotePlaceholder) {
+        // 旧展开状态不能让尚未加载的引用在回包时自动长高。
+        if (quote.isQuotePlaceholder) expanded = false
+    }
+    val isExpanded = expanded && !quote.isQuotePlaceholder
+    val toggleExpanded = {
+        if (quote.isQuotePlaceholder) onQuoteClick(quote.id) else expanded = !expanded
+    }
     val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
+        targetValue = if (isExpanded) 180f else 0f,
         animationSpec = MiooMotion.tweenOut(if (reducedMotion) 0 else MiooMotion.DurationSmall),
         label = "quoteExpansionArrow"
     )
@@ -238,13 +246,14 @@ fun QuotedPostBox(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         modifier = Modifier.weight(1f))
                     Icon(Icons.Default.ExpandMore,
-                        contentDescription = if (expanded) "收起引用" else "展开引用",
+                        contentDescription = if (quote.isQuotePlaceholder) "查看引用" else if (isExpanded) "收起引用" else "展开引用",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         modifier = Modifier.size(18.dp).rotate(arrowRotation))
                 }
-                if (!expanded) {
+                if (!isExpanded) {
                     Text(remember(quote.content) { quotePreviewPlain(quote.content) },
-                        style = readingQuoteStyle(), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        style = readingQuoteStyle(), minLines = 2, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis)
                 } else {
                     ReadingIdentity(quote)
                     HtmlContent(html = quote.content, onQuoteClick = onQuoteClick,

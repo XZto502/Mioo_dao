@@ -1620,33 +1620,24 @@ private fun ThreadReplyRow(
     onShareCard: () -> Unit,
     onOpenDiceRule: () -> Unit
 ) {
-    // Per-key observation: filling quote X does not recompose rows that only need Y
-    val quotedReplies = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
-        emptyList()
+    // 每个引用从首帧就拥有同样的预览槽位；缓存命中只替换槽位内容。
+    val quotedPostsData = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
+        StablePostList(emptyList())
     } else {
-        item.quoteIds.mapNotNull { id -> quoteCache[id] }
-    }
-    // Resolve resto via API fields only — avoids rebuilding a reply-id Set on every page append.
-    // No per-row LaunchedEffect prewarm: HtmlParseCache.getOrParse + ContentBlockSplitter
-    // fill on first bind; row-level effects caused Default thrash during fling.
-    val quotedPostsData = remember(item.quoteIds, quotedReplies, poUserHash, currentThreadId) {
-        if (quotedReplies.isEmpty()) {
-            StablePostList(emptyList())
-        } else {
-            StablePostList(
-                quotedReplies.map { quote ->
-                    val base = quote.toPostData(
-                        isPo = quote.userHash == poUserHash
-                    )
-                    val targetResto = when {
-                        quote.resto != null && quote.resto > 0L -> quote.resto.toString()
-                        quote.idStr == currentThreadId -> currentThreadId
-                        else -> quote.idStr
-                    }
-                    base.copy(resto = targetResto)
+        StablePostList(item.quoteIds.map { id ->
+            val quote = quoteCache[id]
+            if (quote == null) {
+                com.mioo.dao.ui.components.pendingInlineQuote(id)
+            } else {
+                val base = quote.toPostData(isPo = quote.userHash == poUserHash)
+                val targetResto = when {
+                    quote.resto != null && quote.resto > 0L -> quote.resto.toString()
+                    quote.idStr == currentThreadId -> currentThreadId
+                    else -> quote.idStr
                 }
-            )
-        }
+                base.copy(resto = targetResto)
+            }
+        })
     }
 
     var showReplyBlockDialog by remember { mutableStateOf(false) }
