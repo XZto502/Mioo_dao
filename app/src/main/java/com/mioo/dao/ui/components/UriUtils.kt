@@ -303,7 +303,24 @@ c(　╹^╹)
 data class KaomojiItem(val raw: String, val preview: String)
 
 val KAOMOJI_ITEMS: List<KaomojiItem> = KAOMOJI_LIST.map { raw ->
-    val preview = if (raw.contains('\n')) {
+    val shortName = when {
+        raw == "(`ヮ´ )σ`∀´) ﾟ∀ﾟ)σ" -> "齐齐哈尔"
+        raw == "( ﾟ∀。)∀。)∀。)" -> "呼伦贝尔"
+        raw.contains("[F5]") -> "F5欧拉"
+        raw.contains("“咩！”") -> "白羊"
+        raw.contains("c(　╹^╹)") -> "兔兔"
+        raw.contains("ヾ ｀. ､`フ") -> "neko"
+        raw.contains(" / 　>") -> "给你"
+        raw.contains("举高高~~") -> "举高高"
+        raw.contains("举高高！") -> "举高高2"
+        raw.contains("ʜᴀᴘᴘʏ") -> "Happy肥肥Day"
+        raw.contains("┻") -> "举糕糕"
+        raw.contains("退钱！") -> "大嘘"
+        raw.contains("gkdgkd") -> "催更喵gkd"
+        raw.contains("つ━☆") -> "巴拉巴拉"
+        else -> null
+    }
+    val preview = shortName ?: if (raw.contains('\n')) {
         raw.lineSequence()
             .firstOrNull { it.isNotBlank() }
             ?.trim()
