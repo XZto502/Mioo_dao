@@ -3,9 +3,14 @@ package com.mioo.dao.ui.components
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -78,6 +83,9 @@ fun RefPopup(
         BackHandler {
             if (canGoBack) onBack() else onDismiss()
         }
+        BoxWithConstraints(Modifier.fillMaxWidth().safeDrawingPadding()) {
+        val maxCardHeight = (maxHeight - 48.dp).coerceAtLeast(0.dp)
+        val contentScroll = remember(postId) { ScrollState(0) }
         AnimatedVisibility(
             visibleState = visibleState,
             enter = MiooMotion.modalEnter(reducedMotion),
@@ -86,7 +94,8 @@ fun RefPopup(
         Card(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 24.dp),
+                .padding(horizontal = 16.dp, vertical = 24.dp)
+                .heightIn(max = maxCardHeight),
             shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
@@ -131,6 +140,13 @@ fun RefPopup(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // 标题与关闭按钮固定；正文、附图与原串入口共用可滚动区域。
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
+                        .verticalScroll(contentScroll)
+                ) {
                 // Content State Machine
                 when {
                     isLoading -> {
@@ -301,7 +317,9 @@ fun RefPopup(
                         }
                     }
                 }
+                }
             }
+        }
         }
         }
     }
