@@ -60,6 +60,20 @@ class SettingsDataStore(private val context: Context) {
         val KEY_DRAFT_BOX_ENABLED = booleanPreferencesKey("draft_box_enabled")
         val KEY_QUOTE_AUTO_DISPLAY = booleanPreferencesKey("quote_auto_display")
         val KEY_DATA_SAVER_ENABLED = booleanPreferencesKey("data_saver_enabled")
+        val KEY_KAOMOJI_ORDER = stringPreferencesKey("kaomoji_order")
+    }
+
+    val kaomojiOrderFlow: Flow<List<String>> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences ->
+            runCatching {
+                val array = org.json.JSONArray(preferences[KEY_KAOMOJI_ORDER] ?: "[]")
+                List(array.length()) { array.getString(it) }
+            }.getOrDefault(emptyList())
+        }
+
+    suspend fun saveKaomojiOrder(ids: List<String>) {
+        context.dataStore.edit { it[KEY_KAOMOJI_ORDER] = org.json.JSONArray(ids).toString() }
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data
