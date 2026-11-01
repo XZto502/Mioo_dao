@@ -468,12 +468,12 @@ class ThreadRepositoryImpl @Inject constructor(
             val imagePart = imageFile?.asImagePart()
 
             val response = apiService.doPostThread(cookie, fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
-            emit(interpretForumWriteResponse(response.string()))
+            val result = interpretForumWriteResponse(response.string())
+            if (result is XdResponse.Success && result.data != "已提交") imageFile?.delete()
+            emit(result)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            emit(XdResponse.Error(message = e.localizedMessage ?: "发串失败", throwable = e))
-        } finally {
-            imageFile?.delete()
+            emit(XdResponse.Error(message = forumWriteNetworkError(e), throwable = e))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -507,15 +507,15 @@ class ThreadRepositoryImpl @Inject constructor(
                     email = email
                 )
             }
-            emit(interpretForumWriteResponse(response.string()))
+            val result = interpretForumWriteResponse(response.string())
+            if (result is XdResponse.Success && result.data != "已提交") imageFile?.delete()
+            emit(result)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (com.mioo.dao.BuildConfig.DEBUG) {
                 android.util.Log.e("ThreadRepo", "Reply failed", e)
             }
-            emit(XdResponse.Error(message = e.localizedMessage ?: "回复失败", throwable = e))
-        } finally {
-            imageFile?.delete()
+            emit(XdResponse.Error(message = forumWriteNetworkError(e), throwable = e))
         }
     }.flowOn(Dispatchers.IO)
 

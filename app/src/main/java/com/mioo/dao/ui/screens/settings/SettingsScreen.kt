@@ -1013,6 +1013,28 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("网络兼容模式", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (settings.networkCompatibilityEnabled) "已开启" else "已关闭")
+                    androidx.compose.material3.Switch(
+                        checked = settings.networkCompatibilityEnabled,
+                        onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+
         // 省流量模式开关
         Card(
             modifier = Modifier.fillMaxWidth(),

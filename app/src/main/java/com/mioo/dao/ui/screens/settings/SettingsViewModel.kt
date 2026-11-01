@@ -353,6 +353,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateQuoteAutoDisplay(enabled)
     }
 
+    fun updateNetworkCompatibility(enabled: Boolean) {
+        settingsRepository.updateNetworkCompatibility(enabled)
+    }
+
     fun updateDataSaverEnabled(enabled: Boolean) {
         settingsRepository.updateDataSaverEnabled(enabled)
     }

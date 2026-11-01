@@ -1107,7 +1107,8 @@ class ThreadViewModel @Inject constructor(
                             if (response.data == "已提交") {
                                 // 兜底判定（未确认成功）：保留输入与草稿，防止非常规错误页
                                 // 被误判成功后把用户内容清空；刷新列表供用户自行核对
-                                _composerState.update { it.copy(isReplying = false) }
+                                _composerState.update { it.copy(isReplying = false,
+                                    replyError = "提交结果暂不确定，正文和图片已保留，请先查看是否已经发出") }
                             } else {
                                 _composerState.update { ReplyComposerState() }
                                 // 发送成功 → 草稿箱中该串草稿一并清除。
@@ -1128,7 +1129,7 @@ class ThreadViewModel @Inject constructor(
                                     settingsRepository.saveThreadCookie(threadId, usedCookie)
                                 }
                             }
-                            onSuccess()
+                            if (response.data != "已提交") onSuccess()
                             loadThreadDetails()
                         }
                         is XdResponse.Error -> {

@@ -129,6 +129,9 @@ class SettingsRepository @Inject constructor(
         .combine(settingsDataStore.diceBadgesEnabledFlow) { settings, diceBadgesEnabled ->
             settings.copy(diceBadgesEnabled = diceBadgesEnabled)
         }
+        .combine(settingsDataStore.networkCompatibilityFlow) { settings, enabled ->
+            settings.copy(networkCompatibilityEnabled = enabled)
+        }
         .stateIn(
         scope = repositoryScope,
         started = SharingStarted.Eagerly,
@@ -179,6 +182,10 @@ class SettingsRepository @Inject constructor(
         repositoryScope.launch {
             settingsDataStore.saveQuoteAutoDisplay(enabled)
         }
+    }
+
+    fun updateNetworkCompatibility(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.saveNetworkCompatibility(enabled) }
     }
 
     fun updateDataSaverEnabled(enabled: Boolean) {

@@ -445,8 +445,12 @@ class ForumViewModel @Inject constructor(
                 ).collect { response ->
                     when (response) {
                         is XdResponse.Success -> {
-                            onResult(true, "发串成功")
-                            refresh()
+                            if (response.data == "已提交") {
+                                onResult(false, "提交结果暂不确定，正文和图片已保留，请先查看是否已经发出")
+                            } else {
+                                onResult(true, "发串成功")
+                                refresh()
+                            }
                         }
                         is XdResponse.Error -> {
                             onResult(false, response.message.ifBlank { "发串失败" })
