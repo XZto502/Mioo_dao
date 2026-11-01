@@ -105,7 +105,7 @@ interface ThreadRepository {
     suspend fun pollSubscriptionUpdatesForNotification(limit: Int = 30): List<BookmarkNewReply>
 
     // Reading progress
-    suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int)
+    suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int, scrollOffset: Int = 0, anchorPostId: String? = null)
     suspend fun getThreadProgress(threadId: String): ThreadProgressEntity?
     suspend fun clearThreadProgress(threadId: String)
 
@@ -388,6 +388,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
             }
@@ -415,6 +416,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
             }
@@ -704,12 +706,14 @@ class ThreadRepositoryImpl @Inject constructor(
         return updates.values.toList()
     }
 
-    override suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int) {
+    override suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int, scrollOffset: Int, anchorPostId: String?) {
         progressDao.upsert(
             ThreadProgressEntity(
                 threadId = threadId,
                 page = page.coerceAtLeast(1),
-                firstVisibleIndex = firstVisibleIndex.coerceAtLeast(0)
+                firstVisibleIndex = firstVisibleIndex.coerceAtLeast(0),
+                scrollOffset = scrollOffset.coerceAtLeast(0),
+                anchorPostId = anchorPostId
             )
         )
     }

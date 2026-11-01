@@ -135,6 +135,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -185,6 +186,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
@@ -213,7 +215,7 @@ fun ThreadScreen(
             val lazyIndex = if (listUi.startPage > 1) (seeded - 1).coerceAtLeast(0) else seeded
             LazyListState(
                 firstVisibleItemIndex = lazyIndex,
-                firstVisibleItemScrollOffset = 0
+                firstVisibleItemScrollOffset = listUi.pendingScrollOffset
             )
         }
     }
@@ -224,14 +226,9 @@ fun ThreadScreen(
     // Kept for progress save only — do NOT read .value in this scope (would recompose whole screen on scroll).
     val currentScrollPage = remember(listStartPage, totalPages) {
         derivedStateOf {
-            val firstVisibleIndex = listState.firstVisibleItemIndex
-            val page = if (firstVisibleIndex <= 0) {
-                listStartPage
-            } else {
-                // startPage==1 时 index 0 是 OP 卡；跳页/续读落在第2页及以上时 OP 不占位
-                val replyIndex = if (listStartPage <= 1) firstVisibleIndex - 1 else firstVisibleIndex
-                listStartPage + (replyIndex / 19)
-            }
+            val anchor = listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == listState.firstVisibleItemIndex }
+            val page = viewModel.readingPageFor(anchor?.key)
             page.coerceIn(1, totalPages.coerceAtLeast(1))
         }
     }
@@ -268,48 +265,39 @@ fun ThreadScreen(
         allowHeavyList = true
     }
 
-    // Persist reading progress while scrolling / on leave
-    LaunchedEffect(listState, viewModel.threadId) {
+    fun saveVisibleProgress() {
+        val anchor = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == listState.firstVisibleItemIndex }
+        viewModel.saveReadingProgress(listState.firstVisibleItemScrollOffset, anchor?.key)
+    }
+    val saveProgressNow by rememberUpdatedState(newValue = { saveVisibleProgress() })
+    // 像素偏移也参与保存；加载与恢复期间不采集临时占位位置。
+    LaunchedEffect(listState, listUi.isLoading, listUi.pendingScrollIndex) {
+        if (listUi.isLoading || listUi.pendingScrollIndex != null) return@LaunchedEffect
         snapshotFlow {
-            listState.firstVisibleItemIndex to currentScrollPage.value
+            Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset,
+                listState.layoutInfo.visibleItemsInfo.firstOrNull {
+                    it.index == listState.firstVisibleItemIndex
+                }?.key)
+        }.distinctUntilChanged().debounce(600).collect { (_, offset, key) ->
+            viewModel.saveReadingProgress(offset, key)
         }
-            .distinctUntilChanged()
-            .debounce(600)
-            .collect { (index, page) ->
-                viewModel.saveReadingProgress(page = page, firstVisibleIndex = index)
-            }
     }
     DisposableEffect(viewModel.threadId, listState) {
-        onDispose {
-            viewModel.saveReadingProgress(
-                page = currentScrollPage.value,
-                firstVisibleIndex = listState.firstVisibleItemIndex
-            )
-        }
+        onDispose { saveProgressNow() }
     }
 
-    // Consume seed after open; only scrollToItem for mid-session jumps (list state already alive).
-    LaunchedEffect(listUi.pendingScrollIndex, listUi.displayItems.size, listUi.isLoading, listState) {
+    // 等实际布局就绪再恢复，不能在入场动画仍隐藏列表时把目标钳制成第 0 项。
+    LaunchedEffect(listUi.pendingScrollIndex, listUi.displayItems.size, listUi.isLoading,
+        listState, allowHeavyList) {
         val index = listUi.pendingScrollIndex ?: return@LaunchedEffect
-        if (listUi.isLoading) return@LaunchedEffect
-        if (listUi.thread == null) return@LaunchedEffect
-
-        // pendingScrollIndex：0=OP、1..=回复；第2页及以上 OP 不占位，目标减一
-        val lazyIndex = if (listUi.startPage > 1) (index - 1).coerceAtLeast(0) else index
-
-        // If LazyListState was created with this index, we are already there — no jump.
-        if (listState.firstVisibleItemIndex != lazyIndex) {
-            val targetMinCount = lazyIndex + 1
-            var attempts = 0
-            while (listState.layoutInfo.totalItemsCount < targetMinCount && attempts < 8) {
-                delay(8)
-                attempts++
-            }
-            val maxIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-            val target = lazyIndex.coerceIn(0, maxIndex)
-            if (listState.firstVisibleItemIndex != target) {
-                listState.scrollToItem(target)
-            }
+        if (listUi.isLoading || listUi.thread == null || !allowHeavyList) return@LaunchedEffect
+        val hasMain = listUi.startPage <= 1
+        val count = listUi.displayItems.size + if (hasMain) 1 else 0
+        if (count > 0) {
+            val target = readingLazyIndex(index, hasMain).coerceIn(0, count - 1)
+            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > target }
+            listState.scrollToItem(target, listUi.pendingScrollOffset)
         }
         viewModel.consumePendingScrollIndex()
     }
@@ -500,10 +488,7 @@ fun ThreadScreen(
                             viewModel = viewModel,
                             isLoading = listUi.isLoading,
                             onRefresh = {
-                                viewModel.saveReadingProgress(
-                                    page = currentScrollPage.value,
-                                    firstVisibleIndex = listState.firstVisibleItemIndex
-                                )
+                                saveVisibleProgress()
                                 viewModel.refreshThread { message ->
                                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                                 }
@@ -595,60 +580,30 @@ fun ThreadScreen(
                     initialDelayMs = 500
                 )
 
-                val shouldLoadMore = remember {
-                    derivedStateOf {
-                        val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-                            ?: return@derivedStateOf false
-                        lastVisibleItem.index >= listState.layoutInfo.totalItemsCount - 2
-                    }
-                }
-
-                LaunchedEffect(shouldLoadMore.value) {
-                    if (shouldLoadMore.value && !listUi.isLoading && !listUi.isLastPage) {
-                        viewModel.loadNextPage()
-                    }
-                }
-
-                // After mid-thread resume/jump, scrolling up loads earlier pages
-                // so the page indicator can decrease with content.
-                LaunchedEffect(listState, listUi.startPage, listUi.isLoading) {
+                // 一个观察器协调前后分页，避免恢复定位、加载状态和滚动各自发请求。
+                LaunchedEffect(listState, listUi.isLoading, listUi.pendingScrollIndex,
+                    listUi.startPage, listUi.isLastPage) {
+                    if (listUi.isLoading || listUi.pendingScrollIndex != null) return@LaunchedEffect
+                    var previousPosition = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
                     snapshotFlow {
-                        Triple(
-                            listState.firstVisibleItemIndex,
-                            listState.isScrollInProgress,
-                            listUi.startPage
-                        )
-                    }
-                        .distinctUntilChanged()
-                        .collect { (index, scrolling, startPage) ->
-                            if (index > 3) {
-                                viewModel.allowPreviousLoad()
-                            }
-                            // Only request previous page while user is actively scrolling near top
-                            if (scrolling &&
-                                !listUi.isLoading &&
-                                startPage > 1 &&
-                                index <= 2
-                            ) {
-                                viewModel.loadPreviousPage()
-                            }
+                        val info = listState.layoutInfo
+                        Triple(listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset,
+                            info.visibleItemsInfo.lastOrNull()?.index ?: -1,
+                            listState.isScrollInProgress)
+                    }.distinctUntilChanged().collect { (position, last, scrolling) ->
+                        val movingUp = position.first < previousPosition.first ||
+                            (position.first == previousPosition.first && position.second < previousPosition.second)
+                        previousPosition = position
+                        if (position.first > 3) viewModel.allowPreviousLoad()
+                        if (scrolling && movingUp && position.first <= 2 && listUi.startPage > 1) {
+                            saveProgressNow()
+                            viewModel.loadPreviousPage()
+                        } else if (last >= 0 && last >= listState.layoutInfo.totalItemsCount - 2 && !listUi.isLastPage) {
+                            saveProgressNow()
+                            viewModel.loadNextPage()
                         }
-                }
-
-                // Keep viewport stable when older replies are prepended above
-                LaunchedEffect(listUi.prependAnchorCount) {
-                    val n = listUi.prependAnchorCount ?: return@LaunchedEffect
-                    if (n > 0) {
-                        val idx = listState.firstVisibleItemIndex
-                        val offset = listState.firstVisibleItemScrollOffset
-                        // prepend 只发生在 startPage>1 时 → 补偿后 startPage==1 说明串首卡片
-                        // 同时出现在了顶部，额外多移一位
-                        val opAppeared = listUi.startPage <= 1
-                        listState.scrollToItem(idx + n + if (opAppeared) 1 else 0, offset)
                     }
-                    viewModel.consumePrependAnchor()
                 }
-
                 // Stable callbacks shared across all list items
                 val onQuoteClick = remember(viewModel) {
                     { quoteNo: String -> viewModel.showRefPopup(quoteNo) }
@@ -784,19 +739,16 @@ fun ThreadScreen(
                         }
                     }
 
-                    if (listUi.isLoading && displayItems.isNotEmpty()) {
-                        item(key = "loading_footer", contentType = "loading") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator()
-                            }
-                        }
-                    }
                 }
+            }
+
+            // 加载指示叠在列表上，不增删尾部条目，避免结束加载时改变最大滚动距离。
+            if (listUi.isLoading && listUi.thread != null) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .padding(top = paddingValues.calculateTopPadding() + 8.dp).size(24.dp),
+                    strokeWidth = 2.dp
+                )
             }
 
             // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）
