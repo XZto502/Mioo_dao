@@ -19,3 +19,16 @@ internal fun resolveReadingIndex(postId: String?, threadId: String, visibleIds: 
     val index = visibleIds.indexOf(postId)
     return if (index >= 0) index + 1 else fallback.coerceAtLeast(0)
 }
+
+/** Convert page-local legacy positions into a window containing adjacent pages. */
+internal fun resolveWindowReadingIndex(
+    postId: String?, threadId: String, targetPageIds: List<String>,
+    windowIds: List<String>, localIndex: Int, targetPage: Int
+): Int {
+    if (postId == threadId || (postId == null && localIndex == 0 && targetPage == 1)) return 0
+    val anchor = postId?.takeIf { it != "9999999" && it in windowIds }
+        ?: targetPageIds.getOrNull((localIndex - 1).coerceAtLeast(0))?.takeUnless { it == "9999999" }
+        ?: targetPageIds.firstOrNull { it != "9999999" }
+        ?: targetPageIds.lastOrNull()
+    return resolveReadingIndex(anchor, threadId, windowIds, 0)
+}

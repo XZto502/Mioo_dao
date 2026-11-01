@@ -3,12 +3,26 @@ package com.mioo.dao.ui.components
 import com.mioo.dao.ui.screens.thread.readingLazyIndex
 import com.mioo.dao.ui.screens.thread.resolveReadingIndex
 import com.mioo.dao.ui.screens.thread.shouldLoadPreviousAtEdge
+import com.mioo.dao.ui.screens.thread.resolveWindowReadingIndex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReadingPositionTest {
+    @Test fun jumpToShortLastPageStartsAtItsReplyWithinThePreparedWindow() {
+        assertEquals(4, resolveWindowReadingIndex(null, "op",
+            listOf("9999999", "last"), listOf("9999999", "a", "b", "last"), 0, 3))
+    }
+
+    @Test fun resumeUsesFloorIdentityAfterAdjacentPagesAndFiltersChangeIndexes() {
+        val window = listOf("earlier", "a", "saved", "next")
+        assertEquals(3, resolveWindowReadingIndex("saved", "op", listOf("a", "saved"), window, 19, 2))
+        assertEquals(3, resolveWindowReadingIndex(null, "op", listOf("a", "saved"), window, 2, 2))
+        assertEquals(0, resolveWindowReadingIndex("op", "op", listOf("a"), window, 0, 1))
+        assertEquals(0, resolveWindowReadingIndex(null, "op", listOf("a"), window, 0, 1))
+    }
+
     @Test fun shortThirdPageCanLoadEarlierRepliesWithoutAnyListMovement() {
         assertTrue(shouldLoadPreviousAtEdge(12f, true, false, 3, false, false))
         assertFalse(shouldLoadPreviousAtEdge(-12f, true, false, 3, false, false))

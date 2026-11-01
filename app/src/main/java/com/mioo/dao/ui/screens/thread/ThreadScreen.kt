@@ -142,6 +142,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import kotlinx.coroutines.flow.onEach
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -208,15 +212,14 @@ fun ThreadScreen(
     val listUi by viewModel.listUiState.collectAsState()
     // Slice only cookies + blocked — ignore theme/font/preload churn
     val threadSettings by settingsViewModel.threadScreenSettings.collectAsState()
-    // Navigation saves this per back-stack entry, including the pixel offset within a floor.
-    // Separate the loading/content slots so the first data load can seed continue-reading
-    // without replacing a restored content position when returning from another thread.
-    val hasThreadContent = listUi.thread != null
-    val listState = key(viewModel.threadId, hasThreadContent) {
+    // Replace the list state only when a complete jump/resume window is ready.
+    // Its very first measure starts at the saved floor and pixel offset; incremental
+    // pagination retains the state and stable item keys.
+    val listState = key(viewModel.threadId, listUi.contentRevision) {
         rememberSaveable(saver = LazyListState.Saver) {
             // pendingScrollIndex: 0=OP, 1..=replies; later pages omit the OP row.
             val seeded = (listUi.pendingScrollIndex ?: 0).coerceAtLeast(0)
-            val lazyIndex = if (listUi.startPage > 1) (seeded - 1).coerceAtLeast(0) else seeded
+            val lazyIndex = readingLazyIndex(seeded, listUi.startPage <= 1)
             LazyListState(
                 firstVisibleItemIndex = lazyIndex,
                 firstVisibleItemScrollOffset = listUi.pendingScrollOffset
@@ -269,12 +272,29 @@ fun ThreadScreen(
         allowHeavyList = true
     }
 
+    var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
+        mutableStateOf<Pair<Any, Int>?>(null)
+    }
+    var leavingThread by remember(viewModel) { mutableStateOf(false) }
     fun saveVisibleProgress() {
+        if (leavingThread) return
         val anchor = listState.layoutInfo.visibleItemsInfo
             .firstOrNull { it.index == listState.firstVisibleItemIndex }
-        viewModel.saveReadingProgress(listState.firstVisibleItemScrollOffset, anchor?.key)
+        val position = anchor?.let { it.key to listState.firstVisibleItemScrollOffset }
+            ?: lastVisibleProgress ?: return
+        viewModel.saveReadingProgress(position.second, position.first)
     }
     val saveProgressNow by rememberUpdatedState(newValue = { saveVisibleProgress() })
+    val leaveThread = {
+        if (!leavingThread) {
+            saveVisibleProgress()
+            // Freeze the exit anchor: an ongoing fling can otherwise overwrite
+            // it during the navigation transition after the user pressed Back.
+            leavingThread = true
+            onBackClick()
+        }
+    }
+    BackHandler { leaveThread() }
     // A short last page (or an empty page) cannot move at all. Observe the user's
     // drag before consumption, rather than requiring a changed list position.
     val edgePaging = remember(listState, viewModel) {
@@ -295,19 +315,29 @@ fun ThreadScreen(
         }
     }
     // 像素偏移也参与保存；加载与恢复期间不采集临时占位位置。
-    LaunchedEffect(listState, listUi.isLoading, listUi.pendingScrollIndex) {
-        if (listUi.isLoading || listUi.pendingScrollIndex != null) return@LaunchedEffect
+    LaunchedEffect(listState, listUi.isReplacing, listUi.pendingScrollIndex) {
+        if (listUi.isReplacing || listUi.pendingScrollIndex != null) return@LaunchedEffect
         snapshotFlow {
             Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset,
                 listState.layoutInfo.visibleItemsInfo.firstOrNull {
                     it.index == listState.firstVisibleItemIndex
                 }?.key)
-        }.distinctUntilChanged().debounce(600).collect { (_, offset, key) ->
-            viewModel.saveReadingProgress(offset, key)
+        }.distinctUntilChanged().onEach { (_, offset, key) ->
+            if (key != null) lastVisibleProgress = key to offset
+        }.debounce(600).collect { (_, offset, key) ->
+            if (!leavingThread) viewModel.saveReadingProgress(offset, key)
         }
     }
-    DisposableEffect(viewModel.threadId, listState) {
-        onDispose { saveProgressNow() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(viewModel, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) saveProgressNow()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            saveProgressNow()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     // 等实际布局就绪再恢复，不能在入场动画仍隐藏列表时把目标钳制成第 0 项。
@@ -478,7 +508,7 @@ fun ThreadScreen(
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
                     } else {
-                        IconButton(onClick = onBackClick) {
+                        IconButton(onClick = leaveThread) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
                     }
@@ -628,10 +658,10 @@ fun ThreadScreen(
                             (position.first == previousPosition.first && position.second < previousPosition.second)
                         previousPosition = position
                         if (position.first > 3) viewModel.allowPreviousLoad()
-                        if (scrolling && movingUp && position.first <= 2 && listUi.startPage > 1) {
+                        if (scrolling && movingUp && position.first <= 6 && listUi.startPage > 1 && listUi.previousPageError == null) {
                             saveProgressNow()
                             viewModel.loadPreviousPage()
-                        } else if (last >= 0 && last >= listState.layoutInfo.totalItemsCount - 2 && !listUi.isLastPage) {
+                        } else if (last >= 0 && last >= listState.layoutInfo.totalItemsCount - 6 && !listUi.isLastPage && listUi.nextPageError == null) {
                             saveProgressNow()
                             viewModel.loadNextPage()
                         }
@@ -773,15 +803,6 @@ fun ThreadScreen(
                     }
 
                 }
-            }
-
-            // 加载指示叠在列表上，不增删尾部条目，避免结束加载时改变最大滚动距离。
-            if (listUi.isLoading && listUi.thread != null) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.TopCenter)
-                        .padding(top = paddingValues.calculateTopPadding() + 8.dp).size(24.dp),
-                    strokeWidth = 2.dp
-                )
             }
 
             // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）

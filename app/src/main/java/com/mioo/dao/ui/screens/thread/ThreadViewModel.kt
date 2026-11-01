@@ -60,6 +60,8 @@ data class ThreadListUiState(
     val displayItems: List<ReplyDisplayItem> = emptyList(),
     val showPoOnly: Boolean = false,
     val isLoading: Boolean = false,
+    val isReplacing: Boolean = false,
+    val contentRevision: Int = 0,
     val errorMessage: String? = null,
     val nextPageError: String? = null,
     val previousPageError: String? = null,
@@ -334,6 +336,7 @@ class ThreadViewModel @Inject constructor(
         _listState.update {
             it.copy(
                 isLoading = true,
+                isReplacing = true,
                 errorMessage = null,
                 thread = null,
                 displayItems = emptyList(),
@@ -412,10 +415,9 @@ class ThreadViewModel @Inject constructor(
                 // 不清空 displayItems：旧页内容保留到新页数据整体替换（SWR 同款行为），
                 // 清空会在 AMOLED 纯黑背景上闪黑帧。落顶由 stickyResumeIndex 种子完成。
                 isLastPage = false,
-                currentPage = page,
-                startPage = page,
                 pendingScrollIndex = null,
-                isLoading = true
+                isLoading = true,
+                isReplacing = true
             )
         }
         loadPage(page = page, mode = LoadMode.REPLACE)
@@ -495,7 +497,8 @@ class ThreadViewModel @Inject constructor(
         val gen = ++loadGeneration
         pageLoadJob?.cancel()
         quoteFetchJob?.cancel()
-        _listState.update { it.copy(isLoading = true, nextPageError = null, previousPageError = null) }
+        _listState.update { it.copy(isLoading = true, isReplacing = mode == LoadMode.REPLACE,
+            nextPageError = null, previousPageError = null) }
 
         pageLoadJob = viewModelScope.launch {
             val flow = if (_listState.value.showPoOnly) {
@@ -523,11 +526,35 @@ class ThreadViewModel @Inject constructor(
                             _listState.update { it.copy(isLoading = false, errorMessage = "返回的串内容不匹配，请重试") }
                             return@collect
                         }
-                        val newPosts = threadData.replies ?: emptyList()
                         val replyCount = threadData.replyCount ?: 0
                         val totalPagesVal =
                             if (replyCount <= 0) 1 else (replyCount + PAGE_SIZE - 1) / PAGE_SIZE
-                        val isLast = newPosts.isEmpty() || page >= totalPagesVal
+                        // Build a reading window before publishing a jump/resume. The
+                        // preceding page supplies upward scroll space even on a one-row
+                        // last page; the next page supplies space below the saved anchor.
+                        val window = sortedMapOf(page to threadData)
+                        if (mode == LoadMode.REPLACE && stickyResumeIndex != null) {
+                            coroutineScope {
+                                listOf(page - 1, page + 1)
+                                    .filter { it in 1..totalPagesVal }
+                                    .map { neighbor -> async {
+                                        val result = if (_listState.value.showPoOnly) {
+                                            threadRepository.getPoDetail(threadId, neighbor).first()
+                                        } else {
+                                            threadRepository.getThreadDetail(threadId, neighbor).first()
+                                        }
+                                        neighbor to (result as? XdResponse.Success)?.data
+                                    } }.awaitAll().forEach { (neighbor, data) ->
+                                        if (data?.idStr == threadId) window[neighbor] = data
+                                    }
+                            }
+                        }
+                        if (gen != loadGeneration) return@collect
+                        val windowStart = window.firstKey()
+                        val windowEnd = window.lastKey()
+                        val newPosts = window.values.flatMap { it.replies.orEmpty() }
+                            .distinctBy { it.id }.sortedBy { it.id }
+                        val isLast = window.getValue(windowEnd).replies.isNullOrEmpty() || windowEnd >= totalPagesVal
 
                         val prevDisplaySize = _listState.value.displayItems.size
 
@@ -550,7 +577,9 @@ class ThreadViewModel @Inject constructor(
                         if (gen != loadGeneration) return@collect
                         rawPosts = combinedPosts
                         if (mode == LoadMode.REPLACE) replyPages.clear()
-                        newPosts.forEach { replyPages[it.idStr] = page }
+                        window.forEach { (number, data) ->
+                            data.replies.orEmpty().forEach { replyPages[it.idStr] = number }
+                        }
 
                         val mainPostData = threadData.toPostData()
                         val displayItems = buildCurrentDisplayItems(combinedPosts, threadData.userHash)
@@ -568,8 +597,10 @@ class ThreadViewModel @Inject constructor(
                             !resumeScrollSeeded
                         ) {
                             resumeScrollSeeded = true
-                            resolveReadingIndex(resumePostId, threadId,
-                                displayItems.map { it.idStr }, stickyResumeIndex ?: 0)
+                            resolveWindowReadingIndex(resumePostId, threadId,
+                                threadData.replies.orEmpty().map { it.idStr }
+                                    .filter { id -> displayItems.any { it.idStr == id } },
+                                displayItems.map { it.idStr }, stickyResumeIndex ?: 0, page)
                         } else {
                             null
                         }
@@ -583,6 +614,7 @@ class ThreadViewModel @Inject constructor(
                                 // Cache is an interim result. Keep the request busy until
                                 // its network emission completes, or a new page can discard it.
                                 isLoading = true,
+                                contentRevision = state.contentRevision + if (mode == LoadMode.REPLACE) 1 else 0,
                                 errorMessage = null,
                                 nextPageError = null,
                                 previousPageError = null,
@@ -593,11 +625,11 @@ class ThreadViewModel @Inject constructor(
                                 },
                                 currentPage = when (mode) {
                                     LoadMode.PREPEND -> state.currentPage
-                                    else -> page
+                                    else -> windowEnd
                                 },
                                 startPage = when (mode) {
                                     LoadMode.PREPEND -> page
-                                    LoadMode.REPLACE -> page
+                                    LoadMode.REPLACE -> windowStart
                                     LoadMode.APPEND -> state.startPage
                                 },
                                 pendingScrollIndex = seedPending ?: state.pendingScrollIndex,
@@ -649,10 +681,10 @@ class ThreadViewModel @Inject constructor(
                             lastIsLast = isLast
                             sawSuccess = true
                             if (newPosts.isNotEmpty() && !isLast) {
-                                currentPage = page + 1
+                                currentPage = windowEnd + 1
                                 isLastPage = false
                             } else {
-                                currentPage = page
+                                currentPage = windowEnd
                                 isLastPage = true
                                 _listState.update { it.copy(isLastPage = true) }
                             }
@@ -674,7 +706,7 @@ class ThreadViewModel @Inject constructor(
             }
             if (gen != loadGeneration) return@launch
             // Release pagination only after every cache/network result has been applied.
-            _listState.update { it.copy(isLoading = false) }
+            _listState.update { it.copy(isLoading = false, isReplacing = false) }
             if (mode == LoadMode.PREPEND) return@launch
             val blockedPage = sawSuccess && lastRawCount > 0 && lastAddedVisible <= 0
             val canChain = blockedPage && !lastIsLast && filteredSkips < MAX_FILTERED_SKIPS
@@ -1295,12 +1327,15 @@ class ThreadViewModel @Inject constructor(
     fun saveReadingProgress(scrollOffset: Int, anchorKey: Any?) {
         val state = _listState.value
         // 首次加载、跳页或恢复未完成时，临时的第 0 项不可覆盖已保存进度。
-        if (state.thread == null || state.pendingScrollIndex != null || state.isLoading) return
+        if (state.thread == null || state.pendingScrollIndex != null || state.isReplacing) return
         val postId = when (anchorKey) {
             is Long -> anchorKey.toString()
             is String -> if (anchorKey == "main_$threadId") threadId else anchorKey
             else -> null
         } ?: return
+        // The API repeats this promotional row on every page; it is not a
+        // stable reading anchor and its page assignment changes after a merge.
+        if (postId == "9999999") return
         val actualPage = if (postId == threadId) 1 else replyPages[postId] ?: return
         val pageItems = state.displayItems.filter { replyPages[it.idStr] == actualPage }
         val localIndex = if (postId == threadId) 0 else pageItems.indexOfFirst { it.idStr == postId } + 1
@@ -1320,6 +1355,7 @@ class ThreadViewModel @Inject constructor(
 
     fun readingPageFor(anchorKey: Any?): Int {
         if (anchorKey == "main_$threadId") return 1
+        if (anchorKey?.toString() == "9999999") return _listState.value.startPage
         return replyPages[anchorKey?.toString()] ?: _listState.value.startPage
     }
 
