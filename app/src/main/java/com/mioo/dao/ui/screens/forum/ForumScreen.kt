@@ -284,7 +284,7 @@ fun ForumScreen(
 
     // Paging via snapshotFlow — does not recompose the whole screen on every scroll frame
     // (derivedStateOf + LaunchedEffect(.value) used to restart the effect on flag churn).
-    LaunchedEffect(listState, currentForumId) {
+    LaunchedEffect(listState, currentForumId, uiState.isLoading, uiState.isRefreshing, uiState.isLastPage) {
         snapshotFlow {
             val info = listState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false

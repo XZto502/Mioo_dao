@@ -317,6 +317,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
                     "该板块或串不存在"
@@ -349,6 +350,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
                     "该串不存在或已被删除"
