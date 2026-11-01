@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -65,7 +65,8 @@ fun KaomojiQuickPanel(
 ) {
     val context = LocalContext.current.applicationContext
     val settings = remember(context) { SettingsDataStore(context) }
-    val grid = rememberLazyGridState()
+    // 只保存用户排序，不跨面板打开恢复滚动位置。
+    val grid = remember { LazyGridState() }
     val haptic = LocalHapticFeedback.current
     var order by remember { mutableStateOf(kaomojiById.keys.toList()) }
     var ready by remember { mutableStateOf(false) }
@@ -78,6 +79,8 @@ fun KaomojiQuickPanel(
     LaunchedEffect(settings) {
         val saved = settings.kaomojiOrderFlow.first()
         order = restoreKaomojiOrder(saved, kaomojiById.keys.toList())
+        // 应用排序后显式定位首项，避免稳定 key 将原首项锚定到其新位置。
+        grid.scrollToItem(0)
         ready = true
     }
 
