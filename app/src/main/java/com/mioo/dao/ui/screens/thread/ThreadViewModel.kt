@@ -400,6 +400,7 @@ class ThreadViewModel @Inject constructor(
 
         currentPage = page
         isLastPage = false
+        suppressPreviousLoad = false
         rawPosts = emptyList()
         // Land at top of the jumped page (OP + first replies of that page)
         resumePostId = null

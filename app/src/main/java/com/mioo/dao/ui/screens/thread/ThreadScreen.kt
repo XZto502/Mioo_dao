@@ -145,6 +145,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import com.mioo.dao.ui.theme.readingTextStyle
 import com.mioo.dao.ui.theme.readingBackground
@@ -224,7 +228,7 @@ fun ThreadScreen(
     val listStartPage = listUi.startPage
     val totalPages = viewModel.totalPages
     // Kept for progress save only — do NOT read .value in this scope (would recompose whole screen on scroll).
-    val currentScrollPage = remember(listStartPage, totalPages) {
+    val currentScrollPage = remember(listState, listStartPage, totalPages) {
         derivedStateOf {
             val anchor = listState.layoutInfo.visibleItemsInfo
                 .firstOrNull { it.index == listState.firstVisibleItemIndex }
@@ -271,6 +275,25 @@ fun ThreadScreen(
         viewModel.saveReadingProgress(listState.firstVisibleItemScrollOffset, anchor?.key)
     }
     val saveProgressNow by rememberUpdatedState(newValue = { saveVisibleProgress() })
+    // A short last page (or an empty page) cannot move at all. Observe the user's
+    // drag before consumption, rather than requiring a changed list position.
+    val edgePaging = remember(listState, viewModel) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val state = viewModel.listUiState.value
+                if (shouldLoadPreviousAtEdge(
+                        available.y, source == NestedScrollSource.Drag,
+                        listState.canScrollBackward, state.startPage,
+                        state.isLoading, state.pendingScrollIndex != null
+                    )) {
+                    saveProgressNow()
+                    viewModel.allowPreviousLoad()
+                    viewModel.loadPreviousPage()
+                }
+                return Offset.Zero
+            }
+        }
+    }
     // 像素偏移也参与保存；加载与恢复期间不采集临时占位位置。
     LaunchedEffect(listState, listUi.isLoading, listUi.pendingScrollIndex) {
         if (listUi.isLoading || listUi.pendingScrollIndex != null) return@LaunchedEffect
@@ -298,6 +321,16 @@ fun ThreadScreen(
             val target = readingLazyIndex(index, hasMain).coerceIn(0, count - 1)
             snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > target }
             listState.scrollToItem(target, listUi.pendingScrollOffset)
+            // A saved floor near the end of this API page may need the following
+            // page to fill the viewport. Do not save the bottom-clamped position
+            // over the original anchor before that context has been loaded.
+            if (!listUi.isLastPage && listUi.nextPageError == null &&
+                (listState.firstVisibleItemIndex < target ||
+                    (listState.firstVisibleItemIndex == target &&
+                        listState.firstVisibleItemScrollOffset < listUi.pendingScrollOffset))) {
+                viewModel.loadNextPage()
+                return@LaunchedEffect
+            }
         }
         viewModel.consumePendingScrollIndex()
     }
@@ -619,7 +652,7 @@ fun ThreadScreen(
                 // final post scroll fully above it without clipping away the glass backdrop.
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().nestedScroll(edgePaging),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(
                         start = 12.dp,

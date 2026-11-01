@@ -2,10 +2,23 @@ package com.mioo.dao.ui.components
 
 import com.mioo.dao.ui.screens.thread.readingLazyIndex
 import com.mioo.dao.ui.screens.thread.resolveReadingIndex
+import com.mioo.dao.ui.screens.thread.shouldLoadPreviousAtEdge
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReadingPositionTest {
+    @Test fun shortThirdPageCanLoadEarlierRepliesWithoutAnyListMovement() {
+        assertTrue(shouldLoadPreviousAtEdge(12f, true, false, 3, false, false))
+        assertFalse(shouldLoadPreviousAtEdge(-12f, true, false, 3, false, false))
+        assertFalse(shouldLoadPreviousAtEdge(12f, false, false, 3, false, false))
+        assertFalse(shouldLoadPreviousAtEdge(12f, true, true, 3, false, false))
+        assertFalse(shouldLoadPreviousAtEdge(12f, true, false, 1, false, false))
+        assertFalse(shouldLoadPreviousAtEdge(12f, true, false, 3, true, false))
+        assertFalse(shouldLoadPreviousAtEdge(12f, true, false, 3, false, true))
+    }
+
     @Test fun laterPagesOmitTheMainPostExactlyOnce() {
         assertEquals(1, readingLazyIndex(1, true))
         assertEquals(0, readingLazyIndex(1, false))
