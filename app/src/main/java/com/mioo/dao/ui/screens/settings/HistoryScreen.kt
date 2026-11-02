@@ -218,8 +218,9 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 ReadingIdentity(PostData(id = item.threadId.orEmpty(), userId = item.cookieHash.ifBlank { "未记录饼干" },
-                    createdAt = "", content = "", isPo = item.type != HistoryType.REPLY,
+                    createdAt = "", content = "", isPo = false,
                     isAdmin = item.cookieHash.equals("Admin", ignoreCase = true)))
+                if (item.type == HistoryType.NEW_THREAD) { Spacer(Modifier.width(4.dp)); HistoryPill("PO") }
                 Spacer(Modifier.width(6.dp))
                 HistoryPill(item.forumName)
                 if (item.type == HistoryType.REPLY) { Spacer(Modifier.width(4.dp)); HistoryPill("我的回复") }

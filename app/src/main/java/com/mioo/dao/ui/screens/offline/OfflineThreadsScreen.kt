@@ -317,7 +317,7 @@ fun OfflineThreadCard(
             // 头行：PO 饼干 + 板块名 …… 串号
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ReadingIdentity(PostData(id = summary.threadId, userId = summary.poUserHash.ifBlank { "???" },
-                    createdAt = "", content = "", isPo = true,
+                    createdAt = "", content = "", isPo = false,
                     isAdmin = summary.poUserHash.equals("Admin", ignoreCase = true)))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(

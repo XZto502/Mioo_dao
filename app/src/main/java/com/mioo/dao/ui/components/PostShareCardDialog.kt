@@ -106,50 +106,6 @@ fun PostShareCardDialog(
         } finally { previewLoading = false }
     }
 
-    fun export(save: Boolean) {
-        if (exporting || (includeContext && contextLoading) || selectedPosts.isEmpty()) return
-        exporting = true
-        // Capture one immutable export configuration; later UI changes cannot change the image midway.
-        val exportPosts = selectedPosts
-        val exportTheme = theme
-        val exportHide = hideCookie
-        val exportContext = includeContext
-        val exportBranding = branding
-        val exportContexts = contextPosts
-        scope.launch {
-            var bitmap: android.graphics.Bitmap? = null
-            try {
-                val images = PostShareCardExporter.loadImages(context, exportPosts)
-                bitmap = PostShareCardExporter.render(context, parent) {
-                    PostShareCardContent(exportPosts, threadId, boardName, title, exportTheme,
-                        exportHide, exportContext, exportBranding, exportContexts,
-                        mainPost, qr, dicePreset, Modifier.width(360.dp), imageBitmaps = images)
-                }
-                val savedUri = PostShareCardExporter.saveToAlbum(context, bitmap)
-                Toast.makeText(context, "已保存至 Pictures/MiooDao", Toast.LENGTH_LONG).show()
-                if (!save) PostShareCardExporter.shareImage(context, savedUri)
-            } catch (cancelled: CancellationException) { throw cancelled
-            } catch (error: Exception) {
-                Toast.makeText(context, error.message ?: "生成失败，请重试", Toast.LENGTH_LONG).show()
-            } catch (_: OutOfMemoryError) {
-                Toast.makeText(context, "图片过大，请减少勾选楼层后重试", Toast.LENGTH_LONG).show()
-            } finally {
-                bitmap?.recycle()
-                exporting = false
-            }
-        }
-    }
-    var pendingSaveOnly by remember { mutableStateOf(true) }
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) export(pendingSaveOnly) else Toast.makeText(context, "保存和分享图片需要存储权限，仍可分享文本链接", Toast.LENGTH_LONG).show()
-    }
-    fun requestExport(saveOnly: Boolean) {
-        pendingSaveOnly = saveOnly
-        if (Build.VERSION.SDK_INT < 29 && ContextCompat.checkSelfPermission(context,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            permission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        } else export(saveOnly)
-    }
     val reducedMotion = isReducedMotionEnabled()
     val visibility = remember { MutableTransitionState(false) }
     var closing by remember { mutableStateOf(false) }
@@ -162,6 +118,54 @@ fun PostShareCardDialog(
             closing = true
             visibility.targetState = false
         }
+    }
+
+    fun export(save: Boolean) {
+        if (exporting || (includeContext && contextLoading) || selectedPosts.isEmpty()) return
+        exporting = true
+        // Capture one immutable export configuration; later UI changes cannot change the image midway.
+        val exportPosts = selectedPosts
+        val exportTheme = theme
+        val exportHide = hideCookie
+        val exportContext = includeContext
+        val exportBranding = branding
+        val exportContexts = contextPosts
+        scope.launch {
+            var bitmap: android.graphics.Bitmap? = null
+            var completed = false
+            try {
+                val images = PostShareCardExporter.loadImages(context, exportPosts)
+                bitmap = PostShareCardExporter.render(context, parent) {
+                    PostShareCardContent(exportPosts, threadId, boardName, title, exportTheme,
+                        exportHide, exportContext, exportBranding, exportContexts,
+                        mainPost, qr, dicePreset, Modifier.width(360.dp), imageBitmaps = images)
+                }
+                val savedUri = PostShareCardExporter.saveToAlbum(context, bitmap)
+                Toast.makeText(context, "已保存至 Pictures/MiooDao", Toast.LENGTH_LONG).show()
+                if (!save) PostShareCardExporter.shareImage(context, savedUri)
+                completed = true
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                Toast.makeText(context, error.message ?: "生成失败，请重试", Toast.LENGTH_LONG).show()
+            } catch (_: OutOfMemoryError) {
+                Toast.makeText(context, "图片过大，请减少勾选楼层后重试", Toast.LENGTH_LONG).show()
+            } finally {
+                bitmap?.recycle()
+                exporting = false
+            }
+            if (completed) requestDismiss()
+        }
+    }
+    var pendingSaveOnly by remember { mutableStateOf(true) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) export(pendingSaveOnly) else Toast.makeText(context, "保存和分享图片需要存储权限，仍可分享文本链接", Toast.LENGTH_LONG).show()
+    }
+    fun requestExport(saveOnly: Boolean) {
+        pendingSaveOnly = saveOnly
+        if (Build.VERSION.SDK_INT < 29 && ContextCompat.checkSelfPermission(context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            permission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else export(saveOnly)
     }
     BackHandler { requestDismiss() }
     AnimatedVisibility(visibleState = visibility,
@@ -263,7 +267,7 @@ fun PostShareCardDialog(
             if (exporting) LinearProgressIndicator(Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { PostShareCardExporter.shareLink(context, threadId, title) }, enabled = !exporting) { Text("仅分享链接") }
+                TextButton(onClick = { PostShareCardExporter.shareLink(context, threadId, title); requestDismiss() }, enabled = !exporting) { Text("仅分享链接") }
                 FilledTonalButton(onClick = { requestExport(true) }, enabled = !exporting && !previewLoading && previewError == null && (!includeContext || !contextLoading)) { Text("保存相册") }
                 Button(onClick = { requestExport(false) }, enabled = !exporting && !previewLoading && previewError == null && (!includeContext || !contextLoading)) { Text("分享卡片图") }
             }
