@@ -5,7 +5,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -37,17 +36,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import coil.compose.AsyncImage
-import com.mioo.dao.ui.theme.DaoTheme
-import com.mioo.dao.ui.theme.readingMetaStyle
+import com.mioo.dao.ui.theme.readingBodyStyle
+import com.mioo.dao.ui.theme.readingCardColor
+import com.mioo.dao.ui.theme.readingCardBorder
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.immersiveDialogProperties
@@ -98,11 +93,10 @@ fun RefPopup(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 24.dp)
                 .heightIn(max = maxCardHeight),
-            shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = readingCardColor()),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            border = readingCardBorder()
         ) {
             Column(
                 modifier = Modifier
@@ -115,10 +109,10 @@ fun RefPopup(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = ">>No.$postId",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
+                        text = "引用",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
                         ),
                         modifier = Modifier.weight(1f)
                     )
@@ -186,85 +180,8 @@ fun RefPopup(
                         }
                     }
                     postData != null -> {
-                        // User Info Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // User ID with dynamic coloring
-                            val idBgColor = when {
-                                postData.isAdmin -> DaoTheme.colors.admin.copy(alpha = 0.15f)
-                                postData.isPo -> DaoTheme.colors.po.copy(alpha = 0.15f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                            val idTextColor = when {
-                                postData.isAdmin -> DaoTheme.colors.admin
-                                postData.isPo -> DaoTheme.colors.po
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-
-                            Text(
-                                text = postData.userId,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
-                                ),
-                                color = idTextColor,
-                                modifier = Modifier
-                                    .background(idBgColor, shape = RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-
-                            // PO tag
-                            if (postData.isPo) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "PO",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(DaoTheme.colors.po, shape = RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            // Admin tag
-                            if (postData.isAdmin) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "ADMIN",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(DaoTheme.colors.admin, shape = RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            // Sage tag
-                            if (postData.isSage) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "SAGE",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(DaoTheme.colors.sage, shape = RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            // Timestamp
-                            Text(
-                                text = formatReadingTime(postData.createdAt),
-                                style = readingMetaStyle(),
-                                modifier = Modifier.weight(1f), textAlign = TextAlign.End,
-                                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            )
-                        }
+                        // Reuse the board card header for identity, badges, time and number.
+                        ReadingPostHeader(postData)
 
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -281,7 +198,7 @@ fun RefPopup(
                         HtmlContent(
                             html = postData.content,
                             onQuoteClick = onQuoteClick,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = readingBodyStyle(),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -293,8 +210,8 @@ fun RefPopup(
                                 contentDescription = "Attached Thumbnail",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(100.dp)
-                                    .clip(MaterialTheme.shapes.medium)
+                                    .size(120.dp)
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable { onImageClick(imageUrl) }
                             )
                         }
