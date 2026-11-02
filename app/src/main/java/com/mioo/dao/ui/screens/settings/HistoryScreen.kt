@@ -1,6 +1,12 @@
 package com.mioo.dao.ui.screens.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,6 +61,7 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = hiltViewModel(),
     modifier: Modifier = Modifier
 ) {
+    val reducedMotion = isReducedMotionEnabled()
     val types = HistoryType.values()
     val pager = rememberPagerState { types.size }
     val type = types[pager.targetPage]
@@ -92,7 +99,10 @@ fun HistoryScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        if (showSearch) TextField(
+                        AnimatedContent(targetState = showSearch, transitionSpec = {
+                            fadeIn(tween(if (reducedMotion) 0 else 180)) togetherWith fadeOut(tween(if (reducedMotion) 0 else 130))
+                        }, label = "historySearch") { active ->
+                        if (active) TextField(
                             value = query, onValueChange = { viewModel.setQuery(type, it) },
                             modifier = Modifier.fillMaxWidth().focusRequester(searchFocus)
                                 .onGloballyPositioned {
@@ -109,6 +119,7 @@ fun HistoryScreen(
                                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
                             )
                         ) else Text("历史")
+                        }
                     },
                     actions = {
                         IconButton(onClick = {

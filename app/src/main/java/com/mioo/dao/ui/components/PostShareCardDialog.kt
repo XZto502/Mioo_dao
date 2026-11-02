@@ -17,6 +17,16 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -140,7 +150,24 @@ fun PostShareCardDialog(
             permission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         } else export(saveOnly)
     }
-    BackHandler { if (!exporting) onDismiss() }
+    val reducedMotion = isReducedMotionEnabled()
+    val visibility = remember { MutableTransitionState(false) }
+    var closing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visibility.targetState = true }
+    LaunchedEffect(closing, visibility.isIdle, visibility.currentState) {
+        if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
+    }
+    fun requestDismiss() {
+        if (!exporting && !closing) {
+            closing = true
+            visibility.targetState = false
+        }
+    }
+    BackHandler { requestDismiss() }
+    AnimatedVisibility(visibleState = visibility,
+        enter = if (reducedMotion) fadeIn(tween(0)) else fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 12 },
+        exit = if (reducedMotion) fadeOut(tween(0)) else fadeOut(tween(180)) + slideOutVertically(tween(220)) { it / 12 },
+        modifier = Modifier.fillMaxSize().zIndex(100f)) {
     Box(Modifier.fillMaxSize().zIndex(100f).background(MaterialTheme.colorScheme.surface)
         .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
             indication = null) { }) {
@@ -160,9 +187,11 @@ fun PostShareCardDialog(
                             modifier = Modifier.size(18.dp).rotate(arrowRotation))
                     }
                 }
-                IconButton(onClick = onDismiss, enabled = !exporting) { Icon(Icons.Default.Close, "关闭") }
+                IconButton(onClick = { requestDismiss() }, enabled = !exporting && !closing) { Icon(Icons.Default.Close, "关闭") }
             }
-            if (showSelection) {
+            AnimatedVisibility(visible = showSelection,
+                enter = if (reducedMotion) fadeIn(tween(0)) else fadeIn(tween(180)) + expandVertically(tween(220)),
+                exit = if (reducedMotion) fadeOut(tween(0)) else fadeOut(tween(150)) + shrinkVertically(tween(200))) {
                 val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                 Surface(modifier = Modifier.fillMaxWidth().heightIn(max = 176.dp).padding(horizontal = 16.dp, vertical = 6.dp),
                     shape = RoundedCornerShape(16.dp), color = if (dark) Color(0xFF16181E) else Color(0xFFF0F2F6)) {
@@ -239,6 +268,7 @@ fun PostShareCardDialog(
                 Button(onClick = { requestExport(false) }, enabled = !exporting && !previewLoading && previewError == null && (!includeContext || !contextLoading)) { Text("分享卡片图") }
             }
         }
+    }
     }
 }
 
