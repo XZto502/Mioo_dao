@@ -45,6 +45,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.local.HistoryType
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.components.HtmlContent
+import com.mioo.dao.ui.components.HtmlParseCache
+import com.mioo.dao.ui.components.LocalDicePreset
 import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReadingIdentity
 import com.mioo.dao.ui.components.ImageViewer
@@ -52,6 +54,8 @@ import com.mioo.dao.ui.components.ListThumbAsyncImage
 import com.mioo.dao.ui.components.formatReadingTimestamp
 import com.mioo.dao.ui.theme.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -63,7 +67,7 @@ fun HistoryScreen(
     modifier: Modifier = Modifier
 ) {
     val reducedMotion = isReducedMotionEnabled()
-    val types = HistoryType.values()
+    val types = remember { HistoryType.values() }
     val pager = rememberPagerState { types.size }
     val type = types[pager.targetPage]
     val query by viewModel.query(type).collectAsState()
@@ -119,7 +123,7 @@ fun HistoryScreen(
                                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
                             )
-                        ) else Text("历史", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                        ) else Text("历史", style = MaterialTheme.typography.titleMedium.copy(fontSize = MaterialTheme.typography.titleMedium.fontSize * 1.125f), fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     },
                     actions = {
@@ -155,6 +159,19 @@ fun HistoryScreen(
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
                     val records by viewModel.items(category).collectAsState()
+                    val quoteColor = MaterialTheme.colorScheme.primary
+                    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                    val dicePreset = LocalDicePreset.current
+                    val readyRecords by produceState(initialValue = emptyList<HistoryItem>(), records, quoteColor, dark, dicePreset) {
+                        if (category == HistoryType.BROWSE && records.isNotEmpty()) {
+                            // Parsing HTML in the first list composition can stall the
+                            // dock transition while it passes over this page.
+                            withContext(Dispatchers.Default) {
+                                HtmlParseCache.prewarm(records.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                            }
+                        }
+                        value = records
+                    }
                     val categoryQuery by viewModel.query(category).collectAsState()
                     // A fresh state also clears LazyColumn's remembered item key, so an
                     // updated/reordered history cannot restore the old reading position.
@@ -168,13 +185,13 @@ fun HistoryScreen(
                             Text(if (categoryQuery.isBlank()) "暂无${category.label}" else "没有匹配的记录",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    } else LazyColumn(
+                    } else if (readyRecords.isNotEmpty()) LazyColumn(
                         state = list, modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
                             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(records, key = { it.id }, contentType = { it.type }) { entry ->
+                        items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
                             HistoryCard(entry, onClick = { viewModel.open(entry, onNavigateToThread) },
                                 onLongClick = { deleteItem = entry }, onImageClick = { image = it })
                         }

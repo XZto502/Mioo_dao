@@ -49,10 +49,10 @@ fun MoreScreen(
     val cardBorder = if (dark) BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.08f)) else null
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = secondaryPageBackground(),
+        containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(title = { Text("更多", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1) },
+            TopAppBar(title = { Text("更多", style = MaterialTheme.typography.titleMedium.copy(fontSize = MaterialTheme.typography.titleMedium.fontSize * 1.125f), fontWeight = FontWeight.Bold, maxLines = 1) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DaoTheme.colors.glassTopBar))
         }
     ) { padding ->
