@@ -26,6 +26,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,13 +63,21 @@ fun HistoryScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val searchFocus = remember { FocusRequester() }
-    LaunchedEffect(searching) { if (searching) searchFocus.requestFocus() }
+    var searchFocusPending by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun closeSearch() {
+        searchFocusPending = false
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+        viewModel.setQuery(type, "")
+        searching = false
+    }
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(image) { onImageViewerOpenChange(image != null) }
     DisposableEffect(Unit) { onDispose { onImageViewerOpenChange(false) } }
     BackHandler(enabled = showSearch && image == null && clearType == null && deleteItem == null) {
-        viewModel.setQuery(type, "")
-        searching = false
+        closeSearch()
     }
 
     Box(modifier.fillMaxSize()) {
@@ -78,7 +89,15 @@ fun HistoryScreen(
                     title = {
                         if (showSearch) TextField(
                             value = query, onValueChange = { viewModel.setQuery(type, it) },
-                            modifier = Modifier.fillMaxWidth().focusRequester(searchFocus), singleLine = true,
+                            modifier = Modifier.fillMaxWidth().focusRequester(searchFocus)
+                                .onGloballyPositioned {
+                                    // Scaffold subcomposes its top bar during layout. Request
+                                    // focus only after this TextField and its target are attached.
+                                    if (searchFocusPending) {
+                                        searchFocusPending = false
+                                        searchFocus.requestFocus()
+                                    }
+                                }, singleLine = true,
                             placeholder = { Text("搜索${type.label}") },
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
@@ -88,8 +107,11 @@ fun HistoryScreen(
                     },
                     actions = {
                         IconButton(onClick = {
-                            if (showSearch) { viewModel.setQuery(type, ""); searching = false }
-                            else searching = true
+                            if (showSearch) closeSearch()
+                            else {
+                                searchFocusPending = true
+                                searching = true
+                            }
                         }) { Icon(if (showSearch) Icons.Default.Close else Icons.Default.Search, contentDescription = if (showSearch) "关闭搜索" else "搜索历史") }
                         IconButton(onClick = { clearType = type }) {
                             Icon(Icons.Outlined.DeleteSweep, contentDescription = "清空${type.label}")
