@@ -10,8 +10,8 @@ import com.mioo.dao.ui.theme.MiooMotion
 @OptIn(ExperimentalFoundationApi::class)
 internal suspend fun PagerState.animateHomeTabTo(page: Int) {
     if (pageCount == 0) return
+    val target = page.coerceIn(0, pageCount - 1)
     scroll {
-        val target = page.coerceIn(0, pageCount - 1)
         updateTargetPage(target)
         // Calculate inside the scroll mutation: a rapid second tap cancels the old
         // animation and continues from its actual fractional position.
@@ -19,6 +19,9 @@ internal suspend fun PagerState.animateHomeTabTo(page: Int) {
         val displacement = (target - currentPage - currentPageOffsetFraction) * stride
         animateHomeTabDistance(displacement)
     }
+    // Round off any residual offset after the spring; a newer tap cancels this
+    // coroutine before it can settle an obsolete target.
+    scrollToPage(target)
 }
 
 internal suspend fun ScrollScope.animateHomeTabDistance(displacement: Float) {

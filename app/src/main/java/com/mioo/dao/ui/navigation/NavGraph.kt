@@ -457,6 +457,9 @@ private fun MainTabs(
         // Neighbor stays composed so a two-page jump can slide across it.
         beyondBoundsPageCount = 1,
         userScrollEnabled = false,
+        // This pager is controlled only by the dock. The default nested-scroll
+        // connection still moves a partially animated pager when a child is dragged.
+        pageNestedScrollConnection = remember { object : NestedScrollConnection {} },
         key = { it }
     ) { page ->
         tabState.SaveableStateProvider(page) {
