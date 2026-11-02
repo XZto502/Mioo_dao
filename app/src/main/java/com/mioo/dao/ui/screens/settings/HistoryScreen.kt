@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.local.HistoryType
 import com.mioo.dao.data.model.effectiveTitle
-import com.mioo.dao.data.repository.historyPlainText
 import com.mioo.dao.ui.components.HtmlContent
 import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReadingIdentity
@@ -207,9 +206,7 @@ fun HistoryScreen(
 private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () -> Unit, onImageClick: (String) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val meta = readingMetaStyle()
-    val date = formatReadingTimestamp(item.timestamp).let {
-        if (item.type == HistoryType.NEW_THREAD) it.replace(Regex(":\\d{2}$"), "") else it
-    }
+    val date = formatReadingTimestamp(item.timestamp, includeSeconds = false)
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
@@ -223,7 +220,6 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
                 if (item.type == HistoryType.NEW_THREAD) { Spacer(Modifier.width(4.dp)); HistoryPill("PO") }
                 Spacer(Modifier.width(6.dp))
                 HistoryPill(item.forumName)
-                if (item.type == HistoryType.REPLY) { Spacer(Modifier.width(4.dp)); HistoryPill("我的回复") }
                 Text(" · $date", modifier = Modifier.weight(1f), style = meta.copy(fontWeight = FontWeight.Normal),
                     color = scheme.onSurfaceVariant.copy(alpha = 0.6f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.width(6.dp))
@@ -231,14 +227,6 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
                     color = if (item.threadId == null) scheme.primary else scheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(10.dp))
-            if (item.type == HistoryType.REPLY) {
-                val summary = remember(item.threadSummary) { historyPlainText(item.threadSummary).ifBlank { "主串 No.${item.threadId.orEmpty()}" } }
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(scheme.secondaryContainer.copy(alpha = 0.3f)).height(IntrinsicSize.Min)) {
-                    Box(Modifier.width(2.5.dp).fillMaxHeight().background(scheme.primary.copy(alpha = 0.45f)))
-                    Text(summary, Modifier.padding(10.dp), style = readingQuoteStyle(), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                Spacer(Modifier.height(10.dp))
-            }
             item.title.effectiveTitle()?.let { title ->
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = scheme.onSurface,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)

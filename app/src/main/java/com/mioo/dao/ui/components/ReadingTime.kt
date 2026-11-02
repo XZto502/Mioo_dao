@@ -26,13 +26,13 @@ internal fun formatReadingTime(raw: String, now: LocalDateTime = LocalDateTime.n
     return formatReadingDateTime(time, now)
 }
 
-internal fun formatReadingTimestamp(timestamp: Long, now: LocalDateTime = LocalDateTime.now(), zone: ZoneId = ZoneId.systemDefault()): String =
-    formatReadingDateTime(LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), zone), now)
+internal fun formatReadingTimestamp(timestamp: Long, now: LocalDateTime = LocalDateTime.now(), zone: ZoneId = ZoneId.systemDefault(), includeSeconds: Boolean = true): String =
+    formatReadingDateTime(LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), zone), now, includeSeconds)
 
-private fun formatReadingDateTime(time: LocalDateTime, now: LocalDateTime): String {
+private fun formatReadingDateTime(time: LocalDateTime, now: LocalDateTime, includeSeconds: Boolean = true): String {
     val age = Duration.between(time, now)
     // A small server/client clock skew must not hide seconds on a just-sent post.
-    val recent = age < Duration.ofDays(7)
+    val recent = includeSeconds && age < Duration.ofDays(7)
     val clock = if (recent) readingClockSeconds else readingClockMinutes
     return when (time.toLocalDate()) {
         now.toLocalDate() -> "今天 ${time.format(clock)}"

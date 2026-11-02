@@ -56,6 +56,14 @@ class QuietReadingTest {
         assertEquals("2026-10-30 09:27:60", formatReadingTime("2026-10-30 09:27:60", now))
     }
 
+    @Test fun historyMinutePrecisionPreservesMinutesForRecentAndOldRecords() {
+        val zone = java.time.ZoneId.of("Asia/Shanghai")
+        fun epoch(time: java.time.LocalDateTime) = time.atZone(zone).toInstant().toEpochMilli()
+        assertEquals("今天 09:27", formatReadingTimestamp(epoch(now.withHour(9).withMinute(27)), now, zone, includeSeconds = false))
+        assertEquals("10-01 16:03", formatReadingTimestamp(epoch(now.withDayOfMonth(1).withHour(16).withMinute(3)), now, zone, includeSeconds = false))
+        assertEquals("25-10-30 12:00", formatReadingTimestamp(epoch(now.minusYears(1)), now, zone, includeSeconds = false))
+    }
+
     @Test fun opticalSpacesAreThinAndIdempotent() {
         val result = withReadingOpticalSpacing("中文Android系统有3个API接口")
         assertEquals("中文\u2009Android\u2009系统有\u20093\u2009个\u2009API\u2009接口", result)
