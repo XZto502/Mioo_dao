@@ -206,7 +206,9 @@ fun ForumScreen(
     // User pull: fire refresh only when the VM is not already refreshing.
     LaunchedEffect(pullToRefreshState, pullToRefreshState.isRefreshing) {
         if (pullToRefreshState.isRefreshing && !uiState.isRefreshing) {
-            refreshFromTop()
+            // A pull can only trigger at the top; don't start another list scroll
+            // mutation while the release gesture is dispatching its fling.
+            viewModel.refresh()
         }
     }
     // Drive the pull indicator from VM state (one-way after user or toolbar starts refresh).

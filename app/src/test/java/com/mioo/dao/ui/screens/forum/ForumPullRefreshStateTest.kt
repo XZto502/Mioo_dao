@@ -48,6 +48,24 @@ class ForumPullRefreshStateTest {
         }
     }
 
+    @Test fun firstNewPullSurvivesAnOlderReturnBeingCancelled() {
+        val frames = PausedFrames()
+        runBlocking(frames) {
+            val state = ForumPullRefreshState(80f)
+            val scroll = state.nestedScrollConnection
+            scroll.onPostScroll(Offset.Zero, Offset(0f, 100f), NestedScrollSource.Drag)
+            val oldRelease = launch { scroll.onPreFling(Velocity.Zero) }
+            frames.animationStarted.await()
+            // The next gesture can arrive before the old release observes cancellation.
+            scroll.onPreScroll(Offset(0f, 200f), NestedScrollSource.Drag)
+            scroll.onPostScroll(Offset.Zero, Offset(0f, 200f), NestedScrollSource.Drag)
+            oldRelease.cancelAndJoin()
+            assertTrue(state.progress > 1f)
+            scroll.onPreFling(Velocity.Zero)
+            assertTrue(state.isRefreshing)
+        }
+    }
+
     @Test fun refreshCompletionClearsDragDistanceAndPassesOrdinaryFlings() = runBlocking(Frames()) {
         val state = ForumPullRefreshState(80f)
         val scroll = state.nestedScrollConnection

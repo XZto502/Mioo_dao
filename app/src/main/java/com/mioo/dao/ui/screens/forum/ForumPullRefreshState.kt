@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 @OptIn(ExperimentalMaterial3Api::class)
 internal class ForumPullRefreshState(override val positionalThreshold: Float) : PullToRefreshState {
     private var delegate by mutableStateOf(newState(false))
+    private var releasing: PullToRefreshState? = null
 
     private fun newState(refreshing: Boolean) = PullToRefreshState(
         positionalThresholdPx = positionalThreshold,
@@ -41,21 +42,41 @@ internal class ForumPullRefreshState(override val positionalThreshold: Float) : 
         delegate = newState(false)
     }
 
-    override var nestedScrollConnection: NestedScrollConnection = object : NestedScrollConnection {
-        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
-            delegate.nestedScrollConnection.onPreScroll(available, source)
+    private fun prepareForDrag(source: NestedScrollSource) {
+        val old = releasing
+        if (source == NestedScrollSource.Drag && old != null && delegate === old && !old.isRefreshing) {
+            // The previous release is still animating. Give the new gesture its
+            // own state before consuming any of its distance; its cancellation
+            // must not erase the new pull.
+            delegate = newState(false)
+        }
+    }
 
-        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-            delegate.nestedScrollConnection.onPostScroll(consumed, available, source)
+    override var nestedScrollConnection: NestedScrollConnection = object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            prepareForDrag(source)
+            return delegate.nestedScrollConnection.onPreScroll(available, source)
+        }
+
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+            prepareForDrag(source)
+            return delegate.nestedScrollConnection.onPostScroll(consumed, available, source)
+        }
 
         override suspend fun onPreFling(available: Velocity): Velocity {
             val releasedState = delegate
+            if (!releasedState.isRefreshing && releasedState.progress == 0f && releasedState.verticalOffset == 0f) {
+                return Velocity.Zero
+            }
+            releasing = releasedState
             return try {
                 releasedState.nestedScrollConnection.onPreFling(available)
             } catch (cancelled: CancellationException) {
                 // A toolbar refresh/board change may already have replaced this state.
                 if (delegate === releasedState) delegate = newState(releasedState.isRefreshing)
                 throw cancelled
+            } finally {
+                if (releasing === releasedState) releasing = null
             }
         }
     }
