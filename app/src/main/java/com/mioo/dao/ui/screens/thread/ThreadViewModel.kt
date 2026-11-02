@@ -539,9 +539,9 @@ class ThreadViewModel @Inject constructor(
                                     .filter { it in 1..totalPagesVal }
                                     .map { neighbor -> async {
                                         val result = if (_listState.value.showPoOnly) {
-                                            threadRepository.getPoDetail(threadId, neighbor).first()
+                                            threadRepository.getPoDetail(threadId, neighbor).last()
                                         } else {
-                                            threadRepository.getThreadDetail(threadId, neighbor).first()
+                                            threadRepository.getThreadDetail(threadId, neighbor).last()
                                         }
                                         neighbor to (result as? XdResponse.Success)?.data
                                     } }.awaitAll().forEach { (neighbor, data) ->
