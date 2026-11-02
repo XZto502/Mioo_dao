@@ -10,17 +10,32 @@ class QuietReadingTest {
     private val today = LocalDate.of(2026, 10, 30)
 
     @Test fun naturalTimesCoverAllDateBuckets() {
-        assertEquals("今天 09:03", formatReadingTime("2026-10-30(五)9:03:59", today))
-        assertEquals("昨天 16:03", formatReadingTime("2026-10-29(四)16:03", today))
-        assertEquals("01/12 16:03", formatReadingTime("2026-1-12 16:03", today))
-        assertEquals("25/10/29", formatReadingTime("2025-10-29(三)16:03", today))
+        assertEquals("今天 09:03:59", formatReadingTime("2026-10-30(五)9:03:59", today))
+        assertEquals("昨天 16:03:00", formatReadingTime("2026-10-29(四)16:03", today))
+        assertEquals("01/12 16:03:17", formatReadingTime("2026-1-12 16:03:17", today))
+        assertEquals("25-10-29 16:03:17", formatReadingTime("2025-10-29(三)16:03:17", today))
     }
 
     @Test fun yesterdayWorksAcrossYearBoundaryAndMalformedInputIsPreserved() {
-        assertEquals("昨天 23:59", formatReadingTime("2025-12-31(三)23:59", LocalDate.of(2026, 1, 1)))
+        assertEquals("昨天 23:59:00", formatReadingTime("2025-12-31(三)23:59", LocalDate.of(2026, 1, 1)))
         assertEquals("unknown", formatReadingTime("unknown", today))
         assertEquals("2026-99-99 12:00", formatReadingTime("2026-99-99 12:00", today))
         assertEquals("2026-02-30 12:00", formatReadingTime("2026-02-30 12:00", today))
+    }
+
+    @Test fun postConversionDoesNotDiscardServerSecondsBeforeFormatting() {
+        val raw = "2026-10-29(四)16:03:17"
+        assertEquals(raw, formatPostTime(" $raw "))
+        assertEquals(raw, com.mioo.dao.data.model.Thread(id = 123, now = raw).toPostData().createdAt)
+        assertEquals(raw, com.mioo.dao.data.model.Reply(id = 124, now = raw, userHash = "cookie", content = "reply").toPostData(false).createdAt)
+    }
+
+    @Test fun historyEpochAndServerStringUseTheSameSecondPrecision() {
+        val zone = java.time.ZoneId.of("Asia/Shanghai")
+        val time = java.time.LocalDateTime.of(2026, 10, 30, 9, 27, 15)
+        assertEquals("今天 09:27:15", formatReadingTimestamp(time.atZone(zone).toInstant().toEpochMilli(), today, zone))
+        assertEquals("今天 09:27:15", formatReadingTime("2026-10-30（五）09:27:15", today))
+        assertEquals("2026-10-30 09:27:60", formatReadingTime("2026-10-30 09:27:60", today))
     }
 
     @Test fun opticalSpacesAreThinAndIdempotent() {

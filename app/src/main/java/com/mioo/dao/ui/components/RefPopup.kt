@@ -41,11 +41,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.readingMetaStyle
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.immersiveDialogProperties
@@ -252,12 +254,14 @@ fun RefPopup(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.weight(1f))
+                            Spacer(modifier = Modifier.width(8.dp))
 
                             // Timestamp
                             Text(
-                                text = remember(postData.createdAt) { formatPostTime(postData.createdAt) },
-                                style = MaterialTheme.typography.bodySmall,
+                                text = formatReadingTime(postData.createdAt),
+                                style = readingMetaStyle(),
+                                modifier = Modifier.weight(1f), textAlign = TextAlign.End,
+                                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         }

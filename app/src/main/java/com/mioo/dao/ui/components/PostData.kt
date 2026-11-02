@@ -39,15 +39,8 @@ data class ReplyDisplayItem(
     val rawContent: String
 )
 
-private val TIME_SECONDS_REGEX = Regex("(\\d{1,2}:\\d{2}):\\d{2}$")
-
-/**
- * 将发串/回复时间精确到分钟，去除末尾秒数（如 2026-10-27(二)22:42:37 → 2026-10-27(二)22:42）。
- */
-fun formatPostTime(raw: String): String {
-    if (raw.isBlank()) return raw
-    return raw.trim().replace(TIME_SECONDS_REGEX, "$1")
-}
+/** Preserve the server's complete clock, including seconds, throughout display/export. */
+fun formatPostTime(raw: String): String = raw.trim()
 
 /**
  * Convert a Thread data model to a display-ready PostData.

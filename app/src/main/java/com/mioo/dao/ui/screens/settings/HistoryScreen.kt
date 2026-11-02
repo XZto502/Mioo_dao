@@ -36,11 +36,9 @@ import com.mioo.dao.data.repository.historyPlainText
 import com.mioo.dao.ui.components.HtmlContent
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbAsyncImage
+import com.mioo.dao.ui.components.formatReadingTimestamp
 import com.mioo.dao.ui.theme.*
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -176,7 +174,7 @@ fun HistoryScreen(
 private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () -> Unit, onImageClick: (String) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val meta = readingMetaStyle()
-    val date = remember(item.timestamp) { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.timestamp)) }
+    val date = formatReadingTimestamp(item.timestamp)
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
@@ -192,9 +190,9 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
                         if (item.type == HistoryType.NEW_THREAD) HistoryPill("[PO]")
                     }
                     Text(if (item.type == HistoryType.REPLY) "$date · ${item.forumName}" else date,
-                        style = meta, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        style = meta, color = scheme.onSurfaceVariant, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 }
-                Text(item.threadId?.let { "No.$it" } ?: "串号确认中", style = meta,
+                Text(item.threadId?.let { "No.$it" } ?: "串号确认中", style = meta, maxLines = 1, softWrap = false,
                     color = if (item.threadId == null) scheme.primary else scheme.onSurfaceVariant)
             }
             if (item.type == HistoryType.NEW_THREAD) {

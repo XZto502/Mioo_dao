@@ -87,26 +87,29 @@ fun PostShareCardContent(
                                 Spacer(Modifier.height(14.dp)); ShareDivider(); Spacer(Modifier.height(14.dp))
                             }
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.height(22.dp)
-                                    .background(if (dark) Color(0xFF23262F) else Color(0xFFEFF1F5), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
-                                    Text(if (hideCookie) "匿名岛民" else post.userId,
-                                        style = shareMeta(11.5f).copy(fontWeight = FontWeight.Medium),
-                                        maxLines = 1, softWrap = false)
-                                }
-                                if (post.isPo) {
-                                    Spacer(Modifier.width(4.dp))
-                                    Box(Modifier.height(22.dp).background(palette.secondaryContainer, RoundedCornerShape(6.dp))
-                                        .padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
-                                        Text("PO", fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
-                                            color = palette.onSecondaryContainer, maxLines = 1)
+                                // Reserve the unweighted right-hand ID before measuring this flexible group.
+                                Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.weight(1f, fill = false).height(22.dp)
+                                        .background(if (dark) Color(0xFF23262F) else Color(0xFFEFF1F5), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
+                                        Text(if (hideCookie) "匿名岛民" else post.userId,
+                                            style = shareMeta(11.5f).copy(fontWeight = FontWeight.Medium),
+                                            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                                     }
+                                    if (post.isPo) {
+                                        Spacer(Modifier.width(4.dp))
+                                        Box(Modifier.height(22.dp).background(palette.secondaryContainer, RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
+                                            Text("PO", fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
+                                                color = palette.onSecondaryContainer, maxLines = 1)
+                                        }
+                                    }
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(formatReadingTime(post.createdAt), style = shareMeta(11.5f),
+                                        softWrap = false,
+                                        color = palette.onSurfaceVariant.copy(alpha = 0.55f), maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
                                 }
-                                Spacer(Modifier.width(6.dp))
-                                Text(formatReadingTime(post.createdAt), style = shareMeta(11.5f),
-                                    color = palette.onSurfaceVariant.copy(alpha = 0.55f), maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.weight(1f))
                                 Text("#${post.id}", style = shareMeta(11.5f), maxLines = 1, softWrap = false,
                                     color = palette.onSurfaceVariant.copy(alpha = 0.55f))
                             }

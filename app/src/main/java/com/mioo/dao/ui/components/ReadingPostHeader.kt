@@ -28,7 +28,7 @@ internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
                 post.isAdmin -> DaoTheme.colors.admin
                 post.isPo -> colors.onSurface
                 else -> colors.onSurfaceVariant.copy(alpha = 0.82f)
-            }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            }, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false))
         if (post.isPo) ReadingRoleBadge("PO")
         if (post.isAdmin) ReadingRoleBadge("ADMIN")
@@ -52,7 +52,7 @@ internal fun ReadingPostHeader(post: PostData) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             ReadingIdentity(post, Modifier.weight(1f, fill = false))
-            Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle(),
+            Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
                 color = colors.onSurfaceVariant.copy(alpha = 0.52f),
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         }
