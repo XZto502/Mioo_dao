@@ -141,7 +141,7 @@ fun MoreScreen(
                         Surface(onClick = {
                             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/XZto502/Mioo_dao"))) }
                         }, shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)) {
-                            Text("GitHub · XZto502/Mioo_dao ↗", Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            Text("GitHub · XZto502/Mioo_dao", Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
                                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                         }
