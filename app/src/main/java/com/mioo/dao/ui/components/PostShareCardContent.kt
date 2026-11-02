@@ -65,8 +65,8 @@ fun PostShareCardContent(
     }
     MaterialTheme(colorScheme = palette) {
         CompositionLocalProvider(LocalDicePreset provides dicePreset, LocalDiceRuleMenu provides {}) {
-            // At export density 3, 64px margins/padding and a 56px corner radius.
-            Column(modifier.background(palette.background).padding((64f / 3f).dp)) {
+            // Keep only the card; the rounded corners remain transparent in the PNG.
+            Column(modifier) {
                 Surface(shape = RoundedCornerShape((56f / 3f).dp), color = palette.surface) {
                     Column(Modifier.fillMaxWidth().padding((64f / 3f).dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

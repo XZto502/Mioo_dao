@@ -46,6 +46,8 @@ import com.mioo.dao.data.local.HistoryType
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.data.repository.historyPlainText
 import com.mioo.dao.ui.components.HtmlContent
+import com.mioo.dao.ui.components.PostData
+import com.mioo.dao.ui.components.ReadingIdentity
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbAsyncImage
 import com.mioo.dao.ui.components.formatReadingTimestamp
@@ -205,7 +207,9 @@ fun HistoryScreen(
 private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () -> Unit, onImageClick: (String) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val meta = readingMetaStyle()
-    val date = formatReadingTimestamp(item.timestamp)
+    val date = formatReadingTimestamp(item.timestamp).let {
+        if (item.type == HistoryType.NEW_THREAD) it.replace(Regex(":\\d{2}$"), "") else it
+    }
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
@@ -213,11 +217,12 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                HistoryPill(item.forumName)
+                ReadingIdentity(PostData(id = item.threadId.orEmpty(), userId = item.cookieHash.ifBlank { "未记录饼干" },
+                    createdAt = "", content = "", isPo = item.type != HistoryType.REPLY,
+                    isAdmin = item.cookieHash.equals("Admin", ignoreCase = true)))
                 Spacer(Modifier.width(6.dp))
-                HistoryPill(item.cookieHash.ifBlank { "未记录饼干" }, secondary = true)
+                HistoryPill(item.forumName)
                 if (item.type == HistoryType.REPLY) { Spacer(Modifier.width(4.dp)); HistoryPill("我的回复") }
-                if (item.type == HistoryType.NEW_THREAD) { Spacer(Modifier.width(4.dp)); HistoryPill("[PO]") }
                 Text(" · $date", modifier = Modifier.weight(1f), style = meta.copy(fontWeight = FontWeight.Normal),
                     color = scheme.onSurfaceVariant.copy(alpha = 0.6f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.width(6.dp))
@@ -234,12 +239,11 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
                 Spacer(Modifier.height(10.dp))
             }
             item.title.effectiveTitle()?.let { title ->
-                Text(title, fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold, color = scheme.onSurface,
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = scheme.onSurface,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(6.dp))
             }
-            val bodyStyle = readingTextStyle(14.5f, 22f, FontWeight.Normal).copy(
-                color = if (scheme.background.luminance() < 0.5f) Color(0xFFDDE1E6) else Color(0xFF2B2F36))
+            val bodyStyle = readingBodyStyle()
             if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = bodyStyle,
                 maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false)
             else Text(item.content, style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
