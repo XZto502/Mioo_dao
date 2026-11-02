@@ -13,6 +13,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.Image
@@ -38,6 +46,7 @@ import com.mioo.dao.utils.PostShareCardExporter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostShareCardDialog(
     initialPostId: String, posts: List<PostData>, threadId: String, title: String,
@@ -139,28 +148,55 @@ fun PostShareCardDialog(
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("生成分享卡片", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { showSelection = !showSelection }, enabled = !exporting) {
-                    Text("选楼 ${selectedPosts.size}/8")
+                val arrowRotation by animateFloatAsState(if (showSelection) 180f else 0f, label = "floorPickerArrow")
+                Surface(onClick = { showSelection = !showSelection }, enabled = !exporting,
+                    shape = CircleShape, color = if (showSelection) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+                    Row(Modifier.padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("选楼 ${selectedPosts.size}/8", fontSize = 12.5.sp, fontWeight = FontWeight.Medium,
+                            maxLines = 1, softWrap = false)
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null,
+                            modifier = Modifier.size(18.dp).rotate(arrowRotation))
+                    }
                 }
                 IconButton(onClick = onDismiss, enabled = !exporting) { Icon(Icons.Default.Close, "关闭") }
             }
-                if (showSelection) Column(Modifier.fillMaxWidth().heightIn(max = 240.dp)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
-                    posts.forEach { post ->
+            if (showSelection) {
+                val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                Surface(modifier = Modifier.fillMaxWidth().heightIn(max = 176.dp).padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(16.dp), color = if (dark) Color(0xFF16181E) else Color(0xFFF0F2F6)) {
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(4.dp)) {
+                        posts.forEach { post ->
                             val checked = post.id in selectedIds
                             val enabled = !exporting && (checked && selectedIds.size > 1 || !checked && selectedIds.size < 8)
-                            fun toggle() { selectedIds = if (checked) selectedIds - post.id else selectedIds + post.id }
-                            Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { toggle() },
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = checked, onCheckedChange = { toggle() }, enabled = enabled)
-                                val summary = remember(post.content) {
-                                    post.content.replace(Regex("<[^>]*>"), " ").decodeHtmlEntities().replace(Regex("\\s+"), " ").take(20)
+                            val summary = remember(post.content) {
+                                post.content.replace(Regex("<[^>]*>"), " ").decodeHtmlEntities().replace(Regex("\\s+"), " ").trim()
+                            }
+                            Surface(onClick = { selectedIds = if (checked) selectedIds - post.id else selectedIds + post.id },
+                                enabled = enabled, shape = RoundedCornerShape(10.dp),
+                                color = if (checked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text("#${post.id} · ${if (hideCookie) "匿名岛民" else post.userId}",
+                                        fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+                                        color = if (checked) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
+                                        maxLines = 1, softWrap = false)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(summary, modifier = Modifier.weight(1f), fontSize = 13.sp,
+                                        fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(if (checked) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                                        contentDescription = if (checked) "已选" else "未选",
+                                        tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                        modifier = Modifier.size(16.dp))
                                 }
-                                Text("#${post.id} · ${if (hideCookie) "匿名岛民" else post.userId}: $summary",
-                                    style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                    }
                 }
+            }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 preview?.let { bitmap ->
                     Image(bitmap.asImageBitmap(), "分享卡片预览", contentScale = ContentScale.FillWidth,

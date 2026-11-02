@@ -56,9 +56,11 @@ fun PostShareCardContent(
     val appColors = MaterialTheme.colorScheme
     val palette = when (cardTheme) {
         ShareCardTheme.PAPER -> lightColorScheme(surface = Color(0xFFFAF9F6),
-            background = Color(0xFFE6E9EF), onSurface = Color(0xFF22262C))
+            background = Color(0xFFE6E9EF), onSurface = Color(0xFF22262C),
+            secondaryContainer = appColors.secondaryContainer, onSecondaryContainer = appColors.onSecondaryContainer)
         ShareCardTheme.NIGHT -> darkColorScheme(surface = Color(0xFF181A20),
-            background = Color(0xFF0D0F14), onSurface = Color(0xFFE3E6EA))
+            background = Color(0xFF0D0F14), onSurface = Color(0xFFE3E6EA),
+            secondaryContainer = appColors.secondaryContainer, onSecondaryContainer = appColors.onSecondaryContainer)
         ShareCardTheme.APP -> appColors
     }
     MaterialTheme(colorScheme = palette) {
@@ -180,11 +182,11 @@ fun PostShareCardContent(
 }
 
 @Composable private fun ShareTag(text: String, size: Float) {
-    val primary = MaterialTheme.colorScheme.primary
-    Box(Modifier.height(22.dp).background(primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+    val scheme = MaterialTheme.colorScheme
+    Box(Modifier.height(22.dp).background(scheme.secondaryContainer, RoundedCornerShape(6.dp))
         .padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
         Text(text, fontSize = size.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-            overflow = TextOverflow.Ellipsis, color = primary)
+            overflow = TextOverflow.Ellipsis, color = scheme.onSecondaryContainer)
     }
 }
 
