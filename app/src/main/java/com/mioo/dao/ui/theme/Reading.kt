@@ -36,6 +36,11 @@ fun readingMetaStyle() = readingTextStyle(11.5f, 16f).copy(fontFeatureSettings =
 fun readingBackground(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
     MaterialTheme.colorScheme.background else Color(0xFFF0F1F4)
 
+/** Opaque backing for the entire reply composer, including the navigation/IME slot. */
+@Composable
+fun readingComposerColor(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
+    Color(0xFF0E1015) else Color(0xFFF0F1F4)
+
 @Composable
 fun readingCardColor(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
     DaoTheme.colors.replyCardBg.copy(alpha = 1f) else Color(0xFFFAFAFC)

@@ -28,8 +28,7 @@ internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
                 post.isAdmin -> DaoTheme.colors.admin
                 post.isPo -> colors.onSurface
                 else -> colors.onSurfaceVariant.copy(alpha = 0.82f)
-            }, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false))
+            }, maxLines = 1, softWrap = false)
         if (post.isPo) ReadingRoleBadge("PO")
         if (post.isAdmin) ReadingRoleBadge("ADMIN")
         if (post.isSage) ReadingRoleBadge("SAGE")
@@ -43,18 +42,21 @@ private fun ReadingRoleBadge(label: String) {
         maxLines = 1, softWrap = false,
         modifier = Modifier.padding(start = 4.dp)
             .background(primary.copy(alpha = 0.12f), RoundedCornerShape(5.dp))
-            .padding(horizontal = 4.dp, vertical = 1.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp))
 }
 
 @Composable
 internal fun ReadingPostHeader(post: PostData) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // Both identity and number are measured at natural width. Only the clock
+        // region may shrink; a long date must never turn an Admin ID into "A…".
+        ReadingIdentity(post)
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ReadingIdentity(post, Modifier.weight(1f, fill = false))
             Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
                 color = colors.onSurfaceVariant.copy(alpha = 0.52f),
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.weight(1f))
         }
         Text("No.${post.id}", style = readingMetaStyle(),
             color = colors.onSurfaceVariant.copy(alpha = 0.42f),

@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.luminance
@@ -156,6 +157,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import com.mioo.dao.ui.theme.readingTextStyle
 import com.mioo.dao.ui.theme.readingBackground
+import com.mioo.dao.ui.theme.readingComposerColor
 import com.mioo.dao.ui.theme.readingTopBarColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -581,15 +583,21 @@ fun ThreadScreen(
             )
         },
         bottomBar = {
-            // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
-            ReplyInputBar(
-                viewModel = viewModel,
-                cookies = threadSettings.cookiesList,
-                selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
-                    ?.takeIf { it < threadSettings.cookiesList.size }
-                    ?: threadSettings.selectedCookieIndex,
-                onCookieSelect = { viewModel.selectThreadCookie(it) }
-            )
+            val composerColor = readingComposerColor()
+            Column {
+                // Feather only the seam above the solid composer, never the input/tools.
+                Box(Modifier.fillMaxWidth().height(10.dp).background(
+                    Brush.verticalGradient(listOf(composerColor.copy(alpha = 0f), composerColor))))
+                // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
+                ReplyInputBar(
+                    viewModel = viewModel,
+                    cookies = threadSettings.cookiesList,
+                    selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
+                        ?.takeIf { it < threadSettings.cookiesList.size }
+                        ?: threadSettings.selectedCookieIndex,
+                    onCookieSelect = { viewModel.selectThreadCookie(it) }
+                )
+            }
         },
         modifier = modifier,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -678,8 +686,8 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
-                // Draw the list behind the translucent composer; end padding still lets the
-                // final post scroll fully above it without clipping away the glass backdrop.
+                // The bottom padding includes both the solid composer and its 10dp
+                // feather so the last floor can scroll fully into the readable region.
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().nestedScroll(edgePaging),

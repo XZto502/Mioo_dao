@@ -67,7 +67,7 @@ import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.toFile
-import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.readingComposerColor
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 
@@ -201,11 +201,11 @@ fun ReplyInputArea(
         }
     }
 
-    // 毛玻璃贴屏幕物理底边，由内容下方的共享槽位把控件顶起来：
+    // 实心底座贴屏幕物理底边，由内容下方的共享槽位把控件顶起来：
     // 无键盘无面板时槽位 = 导航条高度（与现在贴导航条一致）；
-    // 键盘/面板谁高用谁，玻璃始终铺到屏幕底无断层。
+    // 键盘/面板谁高用谁，背景始终不透明地铺到屏幕底。
     Surface(
-        color = DaoTheme.colors.glassNavBar,
+        color = readingComposerColor(),
         tonalElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -396,7 +396,7 @@ fun ReplyInputArea(
 
             // 【共享底部槽位】max(键盘, 面板)，绝不相加。面板开时直接填充槽位
             // （无收起动画，高度变化完全由槽位驱动 = 单一动画源，杜绝 ime+面板叠加过冲）。
-            // 毛玻璃铺底直达屏幕底，面板内容 navigationBarsPadding 防撞小白条。
+            // 实心背景铺底直达屏幕底，面板内容 navigationBarsPadding 防撞小白条。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
