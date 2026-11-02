@@ -66,6 +66,8 @@ import com.mioo.dao.data.local.OfflineThreadSummary
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.screens.settings.secondaryPageBackground
+import com.mioo.dao.ui.screens.settings.secondaryCardBackground
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -160,8 +162,8 @@ fun OfflineThreadsScreen(
                     Column {
                         Text(
                             text = "已离线串",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                         if (totalCount > 0) {
                             Text(
@@ -195,7 +197,7 @@ fun OfflineThreadsScreen(
                 )
             )
         },
-        containerColor = Color.Transparent,
+        containerColor = secondaryPageBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { paddingValues ->
@@ -297,15 +299,14 @@ fun OfflineThreadCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+    val isAdmin = summary.poUserHash.equals("Admin", ignoreCase = true)
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.small,
-        colors = CardDefaults.cardColors(containerColor = DaoTheme.colors.threadCardBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, outline)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = secondaryCardBackground()),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // 头行：PO 饼干 + 板块名 …… 串号
@@ -313,19 +314,20 @@ fun OfflineThreadCard(
                 Text(
                     text = summary.poUserHash.ifBlank { "???" },
                     style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 11.5.sp
                     ),
-                    color = DaoTheme.colors.po,
+                    color = if (isAdmin) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier
-                        .background(DaoTheme.colors.po.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                        .background(if (isAdmin) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = summary.forumName,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

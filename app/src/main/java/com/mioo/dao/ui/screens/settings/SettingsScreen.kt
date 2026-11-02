@@ -24,6 +24,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
@@ -103,11 +110,11 @@ fun SettingsScreen(
 ) {
     val settings by viewModel.settingsState.collectAsState()
     var authMenuExpanded by remember { mutableStateOf(false) }
-    
+
     var showAddFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
     var newFolderUuid by remember { mutableStateOf("") }
-    
+
     val context = LocalContext.current
 
     val scanLauncher = rememberLauncherForActivityResult(
@@ -197,7 +204,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("应用设置", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+                title = { Text("应用设置", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(
@@ -212,7 +219,7 @@ fun SettingsScreen(
             )
         },
         modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
+        containerColor = secondaryPageBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Column(
@@ -221,33 +228,34 @@ fun SettingsScreen(
                 .padding(paddingValues)
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
+        Text("饼干与屏蔽管理", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 1. Cookie Configuration (饼干设置)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Cookie, contentDescription = "饼干设置")
+                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "饼干设置")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "发言饼干管理 (User Hash)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "在此添加并选择您发帖和回复时使用的发言饼干 (userhash)。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
@@ -280,9 +288,9 @@ fun SettingsScreen(
                         Text("相册选图扫码")
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 // List of speaking cookies
                 if (settings.cookiesList.isEmpty()) {
                     Text(
@@ -349,6 +357,8 @@ fun SettingsScreen(
                                 )
                             }
                             OutlinedTextField(
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
+                                shape = RoundedCornerShape(16.dp),
                                 value = note,
                                 onValueChange = { viewModel.setCookieNote(cookie, it) },
                                 modifier = Modifier
@@ -362,16 +372,16 @@ fun SettingsScreen(
                     }
                 }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+
                 // 2. Auth Cookie (鉴权饼干)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Cookie, contentDescription = "鉴权饼干")
+                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "鉴权饼干")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "高级：鉴权饼干 (Auth)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -392,6 +402,7 @@ fun SettingsScreen(
                     }
 
                     OutlinedTextField(
+                        shape = RoundedCornerShape(16.dp),
                         value = authDisplayName,
                         onValueChange = {},
                         label = { Text("当前鉴权饼干") },
@@ -400,7 +411,8 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth().clickable { authMenuExpanded = true },
                         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledBorderColor = Color.Transparent,
+                            disabledContainerColor = secondaryCardBackground(),
                             disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         trailingIcon = {
@@ -444,29 +456,30 @@ fun SettingsScreen(
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
 
+        Text("数据备份与缓存", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 备份与恢复
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Backup, contentDescription = "备份与恢复")
+                    SettingsHeaderIcon(Icons.Default.Backup, contentDescription = "备份与恢复")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "备份与恢复",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "自选内容导出为一个 JSON 文件，可在此设备或另一台设备恢复；旧版纯饼干备份文件也可恢复",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -486,25 +499,25 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // 草稿箱开关
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Save, contentDescription = "草稿箱")
+                    SettingsHeaderIcon(Icons.Default.Save, contentDescription = "草稿箱")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "草稿箱",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "关闭后，回复不再自动保存，发串界面不再提供保存草稿功能",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -529,7 +542,7 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Card(Modifier.fillMaxWidth()) {
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("分享卡片显示品牌水印", style = MaterialTheme.typography.titleSmall)
@@ -543,16 +556,18 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(16.dp))
 
+        Text("外观与主题", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
         // 3. Dark Mode Toggle (显示模式)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DarkMode, contentDescription = "显示模式")
+                    SettingsHeaderIcon(Icons.Default.DarkMode, contentDescription = "显示模式")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "显示模式", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(text = "显示模式", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 // 系统实时深色状态 + 当前生效的深色状态（点击回调里不能调 Composable，提前算好）
@@ -601,19 +616,20 @@ fun SettingsScreen(
             }
         }
 
+        SettingsGroupDivider()
         // 4. Theme Color Selection (主题颜色)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
+                    SettingsHeaderIcon(
                         imageVector = Icons.Default.Palette,
                         contentDescription = "主题颜色"
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "主题色选择", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(text = "主题色选择", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -635,7 +651,7 @@ fun SettingsScreen(
                     emptyList()
                 }
 
-                
+
                 colors.forEach { (colorKey, colorLabel) ->
                     Row(
                         modifier = Modifier
@@ -658,29 +674,30 @@ fun SettingsScreen(
             }
         }
 
+        SettingsGroupDivider()
         // 5. Glass effect (毛玻璃特效)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
+                    SettingsHeaderIcon(
                         imageVector = Icons.Default.BlurOn,
                         contentDescription = "毛玻璃特效"
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "毛玻璃特效",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。完整模糊效果需 Android 12+，更低版本会自动使用约 95% 不透明底色。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -704,26 +721,28 @@ fun SettingsScreen(
             }
         }
 
+        }
+
         // 骰点高亮（跑团/安科）
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Casino, contentDescription = "骰点高亮")
+                    SettingsHeaderIcon(Icons.Default.Casino, contentDescription = "骰点高亮")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "骰点高亮（跑团/安科）",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -747,25 +766,27 @@ fun SettingsScreen(
             }
         }
 
+        Text("阅读与排版", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
         // 6. Font Size Configuration (字体大小)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FormatSize, contentDescription = "字体大小")
+                    SettingsHeaderIcon(Icons.Default.FormatSize, contentDescription = "字体大小")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "字体大小", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(text = "字体大小", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "滑动缩放以调整帖子和回复的内容文本字号大小。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                
+
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -779,7 +800,7 @@ fun SettingsScreen(
                     )
                     Text(text = "最大", style = MaterialTheme.typography.bodySmall)
                 }
-                
+
                 Slider(
                     value = settings.fontSizeScale,
                     onValueChange = { viewModel.updateFontSize(it) },
@@ -795,26 +816,27 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
 
+
+        SettingsGroupDivider()
         // 行间距
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FormatLineSpacing, contentDescription = "行间距")
+                    SettingsHeaderIcon(Icons.Default.FormatLineSpacing, contentDescription = "行间距")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "行间距", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(text = "行间距", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "滑动调整行与行之间的距离，与字体大小独立生效，全应用即时应用。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -845,18 +867,19 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
 
+
+        SettingsGroupDivider()
         // 自定义字体
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FontDownload, contentDescription = "自定义字体")
+                    SettingsHeaderIcon(Icons.Default.FontDownload, contentDescription = "自定义字体")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "自定义字体", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(text = "自定义字体", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
         Text(
@@ -916,7 +939,7 @@ fun SettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(text = "中文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
@@ -966,28 +989,29 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
 
+
+        SettingsGroupDivider()
         // 引用自动显示开关
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FormatQuote, contentDescription = "引用自动显示")
+                    SettingsHeaderIcon(Icons.Default.FormatQuote, contentDescription = "引用自动显示")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "引用自动显示",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -1011,16 +1035,16 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
 
-        Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("网络兼容模式", style = MaterialTheme.typography.titleMedium,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 Spacer(Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1033,28 +1057,30 @@ fun SettingsScreen(
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
+
+
+        }
 
         // 省流量模式开关
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudOff, contentDescription = "省流量模式")
+                    SettingsHeaderIcon(Icons.Default.CloudOff, contentDescription = "省流量模式")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "省流量模式",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -1081,21 +1107,21 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // 7. Block Management (屏蔽管理)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
+                    SettingsHeaderIcon(
                         imageVector = Icons.Default.Block,
                         contentDescription = "屏蔽管理"
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "屏蔽管理",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1134,7 +1160,7 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                     }
                 }
 
@@ -1174,7 +1200,7 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                     }
                 }
 
@@ -1187,24 +1213,24 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                
+
                 var newKeyword by remember { mutableStateOf("") }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
+                        shape = RoundedCornerShape(16.dp),
                         value = newKeyword,
                         onValueChange = { newKeyword = it },
                         placeholder = { Text("输入要屏蔽的关键字...", style = MaterialTheme.typography.bodyMedium) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
+                            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = secondaryCardBackground(),
+                            unfocusedContainerColor = secondaryCardBackground()
                         )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1223,9 +1249,9 @@ fun SettingsScreen(
                         )
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 if (settings.blockedKeywords.isEmpty()) {
                     Text(
                         text = "暂无屏蔽的关键字",
@@ -1254,25 +1280,25 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                     }
                 }
             }
         }
 
         // 3. Multiple Feed Folders (多云端收藏夹)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(androidx.compose.material.icons.Icons.Default.Save, contentDescription = "云端收藏夹")
+                    SettingsHeaderIcon(androidx.compose.material.icons.Icons.Default.Save, contentDescription = "云端收藏夹")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "云端收藏夹",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     IconButton(onClick = { showAddFolderDialog = true }) {
@@ -1282,8 +1308,8 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "添加额外的收藏夹UUID，可在收藏界面作为卡片独立浏览。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -1302,7 +1328,7 @@ fun SettingsScreen(
                             Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
                         }
                     }
-                    androidx.compose.material3.HorizontalDivider()
+                    androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 }
             }
         }
@@ -1320,26 +1346,26 @@ fun SettingsScreen(
             }
         }
 
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = "订阅通知")
+                    SettingsHeaderIcon(Icons.Default.Info, contentDescription = "订阅通知")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "X岛订阅新回复通知",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "后台定期向 X岛 官方接口查询：云端订阅夹（feed UUID）与本地收藏串是否有新回复，有更新则发系统通知。\n" +
                         "说明：岛方未对第三方开放实时推送通道，蓝岛等客户端也是本地轮询同一套订阅数据，并非互相收对方 App 的推送。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -1397,25 +1423,25 @@ fun SettingsScreen(
         val isPreloading by viewModel.isPreloadingState.collectAsState()
         val preloadProgress by viewModel.preloadProgressState.collectAsState()
 
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Save, contentDescription = "离线缓存")
+                    SettingsHeaderIcon(Icons.Default.Save, contentDescription = "离线缓存")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "离线阅读与智能预加载",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后会在网络连接可用时预先下载帖子，方便您在无网环境下进行阅读。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -1493,8 +1519,8 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "只限制图片磁盘缓存，默认 1024 MB。超出后自动删掉最久没看的图片，松手后立即生效。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Slider(
                     value = cacheLimitDraft,
@@ -1520,7 +1546,7 @@ fun SettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Smart Preload Mode
@@ -1530,7 +1556,7 @@ fun SettingsScreen(
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1573,7 +1599,7 @@ fun SettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Preload Bookmarks — 正式版屏蔽批量缓存，避免对岛服务器造成过大负担
@@ -1629,6 +1655,8 @@ fun SettingsScreen(
             text = {
                 Column {
                     OutlinedTextField(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
                         value = newFolderName,
                         onValueChange = { newFolderName = it },
                         label = { Text("收藏夹名称") },
@@ -1637,6 +1665,8 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
                         value = newFolderUuid,
                         onValueChange = { newFolderUuid = it },
                         label = { Text("订阅 UUID") },
@@ -1822,4 +1852,34 @@ private fun decodeQrFromUri(context: Context, uri: Uri): String? {
     } finally {
         bitmap.recycle()
     }
+}
+
+
+@Composable
+internal fun secondaryPageBackground(): Color {
+    val bg = MaterialTheme.colorScheme.background
+    return when { bg == Color.Black -> Color.Black; bg.luminance() < 0.5f -> Color(0xFF0E1015); else -> Color(0xFFF0F1F4) }
+}
+
+@Composable
+internal fun secondaryCardBackground(): Color {
+    val bg = MaterialTheme.colorScheme.background
+    return when { bg == Color.Black -> Color(0xFF121318); bg.luminance() < 0.5f -> Color(0xFF16181E); else -> Color.White }
+}
+
+@Composable
+private fun SettingsGroupCard(modifier: Modifier = Modifier, elevation: androidx.compose.material3.CardElevation = CardDefaults.cardElevation(0.dp), content: @Composable ColumnScope.() -> Unit) {
+    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground()), elevation = elevation, content = content)
+}
+
+@Composable
+private fun SettingsHeaderIcon(imageVector: ImageVector, contentDescription: String?) {
+    Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+        Icon(imageVector, contentDescription, modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
+private fun SettingsGroupDivider() {
+    HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
 }

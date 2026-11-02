@@ -33,6 +33,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
+import com.mioo.dao.ui.screens.settings.secondaryPageBackground
+import com.mioo.dao.ui.screens.settings.secondaryCardBackground
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -77,7 +82,7 @@ fun SearchScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("搜索") },
+                title = { Text("搜索", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -89,7 +94,7 @@ fun SearchScreen(
             )
         },
         modifier = modifier,
-        containerColor = Color.Transparent,
+        containerColor = secondaryPageBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
         Column(
@@ -100,6 +105,8 @@ fun SearchScreen(
                 .padding(horizontal = 12.dp)
         ) {
             OutlinedTextField(
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
                 value = uiState.query,
                 onValueChange = viewModel::onQueryChange,
                 modifier = Modifier.fillMaxWidth(),
@@ -170,8 +177,10 @@ fun SearchScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onNavigateToThread(tid) },
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = CardDefaults.cardElevation(0.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                                containerColor = secondaryCardBackground()
                             )
                         ) {
                             Row(
@@ -210,8 +219,10 @@ fun SearchScreen(
                                 .clickable(enabled = uiState.query.isNotBlank()) {
                                     viewModel.openSiteSearch()
                                 },
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = CardDefaults.cardElevation(0.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                                containerColor = secondaryCardBackground()
                             )
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
@@ -300,8 +311,10 @@ private fun SearchHitRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        shape = RoundedCornerShape(16.dp),
+                            elevation = CardDefaults.cardElevation(0.dp),
+                            colors = CardDefaults.cardColors(
+            containerColor = secondaryCardBackground()
         )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
