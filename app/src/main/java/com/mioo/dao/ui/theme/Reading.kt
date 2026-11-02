@@ -52,3 +52,10 @@ fun readingCardBorder(): BorderStroke? = if (MaterialTheme.colorScheme.backgroun
 @Composable
 fun readingTopBarColor(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
     DaoTheme.colors.glassTopBar else DaoTheme.colors.glassTopBar.copy(alpha = 0.96f)
+
+/** Shared type scale for settings controls and cookie selection surfaces. */
+@Composable
+fun settingsItemStyle() = readingTextStyle(15f, 22f, FontWeight.Medium)
+
+@Composable
+fun settingsDescriptionStyle() = readingTextStyle(12f, 18f, FontWeight.Normal)

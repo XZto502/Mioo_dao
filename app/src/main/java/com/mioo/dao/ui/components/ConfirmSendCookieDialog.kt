@@ -1,6 +1,16 @@
 package com.mioo.dao.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import com.mioo.dao.ui.theme.settingsItemStyle
+import com.mioo.dao.ui.theme.settingsDescriptionStyle
+import com.mioo.dao.ui.theme.readingTextStyle
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -49,23 +59,27 @@ fun ConfirmSendCookieDialog(
     }
     Dialog(onDismissRequest = { close() }, properties = immersiveDialogProperties()) {
         ImmersiveDialogEffect()
-        AnimatedVisibility(visibleState = visible, enter = MiooMotion.modalEnter(reduced), exit = MiooMotion.modalExit(reduced)) {
+        AnimatedVisibility(visibleState = visible, enter = fadeIn(tween(if (reduced) 0 else 180)) + scaleIn(initialScale = 0.97f, animationSpec = tween(if (reduced) 0 else 220, easing = FastOutSlowInEasing)),
+            exit = fadeOut(tween(if (reduced) 0 else 140)) + scaleOut(targetScale = 0.98f, animationSpec = tween(if (reduced) 0 else 160))) {
             Surface(shape = RoundedCornerShape(20.dp), color = readingCardColor(), tonalElevation = 0.dp) {
                 Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                    Text("确认发言饼干", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("确认发言饼干", style = readingTextStyle(17f, 24f, FontWeight.SemiBold))
                     Spacer(Modifier.height(6.dp))
-                    Text("请选择本次发送使用的饼干。", style = MaterialTheme.typography.bodyMedium,
+                    Text("请选择本次发送使用的饼干。", style = settingsDescriptionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     if (cookies.isEmpty()) {
-                        Text("还没有可用饼干，请先在应用设置中添加。", style = MaterialTheme.typography.bodyMedium,
+                        Text("还没有可用饼干，请先在应用设置中添加。", style = settingsDescriptionStyle(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp))
                     } else {
                         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             itemsIndexed(cookies) { _, cookie ->
                                 val selected = chosen == cookie
+                                val rowColor by animateColorAsState(
+                                    if (selected) MaterialTheme.colorScheme.secondaryContainer else readingCardColor(),
+                                    animationSpec = tween(if (reduced) 0 else 150), label = "confirmedCookieColor")
                                 Surface(shape = RoundedCornerShape(12.dp),
-                                    color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+                                    color = rowColor,
                                     modifier = Modifier.fillMaxWidth().clickable(enabled = !closing) { chosen = cookie }) {
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                         RadioButton(selected = selected, onClick = null, enabled = !closing)
@@ -73,8 +87,8 @@ fun ConfirmSendCookieDialog(
                                         Column(Modifier.weight(1f)) {
                                             val identity = historyCookieIdentity(cookie)
                                             Text(notes[cookie]?.takeIf { it.isNotBlank() } ?: identity,
-                                                style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            if (!notes[cookie].isNullOrBlank()) Text(identity, style = MaterialTheme.typography.bodySmall,
+                                                style = settingsItemStyle(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            if (!notes[cookie].isNullOrBlank()) Text(identity, style = settingsDescriptionStyle(),
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
@@ -83,20 +97,20 @@ fun ConfirmSendCookieDialog(
                         }
                         if (chosen != null && CookieInterceptor.extractHash(chosen).isNullOrBlank()) {
                             Text("所选饼干不可用，请选择其他饼干或在设置中检查。",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = settingsDescriptionStyle(),
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(top = 8.dp))
                         }
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { close() }, enabled = !closing) { Text("取消") }
+                        TextButton(onClick = { close() }, enabled = !closing) { Text("取消", style = settingsItemStyle()) }
                         Spacer(Modifier.width(8.dp))
                         Button(onClick = {
                             val cookie = chosen
                             val index = cookies.indexOf(cookie)
                             if (cookie != null && !CookieInterceptor.extractHash(cookie).isNullOrBlank() && index >= 0) close(index to cookie)
-                        }, enabled = !closing && !CookieInterceptor.extractHash(chosen).isNullOrBlank() && cookies.any { it == chosen }) { Text("确认发送") }
+                        }, enabled = !closing && !CookieInterceptor.extractHash(chosen).isNullOrBlank() && cookies.any { it == chosen }) { Text("确认发送", style = settingsItemStyle()) }
                     }
                 }
             }

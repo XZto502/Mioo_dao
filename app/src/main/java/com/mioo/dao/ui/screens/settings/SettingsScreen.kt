@@ -98,6 +98,8 @@ import com.mioo.dao.data.model.ImageCacheLimit
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.repository.BackupRepository
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.settingsItemStyle
+import com.mioo.dao.ui.theme.settingsDescriptionStyle
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
 
@@ -244,14 +246,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "发言饼干管理 (User Hash)",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "在此添加并选择您发帖和回复时使用的发言饼干 (userhash)。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -380,8 +381,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "高级：鉴权饼干 (Auth)",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -464,7 +464,7 @@ fun SettingsScreen(
                 SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = null)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("发送前确认饼干", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text("发送前确认饼干", style = settingsItemStyle())
                     Text("发送回复或新串前选择饼干", fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 }
@@ -485,14 +485,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "备份与恢复",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "自选内容导出为一个 JSON 文件，可在此设备或另一台设备恢复；旧版纯饼干备份文件也可恢复",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -523,14 +522,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "草稿箱",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "关闭后，回复不再自动保存，发串界面不再提供保存草稿功能",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -581,7 +579,7 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SettingsHeaderIcon(Icons.Default.DarkMode, contentDescription = "显示模式")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "显示模式", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "显示模式", style = settingsItemStyle())
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 // 系统实时深色状态 + 当前生效的深色状态（点击回调里不能调 Composable，提前算好）
@@ -643,7 +641,7 @@ fun SettingsScreen(
                         contentDescription = "主题颜色"
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "主题色选择", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "主题色选择", style = settingsItemStyle())
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -703,14 +701,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "毛玻璃特效",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。完整模糊效果需 Android 12+，更低版本会自动使用约 95% 不透明底色。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -748,14 +745,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "骰点高亮（跑团/安科）",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -791,12 +787,12 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SettingsHeaderIcon(Icons.Default.FormatSize, contentDescription = "字体大小")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "字体大小", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "字体大小", style = settingsItemStyle())
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "滑动缩放以调整帖子和回复的内容文本字号大小。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
 
@@ -842,12 +838,12 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SettingsHeaderIcon(Icons.Default.FormatLineSpacing, contentDescription = "行间距")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "行间距", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "行间距", style = settingsItemStyle())
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "滑动调整行与行之间的距离，与字体大小独立生效，全应用即时应用。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
 
@@ -893,7 +889,7 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SettingsHeaderIcon(Icons.Default.FontDownload, contentDescription = "自定义字体")
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "自定义字体", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "自定义字体", style = settingsItemStyle())
                 }
                 Spacer(modifier = Modifier.height(8.dp))
         Text(
@@ -1017,14 +1013,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "引用自动显示",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1057,7 +1052,7 @@ fun SettingsScreen(
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 Spacer(Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(),
@@ -1086,14 +1081,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "省流量模式",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1134,8 +1128,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "屏蔽管理",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1311,8 +1304,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "云端收藏夹",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     IconButton(onClick = { showAddFolderDialog = true }) {
@@ -1322,7 +1314,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "添加额外的收藏夹UUID，可在收藏界面作为卡片独立浏览。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1370,15 +1362,14 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "X岛订阅新回复通知",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "后台定期向 X岛 官方接口查询：云端订阅夹（feed UUID）与本地收藏串是否有新回复，有更新则发系统通知。\n" +
                         "说明：岛方未对第三方开放实时推送通道，蓝岛等客户端也是本地轮询同一套订阅数据，并非互相收对方 App 的推送。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1447,14 +1438,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "离线阅读与智能预加载",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后会在网络连接可用时预先下载帖子，方便您在无网环境下进行阅读。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1533,7 +1523,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "只限制图片磁盘缓存，默认 1024 MB。超出后自动删掉最久没看的图片，松手后立即生效。",
-                    fontSize = 12.sp, fontWeight = FontWeight.Normal,
+                    style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Slider(

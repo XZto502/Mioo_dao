@@ -10,6 +10,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -770,6 +772,7 @@ private fun ForumDrawerItem(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ForumThreadListPane(
     forumKey: String,
@@ -930,7 +933,10 @@ private fun ForumThreadListPane(
         )
     }
 
-    // Always keep a LazyColumn so pull-to-refresh nested scroll has a scrollable child.
+    // The platform edge stretch can consume the first pull while unwinding a
+    // fling at the top. The refresh indicator owns this edge interaction instead.
+    CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+    // Always keep a LazyColumn so pull-to-refresh has a scrollable child.
     LazyColumn(
         state = listState,
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
@@ -1043,6 +1049,7 @@ private fun ForumThreadListPane(
                 }
             }
         }
+    }
     }
 }
 
