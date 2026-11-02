@@ -10,7 +10,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -151,8 +151,9 @@ fun HistoryScreen(
                     val category = types[page]
                     val records by viewModel.items(category).collectAsState()
                     val categoryQuery by viewModel.query(category).collectAsState()
-                    val list = rememberLazyListState()
-                    LaunchedEffect(openGeneration) { list.scrollToItem(0) }
+                    // A fresh state also clears LazyColumn's remembered item key, so an
+                    // updated/reordered history cannot restore the old reading position.
+                    val list = remember(category, openGeneration) { LazyListState() }
                     var previousQuery by rememberSaveable(category.name) { mutableStateOf(categoryQuery) }
                     LaunchedEffect(categoryQuery) {
                         if (previousQuery != categoryQuery) { list.scrollToItem(0); previousQuery = categoryQuery }

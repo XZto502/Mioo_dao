@@ -176,6 +176,14 @@ fun MiooDaoNavGraph(
     val tabScope = rememberCoroutineScope()
     val tabPagerState = rememberPagerState(initialPage = 0) { 4 }
     var historyOpenGeneration by remember { mutableIntStateOf(0) }
+    var previousRoute by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == Screen.Home.route && previousRoute == Screen.Thread.route &&
+            tabPagerState.currentPage == 2) {
+            historyOpenGeneration++
+        }
+        previousRoute = currentRoute
+    }
 
     val bottomBarItems = remember {
         listOf(
