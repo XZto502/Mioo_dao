@@ -14,6 +14,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.material.ripple.LocalRippleTheme
+import androidx.compose.material.ripple.RippleAlpha
+import androidx.compose.material.ripple.RippleTheme
+import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -38,6 +43,11 @@ import androidx.core.view.WindowCompat
 import com.mioo.dao.ui.theme.isActivitySystemBarsOverridden
 import kotlinx.coroutines.delay
 
+
+private object NoRippleTheme : RippleTheme {
+    @Composable override fun defaultColor(): Color = Color.Transparent
+    @Composable override fun rippleAlpha() = RippleAlpha(0f, 0f, 0f, 0f)
+}
 
 private val LightColorScheme = lightColorScheme(
     primary = LightPrimary,
@@ -385,8 +395,10 @@ fun MiooDaoTheme(
                     .background(colorScheme.background)
             }
 
-            Box(modifier = rootModifier) {
-                content()
+            CompositionLocalProvider(LocalIndication provides rememberRipple(color = Color.Transparent), LocalRippleTheme provides NoRippleTheme) {
+                Box(modifier = rootModifier) {
+                    content()
+                }
             }
         }
     }

@@ -1,8 +1,6 @@
 package com.mioo.dao.ui.screens.settings
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -110,24 +108,7 @@ fun HistoryScreen(
                                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
                             )
-                        ) else Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            listOf("浏览", "发言", "发串").forEachIndexed { index, label ->
-                                val selected = pager.targetPage == index
-                                val size by animateFloatAsState(if (selected) 18f else 15.5f, label = "historyTabSize")
-                                val color by animateColorAsState(if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f), label = "historyTabColor")
-                                val indicator by animateFloatAsState(if (selected) 1f else 0f, label = "historyIndicator")
-                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable {
-                                    if (!selected) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
-                                    }
-                                }) {
-                                    Text(label, fontSize = size.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, color = color, maxLines = 1, softWrap = false)
-                                    Spacer(Modifier.height(3.dp))
-                                    Box(Modifier.width(16.dp).height(3.dp).clip(RoundedCornerShape(1.5.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = indicator)))
-                                }
-                            }
-                        }
+                        ) else Text("历史")
                     },
                     actions = {
                         IconButton(onClick = {
@@ -147,6 +128,18 @@ fun HistoryScreen(
             snackbarHost = { SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(bottom = 104.dp)) }
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+                PrimaryScrollableTabRow(selectedTabIndex = pager.targetPage, edgePadding = 8.dp, divider = {}) {
+                    types.forEachIndexed { index, entry ->
+                        Tab(selected = pager.targetPage == index, onClick = {
+                            if (pager.targetPage != index) {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
+                            }
+                        }, text = { Text(entry.label, maxLines = 1, softWrap = false) })
+                    }
+                }
+                HorizontalDivider()
+
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
                     val records by viewModel.items(category).collectAsState()
