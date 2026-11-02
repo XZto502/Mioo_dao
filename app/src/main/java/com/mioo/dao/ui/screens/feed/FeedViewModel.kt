@@ -119,9 +119,12 @@ class FeedViewModel @Inject constructor(
     private var replyCountJob: kotlinx.coroutines.Job? = null
 
     fun selectFolder(uuid: String?) {
+        remoteFeedJob?.cancel()
+        replyCountJob?.cancel()
         _uiState.update {
             it.copy(
                 selectedFolderId = uuid,
+                isLoading = false,
                 // 任何切换都清空旧数据：留着会在新文件夹标题下展示上一个夹的帖子
                 remoteThreads = emptyList(),
                 remoteDisplayItems = emptyList(),

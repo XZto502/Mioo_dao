@@ -1,5 +1,8 @@
 package com.mioo.dao.ui.screens.feed
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +33,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -54,13 +60,14 @@ import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FeedScreen(
     viewModel: FeedViewModel,
@@ -71,9 +78,21 @@ fun FeedScreen(
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
     val uiState by viewModel.uiState.collectAsState()
-    // Survive navigate → thread → back (and tab switches with restoreState).
-    val listState = rememberSaveable(uiState.selectedFolderId, saver = LazyListState.Saver) {
-        LazyListState()
+    val folderIds = remember(uiState.feedFolders) { listOf(null) + uiState.feedFolders.map { it.uuid } }
+    val pager = rememberPagerState(initialPage = folderIds.indexOf(uiState.selectedFolderId).coerceAtLeast(0)) { folderIds.size }
+    val listStates = remember { mutableStateMapOf<String, LazyListState>() }
+    val pageSnapshots = remember { mutableStateMapOf<String, FeedUiState>() }
+    fun pageKey(id: String?) = id ?: "__offline__"
+    SideEffect {
+        if (!uiState.isLoading) pageSnapshots[pageKey(uiState.selectedFolderId)] = uiState
+    }
+    LaunchedEffect(folderIds) {
+        val selectedIndex = folderIds.indexOf(viewModel.uiState.value.selectedFolderId).coerceAtLeast(0)
+        pager.scrollToPage(selectedIndex)
+        snapshotFlow { pager.settledPage }.collect { index ->
+            val id = folderIds.getOrNull(index)
+            if (id != viewModel.uiState.value.selectedFolderId) viewModel.selectFolder(id)
+        }
     }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -142,7 +161,7 @@ fun FeedScreen(
                 title = { Text("我的收藏") },
                 actions = {
                     IconButton(onClick = {
-                        scope.launch { listState.animateScrollToItem(0) }
+                        scope.launch { listStates[pageKey(uiState.selectedFolderId)]?.animateScrollToItem(0) }
                         if (uiState.selectedFolderId != null) {
                             viewModel.refreshRemote()
                         } else {
@@ -167,39 +186,35 @@ fun FeedScreen(
                 .padding(paddingValues)
         ) {
             androidx.compose.material3.PrimaryScrollableTabRow(
-                selectedTabIndex = if (uiState.selectedFolderId == null) {
-                    0
-                } else {
-                    uiState.feedFolders.indexOfFirst { it.uuid == uiState.selectedFolderId } + 1
-                },
+                selectedTabIndex = pager.targetPage.coerceIn(0, folderIds.lastIndex),
                 edgePadding = 8.dp,
                 divider = {}
             ) {
-                androidx.compose.material3.Tab(
-                    selected = uiState.selectedFolderId == null,
-                    onClick = {
-                        if (uiState.selectedFolderId != null) {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
-                        viewModel.selectFolder(null)
-                    },
-                    text = { Text("已离线") }
-                )
-                uiState.feedFolders.forEach { folder ->
+                folderIds.forEachIndexed { index, id ->
                     androidx.compose.material3.Tab(
-                        selected = uiState.selectedFolderId == folder.uuid,
+                        selected = pager.targetPage == index,
                         onClick = {
-                            if (uiState.selectedFolderId != folder.uuid) {
+                            if (pager.targetPage != index) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
                             }
-                            viewModel.selectFolder(folder.uuid)
                         },
-                        text = { Text(folder.name) }
+                        text = { Text(if (id == null) "已离线" else uiState.feedFolders.firstOrNull { it.uuid == id }?.name.orEmpty()) }
                     )
                 }
             }
             HorizontalDivider()
 
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
+                val folderId = folderIds[page]
+                val current = folderId == uiState.selectedFolderId
+                val pageState = if (current) uiState else pageSnapshots[pageKey(folderId)]
+                val listState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
+                SideEffect { listStates[pageKey(folderId)] = listState }
+                if (pageState == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                } else {
+                val uiState = pageState
             when {
                 uiState.isLoading -> {
                     Box(
@@ -276,8 +291,8 @@ fun FeedScreen(
                             last.index >= listState.layoutInfo.totalItemsCount - 3
                         }
                     }
-                    LaunchedEffect(shouldLoadMore.value) {
-                        if (shouldLoadMore.value) viewModel.loadMoreRemote()
+                    LaunchedEffect(current, shouldLoadMore.value) {
+                        if (current && shouldLoadMore.value) viewModel.loadMoreRemote()
                     }
 
                     LazyColumn(
@@ -347,6 +362,8 @@ fun FeedScreen(
                             }
                         }
                     }
+                }
+            }
                 }
             }
         }
