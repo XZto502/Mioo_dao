@@ -156,7 +156,7 @@ fun MiooDaoNavGraph(
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
 
     // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
-    // 板块 / 收藏 / 更多 share one pager and spring across, including through the middle page.
+    // All four home tabs share one pager and spring continuously through intermediate pages.
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         MiooMotion.pageEnter(reducedMotion)
     }
@@ -304,10 +304,7 @@ fun MiooDaoNavGraph(
                                             if (reducedMotion) {
                                                 tabPagerState.scrollToPage(index)
                                             } else {
-                                                tabPagerState.animateScrollToPage(
-                                                    page = index,
-                                                    animationSpec = MiooMotion.tabPagerSpring()
-                                                )
+                                                tabPagerState.animateHomeTabTo(index)
                                             }
                                         }
                                     }
