@@ -204,7 +204,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("应用设置", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
+                title = { Text("应用设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(

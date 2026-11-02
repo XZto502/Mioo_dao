@@ -158,7 +158,7 @@ fun FeedScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("我的收藏") },
+                title = { Text("我的收藏", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1) },
                 actions = {
                     IconButton(onClick = {
                         scope.launch { listStates[pageKey(uiState.selectedFolderId)]?.animateScrollToItem(0) }

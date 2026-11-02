@@ -119,7 +119,7 @@ fun HistoryScreen(
                                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
                             )
-                        ) else Text("历史")
+                        ) else Text("历史", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     },
                     actions = {

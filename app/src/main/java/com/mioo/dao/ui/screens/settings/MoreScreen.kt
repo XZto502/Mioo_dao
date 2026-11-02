@@ -52,7 +52,7 @@ fun MoreScreen(
         containerColor = secondaryPageBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(title = { Text("更多", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+            TopAppBar(title = { Text("更多", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DaoTheme.colors.glassTopBar))
         }
     ) { padding ->
