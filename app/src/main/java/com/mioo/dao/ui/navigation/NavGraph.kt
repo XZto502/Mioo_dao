@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
+import com.mioo.dao.ui.theme.readingBackground
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -265,17 +268,19 @@ fun MiooDaoNavGraph(
                     // offset (not graphicsLayer) moves the touch target with the slide.
                     val slideFraction = bottomBarSlide.value
                     val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
+                    val pageBgColor = readingBackground()
                     Box(
                         modifier = Modifier
                             .onSizeChanged { bottomBarHeightPx = it.height }
                             .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
                             .fillMaxWidth()
+                            .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
                             .navigationBarsPadding()
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
                         NavigationBar(
                             windowInsets = WindowInsets(0, 0, 0, 0),
-                            containerColor = DaoTheme.colors.glassNavBar,
+                            containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
                             tonalElevation = 0.dp,
                             modifier = Modifier
                                 .fillMaxWidth()

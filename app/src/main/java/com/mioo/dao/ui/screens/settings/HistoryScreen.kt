@@ -2,6 +2,7 @@ package com.mioo.dao.ui.screens.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +27,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -62,6 +67,7 @@ fun HistoryScreen(
     var deleteItem by remember { mutableStateOf<HistoryItem?>(null) }
     var image by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
     val searchFocus = remember { FocusRequester() }
     var searchFocusPending by remember { mutableStateOf(false) }
@@ -104,7 +110,24 @@ fun HistoryScreen(
                                 focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
                             )
-                        ) else Text("历史")
+                        ) else Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            listOf("浏览", "发言", "发串").forEachIndexed { index, label ->
+                                val selected = pager.targetPage == index
+                                val size by animateFloatAsState(if (selected) 18f else 15.5f, label = "historyTabSize")
+                                val color by animateColorAsState(if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f), label = "historyTabColor")
+                                val indicator by animateFloatAsState(if (selected) 1f else 0f, label = "historyIndicator")
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable {
+                                    if (!selected) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
+                                    }
+                                }) {
+                                    Text(label, fontSize = size.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, color = color, maxLines = 1, softWrap = false)
+                                    Spacer(Modifier.height(3.dp))
+                                    Box(Modifier.width(16.dp).height(3.dp).clip(RoundedCornerShape(1.5.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = indicator)))
+                                }
+                            }
+                        }
                     },
                     actions = {
                         IconButton(onClick = {
@@ -124,27 +147,6 @@ fun HistoryScreen(
             snackbarHost = { SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(bottom = 104.dp)) }
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ) {
-                    Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        types.forEachIndexed { index, entry ->
-                            val selected = pager.targetPage == index
-                            val color by animateColorAsState(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, label = "historySegment")
-                            Surface(
-                                onClick = { scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) } },
-                                modifier = Modifier.weight(1f), shape = RoundedCornerShape(20.dp), color = color
-                            ) {
-                                Box(Modifier.heightIn(min = 36.dp).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-                                    Text(entry.label, style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    }
-                }
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
                     val records by viewModel.items(category).collectAsState()
@@ -205,22 +207,17 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = readingCardBorder()
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (item.type == HistoryType.BROWSE) HistoryPill(item.forumName)
-                        HistoryPill(item.cookieHash.ifBlank { "未记录饼干" }, secondary = true)
-                        if (item.type == HistoryType.REPLY) HistoryPill("我的回复")
-                        if (item.type == HistoryType.NEW_THREAD) HistoryPill("[PO]")
-                    }
-                    Text(if (item.type == HistoryType.REPLY) "$date · ${item.forumName}" else date,
-                        style = meta, color = scheme.onSurfaceVariant, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
-                }
-                Text(item.threadId?.let { "No.$it" } ?: "串号确认中", style = meta, maxLines = 1, softWrap = false,
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                HistoryPill(item.forumName)
+                Spacer(Modifier.width(6.dp))
+                HistoryPill(item.cookieHash.ifBlank { "未记录饼干" }, secondary = true)
+                if (item.type == HistoryType.REPLY) { Spacer(Modifier.width(4.dp)); HistoryPill("我的回复") }
+                if (item.type == HistoryType.NEW_THREAD) { Spacer(Modifier.width(4.dp)); HistoryPill("[PO]") }
+                Text(" · $date", modifier = Modifier.weight(1f), style = meta.copy(fontWeight = FontWeight.Normal),
+                    color = scheme.onSurfaceVariant.copy(alpha = 0.6f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.width(6.dp))
+                Text(item.threadId?.let { "No.$it" } ?: "串号确认中", style = meta.copy(fontWeight = FontWeight.Normal), maxLines = 1, softWrap = false,
                     color = if (item.threadId == null) scheme.primary else scheme.onSurfaceVariant)
-            }
-            if (item.type == HistoryType.NEW_THREAD) {
-                Spacer(Modifier.height(8.dp)); HistoryPill(item.forumName)
             }
             Spacer(Modifier.height(10.dp))
             if (item.type == HistoryType.REPLY) {
@@ -232,13 +229,15 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
                 Spacer(Modifier.height(10.dp))
             }
             item.title.effectiveTitle()?.let { title ->
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = scheme.onSurface,
+                Text(title, fontSize = 15.5.sp, fontWeight = FontWeight.SemiBold, color = scheme.onSurface,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(6.dp))
             }
-            if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = readingBodyStyle(),
+            val bodyStyle = readingTextStyle(14.5f, 22f, FontWeight.Normal).copy(
+                color = if (scheme.background.luminance() < 0.5f) Color(0xFFDDE1E6) else Color(0xFF2B2F36))
+            if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = bodyStyle,
                 maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false)
-            else Text(item.content, style = readingBodyStyle(), maxLines = 8, overflow = TextOverflow.Ellipsis)
+            else Text(item.content, style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",

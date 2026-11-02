@@ -650,7 +650,8 @@ class ThreadRepositoryImpl @Inject constructor(
             val contentSame =
                 existing.content == thread.content &&
                     existing.title == thread.title &&
-                    existing.userid == thread.userHash && existing.forumName.isNotBlank()
+                    existing.userid == thread.userHash && existing.forumName.isNotBlank() &&
+                    existing.forumName != "板块 ${thread.fidStr}"
             if (contentSame) {
                 historyDao.touchHistory(thread.idStr)
                 return

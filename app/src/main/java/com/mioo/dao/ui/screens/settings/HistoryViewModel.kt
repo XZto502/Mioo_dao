@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.local.HistoryType
 import com.mioo.dao.data.repository.ThreadRepository
+import com.mioo.dao.data.repository.ForumRepository
+import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.ui.components.IslandImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -25,6 +27,7 @@ data class HistoryItem(
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
     private val repository: ThreadRepository,
+    private val forums: ForumRepository,
     private val savedState: SavedStateHandle
 ) : ViewModel() {
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
@@ -33,18 +36,27 @@ class HistoryViewModel @Inject constructor(
     fun query(type: HistoryType): StateFlow<String> = savedState.getStateFlow("history.query.${type.name}", "")
     fun setQuery(type: HistoryType, value: String) { savedState["history.query.${type.name}"] = value }
 
+    private val forumNames = forums.getForumList().map { result ->
+        (result as? XdResponse.Success)?.data.orEmpty().flatMap { it.forums }.associate { it.id to it.name }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private fun forumName(fid: String?, stored: String, names: Map<String, String>): String {
+        val placeholder = stored.isBlank() || stored == "板块 ${fid.orEmpty()}"
+        return if (placeholder) names[fid] ?: stored.ifBlank { "板块 ${fid.orEmpty()}" } else stored
+    }
+
     private val browsing = query(HistoryType.BROWSE).flatMapLatest { text ->
-        repository.observeBrowsingHistory(text.trim()).map { records -> records.map { record ->
+        combine(repository.observeBrowsingHistory(text.trim()), forumNames) { records, names -> records.map { record ->
             val h = record.history
-            HistoryItem(h.id, HistoryType.BROWSE, h.id, h.forumName.ifBlank { "板块 ${h.fid.orEmpty()}" },
+            HistoryItem(h.id, HistoryType.BROWSE, h.id, forumName(h.fid, h.forumName, names),
                 h.userid, h.timestamp, h.title, h.content, lastReadPage = record.lastReadPage)
         } }
     }.flowOn(Dispatchers.IO).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private fun actions(type: HistoryType) = query(type).flatMapLatest { text ->
-        repository.observePostActions(type, text.trim()).map { records -> records.map { h ->
+        combine(repository.observePostActions(type, text.trim()), forumNames) { records, names -> records.map { h ->
             val image = h.imagePath?.let(::File)?.takeIf { it.isFile }?.toURI()?.toString() ?: IslandImage.url(h.imageUrl)
-            HistoryItem(h.id, type, h.threadId, h.forumName, h.cookieHash, h.timestamp, h.title, h.content,
+            HistoryItem(h.id, type, h.threadId, forumName(h.forumId, h.forumName, names), h.cookieHash, h.timestamp, h.title, h.content,
                 threadSummary = h.threadTitle?.takeIf { it.isNotBlank() }?.let { "$it\n${h.threadSummary}" } ?: h.threadSummary,
                 image = image)
         } }
