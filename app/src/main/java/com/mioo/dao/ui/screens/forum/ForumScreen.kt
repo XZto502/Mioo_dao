@@ -60,7 +60,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -195,19 +194,22 @@ fun ForumScreen(
     LaunchedEffect(drawerOverDock) { onDrawerOpenChange(drawerOverDock) }
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
 
-    val pullToRefreshState = rememberPullToRefreshState()
+    val pullThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 80.dp.toPx() }
+    val pullToRefreshState = remember(currentForumId, pullThresholdPx) {
+        ForumPullRefreshState(pullThresholdPx)
+    }
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
     val showTopLoading = uiState.isRefreshing ||
         (uiState.isLoading && uiState.threads.isEmpty())
 
     // User pull: fire refresh only when the VM is not already refreshing.
-    LaunchedEffect(pullToRefreshState.isRefreshing) {
+    LaunchedEffect(pullToRefreshState, pullToRefreshState.isRefreshing) {
         if (pullToRefreshState.isRefreshing && !uiState.isRefreshing) {
             refreshFromTop()
         }
     }
     // Drive the pull indicator from VM state (one-way after user or toolbar starts refresh).
-    LaunchedEffect(showTopLoading) {
+    LaunchedEffect(pullToRefreshState, showTopLoading) {
         if (showTopLoading) {
             if (!pullToRefreshState.isRefreshing) {
                 pullToRefreshState.startRefresh()
@@ -569,7 +571,6 @@ fun ForumScreen(
                         onBlockThread = { settingsViewModel.addBlockedThread(it) },
                         onBlockUser = { settingsViewModel.addBlockedUser(it) },
                         onFreeCopy = { freeCopyText = it },
-                        userScrollEnabled = !drawerBlocksMainList,
                         warmEnabled = allowBackgroundWarm,
                         onFirstScreenReady = notifyColdStartReady
                     )
@@ -775,7 +776,6 @@ private fun ForumThreadListPane(
     onBlockThread: (String) -> Unit,
     onBlockUser: (String) -> Unit,
     onFreeCopy: (String) -> Unit,
-    userScrollEnabled: Boolean = true,
     warmEnabled: Boolean = true,
     onFirstScreenReady: () -> Unit = {}
 ) {
@@ -923,7 +923,8 @@ private fun ForumThreadListPane(
     // Always keep a LazyColumn so pull-to-refresh nested scroll has a scrollable child.
     LazyColumn(
         state = listState,
-        userScrollEnabled = userScrollEnabled,
+        // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
+        // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(
