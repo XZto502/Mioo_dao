@@ -41,6 +41,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -74,6 +76,7 @@ fun FeedScreen(
         LazyListState()
     }
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     val emptyStringLambda = remember { { _: String -> } }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     // 长按/删除按钮弹出的离线串删除确认
@@ -174,13 +177,23 @@ fun FeedScreen(
             ) {
                 androidx.compose.material3.Tab(
                     selected = uiState.selectedFolderId == null,
-                    onClick = { viewModel.selectFolder(null) },
+                    onClick = {
+                        if (uiState.selectedFolderId != null) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        viewModel.selectFolder(null)
+                    },
                     text = { Text("已离线") }
                 )
                 uiState.feedFolders.forEach { folder ->
                     androidx.compose.material3.Tab(
                         selected = uiState.selectedFolderId == folder.uuid,
-                        onClick = { viewModel.selectFolder(folder.uuid) },
+                        onClick = {
+                            if (uiState.selectedFolderId != folder.uuid) {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            viewModel.selectFolder(folder.uuid)
+                        },
                         text = { Text(folder.name) }
                     )
                 }
