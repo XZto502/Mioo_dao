@@ -234,341 +234,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-        Text("饼干与屏蔽管理", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // 1. Cookie Configuration (饼干设置)
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "饼干设置")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "发言饼干管理 (User Hash)",
-                        style = settingsItemStyle()
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "在此添加并选择您发帖和回复时使用的发言饼干 (userhash)。",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            val options = ScanOptions().apply {
-                                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                                setPrompt("请扫描含有饼干的二维码")
-                                setBeepEnabled(false)
-                                setOrientationLocked(true)
-                                setCaptureActivity(CustomCaptureActivity::class.java)
-                                setBarcodeImageEnabled(false)
-                            }
-                            scanLauncher.launch(options)
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("扫码添加")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            galleryLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("相册选图扫码")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // List of speaking cookies
-                if (settings.cookiesList.isEmpty()) {
-                    Text(
-                        text = "暂无发言饼干，请在上方添加或扫码导入",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
-                    )
-                } else {
-                    settings.cookiesList.forEachIndexed { index, cookie ->
-                        val isSelected = settings.selectedCookieIndex == index
-                        var displayName = cookie
-                        try {
-                            if (cookie.startsWith("{")) {
-                                val json = org.json.JSONObject(cookie)
-                                displayName = json.optString("name", "")
-                                if (displayName.isEmpty()) {
-                                    displayName = json.optString("cookie", "")
-                                }
-                                if (displayName.isEmpty()) {
-                                    displayName = json.optString("userhash", cookie)
-                                }
-                            }
-                        } catch (e: Exception) {}
-                        if (!cookie.startsWith("{")) displayName = cookie.take(6)
-                        val sixId = cookieSixCharId(cookie)
-                        val note = settings.cookieNotes[cookie].orEmpty()
-                        val label = if (note.isNotBlank()) "$note · $displayName" else displayName
-
-                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.selectCookie(index) }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = null
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = label,
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                IconButton(onClick = { viewModel.deleteCookie(cookie) }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "删除饼干",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-                            if (sixId.isNotEmpty()) {
-                                Text(
-                                    text = "ID: $sixId",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(start = 48.dp, bottom = 2.dp)
-                                )
-                            }
-                            OutlinedTextField(
-                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
-                                shape = RoundedCornerShape(16.dp),
-                                value = note,
-                                onValueChange = { viewModel.setCookieNote(cookie, it) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 48.dp, end = 8.dp),
-                                singleLine = true,
-                                placeholder = { Text("备注名（如：日常饼干）") },
-                                textStyle = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-
-                // 2. Auth Cookie (鉴权饼干)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "鉴权饼干")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "高级：鉴权饼干 (Auth)",
-                        style = settingsItemStyle()
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                // Dropdown to select from existing cookies
-                androidx.compose.foundation.layout.Box {
-                    var authDisplayName = settings.authCookie
-                    if (authDisplayName.isNotEmpty()) {
-                        try {
-                            if (authDisplayName.startsWith("{")) {
-                                val json = org.json.JSONObject(authDisplayName)
-                                authDisplayName = json.optString("name", "")
-                                if (authDisplayName.isEmpty()) authDisplayName = json.optString("cookie", "")
-                                if (authDisplayName.isEmpty()) authDisplayName = json.optString("userhash", settings.authCookie)
-                            }
-                        } catch (e: Exception) {}
-                    } else {
-                        authDisplayName = "无 (不使用鉴权)"
-                    }
-
-                    OutlinedTextField(
-                        shape = RoundedCornerShape(16.dp),
-                        value = authDisplayName,
-                        onValueChange = {},
-                        label = { Text("当前鉴权饼干") },
-                        readOnly = true,
-                        enabled = false,
-                        modifier = Modifier.fillMaxWidth().clickable { authMenuExpanded = true },
-                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = Color.Transparent,
-                            disabledContainerColor = secondaryCardBackground(),
-                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        trailingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "展开"
-                            )
-                        }
-                    )
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = authMenuExpanded,
-                        onDismissRequest = { authMenuExpanded = false }
-                    ) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("无 (不使用鉴权)") },
-                            onClick = {
-                                viewModel.updateAuthCookie("")
-                                authMenuExpanded = false
-                            }
-                        )
-                        settings.cookiesList.forEach { cookieStr ->
-                            var displayName = cookieStr
-                            try {
-                                if (cookieStr.startsWith("{")) {
-                                    val json = org.json.JSONObject(cookieStr)
-                                    displayName = json.optString("name", "")
-                                    if (displayName.isEmpty()) displayName = json.optString("cookie", "")
-                                    if (displayName.isEmpty()) displayName = json.optString("userhash", cookieStr)
-                                }
-                            } catch (e: Exception) {}
-
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(displayName) },
-                                onClick = {
-                                    viewModel.updateAuthCookie(cookieStr)
-                                    authMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("发送前确认饼干", style = settingsItemStyle())
-                    Text("发送回复或新串前选择饼干", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
-                }
-                androidx.compose.material3.Switch(checked = settings.confirmCookieBeforeSend,
-                    onCheckedChange = viewModel::updateConfirmCookieBeforeSend)
-            }
-        }
-
-        Text("数据备份与缓存", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // 备份与恢复
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.Backup, contentDescription = "备份与恢复")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "备份与恢复",
-                        style = settingsItemStyle()
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "自选内容导出为一个 JSON 文件，可在此设备或另一台设备恢复；旧版纯饼干备份文件也可恢复",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        pendingBackupSections = BackupRepository.ALL_SECTIONS.toSet()
-                        showBackupPicker = true
-                    }) { Text("备份") }
-                    OutlinedButton(onClick = {
-                        importBackupFileLauncher.launch(
-                            arrayOf("application/json", "text/plain", "application/octet-stream")
-                        )
-                    }) { Text("恢复") }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 草稿箱开关
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.Save, contentDescription = "草稿箱")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "草稿箱",
-                        style = settingsItemStyle()
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "关闭后，回复不再自动保存，发串界面不再提供保存草稿功能",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateDraftBoxEnabled(!settings.draftBoxEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.draftBoxEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.draftBoxEnabled,
-                        onCheckedChange = { viewModel.updateDraftBoxEnabled(it) }
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-        SettingsGroupCard(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("分享卡片显示品牌水印", style = MaterialTheme.typography.titleSmall)
-                    Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                androidx.compose.material3.Switch(checked = settings.showShareCardBranding,
-                    onCheckedChange = viewModel::setShowShareCardBranding)
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-
-        Text("外观与主题", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("外观与主题", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
         // 3. Dark Mode Toggle (显示模式)
         SettingsGroupCard(
@@ -733,50 +399,7 @@ fun SettingsScreen(
         }
 
         }
-
-        // 骰点高亮（跑团/安科）
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.Casino, contentDescription = "骰点高亮")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "骰点高亮（跑团/安科）",
-                        style = settingsItemStyle()
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateDiceBadgesEnabled(!settings.diceBadgesEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.diceBadgesEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.diceBadgesEnabled,
-                        onCheckedChange = { viewModel.updateDiceBadgesEnabled(it) }
-                    )
-                }
-            }
-        }
-
-        Text("阅读与排版", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
         // 6. Font Size Configuration (字体大小)
         SettingsGroupCard(
@@ -1046,47 +669,27 @@ fun SettingsScreen(
 
 
 
-        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("网络兼容模式", style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
-                Spacer(Modifier.height(12.dp))
-                Row(modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (settings.networkCompatibilityEnabled) "已开启" else "已关闭")
-                    androidx.compose.material3.Switch(
-                        checked = settings.networkCompatibilityEnabled,
-                        onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
-                    )
-                }
-            }
-        }
+
 
 
         }
-
-        // 省流量模式开关
+        // 骰点高亮（跑团/安科）
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.CloudOff, contentDescription = "省流量模式")
+                    SettingsHeaderIcon(Icons.Default.Casino, contentDescription = "骰点高亮")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "省流量模式",
+                        text = "骰点高亮（跑团/安科）",
                         style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
+                    text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1095,25 +698,298 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            viewModel.updateDataSaverEnabled(!settings.dataSaverEnabled)
+                            viewModel.updateDiceBadgesEnabled(!settings.diceBadgesEnabled)
                         },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (settings.dataSaverEnabled) "已开启" else "已关闭",
+                        text = if (settings.diceBadgesEnabled) "已开启" else "已关闭",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     androidx.compose.material3.Switch(
-                        checked = settings.dataSaverEnabled,
-                        onCheckedChange = { viewModel.updateDataSaverEnabled(it) }
+                        checked = settings.diceBadgesEnabled,
+                        onCheckedChange = { viewModel.updateDiceBadgesEnabled(it) }
                     )
                 }
             }
         }
+        Text("发帖与饼干", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1. Cookie Configuration (饼干设置)
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "饼干设置")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "发言饼干管理 (User Hash)",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "在此添加并选择您发帖和回复时使用的发言饼干 (userhash)。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val options = ScanOptions().apply {
+                                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                setPrompt("请扫描含有饼干的二维码")
+                                setBeepEnabled(false)
+                                setOrientationLocked(true)
+                                setCaptureActivity(CustomCaptureActivity::class.java)
+                                setBarcodeImageEnabled(false)
+                            }
+                            scanLauncher.launch(options)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("扫码添加")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("相册选图扫码")
+                    }
+                }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // List of speaking cookies
+                if (settings.cookiesList.isEmpty()) {
+                    Text(
+                        text = "暂无发言饼干，请在上方添加或扫码导入",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+                    )
+                } else {
+                    settings.cookiesList.forEachIndexed { index, cookie ->
+                        val isSelected = settings.selectedCookieIndex == index
+                        var displayName = cookie
+                        try {
+                            if (cookie.startsWith("{")) {
+                                val json = org.json.JSONObject(cookie)
+                                displayName = json.optString("name", "")
+                                if (displayName.isEmpty()) {
+                                    displayName = json.optString("cookie", "")
+                                }
+                                if (displayName.isEmpty()) {
+                                    displayName = json.optString("userhash", cookie)
+                                }
+                            }
+                        } catch (e: Exception) {}
+                        if (!cookie.startsWith("{")) displayName = cookie.take(6)
+                        val sixId = cookieSixCharId(cookie)
+                        val note = settings.cookieNotes[cookie].orEmpty()
+                        val label = if (note.isNotBlank()) "$note · $displayName" else displayName
+
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectCookie(index) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = null
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = label,
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                IconButton(onClick = { viewModel.deleteCookie(cookie) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "删除饼干",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                            if (sixId.isNotEmpty()) {
+                                Text(
+                                    text = "ID: $sixId",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 48.dp, bottom = 2.dp)
+                                )
+                            }
+                            OutlinedTextField(
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
+                                shape = RoundedCornerShape(16.dp),
+                                value = note,
+                                onValueChange = { viewModel.setCookieNote(cookie, it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 48.dp, end = 8.dp),
+                                singleLine = true,
+                                placeholder = { Text("备注名（如：日常饼干）") },
+                                textStyle = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+
+                // 2. Auth Cookie (鉴权饼干)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "鉴权饼干")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "高级：鉴权饼干 (Auth)",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                // Dropdown to select from existing cookies
+                androidx.compose.foundation.layout.Box {
+                    var authDisplayName = settings.authCookie
+                    if (authDisplayName.isNotEmpty()) {
+                        try {
+                            if (authDisplayName.startsWith("{")) {
+                                val json = org.json.JSONObject(authDisplayName)
+                                authDisplayName = json.optString("name", "")
+                                if (authDisplayName.isEmpty()) authDisplayName = json.optString("cookie", "")
+                                if (authDisplayName.isEmpty()) authDisplayName = json.optString("userhash", settings.authCookie)
+                            }
+                        } catch (e: Exception) {}
+                    } else {
+                        authDisplayName = "无 (不使用鉴权)"
+                    }
+
+                    OutlinedTextField(
+                        shape = RoundedCornerShape(16.dp),
+                        value = authDisplayName,
+                        onValueChange = {},
+                        label = { Text("当前鉴权饼干") },
+                        readOnly = true,
+                        enabled = false,
+                        modifier = Modifier.fillMaxWidth().clickable { authMenuExpanded = true },
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = Color.Transparent,
+                            disabledContainerColor = secondaryCardBackground(),
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "展开"
+                            )
+                        }
+                    )
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = authMenuExpanded,
+                        onDismissRequest = { authMenuExpanded = false }
+                    ) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("无 (不使用鉴权)") },
+                            onClick = {
+                                viewModel.updateAuthCookie("")
+                                authMenuExpanded = false
+                            }
+                        )
+                        settings.cookiesList.forEach { cookieStr ->
+                            var displayName = cookieStr
+                            try {
+                                if (cookieStr.startsWith("{")) {
+                                    val json = org.json.JSONObject(cookieStr)
+                                    displayName = json.optString("name", "")
+                                    if (displayName.isEmpty()) displayName = json.optString("cookie", "")
+                                    if (displayName.isEmpty()) displayName = json.optString("userhash", cookieStr)
+                                }
+                            } catch (e: Exception) {}
+
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(displayName) },
+                                onClick = {
+                                    viewModel.updateAuthCookie(cookieStr)
+                                    authMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("发送前确认饼干", style = settingsItemStyle())
+                    Text("发送回复或新串前选择饼干", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
+                }
+                androidx.compose.material3.Switch(checked = settings.confirmCookieBeforeSend,
+                    onCheckedChange = viewModel::updateConfirmCookieBeforeSend)
+            }
+        }
+        // 草稿箱开关
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.Save, contentDescription = "草稿箱")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "草稿箱",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "关闭后，回复不再自动保存，发串界面不再提供保存草稿功能",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDraftBoxEnabled(!settings.draftBoxEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.draftBoxEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.draftBoxEnabled,
+                        onCheckedChange = { viewModel.updateDraftBoxEnabled(it) }
+                    )
+                }
+            }
+        }
         // 7. Block Management (屏蔽管理)
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
@@ -1292,7 +1168,7 @@ fun SettingsScreen(
                 }
             }
         }
-
+        Text("收藏与分享", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 3. Multiple Feed Folders (多云端收藏夹)
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
@@ -1338,7 +1214,6 @@ fun SettingsScreen(
                 }
             }
         }
-
         // 5. Subscription notifications (蓝岛-style local poll)
         val notifPermissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
@@ -1420,9 +1295,113 @@ fun SettingsScreen(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("分享卡片显示品牌水印", style = settingsItemStyle())
+                    Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = settings.showShareCardBranding,
+                    onCheckedChange = viewModel::setShowShareCardBranding)
+            }
+        }
+        Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("网络兼容模式", style = settingsItemStyle())
+                Spacer(Modifier.height(8.dp))
+                Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (settings.networkCompatibilityEnabled) "已开启" else "已关闭")
+                    androidx.compose.material3.Switch(
+                        checked = settings.networkCompatibilityEnabled,
+                        onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
+                    )
+                }
+            }
+        }
+        // 省流量模式开关
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.CloudOff, contentDescription = "省流量模式")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "省流量模式",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDataSaverEnabled(!settings.dataSaverEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.dataSaverEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.dataSaverEnabled,
+                        onCheckedChange = { viewModel.updateDataSaverEnabled(it) }
+                    )
+                }
+            }
+        }
+        // 备份与恢复
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.Backup, contentDescription = "备份与恢复")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "备份与恢复",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "自选内容导出为一个 JSON 文件，可在此设备或另一台设备恢复；旧版纯饼干备份文件也可恢复",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        pendingBackupSections = BackupRepository.ALL_SECTIONS.toSet()
+                        showBackupPicker = true
+                    }) { Text("备份") }
+                    OutlinedButton(onClick = {
+                        importBackupFileLauncher.launch(
+                            arrayOf("application/json", "text/plain", "application/octet-stream")
+                        )
+                    }) { Text("恢复") }
+                }
+            }
+        }
         // 6. Offline and Caching Settings (离线与缓存设置)
         val cacheSize by viewModel.cacheSizeState.collectAsState()
         val isPreloading by viewModel.isPreloadingState.collectAsState()
@@ -1641,9 +1620,6 @@ fun SettingsScreen(
                 }
             }
         }
-
-
-
         Spacer(modifier = Modifier.height(100.dp))
     }
 }
