@@ -63,6 +63,7 @@ import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.CookieSelector
+import com.mioo.dao.ui.components.ConfirmSendCookieDialog
 import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
@@ -77,14 +78,17 @@ fun ReplyInputArea(
     quotedPostNo: String?,
     cookies: List<String>,
     selectedCookieIndex: Int,
+    confirmCookieBeforeSend: Boolean = false,
+    cookieNotes: Map<String, String> = emptyMap(),
     isReplying: Boolean = false,
     replyError: String? = null,
     onCookieSelect: (Int) -> Unit,
     onReplyTextChange: (String) -> Unit,
     onCancelQuote: () -> Unit,
-    onSend: (java.io.File?) -> Unit
+    onSend: (java.io.File?, String?) -> Unit
 ) {
     var cookieMenuExpanded by remember { mutableStateOf(false) }
+    var showCookieConfirmation by remember { mutableStateOf(false) }
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
     var showDiceDialog by remember { mutableStateOf(false) }
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -368,12 +372,16 @@ fun ReplyInputArea(
 
                     IconButton(
                         onClick = {
-                            val file = attachedImageUri?.toFile(context)
-                            if (attachedImageUri != null && file == null) {
-                                android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
-                                return@IconButton
+                            if (confirmCookieBeforeSend) {
+                                hideSystemIme()
+                                closeToolPanels()
+                                showCookieConfirmation = true
+                            } else {
+                                val file = attachedImageUri?.toFile(context)
+                                if (attachedImageUri != null && file == null) {
+                                    android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
+                                } else onSend(file, null)
                             }
-                            onSend(file)
                         },
                         enabled = isSendActive
                     ) {
@@ -424,6 +432,20 @@ fun ReplyInputArea(
                 showDiceDialog = false
             }
         )
+    }
+
+    if (showCookieConfirmation) {
+        ConfirmSendCookieDialog(cookies = cookies, notes = cookieNotes, selectedIndex = selectedCookieIndex,
+            onDismiss = { showCookieConfirmation = false }, onConfirm = { index, cookie ->
+                showCookieConfirmation = false
+                val file = attachedImageUri?.toFile(context)
+                if (attachedImageUri != null && file == null) {
+                    android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    onCookieSelect(index)
+                    onSend(file, cookie)
+                }
+            })
     }
 
     previewAttachedUri?.let { uri ->

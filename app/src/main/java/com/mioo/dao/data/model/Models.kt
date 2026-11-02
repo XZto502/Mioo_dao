@@ -45,6 +45,7 @@ data class UserSettings(
     val cacheLimitMb: Int = ImageCacheLimit.DEFAULT_MB,
     /** 草稿箱总开关：关闭后回复/新串不再自动存草稿。 */
     val draftBoxEnabled: Boolean = true,
+    val confirmCookieBeforeSend: Boolean = false,
     /** 引用自动显示：关闭后串内页回复正文不再内嵌展开引用卡片，仅保留可点击链接。 */
     val quoteAutoDisplayEnabled: Boolean = true,
     /** 跑团/安科骰点高亮：关闭后串正文不渲染骰子胶囊徽章。 */

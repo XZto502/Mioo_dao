@@ -592,6 +592,8 @@ fun ThreadScreen(
                 ReplyInputBar(
                     viewModel = viewModel,
                     cookies = threadSettings.cookiesList,
+                    confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
+                    cookieNotes = threadSettings.cookieNotes,
                     selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
                         ?.takeIf { it < threadSettings.cookiesList.size }
                         ?: threadSettings.selectedCookieIndex,
@@ -1884,6 +1886,8 @@ private fun ReplyInputBar(
     viewModel: ThreadViewModel,
     cookies: List<String>,
     selectedCookieIndex: Int,
+    confirmCookieBeforeSend: Boolean,
+    cookieNotes: Map<String, String>,
     onCookieSelect: (Int) -> Unit
 ) {
     val composerState by viewModel.composerState.collectAsState()
@@ -1892,14 +1896,16 @@ private fun ReplyInputBar(
         quotedPostNo = composerState.quotedPostNo,
         cookies = cookies,
         selectedCookieIndex = selectedCookieIndex,
+        confirmCookieBeforeSend = confirmCookieBeforeSend,
+        cookieNotes = cookieNotes,
         isReplying = composerState.isReplying,
         replyError = composerState.replyError,
         onCookieSelect = onCookieSelect,
         onReplyTextChange = remember(viewModel) { { text: String -> viewModel.updateReplyText(text) } },
         onCancelQuote = remember(viewModel) { { viewModel.setQuotedPost(null) } },
         onSend = remember(viewModel) {
-            { file: java.io.File? ->
-                viewModel.submitReply(imageFile = file)
+            { file: java.io.File?, cookie: String? ->
+                viewModel.submitReply(imageFile = file, cookieOverride = cookie)
             }
         }
     )

@@ -123,6 +123,9 @@ class SettingsRepository @Inject constructor(
             quoteAutoDisplayEnabled = quoteAutoDisplay
         )
     }
+        .combine(settingsDataStore.confirmCookieBeforeSendFlow) { settings, enabled ->
+            settings.copy(confirmCookieBeforeSend = enabled)
+        }
         .combine(settingsDataStore.showShareCardBrandingFlow) { settings, branding ->
             settings.copy(showShareCardBranding = branding)
         }
@@ -170,6 +173,10 @@ class SettingsRepository @Inject constructor(
 
     fun setShowShareCardBranding(enabled: Boolean) {
         repositoryScope.launch { settingsDataStore.setShowShareCardBranding(enabled) }
+    }
+
+    fun updateConfirmCookieBeforeSend(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.saveConfirmCookieBeforeSend(enabled) }
     }
 
     fun updateDraftBoxEnabled(enabled: Boolean) {

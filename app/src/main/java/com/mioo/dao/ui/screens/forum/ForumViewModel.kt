@@ -433,6 +433,7 @@ class ForumViewModel @Inject constructor(
         author: String,
         content: String,
         imageFile: java.io.File? = null,
+        cookie: String? = null,
         onResult: (success: Boolean, message: String) -> Unit
     ) {
         val targetForumId = forumId
@@ -446,6 +447,7 @@ class ForumViewModel @Inject constructor(
                     email = null,
                     content = content,
                     imageFile = imageFile,
+                    cookie = cookie,
                     forumName = targetForumName
                 ).collect { response ->
                     when (response) {

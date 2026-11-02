@@ -648,6 +648,8 @@ fun ForumScreen(
         CreateThreadEditor(
             cookies = forumSettings.cookiesList,
             selectedCookieIndex = forumSettings.selectedCookieIndex,
+            confirmCookieBeforeSend = forumSettings.confirmCookieBeforeSend,
+            cookieNotes = forumSettings.cookieNotes,
             boardName = uiState.currentForumName,
             initialContent = initialDraft.content,
             initialTitle = initialDraft.title,
@@ -673,14 +675,14 @@ fun ForumScreen(
                     settingsViewModel.clearNewThreadDraft()
                 }
             },
-            onSubmit = { title, author, content, imageUri ->
+            onSubmit = { title, author, content, imageUri, cookie ->
                 if (!isPostingThread) {
                     val imageFile = imageUri?.toFile(context)
                     if (imageUri != null && imageFile == null) {
                         Toast.makeText(context, "图片读取失败", Toast.LENGTH_SHORT).show()
                     } else {
                         isPostingThread = true
-                        viewModel.createThread(title, author, content, imageFile) { ok, message ->
+                        viewModel.createThread(title, author, content, imageFile, cookie) { ok, message ->
                             isPostingThread = false
                             if (ok) {
                                 settingsViewModel.clearNewThreadDraft()

@@ -57,6 +57,7 @@ class SettingsDataStore(private val context: Context) {
         /** last-notified replyCount snapshot for X-island feed/bookmark poll: "tid:count,tid:count" */
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
         val KEY_SHARE_CARD_BRANDING = booleanPreferencesKey("show_share_card_branding")
+        val KEY_CONFIRM_COOKIE_BEFORE_SEND = booleanPreferencesKey("confirm_cookie_before_send")
         val KEY_DRAFT_BOX_ENABLED = booleanPreferencesKey("draft_box_enabled")
         val KEY_QUOTE_AUTO_DISPLAY = booleanPreferencesKey("quote_auto_display")
         val KEY_NETWORK_COMPATIBILITY = booleanPreferencesKey("network_compatibility")
@@ -503,6 +504,14 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setShowShareCardBranding(enabled: Boolean) {
         context.dataStore.edit { it[KEY_SHARE_CARD_BRANDING] = enabled }
+    }
+
+    val confirmCookieBeforeSendFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_CONFIRM_COOKIE_BEFORE_SEND] ?: false }
+
+    suspend fun saveConfirmCookieBeforeSend(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_CONFIRM_COOKIE_BEFORE_SEND] = enabled }
     }
 
     val draftBoxEnabledFlow: Flow<Boolean> = context.dataStore.data

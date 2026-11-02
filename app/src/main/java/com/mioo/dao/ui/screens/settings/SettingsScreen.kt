@@ -459,6 +459,20 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("发送前确认饼干", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text("发送回复或新串前选择饼干", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
+                }
+                androidx.compose.material3.Switch(checked = settings.confirmCookieBeforeSend,
+                    onCheckedChange = viewModel::updateConfirmCookieBeforeSend)
+            }
+        }
+
         Text("数据备份与缓存", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 备份与恢复
         SettingsGroupCard(

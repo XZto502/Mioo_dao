@@ -31,6 +31,8 @@ import kotlinx.coroutines.launch
 data class ThreadScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
+    val cookieNotes: Map<String, String> = emptyMap(),
+    val confirmCookieBeforeSend: Boolean = false,
     val blockedThreads: List<String> = emptyList(),
     val quoteAutoDisplayEnabled: Boolean = true,
     val diceBadgesEnabled: Boolean = true
@@ -41,6 +43,8 @@ data class ThreadScreenSettings(
 data class ForumScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
+    val cookieNotes: Map<String, String> = emptyMap(),
+    val confirmCookieBeforeSend: Boolean = false,
     val pinnedForums: List<String> = emptyList(),
     val expandedForumGroups: List<String> = emptyList(),
     val draftBoxEnabled: Boolean = true
@@ -65,6 +69,8 @@ class SettingsViewModel @Inject constructor(
             ThreadScreenSettings(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
+                cookieNotes = it.cookieNotes,
+                confirmCookieBeforeSend = it.confirmCookieBeforeSend,
                 blockedThreads = it.blockedThreads,
                 quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled,
                 diceBadgesEnabled = it.diceBadgesEnabled
@@ -82,6 +88,8 @@ class SettingsViewModel @Inject constructor(
             ForumScreenSettings(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
+                cookieNotes = it.cookieNotes,
+                confirmCookieBeforeSend = it.confirmCookieBeforeSend,
                 pinnedForums = it.pinnedForums,
                 expandedForumGroups = it.expandedForumGroups,
                 draftBoxEnabled = it.draftBoxEnabled
@@ -343,6 +351,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setShowShareCardBranding(enabled: Boolean) {
         settingsRepository.setShowShareCardBranding(enabled)
+    }
+
+    fun updateConfirmCookieBeforeSend(enabled: Boolean) {
+        settingsRepository.updateConfirmCookieBeforeSend(enabled)
     }
 
     fun updateDraftBoxEnabled(enabled: Boolean) {

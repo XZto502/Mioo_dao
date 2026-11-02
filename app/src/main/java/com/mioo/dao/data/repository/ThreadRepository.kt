@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.mioo.dao.data.api.XdApiService
+import com.mioo.dao.data.api.CookieInterceptor
 import com.mioo.dao.data.api.GithubApiService
 import com.mioo.dao.data.api.extractQuotedJsonString
 import com.mioo.dao.data.api.isXdBusinessPlainString
@@ -490,7 +491,7 @@ class ThreadRepositoryImpl @Inject constructor(
 
             val imagePart = imageFile?.asImagePart()
 
-            val response = apiService.doPostThread(usedCookie, fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
+            val response = apiService.doPostThread(CookieInterceptor.extractHash(usedCookie), fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
             val raw = response.string()
             val result = interpretForumWriteResponse(raw)
             if (result is XdResponse.Success && result.data != "已提交") {
@@ -527,11 +528,11 @@ class ThreadRepositoryImpl @Inject constructor(
                 val contentBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
                 val parentBody = parent.toRequestBody("text/plain".toMediaTypeOrNull())
                 val imagePart = imageFile.asImagePart()
-                apiService.doReplyThread(usedCookie, null, titleBody, nameBody, emailBody, contentBody, parentBody, imagePart)
+                apiService.doReplyThread(CookieInterceptor.extractHash(usedCookie), null, titleBody, nameBody, emailBody, contentBody, parentBody, imagePart)
             } else {
                 // Use FormUrlEncoded for text-only replies (more reliable)
                 apiService.doReplyThreadText(
-                    cookieOverride = usedCookie,
+                    cookieOverride = CookieInterceptor.extractHash(usedCookie),
                     resto = parent,
                     content = content,
                     name = name,

@@ -49,6 +49,7 @@ import com.mioo.dao.data.local.DraftEntity
 import com.mioo.dao.data.local.PostDraftContent
 import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.CookieSelector
+import com.mioo.dao.ui.components.ConfirmSendCookieDialog
 import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.KaomojiQuickPanel
@@ -61,6 +62,8 @@ import com.mioo.dao.ui.theme.immersiveDialogProperties
 fun CreateThreadEditor(
     cookies: List<String>,
     selectedCookieIndex: Int,
+    confirmCookieBeforeSend: Boolean,
+    cookieNotes: Map<String, String>,
     boardName: String,
     initialContent: String = "",
     initialTitle: String = "",
@@ -71,7 +74,7 @@ fun CreateThreadEditor(
     onCookieSelect: (Int) -> Unit,
     isSubmitting: Boolean,
     onDismiss: () -> Unit,
-    onSubmit: (String, String, String, Uri?) -> Unit
+    onSubmit: (String, String, String, Uri?, String?) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
     // Follow the app theme, including an explicit light/dark override in settings.
@@ -108,6 +111,7 @@ fun CreateThreadEditor(
     var previewImage by remember { mutableStateOf<Uri?>(null) }
     var nameExpanded by remember { mutableStateOf(false) }
     var cookiesExpanded by remember { mutableStateOf(false) }
+    var showCookieConfirmation by remember { mutableStateOf(false) }
     var kaomojiExpanded by remember { mutableStateOf(false) }
     var diceOpen by remember { mutableStateOf(false) }
     var draftsOpen by remember { mutableStateOf(false) }
@@ -208,7 +212,8 @@ fun CreateThreadEditor(
                     onClick = {
                         keyboard?.hide()
                         focus.clearFocus(force = true)
-                        onSubmit(title, name.ifBlank { "无名氏" }, body.text, image)
+                        if (confirmCookieBeforeSend) showCookieConfirmation = true
+                        else onSubmit(title, name.ifBlank { "无名氏" }, body.text, image, null)
                     },
                     enabled = canSend, shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -310,6 +315,14 @@ fun CreateThreadEditor(
             if (dirty) { draftToOpen = draft; confirmLeave = true } else onSelectDraft(draft)
         })
     }
+    }
+    if (showCookieConfirmation) {
+        ConfirmSendCookieDialog(cookies = cookies, notes = cookieNotes, selectedIndex = selectedCookieIndex,
+            onDismiss = { showCookieConfirmation = false }, onConfirm = { index, cookie ->
+                showCookieConfirmation = false
+                onCookieSelect(index)
+                onSubmit(title, name.ifBlank { "无名氏" }, body.text, image, cookie)
+            })
     }
     if (diceOpen) DiceDialog(onDismiss = { diceOpen = false }, onInsert = { insert(it); diceOpen = false })
     previewImage?.let { uri -> ImageViewer(imageUrl = uri.toString(), onDismiss = { previewImage = null }) }

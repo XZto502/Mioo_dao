@@ -1135,9 +1135,9 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    fun submitReply(imageFile: File? = null, onSuccess: () -> Unit = {}) {
+    fun submitReply(imageFile: File? = null, cookieOverride: String? = null, onSuccess: () -> Unit = {}) {
         val currentComposer = _composerState.value
-        val threadCookie = _threadCookieIndex.value?.let { idx ->
+        val threadCookie = cookieOverride ?: _threadCookieIndex.value?.let { idx ->
             settingsRepository.settings.value.cookiesList.getOrNull(idx)
         }
         if (currentComposer.replyText.isBlank() && imageFile == null) return
