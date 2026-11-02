@@ -1215,7 +1215,8 @@ class ThreadViewModel @Inject constructor(
                 email = null,
                 content = content,
                 imageFile = null,
-                cookie = cookie
+                cookie = cookie,
+                recordHistory = false
             ).collect { response ->
                 when (response) {
                     is XdResponse.Success -> onResult(true, null)

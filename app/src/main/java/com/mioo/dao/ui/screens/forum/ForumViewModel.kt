@@ -435,15 +435,18 @@ class ForumViewModel @Inject constructor(
         imageFile: java.io.File? = null,
         onResult: (success: Boolean, message: String) -> Unit
     ) {
+        val targetForumId = forumId
+        val targetForumName = _uiState.value.currentForumName
         viewModelScope.launch {
             try {
                 threadRepository.doPostThread(
-                    fid = forumId,
+                    fid = targetForumId,
                     title = if (title.isBlank()) null else title,
                     name = if (author.isBlank()) null else author,
                     email = null,
                     content = content,
-                    imageFile = imageFile
+                    imageFile = imageFile,
+                    forumName = targetForumName
                 ).collect { response ->
                     when (response) {
                         is XdResponse.Success -> {

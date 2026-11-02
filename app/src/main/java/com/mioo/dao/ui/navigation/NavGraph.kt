@@ -28,6 +28,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -41,6 +45,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -81,7 +86,6 @@ import com.mioo.dao.ui.screens.thread.ThreadViewModel
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object SettingsDetail : Screen("settings_detail")
-    object BrowsingHistory : Screen("browsing_history")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
     object Thread : Screen("thread/{threadId}") {
@@ -167,13 +171,14 @@ fun MiooDaoNavGraph(
     }
     val density = LocalDensity.current
     val tabScope = rememberCoroutineScope()
-    val tabPagerState = rememberPagerState(initialPage = 0) { 3 }
+    val tabPagerState = rememberPagerState(initialPage = 0) { 4 }
 
     val bottomBarItems = remember {
         listOf(
             Triple(0, Icons.Default.Home, "板块"),
             Triple(1, Icons.Default.Bookmark, "收藏"),
-            Triple(2, Icons.Default.Settings, "更多")
+            Triple(2, Icons.Default.History, "历史"),
+            Triple(3, Icons.Default.Settings, "更多")
         )
     }
 
@@ -282,7 +287,15 @@ fun MiooDaoNavGraph(
                         ) {
                             bottomBarItems.forEach { (index, icon, label) ->
                                 NavigationBarItem(
-                                    icon = { Icon(icon, contentDescription = label) },
+                                    icon = {
+                                        val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
+                                            0 -> Icons.Outlined.Home
+                                            1 -> Icons.Outlined.BookmarkBorder
+                                            3 -> Icons.Outlined.Settings
+                                            else -> icon
+                                        }
+                                        Icon(displayIcon, contentDescription = label)
+                                    },
                                     label = { Text(label) },
                                     selected = tabPagerState.targetPage == index,
                                     onClick = {
@@ -336,9 +349,6 @@ fun MiooDaoNavGraph(
                     onNavigateToSettings = {
                         navController.navigate(Screen.SettingsDetail.route)
                     },
-                    onNavigateToHistory = {
-                        navController.navigate(Screen.BrowsingHistory.route)
-                    },
                     onNavigateToDrafts = {
                         navController.navigate(Screen.DraftBox.route)
                     },
@@ -367,19 +377,6 @@ fun MiooDaoNavGraph(
                         onBackClick = {
                             navController.popBackStack()
                         }
-                    )
-                }
-            }
-
-            composable(route = Screen.BrowsingHistory.route) { _ ->
-                PageBackdrop {
-                    val viewModel: SettingsViewModel = hiltViewModel()
-                    HistoryScreen(
-                        viewModel = viewModel,
-                        onBackClick = {
-                            navController.popBackStack()
-                        },
-                        onNavigateToThread = navigateToThread
                     )
                 }
             }
@@ -436,10 +433,10 @@ private fun MainTabs(
     onImageViewerOpenChange: (Boolean) -> Unit = {},
     onComposerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
-    onNavigateToHistory: () -> Unit,
     onNavigateToDrafts: () -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
+    val tabState = rememberSaveableStateHolder()
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
@@ -448,6 +445,7 @@ private fun MainTabs(
         userScrollEnabled = false,
         key = { it }
     ) { page ->
+        tabState.SaveableStateProvider(page) {
         PageBackdrop {
             when (page) {
                 0 -> {
@@ -470,17 +468,18 @@ private fun MainTabs(
                         onImageViewerOpenChange = onImageViewerOpenChange
                     )
                 }
+                2 -> HistoryScreen(onNavigateToThread = onNavigateToThread, onImageViewerOpenChange = onImageViewerOpenChange)
                 else -> {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     MoreScreen(
                         viewModel = viewModel,
                         onNavigateToSettings = onNavigateToSettings,
-                        onNavigateToHistory = onNavigateToHistory,
                         onNavigateToDrafts = onNavigateToDrafts,
                         onNavigateToSearch = onNavigateToSearch
                     )
                 }
             }
+        }
         }
     }
 }

@@ -8,6 +8,12 @@ import androidx.room.Query
 @Dao
 interface ProgressDao {
 
+    @Query("SELECT * FROM thread_progress")
+    suspend fun getAll(): List<ThreadProgressEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(progress: List<ThreadProgressEntity>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(progress: ThreadProgressEntity)
 

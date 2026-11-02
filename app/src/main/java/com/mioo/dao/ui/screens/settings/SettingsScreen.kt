@@ -1670,7 +1670,9 @@ fun SettingsScreen(
     if (showBackupPicker) {
         val sectionLabels = listOf(
             "cookies" to "发言饼干（含备注/鉴权/选中）",
-            "history" to "浏览历史",
+            "history" to "浏览历史（含阅读位置）",
+            "replyHistory" to "发言历史（含附图）",
+            "newThreadHistory" to "发串历史（含附图）",
             "bookmarks" to "本地收藏",
             "drafts" to "草稿箱",
             "settings" to "应用设置（主题/字体/开关等）",
@@ -1681,7 +1683,7 @@ fun SettingsScreen(
             properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
             title = { com.mioo.dao.ui.theme.ImmersiveDialogEffect(); Text("选择备份内容") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     sectionLabels.forEach { (key, label) ->
                         Row(
                             modifier = Modifier.fillMaxWidth()
@@ -1722,6 +1724,8 @@ fun SettingsScreen(
                     else {
                         if (r.cookies >= 0) add("发言饼干：${r.cookies} 个")
                         if (r.history >= 0) add("浏览历史：${r.history} 条")
+                        if (r.replyHistory >= 0) add("发言历史：${r.replyHistory} 条")
+                        if (r.newThreadHistory >= 0) add("发串历史：${r.newThreadHistory} 条")
                         if (r.bookmarks >= 0) add("本地收藏：${r.bookmarks} 条")
                         if (r.drafts >= 0) add("草稿箱：${r.drafts} 条")
                         if (r.settings) add("应用设置：已恢复")
