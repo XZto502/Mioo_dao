@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -465,6 +467,10 @@ class ForumViewModel @Inject constructor(
 
     // --- 发言草稿箱：发串草稿 ---
 
+    val postDrafts = threadRepository.getDrafts()
+        .map { drafts -> drafts.filter { it.type == com.mioo.dao.data.local.DraftEntity.TYPE_POST } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     /** 草稿箱里待恢复的发串草稿（跨屏总线，单例持有）。 */
     val postDraftPrefill: StateFlow<com.mioo.dao.data.local.DraftEntity?>
         get() = draftPrefillBus.pending
@@ -473,16 +479,18 @@ class ForumViewModel @Inject constructor(
         draftPrefillBus.consume()
     }
 
-    fun savePostDraft(title: String, author: String, content: String, onDone: () -> Unit = {}) {
+    fun savePostDraft(title: String, author: String, content: String, onDone: (Boolean) -> Unit) {
+        val boardId = forumId
+        val boardName = _uiState.value.currentForumName
         viewModelScope.launch {
-            threadRepository.savePostDraft(
-                boardId = forumId,
-                boardName = _uiState.value.currentForumName,
-                name = author.takeIf { it.isNotBlank() },
-                title = title.takeIf { it.isNotBlank() },
-                content = content
-            )
-            onDone()
+            try {
+                threadRepository.savePostDraft(boardId, boardName, author, title, content)
+                onDone(true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                onDone(false)
+            }
         }
     }
 

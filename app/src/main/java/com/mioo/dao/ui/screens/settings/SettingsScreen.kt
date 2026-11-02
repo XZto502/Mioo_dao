@@ -502,7 +502,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "关闭后，未发送的回复与新串内容不再自动保存到草稿箱",
+                    text = "关闭后，回复不再自动保存，发串界面不再提供保存草稿功能",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

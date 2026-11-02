@@ -111,7 +111,7 @@ fun DraftBoxScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "暂无草稿\n回复时输入的内容会自动存到这里；发串可点顶部\"存草稿\"",
+                    text = "暂无草稿\n回复内容会自动保存；发串时可点保存按钮，或退出时选择“保存草稿”",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center

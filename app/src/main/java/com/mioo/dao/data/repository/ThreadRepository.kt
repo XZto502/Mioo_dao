@@ -928,19 +928,11 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String) {
         ensureDraftsMigrated()
-        if (content.isBlank() && title.isNullOrBlank()) {
+        val fields = com.mioo.dao.data.local.PostDraftContent(title.orEmpty(), name.orEmpty(), content)
+        if (!fields.hasContent) {
             draftDao.deleteFor(com.mioo.dao.data.local.DraftEntity.TYPE_POST, boardId)
         } else {
-            draftDao.upsert(
-                com.mioo.dao.data.local.DraftEntity(
-                    type = com.mioo.dao.data.local.DraftEntity.TYPE_POST,
-                    targetId = boardId,
-                    targetName = boardName,
-                    name = name?.takeIf { it.isNotBlank() },
-                    title = title?.takeIf { it.isNotBlank() },
-                    content = content
-                )
-            )
+            draftDao.upsert(fields.toDraft(boardId, boardName))
         }
     }
 

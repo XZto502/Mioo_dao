@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Menu
@@ -128,6 +129,8 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.data.local.DraftEntity
+import com.mioo.dao.data.local.PostDraftContent
 import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.FreeCopyDialog
@@ -659,51 +662,56 @@ fun ForumScreen(
         )
     }
 
-    var newThreadDraftText by remember { mutableStateOf("") }
-    /** 草稿箱恢复的发串草稿（优先于全局自动草稿预填）。 */
+    // New threads are saved only by an explicit action, never by typing.
     var pendingPostDraft by remember {
         mutableStateOf<com.mioo.dao.data.local.DraftEntity?>(null)
     }
-    LaunchedEffect(showCreateDialog) {
-        if (showCreateDialog) {
-            newThreadDraftText = settingsViewModel.getNewThreadDraft()
+    var composerSession by remember { mutableIntStateOf(0) }
+    fun selectPostDraft(draft: DraftEntity) {
+        if (draft.targetId != "new_thread" && draft.targetId != viewModel.forumId) {
+            viewModel.selectForum(draft.targetId, draft.targetName)
         }
+        pendingPostDraft = draft
+        composerSession++
     }
     // 草稿箱 → 发串：总线收到草稿后打开对话框并预填
     val postDraftPrefill by viewModel.postDraftPrefill.collectAsState()
     LaunchedEffect(postDraftPrefill) {
         if (postDraftPrefill != null) {
-            pendingPostDraft = postDraftPrefill
+            selectPostDraft(postDraftPrefill!!)
             showCreateDialog = true
             viewModel.consumePostDraftPrefill()
         }
     }
 
     if (showCreateDialog) {
+        val postDrafts by viewModel.postDrafts.collectAsState()
         // 与串内回复栏同源：键盘/导航条高度在 Activity 窗口里量取。
         // Dialog 窗口在这台设备上收不到 ime insets、可见区兜底也不收缩，
         // 槽位如果用对话框自己量到的 0，底栏就会被键盘整个盖住。
         val density = LocalDensity.current
         val imeBottomPx = rememberEffectiveImeBottomPx()
         val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+        key(composerSession) {
+        val initialDraft = pendingPostDraft?.let { PostDraftContent.from(it) } ?: PostDraftContent("", "", "")
         CreateThreadDialog(
             imeBottomPx = imeBottomPx,
             navBottomPx = navBottomPx,
             cookies = forumSettings.cookiesList,
             selectedCookieIndex = forumSettings.selectedCookieIndex,
             boardName = uiState.currentForumName,
-            initialContent = pendingPostDraft?.content ?: newThreadDraftText,
-            initialTitle = pendingPostDraft?.title ?: "",
-            initialName = pendingPostDraft?.name ?: "",
-            onContentChange = { draft ->
-                // Debounced inside ViewModel — no per-keystroke coroutine spam
-                settingsViewModel.saveNewThreadDraft(draft)
-            },
+            initialContent = initialDraft.content,
+            initialTitle = initialDraft.title,
+            initialName = initialDraft.name,
+            drafts = postDrafts,
+            onSelectDraft = ::selectPostDraft,
             // 草稿箱开关关闭时不提供「存草稿」按钮（参数为 null 时对话框隐藏该入口）
             onSaveDraft = if (forumSettings.draftBoxEnabled) {
-                { draftTitle: String, draftAuthor: String, draftContent: String ->
-                    viewModel.savePostDraft(draftTitle, draftAuthor, draftContent) {
-                        Toast.makeText(context, "已存入草稿箱", Toast.LENGTH_SHORT).show()
+                { draftTitle: String, draftAuthor: String, draftContent: String, onDone: (Boolean) -> Unit ->
+                    viewModel.savePostDraft(draftTitle, draftAuthor, draftContent) { saved ->
+                        if (saved) settingsViewModel.clearNewThreadDraft()
+                        Toast.makeText(context, if (saved) "已存入草稿箱" else "草稿保存失败，请重试", Toast.LENGTH_SHORT).show()
+                        onDone(saved)
                     }
                 }
             } else null,
@@ -713,6 +721,7 @@ fun ForumScreen(
                 if (!isPostingThread) {
                     showCreateDialog = false
                     pendingPostDraft = null
+                    settingsViewModel.clearNewThreadDraft()
                 }
             },
             onSubmit = { title, author, content, imageUri ->
@@ -739,6 +748,7 @@ fun ForumScreen(
                 }
             }
         )
+        }
     }
 
     activeImageUrl?.let { imageUrl ->
@@ -1129,8 +1139,9 @@ fun CreateThreadDialog(
     initialContent: String = "",
     initialTitle: String = "",
     initialName: String = "",
-    onContentChange: (String) -> Unit = {},
-    onSaveDraft: ((title: String, author: String, content: String) -> Unit)? = null,
+    drafts: List<DraftEntity> = emptyList(),
+    onSelectDraft: (DraftEntity) -> Unit = {},
+    onSaveDraft: ((title: String, author: String, content: String, onDone: (Boolean) -> Unit) -> Unit)? = null,
     onCookieSelect: (Int) -> Unit,
     isSubmitting: Boolean = false,
     onDismiss: () -> Unit,
@@ -1152,6 +1163,9 @@ fun CreateThreadDialog(
     var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
     var previewAttachedUri by remember { mutableStateOf<Uri?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
+    var showDraftPicker by remember { mutableStateOf(false) }
+    var draftToOpen by remember { mutableStateOf<DraftEntity?>(null) }
+    var isSavingDraft by remember { mutableStateOf(false) }
     /** 打开快捷面板后短时间内忽略 IME 可见（键盘下落动画） */
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
 
@@ -1160,24 +1174,37 @@ fun CreateThreadDialog(
     val colorScheme = MaterialTheme.colorScheme
     val density = LocalDensity.current
 
-    var userEditedContent by remember { mutableStateOf(false) }
-    LaunchedEffect(initialContent) {
-        // 异步草稿晚到时不得覆盖用户已输入的内容（打开对话框到 DataStore 返回有几十毫秒窗口）
-        if (!userEditedContent && contentValue.text != initialContent) {
-            contentValue = contentValue.copy(
-                text = initialContent,
-                selection = TextRange(initialContent.length)
-            )
-        }
-    }
-
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         attachedImageUri = uri
     }
 
-    val canSubmit = !isSubmitting && (contentValue.text.isNotBlank() || attachedImageUri != null)
+    val fields = PostDraftContent(title, author, contentValue.text)
+    var savedFields by remember { mutableStateOf(PostDraftContent(initialTitle, initialName, initialContent)) }
+    val hasUnsavedChanges = fields != savedFields || attachedImageUri != null
+    val canSubmit = !isSubmitting && !isSavingDraft && (contentValue.text.isNotBlank() || attachedImageUri != null)
+
+    fun finishPendingAction() {
+        confirmDiscard = false
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
+        val draft = draftToOpen
+        draftToOpen = null
+        if (draft == null) onDismiss() else onSelectDraft(draft)
+    }
+
+    fun saveDraft(leaveAfterSave: Boolean) {
+        val save = onSaveDraft ?: return
+        if (isSavingDraft || isSubmitting || !fields.hasContent) return
+        isSavingDraft = true
+        val snapshot = fields
+        save(title, author, contentValue.text) { saved ->
+            isSavingDraft = false
+            if (saved) savedFields = snapshot
+            if (saved && leaveAfterSave) finishPendingAction()
+        }
+    }
 
     fun submit() {
         if (!canSubmit) return
@@ -1189,7 +1216,6 @@ fun CreateThreadDialog(
     }
 
     fun insertAtCursor(snippet: String) {
-        userEditedContent = true
         val text = contentValue.text
         val selection = contentValue.selection
         val start = selection.start.coerceIn(0, text.length)
@@ -1202,7 +1228,6 @@ fun CreateThreadDialog(
             text = newText,
             selection = TextRange(newCursor)
         )
-        onContentChange(newText)
     }
 
     fun closeToolPanels() {
@@ -1212,7 +1237,7 @@ fun CreateThreadDialog(
     fun requestLeave() {
         // 发送中不允许关闭对话框；也不弹"放弃"确认——原实现会弹确认，
         // 但点"放弃"被父层 isPostingThread 拦截成死点击
-        if (isSubmitting) return
+        if (isSubmitting || isSavingDraft) return
         if (confirmDiscard) {
             confirmDiscard = false
             return
@@ -1221,8 +1246,7 @@ fun CreateThreadDialog(
             closeToolPanels()
             return
         }
-        val dirty = title.isNotBlank() || contentValue.text.isNotBlank() || attachedImageUri != null
-        if (dirty) confirmDiscard = true else onDismiss()
+        if (hasUnsavedChanges) confirmDiscard = true else onDismiss()
     }
 
     val isDark = isSystemInDarkTheme()
@@ -1373,12 +1397,12 @@ fun CreateThreadDialog(
                         actions = {
                             if (onSaveDraft != null) {
                                 IconButton(
-                                    onClick = { onSaveDraft(title, author, contentValue.text) },
-                                    enabled = title.isNotBlank() || contentValue.text.isNotBlank()
+                                    onClick = { saveDraft(leaveAfterSave = false) },
+                                    enabled = fields.hasContent && !isSubmitting && !isSavingDraft
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Description,
-                                        contentDescription = "存草稿"
+                                        imageVector = Icons.Default.Save,
+                                        contentDescription = "保存草稿"
                                     )
                                 }
                             }
@@ -1495,6 +1519,30 @@ fun CreateThreadDialog(
                         .padding(innerPadding)
                         .padding(horizontal = 16.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (onSaveDraft != null) "保存标题、名称和正文" else "草稿箱已关闭",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus(force = true)
+                                closeToolPanels()
+                                showDraftPicker = true
+                            },
+                            enabled = !isSubmitting && !isSavingDraft
+                        ) {
+                            Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("选择草稿")
+                        }
+                    }
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
@@ -1559,9 +1607,7 @@ fun CreateThreadDialog(
                         BasicTextField(
                             value = contentValue,
                             onValueChange = { newValue ->
-                                userEditedContent = true
                                 contentValue = newValue
-                                onContentChange(newValue.text)
                             },
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1679,17 +1725,53 @@ fun CreateThreadDialog(
     }
     if (confirmDiscard) {
         AlertDialog(
-            onDismissRequest = { confirmDiscard = false },
-            title = { Text("是否放弃编辑") },
-            text = { Text("标题、正文或图片还没发送。放弃后仍会保留草稿，下次可以继续写。") },
+            onDismissRequest = { if (!isSavingDraft) { confirmDiscard = false; draftToOpen = null } },
+            properties = immersiveDialogProperties(),
+            icon = { Icon(Icons.Default.Description, contentDescription = null) },
+            title = { Text(if (onSaveDraft != null) "是否保存草稿？" else "放弃本次编辑？") },
+            text = {
+                ImmersiveDialogEffect(lightAppearance = !isDark)
+                Text(buildString {
+                    append(when {
+                        onSaveDraft == null -> "草稿箱已关闭。"
+                        draftToOpen != null -> "选择其他草稿前，可以先保存当前编辑。"
+                        else -> "保存后可从草稿箱或发串界面继续编辑。"
+                    })
+                    append("放弃将清空本次编辑，已保存的草稿不受影响。")
+                    if (attachedImageUri != null) append("\n图片不会存入草稿，继续编辑时需重新选择。")
+                })
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmDiscard = false
-                    onDismiss()
-                }) { Text("放弃") }
+                if (onSaveDraft != null) {
+                    FilledTonalButton(
+                        onClick = { saveDraft(leaveAfterSave = true) },
+                        enabled = fields.hasContent && !isSavingDraft
+                    ) { Text(if (isSavingDraft) "保存中…" else "保存草稿") }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") }
+                Row {
+                    TextButton(
+                        onClick = { confirmDiscard = false; draftToOpen = null },
+                        enabled = !isSavingDraft
+                    ) { Text("继续编辑") }
+                    TextButton(onClick = { finishPendingAction() }, enabled = !isSavingDraft) {
+                        Text("放弃", color = colorScheme.error)
+                    }
+                }
+            }
+        )
+    }
+    if (showDraftPicker) {
+        PostDraftPicker(
+            drafts = drafts,
+            onDismiss = { showDraftPicker = false },
+            onSelect = { draft ->
+                showDraftPicker = false
+                if (hasUnsavedChanges) {
+                    draftToOpen = draft
+                    confirmDiscard = true
+                } else onSelectDraft(draft)
             }
         )
     }
