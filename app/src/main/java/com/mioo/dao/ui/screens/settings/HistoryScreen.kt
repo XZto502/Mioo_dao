@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 fun HistoryScreen(
     onNavigateToThread: (String) -> Unit,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
+    openGeneration: Int = 0,
     viewModel: HistoryViewModel = hiltViewModel(),
     modifier: Modifier = Modifier
 ) {
@@ -149,6 +150,7 @@ fun HistoryScreen(
                     val records by viewModel.items(category).collectAsState()
                     val categoryQuery by viewModel.query(category).collectAsState()
                     val list = rememberLazyListState()
+                    LaunchedEffect(openGeneration) { list.scrollToItem(0) }
                     var previousQuery by rememberSaveable(category.name) { mutableStateOf(categoryQuery) }
                     LaunchedEffect(categoryQuery) {
                         if (previousQuery != categoryQuery) { list.scrollToItem(0); previousQuery = categoryQuery }

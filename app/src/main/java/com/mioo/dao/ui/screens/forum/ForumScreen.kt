@@ -142,6 +142,7 @@ fun ForumScreen(
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var switchingBoard by remember { mutableStateOf(false) }
     val emptyStringLambda = remember { { _: String -> } }
     var handledRefreshGeneration by rememberSaveable(currentForumId) { mutableStateOf(0L) }
 
@@ -277,19 +278,24 @@ fun ForumScreen(
     val allowBackgroundWarm = !drawerBlocksMainList && !boardSwitchQuiet
 
     fun selectBoard(id: String, name: String) {
-        if (id == viewModel.forumId) {
-            scope.launch { drawerState.close() }
-            return
+        if (switchingBoard) return
+        switchingBoard = true
+        scope.launch {
+            try {
+                // Finish dismissing the modal scrim before replacing its underlying list.
+                // Otherwise a gesture can interrupt close and leave the new board covered.
+                drawerState.close()
+                if (id != viewModel.forumId) viewModel.selectForum(id, name)
+            } finally {
+                switchingBoard = false
+            }
         }
-        // Start content switch immediately; close drawer in parallel for snappier feel
-        viewModel.selectForum(id, name)
-        scope.launch { drawerState.close() }
     }
 
     Box(Modifier.fillMaxSize()) {
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = true,
+        gesturesEnabled = !switchingBoard,
         scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
         drawerContent = {
             ModalDrawerSheet(

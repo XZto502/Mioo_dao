@@ -172,6 +172,7 @@ fun MiooDaoNavGraph(
     val density = LocalDensity.current
     val tabScope = rememberCoroutineScope()
     val tabPagerState = rememberPagerState(initialPage = 0) { 4 }
+    var historyOpenGeneration by remember { mutableIntStateOf(0) }
 
     val bottomBarItems = remember {
         listOf(
@@ -299,6 +300,7 @@ fun MiooDaoNavGraph(
                                     label = { Text(label) },
                                     selected = tabPagerState.targetPage == index,
                                     onClick = {
+                                        if (index == 2) historyOpenGeneration++
                                         if (tabPagerState.targetPage == index) return@NavigationBarItem
                                         tabScope.launch {
                                             if (reducedMotion) {
@@ -337,6 +339,7 @@ fun MiooDaoNavGraph(
             ) { _ ->
                 MainTabs(
                     pagerState = tabPagerState,
+                    historyOpenGeneration = historyOpenGeneration,
                     onNavigateToThread = navigateToThread,
                     onColdStartContentReady = onColdStartContentReady,
                     dockSinkFraction = { bottomBarSlide.value },
@@ -423,6 +426,7 @@ fun MiooDaoNavGraph(
 @Composable
 private fun MainTabs(
     pagerState: PagerState,
+    historyOpenGeneration: Int,
     onNavigateToThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float = { 0f },
@@ -465,7 +469,7 @@ private fun MainTabs(
                         onImageViewerOpenChange = onImageViewerOpenChange
                     )
                 }
-                2 -> HistoryScreen(onNavigateToThread = onNavigateToThread, onImageViewerOpenChange = onImageViewerOpenChange)
+                2 -> HistoryScreen(onNavigateToThread = onNavigateToThread, onImageViewerOpenChange = onImageViewerOpenChange, openGeneration = historyOpenGeneration)
                 else -> {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     MoreScreen(
