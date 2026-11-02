@@ -182,6 +182,7 @@ fun MiooDaoNavGraph(
     var forumDrawerOpen by remember { mutableStateOf(false) }
     // 大图查看器打开时收起悬浮 dock：不遮查看器底部药丸、不拦点击
     var isImageViewerOpen by remember { mutableStateOf(false) }
+    var isComposerOpen by remember { mutableStateOf(false) }
     // Scroll the feed downward (finger up) and the tab capsule slides off the bottom.
     // A short reverse drag, or hitting the top, brings it back.
     var bottomBarVisible by remember { mutableStateOf(true) }
@@ -246,7 +247,7 @@ fun MiooDaoNavGraph(
 
     Scaffold(
         bottomBar = {
-            if (showBottomBar) {
+            if (showBottomBar && !isComposerOpen) {
                 // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
                 AnimatedVisibility(
                     visible = !forumDrawerOpen && !isImageViewerOpen,
@@ -331,6 +332,7 @@ fun MiooDaoNavGraph(
                     dockSinkFraction = { bottomBarSlide.value },
                     onForumDrawerOpenChange = { forumDrawerOpen = it },
                     onImageViewerOpenChange = { isImageViewerOpen = it },
+                    onComposerOpenChange = { isComposerOpen = it },
                     onNavigateToSettings = {
                         navController.navigate(Screen.SettingsDetail.route)
                     },
@@ -432,6 +434,7 @@ private fun MainTabs(
     dockSinkFraction: () -> Float = { 0f },
     onForumDrawerOpenChange: (Boolean) -> Unit = {},
     onImageViewerOpenChange: (Boolean) -> Unit = {},
+    onComposerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToDrafts: () -> Unit,
@@ -455,7 +458,8 @@ private fun MainTabs(
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = dockSinkFraction,
                         onDrawerOpenChange = onForumDrawerOpenChange,
-                        onImageViewerOpenChange = onImageViewerOpenChange
+                        onImageViewerOpenChange = onImageViewerOpenChange,
+                        onComposerOpenChange = onComposerOpenChange
                     )
                 }
                 1 -> {

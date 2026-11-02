@@ -66,7 +66,8 @@ fun CookieSelector(
     selectedIndex: Int,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    onSelect: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh
 ) {
     val currentCookie = cookies.getOrNull(selectedIndex) ?: "选择饼干"
     val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
@@ -74,7 +75,7 @@ fun CookieSelector(
     // 胶囊色不透明：透出下层文字的 alpha 色会在玻璃底栏上糊字
     val capsuleColor by animateColorAsState(
         targetValue = if (expanded) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        else containerColor,
         label = "cookieCapsule"
     )
     val capsuleBorderColor = if (expanded) {

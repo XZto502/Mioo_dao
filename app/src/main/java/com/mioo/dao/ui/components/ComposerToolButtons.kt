@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.graphicsPressScale
@@ -33,7 +34,8 @@ fun ComposerToolButtons(
     onDiceClick: () -> Unit,
     onKaomojiClick: () -> Unit,
     onImageClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
 ) {
     val scheme = MaterialTheme.colorScheme
     val idle = scheme.onSurfaceVariant
@@ -42,7 +44,7 @@ fun ComposerToolButtons(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(22.dp),
-        color = scheme.surfaceVariant.copy(alpha = 0.45f),
+        color = containerColor,
         border = BorderStroke(
             width = 0.5.dp,
             color = scheme.outlineVariant.copy(alpha = 0.55f)
