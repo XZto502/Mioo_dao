@@ -242,6 +242,7 @@ fun ThreadScreen(
         }
     }
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
+    var referenceImageOpen by remember { mutableStateOf(false) }
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
     // 串内举报：目标楼层 id（该楼自身），null = 对话框关闭
@@ -682,7 +683,7 @@ fun ThreadScreen(
                     { quoteNo: String -> viewModel.showRefPopup(quoteNo) }
                 }
                 val onImageClick = remember {
-                    { url: String -> activeImageUrl = IslandImage.fullSize(url) }
+                    { url: String -> referenceImageOpen = false; activeImageUrl = IslandImage.fullSize(url) }
                 }
                 val onViewThreadClick = remember(onNavigateToThread) {
                     { tid: String -> onNavigateToThread(tid) }
@@ -842,7 +843,11 @@ fun ThreadScreen(
             // Own collector: open/close ref never invalidates the LazyColumn parent
             ThreadRefPopupHost(
                 viewModel = viewModel,
-                onImageClick = { activeImageUrl = it },
+                onImageClick = { url ->
+                    viewModel.dismissRefPopup()
+                    referenceImageOpen = true
+                    activeImageUrl = IslandImage.fullSize(url)
+                },
                 onNavigateToThread = onNavigateToThread
             )
         }
@@ -878,10 +883,10 @@ fun ThreadScreen(
     activeImageUrl?.let { imageUrl ->
         ImageViewer(
             initialImageUrl = imageUrl,
-            imageMeta = viewerImages,
-            onDismiss = { activeImageUrl = null },
+            imageMeta = if (referenceImageOpen) emptyList() else viewerImages,
+            onDismiss = { activeImageUrl = null; referenceImageOpen = false },
             onRequestMorePages = { viewModel.loadNextPage(resetFilterSkip = true) },
-            hasMorePages = !listUi.isLastPage,
+            hasMorePages = !referenceImageOpen && !listUi.isLastPage,
             isLoadingMore = listUi.isLoading,
             loadedPage = listUi.currentPage,
             pageLoadError = listUi.nextPageError,

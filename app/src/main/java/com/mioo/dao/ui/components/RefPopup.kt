@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -81,7 +82,7 @@ fun RefPopup(
             if (canGoBack) onBack() else onDismiss()
         }
         BoxWithConstraints(Modifier.fillMaxWidth().safeDrawingPadding()) {
-        val maxCardHeight = (maxHeight - 48.dp).coerceAtLeast(0.dp)
+        val maxCardHeight = minOf(maxHeight * 0.65f, 460.dp)
         val contentScroll = remember(postId) { ScrollState(0) }
         AnimatedVisibility(
             visibleState = visibleState,
@@ -93,49 +94,15 @@ fun RefPopup(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 24.dp)
                 .heightIn(max = maxCardHeight),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = readingCardColor()),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            border = readingCardBorder()
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) androidx.compose.ui.graphics.Color(0xFF16181E) else androidx.compose.ui.graphics.Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                // Header Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "引用",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (canGoBack) {
-                        TextButton(onClick = onBack) {
-                            Text("上一层")
-                        }
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close reference",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
                 // 标题与关闭按钮固定；正文、附图与原串入口共用可滚动区域。
                 Column(
                     modifier = Modifier
@@ -216,26 +183,7 @@ fun RefPopup(
                             )
                         }
 
-                        // View Original Thread right aligned text
-                        val targetThreadId = postData.resto
-                        val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
-                        val hasValidThread = !targetThreadId.isNullOrBlank() && targetThreadId != "0" && targetThreadId != "null"
-                        if (hasValidThread && !isCurrentThread) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onViewThreadClick(targetThreadId!!) }
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                Text(
-                                    text = "跳转原串",
-                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
+
                     }
                 }
                 }

@@ -209,71 +209,27 @@ fun QuotedPostBox(
     modifier: Modifier = Modifier,
     currentThreadId: String? = null
 ) {
-    val isDeleted = quote.content.contains("该引用不存在") || quote.content.contains("该帖不存在") || quote.content.contains("已被删除")
-
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    var expanded by rememberSaveable(quote.id) { mutableStateOf(false) }
-    val reducedMotion = isReducedMotionEnabled()
-    LaunchedEffect(quote.id, quote.isQuotePlaceholder) {
-        // 旧展开状态不能让尚未加载的引用在回包时自动长高。
-        if (quote.isQuotePlaceholder) expanded = false
-    }
-    val isExpanded = expanded && !quote.isQuotePlaceholder
-    val toggleExpanded = {
-        if (quote.isQuotePlaceholder) onQuoteClick(quote.id) else expanded = !expanded
-    }
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (isExpanded) 180f else 0f,
-        animationSpec = MiooMotion.tweenOut(if (reducedMotion) 0 else MiooMotion.DurationSmall),
-        label = "quoteExpansionArrow"
-    )
     Surface(
         modifier = modifier.fillMaxWidth().combinedClickable(
             interactionSource = remember { MutableInteractionSource() }, indication = null,
-            onClick = toggleExpanded, onLongClick = onLongClick),
+            onClick = { onQuoteClick(quote.id) }, onLongClick = onLongClick),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.05f else 0.035f)
     ) {
-        Row(Modifier.animateContentSize(
-            animationSpec = MiooMotion.tweenOut(if (reducedMotion) 0 else MiooMotion.DurationSmall)
-        ).height(IntrinsicSize.Min).padding(horizontal = 12.dp, vertical = 9.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min).padding(horizontal = 12.dp, vertical = 9.dp)) {
             Box(Modifier.width(2.5.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)))
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("No.${quote.id}", style = readingTextStyle(11f, 16f).copy(fontFeatureSettings = "tnum"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(1f))
-                    Icon(Icons.Default.ExpandMore,
-                        contentDescription = if (quote.isQuotePlaceholder) "查看引用" else if (isExpanded) "收起引用" else "展开引用",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(18.dp).rotate(arrowRotation))
+                Text("No.${quote.id}", style = readingTextStyle(11f, 16f).copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                val previewContent = remember(quote.content) {
+                    quote.content.replace(Regex("(?i)(?:\\s|<br\\s*/?>|&nbsp;)+$"), "")
                 }
-                if (!isExpanded) {
-                    Text(remember(quote.content) { quotePreviewPlain(quote.content) },
-                        style = readingQuoteStyle(), minLines = 2, maxLines = 2,
-                        overflow = TextOverflow.Ellipsis)
-                } else {
-                    ReadingIdentity(quote)
-                    HtmlContent(html = quote.content, onQuoteClick = onQuoteClick,
-                        onTextClick = toggleExpanded,
-                        onLongClick = onLongClick, style = readingQuoteStyle(),
-                        modifier = Modifier.fillMaxWidth())
-                    quote.imageUrl?.let { imageUrl ->
-                        ListThumbAsyncImage(imageUrl = imageUrl, contentDescription = "引用图片",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(120.dp).clip(RoundedCornerShape(10.dp))
-                                .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) })
-                    }
-                    val target = quote.resto
-                    if (!isDeleted && !target.isNullOrBlank() && target != "0" &&
-                        target != "null" && target != currentThreadId) {
-                        Text("跳转原串", style = readingMetaStyle(), color = quoteColor,
-                            modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onViewThreadClick(target) }.padding(vertical = 4.dp))
-                    }
-                }
+                if (previewContent.isBlank()) Text("（图片或空内容）", style = readingQuoteStyle())
+                else HtmlContent(html = previewContent, onQuoteClick = {}, style = readingQuoteStyle(),
+                    maxLines = 3, overflow = TextOverflow.Ellipsis, enableGestures = false)
             }
         }
     }
