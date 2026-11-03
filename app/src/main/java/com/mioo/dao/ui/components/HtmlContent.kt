@@ -606,9 +606,17 @@ fun HtmlContent(
                 onTap = { pos ->
                     layoutResult?.let { layout ->
                         val offset = layout.getOffsetForPosition(pos)
-                        val spoilerAnnotation = displayText.getStringAnnotations(
-                            tag = "SPOILER", start = offset, end = offset
-                        ).firstOrNull()
+                        val visibleEnd = if (layout.lineCount > 0) layout.getLineEnd(layout.lineCount - 1) else 0
+                        val hitSlop = 8.dp.toPx()
+                        val spoilerAnnotation = spoilerRanges.firstOrNull { range ->
+                            val start = range.start.coerceAtLeast(0)
+                            val end = minOf(range.end, visibleEnd, layout.layoutInput.text.length)
+                            (start until end).any { index ->
+                                val bounds = layout.getBoundingBox(index)
+                                pos.x >= bounds.left - hitSlop && pos.x <= bounds.right + hitSlop &&
+                                    pos.y >= bounds.top - hitSlop && pos.y <= bounds.bottom + hitSlop
+                            }
+                        }
                         val quoteAnnotation = displayText.getStringAnnotations(
                             tag = "QUOTE_CLICK", start = offset, end = offset
                         ).firstOrNull()
@@ -643,9 +651,12 @@ fun HtmlContent(
         modifier = if (spoilerRanges.isEmpty()) textModifier else textModifier.drawBehind {
             val layout = layoutResult ?: return@drawBehind
             spoilerRanges.forEachIndexed { index, range ->
-                if (range.start >= layout.layoutInput.text.length) return@forEachIndexed
+                if (layout.lineCount == 0) return@forEachIndexed
+                val visibleEnd = layout.getLineEnd(layout.lineCount - 1)
+                val endOffset = minOf(range.end, visibleEnd, layout.layoutInput.text.length)
+                if (range.start < 0 || range.start >= endOffset) return@forEachIndexed
                 val firstLine = layout.getLineForOffset(range.start)
-                val lastOffset = (range.end - 1).coerceAtMost(layout.layoutInput.text.length - 1)
+                val lastOffset = endOffset - 1
                 val lastLine = layout.getLineForOffset(lastOffset)
                 val progress = spoilerProgress[index].value
                 val fill = androidx.compose.ui.graphics.lerp(spoilerHiddenColor, spoilerRevealedColor, progress)
