@@ -101,13 +101,9 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
         if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
     }
     BackHandler { close() }
-    val enterDuration = if (reducedMotion) 0 else 460
-    val exitDuration = if (reducedMotion) 0 else 360
     AnimatedVisibility(visibleState = visibility,
-        enter = fadeIn(tween(enterDuration, easing = MiooMotion.EaseOut)) +
-            scaleIn(initialScale = MiooMotion.ScaleEnterFrom, animationSpec = tween(enterDuration, easing = MiooMotion.EaseOut)),
-        exit = fadeOut(tween(exitDuration, easing = MiooMotion.EaseOut)) +
-            scaleOut(targetScale = MiooMotion.ScaleExitTo, animationSpec = tween(exitDuration, easing = MiooMotion.EaseOut)),
+        enter = MiooMotion.modalEnter(reducedMotion),
+        exit = MiooMotion.modalExit(reducedMotion),
         modifier = Modifier.fillMaxSize().zIndex(100f)) {
     Box(Modifier.fillMaxSize().background(pageColor)) {
         Column(Modifier.fillMaxSize()) {
