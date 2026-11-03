@@ -16,7 +16,9 @@ object ContentBlockSplitter {
             val trimmed = text.replace(edgeBreaks, "")
             if (trimmed.isNotBlank()) blocks.add(PostContentBlock.Text(trimmed))
         }
-        val spoilers = Regex("\\[h\\][\\s\\S]*?\\[/h\\]", RegexOption.IGNORE_CASE)
+        val spoilers = Regex(
+            """\[h\][\s\S]*?\[/h\]|<span\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bh(?:-hidden-text)?\b[^"']*["'])[^>]*>[\s\S]*?</span\s*>""",
+            RegexOption.IGNORE_CASE)
             .findAll(html).map { it.range }.toList()
         for (match in reference.findAll(html)) {
             if (spoilers.any { match.range.first in it }) continue

@@ -2,6 +2,8 @@ package com.mioo.dao.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +36,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.runtime.key
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -173,7 +183,7 @@ fun parseHtmlToAnnotatedString(
             appendHtmlFragment(cleaned.substring(cursor, match.range.first), quoteLinkColor, defaultGreenColor, darkTheme, ctx)
             val start = length
             // Avoid inline dice exposing the hidden content before it is revealed.
-            appendHtmlFragment(match.groupValues[1], quoteLinkColor, defaultGreenColor, darkTheme, null)
+            appendHtmlFragment(match.groups[1]?.value ?: match.groups[2]!!.value, quoteLinkColor, defaultGreenColor, darkTheme, null)
             if (length > start) addStringAnnotation("SPOILER", index.toString(), start, length)
             cursor = match.range.last + 1
         }
@@ -182,7 +192,10 @@ fun parseHtmlToAnnotatedString(
     return ParsedContent(annotated = annotated, diceBadges = ctx?.badges ?: emptyList())
 }
 
-private val SPOILER_PATTERN = Regex("\\[h\\]([\\s\\S]*?)\\[/h\\]", RegexOption.IGNORE_CASE)
+private val SPOILER_PATTERN = Regex(
+    """\[h\]([\s\S]*?)\[/h\]|<span\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bh(?:-hidden-text)?\b[^"']*["'])[^>]*>([\s\S]*?)</span\s*>""",
+    RegexOption.IGNORE_CASE
+)
 
 private fun AnnotatedString.Builder.appendHtmlFragment(
     fragment: String, quoteLinkColor: Color, defaultGreenColor: Color,
@@ -500,7 +513,7 @@ fun HtmlContent(
     }
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
-    var layoutResult by remember(enableGestures) {
+    var layoutResult by remember(html, enableGestures) {
         mutableStateOf<TextLayoutResult?>(null)
     }
 
@@ -531,24 +544,30 @@ fun HtmlContent(
     }
 
     var revealedSpoilers by remember(html) { mutableStateOf(emptySet<String>()) }
-    val spoilerBackground = MaterialTheme.colorScheme.secondaryContainer
-    val spoilerTextColor = MaterialTheme.colorScheme.onSecondaryContainer
-    val displayText = remember(annotatedString, revealedSpoilers, spoilerBackground, spoilerTextColor, enableGestures) {
-        val ranges = annotatedString.getStringAnnotations("SPOILER", 0, annotatedString.length)
-            .filter { it.item !in revealedSpoilers }.sortedBy { it.start }
-        if (ranges.isEmpty()) annotatedString else buildAnnotatedString {
-            var start = 0
-            ranges.forEach { range ->
-                append(annotatedString.subSequence(start, range.start))
-                val hiddenStart = length
-                append(if (enableGestures) "  剧透内容 · 点击查看  " else "  剧透内容  ")
-                addStyle(SpanStyle(color = spoilerTextColor, background = spoilerBackground, fontWeight = FontWeight.Medium), hiddenStart, length)
-                addStringAnnotation("SPOILER", range.item, hiddenStart, length)
-                start = range.end
-            }
-            append(annotatedString.subSequence(start, annotatedString.length))
+    val spoilerRanges = remember(annotatedString) {
+        annotatedString.getStringAnnotations("SPOILER", 0, annotatedString.length)
+    }
+    val spoilerProgress = spoilerRanges.map { range ->
+        key(range.item) {
+            animateFloatAsState(
+                targetValue = if (range.item in revealedSpoilers) 1f else 0f,
+                animationSpec = tween(durationMillis = 180), label = "spoilerReveal"
+            )
         }
     }
+    val displayText = remember(annotatedString, revealedSpoilers) {
+        buildAnnotatedString {
+            append(annotatedString)
+            spoilerRanges.filter { it.item !in revealedSpoilers }.forEach { range ->
+                addStyle(SpanStyle(color = Color.Transparent), range.start, range.end)
+            }
+        }
+    }
+    val spoilerHiddenColor = if (darkTheme) Color(0xFF282C35) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
+    val spoilerRevealedColor = if (darkTheme) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+        else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.22f)
+    val spoilerOutline = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    val haptics = LocalHapticFeedback.current
 
     val textModifier = if (!enableGestures) {
         modifier
@@ -589,6 +608,7 @@ fun HtmlContent(
 
                         when {
                             spoilerAnnotation != null -> {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 revealedSpoilers = if (spoilerAnnotation.item in revealedSpoilers) revealedSpoilers - spoilerAnnotation.item else revealedSpoilers + spoilerAnnotation.item
                             }
                             diceAnnotation != null -> onDiceClickState.value?.invoke()
@@ -607,13 +627,43 @@ fun HtmlContent(
 
     Text(
         text = displayText,
-        modifier = textModifier,
+        modifier = if (spoilerRanges.isEmpty()) textModifier else textModifier.drawBehind {
+            val layout = layoutResult ?: return@drawBehind
+            spoilerRanges.forEachIndexed { index, range ->
+                if (range.start >= layout.layoutInput.text.length) return@forEachIndexed
+                val firstLine = layout.getLineForOffset(range.start)
+                val lastOffset = (range.end - 1).coerceAtMost(layout.layoutInput.text.length - 1)
+                val lastLine = layout.getLineForOffset(lastOffset)
+                val progress = spoilerProgress[index].value
+                val fill = androidx.compose.ui.graphics.lerp(spoilerHiddenColor, spoilerRevealedColor, progress)
+                for (line in firstLine..lastLine) {
+                    val start = maxOf(range.start, layout.getLineStart(line))
+                    val end = minOf(range.end, layout.getLineEnd(line, visibleEnd = true))
+                    if (start >= end) continue
+                    var left = Float.POSITIVE_INFINITY
+                    var right = Float.NEGATIVE_INFINITY
+                    for (offset in start until end) {
+                        val bounds = layout.getBoundingBox(offset)
+                        left = minOf(left, bounds.left)
+                        right = maxOf(right, bounds.right)
+                    }
+                    val top = layout.getLineTop(line) + 1.5.dp.toPx()
+                    val bottom = layout.getLineBottom(line) - 1.5.dp.toPx()
+                    if (right <= left || bottom <= top) continue
+                    val rectSize = Size(right - left, bottom - top)
+                    val radius = CornerRadius(6.dp.toPx())
+                    drawRoundRect(fill, topLeft = Offset(left, top), size = rectSize, cornerRadius = radius)
+                    if (progress < 1f) drawRoundRect(spoilerOutline.copy(alpha = spoilerOutline.alpha * (1f - progress)),
+                        topLeft = Offset(left, top), size = rectSize, cornerRadius = radius, style = Stroke(width = 0.5.dp.toPx()))
+                }
+            }
+        },
         style = mergedStyle,
         maxLines = maxLines,
         overflow = overflow,
         inlineContent = inlineContent,
         // List mode: stable no-op (no layoutResult write → no per-measure recomposition).
-        onTextLayout = if (enableGestures) {
+        onTextLayout = if (enableGestures || spoilerRanges.isNotEmpty()) {
             { layoutResult = it }
         } else {
             NoOpOnTextLayout
