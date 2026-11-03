@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -140,19 +139,6 @@ fun ForumScreen(
     val currentForumId = viewModel.forumId
     val listState = rememberSaveable(currentForumId, saver = LazyListState.Saver) {
         LazyListState()
-    }
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    LaunchedEffect(currentForumId, listState, lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-            delay(3000)
-            while (true) {
-                if (!listState.isScrollInProgress) {
-                    val ids = listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Long }
-                    viewModel.refreshVisibleReplyCounts(ids)
-                }
-                delay(30000)
-            }
-        }
     }
     val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }

@@ -150,7 +150,6 @@ interface ThreadRepository {
      * 补抓一个云端订阅串的回复总数并写入缓存。
      * feed 接口不返回回复数，只能按串抓第 1 页；失败返回 null。
      */
-    suspend fun fetchLiveReplyCount(tid: String): Int?
     suspend fun refreshCloudFeedReplyCount(tid: String): Int?
 
     // 发言草稿箱 (draft box): reply drafts keyed by thread, post drafts keyed by board.
@@ -1114,15 +1113,6 @@ class ThreadRepositoryImpl @Inject constructor(
             }
         }
 
-    override suspend fun fetchLiveReplyCount(tid: String): Int? = withContext(Dispatchers.IO) {
-        try {
-            fetchThread(tid, 1).replyCount
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
-        }
-    }
     override suspend fun refreshCloudFeedReplyCount(tid: String): Int? =
         withContext(Dispatchers.IO) {
             try {
