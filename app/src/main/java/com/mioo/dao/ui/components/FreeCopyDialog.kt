@@ -4,6 +4,10 @@ import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.MutableTransitionState
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
@@ -46,6 +50,8 @@ import androidx.compose.ui.zIndex
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
@@ -60,10 +66,13 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
     val reducedMotion = isReducedMotionEnabled()
     var closing by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
-    val cleanText = remember(text) {
-        android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_LEGACY)
-            .toString().trim()
+    val parsedText by produceState<String?>(initialValue = null, key1 = text) {
+        value = withContext(Dispatchers.Default) {
+            android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_LEGACY)
+                .toString().trim()
+        }
     }
+    val cleanText = parsedText.orEmpty()
     val quickItems = remember(cleanText, postId) {
         (listOfNotNull(postId.takeIf { it.isNotBlank() }?.let { "No.$it" }) +
             Regex("https?://[^\\s\\u4e00-\\u9fa5\"<>]+|>>No\\.\\d+")
@@ -92,8 +101,14 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
         if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
     }
     BackHandler { close() }
-    AnimatedVisibility(visibleState = visibility, enter = MiooMotion.modalEnter(reducedMotion),
-        exit = MiooMotion.modalExit(reducedMotion), modifier = Modifier.fillMaxSize().zIndex(100f)) {
+    val enterDuration = if (reducedMotion) 0 else 460
+    val exitDuration = if (reducedMotion) 0 else 360
+    AnimatedVisibility(visibleState = visibility,
+        enter = fadeIn(tween(enterDuration, easing = MiooMotion.EaseOut)) +
+            scaleIn(initialScale = MiooMotion.ScaleEnterFrom, animationSpec = tween(enterDuration, easing = MiooMotion.EaseOut)),
+        exit = fadeOut(tween(exitDuration, easing = MiooMotion.EaseOut)) +
+            scaleOut(targetScale = MiooMotion.ScaleExitTo, animationSpec = tween(exitDuration, easing = MiooMotion.EaseOut)),
+        modifier = Modifier.fillMaxSize().zIndex(100f)) {
     Box(Modifier.fillMaxSize().background(pageColor)) {
         Column(Modifier.fillMaxSize()) {
             Row(
@@ -104,7 +119,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                 Text("自由复制", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 val buttonColor by animateColorAsState(if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer, label = "copyColor")
                 Surface(onClick = {
-                    if (!copied && !closing) {
+                    if (!copied && !closing && parsedText != null) {
                         clipboard.setText(AnnotatedString(cleanText))
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         copied = true
@@ -132,9 +147,11 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                     Spacer(Modifier.height(12.dp))
                     Divider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     Spacer(Modifier.height(12.dp))
-                    SelectionContainer {
-                        Text(cleanText, fontSize = 15.5.sp, lineHeight = 25.sp, letterSpacing = 0.25.sp,
-                            fontWeight = FontWeight.Normal, color = if (dark) Color(0xFFE3E6EA) else Color(0xFF22262C))
+                    if (parsedText != null && (visibility.isIdle || closing || reducedMotion)) {
+                        SelectionContainer {
+                            Text(cleanText, fontSize = 15.5.sp, lineHeight = 25.sp, letterSpacing = 0.25.sp,
+                                fontWeight = FontWeight.Normal, color = if (dark) Color(0xFFE3E6EA) else Color(0xFF22262C))
+                        }
                     }
                 }
             }
