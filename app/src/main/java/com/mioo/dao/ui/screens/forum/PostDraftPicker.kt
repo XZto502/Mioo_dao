@@ -1,5 +1,9 @@
 package com.mioo.dao.ui.screens.forum
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,10 +40,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
-internal fun PostDraftPicker(
+internal fun AnimatedVisibilityScope.PostDraftPicker(
     drafts: List<DraftEntity>,
+    reducedMotion: Boolean,
     onDismiss: () -> Unit,
     onSelect: (DraftEntity) -> Unit
 ) {
@@ -48,7 +53,11 @@ internal fun PostDraftPicker(
     Box(Modifier.fillMaxSize().zIndex(200f)) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f)).clickable(onClick = onDismiss))
         Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .animateEnterExit(
+                    enter = slideInVertically(tween(if (reducedMotion) 0 else 220)) { it / 5 },
+                    exit = slideOutVertically(tween(if (reducedMotion) 0 else 180)) { it / 5 }
+                ),
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = MaterialTheme.colorScheme.surface
         ) {

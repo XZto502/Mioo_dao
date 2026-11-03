@@ -321,9 +321,9 @@ fun CreateThreadEditor(
             }
         }
         AnimatedVisibility(visible = draftsOpen,
-            enter = fadeIn(tween(if (reducedMotion) 0 else 200)) + slideInVertically(tween(if (reducedMotion) 0 else 220)) { it / 5 },
-            exit = fadeOut(tween(if (reducedMotion) 0 else 160)) + slideOutVertically(tween(if (reducedMotion) 0 else 180)) { it / 5 }) {
-            PostDraftPicker(drafts, onDismiss = { draftsOpen = false }, onSelect = { draft ->
+            enter = fadeIn(tween(if (reducedMotion) 0 else 200)),
+            exit = fadeOut(tween(if (reducedMotion) 0 else 180))) {
+            PostDraftPicker(drafts, reducedMotion = reducedMotion, onDismiss = { draftsOpen = false }, onSelect = { draft ->
                 draftsOpen = false
                 scope.launch {
                     if (!reducedMotion) delay(180)
