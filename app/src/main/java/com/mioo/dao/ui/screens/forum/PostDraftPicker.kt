@@ -68,14 +68,14 @@ internal fun AnimatedVisibilityScope.PostDraftPicker(
                     Text("选择发串草稿", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "恢复标题、名称和正文，并切换到原板块。",
+                        "选择当前板块的草稿，恢复标题、名称和正文。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 if (drafts.isEmpty()) {
                     Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                        Text("暂无发串草稿", style = MaterialTheme.typography.titleMedium)
+                        Text("当前板块暂无发串草稿", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "编辑后点顶部保存按钮，或退出时选择“保存草稿”，就会出现在这里。",

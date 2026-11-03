@@ -670,7 +670,7 @@ fun ForumScreen(
             initialContent = initialDraft.content,
             initialTitle = initialDraft.title,
             initialName = initialDraft.name,
-            drafts = postDrafts,
+            drafts = postDrafts.filter { it.targetId == currentForumId },
             onSelectDraft = ::selectPostDraft,
             // 草稿箱开关关闭时不提供「存草稿」按钮（参数为 null 时对话框隐藏该入口）
             onSaveDraft = if (forumSettings.draftBoxEnabled) {
