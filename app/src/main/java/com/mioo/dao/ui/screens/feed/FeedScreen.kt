@@ -1,6 +1,15 @@
 package com.mioo.dao.ui.screens.feed
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.mioo.dao.ui.screens.forum.ForumViewModel
+import com.mioo.dao.ui.components.homePageColor
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
@@ -78,6 +87,14 @@ fun FeedScreen(
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
     val uiState by viewModel.uiState.collectAsState()
+    val forumViewModel: ForumViewModel = hiltViewModel()
+    val forumState by forumViewModel.uiState.collectAsState()
+    LaunchedEffect(forumState.forumGroups.isEmpty()) {
+        if (forumState.forumGroups.isEmpty()) forumViewModel.loadForumGroups()
+    }
+    val forumNames = remember(forumState.forumGroups) {
+        forumState.forumGroups.flatMap { it.forums }.associate { it.id to it.name }
+    }
     val folderIds = remember(uiState.feedFolders) { listOf(null) + uiState.feedFolders.map { it.uuid } }
     val pager = rememberPagerState(initialPage = folderIds.indexOf(uiState.selectedFolderId).coerceAtLeast(0)) { folderIds.size }
     val listStates = remember { mutableStateMapOf<String, LazyListState>() }
@@ -177,7 +194,7 @@ fun FeedScreen(
             )
         },
         modifier = modifier,
-        containerColor = Color.Transparent,
+        containerColor = homePageColor(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Column(
@@ -185,25 +202,22 @@ fun FeedScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            androidx.compose.material3.PrimaryScrollableTabRow(
-                selectedTabIndex = pager.targetPage.coerceIn(0, folderIds.lastIndex),
-                edgePadding = 8.dp,
-                divider = {}
-            ) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 folderIds.forEachIndexed { index, id ->
-                    androidx.compose.material3.Tab(
-                        selected = pager.targetPage == index,
-                        onClick = {
-                            if (pager.targetPage != index) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
-                            }
-                        },
-                        text = { Text(if (id == null) "已离线" else uiState.feedFolders.firstOrNull { it.uuid == id }?.name.orEmpty()) }
-                    )
+                    val selected = pager.targetPage == index
+                    Surface(onClick = {
+                        if (!selected) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
+                        }
+                    }, shape = CircleShape, color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent) {
+                        Text(if (id == null) "已离线" else uiState.feedFolders.firstOrNull { it.uuid == id }?.name.orEmpty(),
+                            Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                            fontSize = 13.5.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1, softWrap = false)
+                    }
                 }
             }
-            HorizontalDivider()
 
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
                 val folderId = folderIds[page]
@@ -314,6 +328,7 @@ fun FeedScreen(
                             ) { summary ->
                                 OfflineFeedRow(
                                     summary = summary,
+                                    forumName = Regex("^板块\\s*(\\d+)$").matchEntire(summary.forumName)?.groupValues?.get(1)?.let { forumNames[it] } ?: summary.forumName,
                                     isUpdating = summary.threadId in uiState.offlineUpdatingIds,
                                     onNavigateToThread = onNavigateToThread,
                                     onUpdate = {
@@ -379,6 +394,7 @@ fun FeedScreen(
 @Composable
 private fun OfflineFeedRow(
     summary: com.mioo.dao.data.local.OfflineThreadSummary,
+    forumName: String,
     isUpdating: Boolean,
     onNavigateToThread: (String) -> Unit,
     onUpdate: () -> Unit,
@@ -388,6 +404,7 @@ private fun OfflineFeedRow(
     val offlineImageDir = remember { java.io.File(context.filesDir, "offline_images") }
     com.mioo.dao.ui.screens.offline.OfflineThreadCard(
         summary = summary,
+        forumName = forumName,
         isUpdating = isUpdating,
         offlineImageDir = offlineImageDir,
         onClick = { onNavigateToThread(summary.threadId) },
@@ -414,7 +431,8 @@ private fun LocalBookmarkRow(
             onThreadClick = onClick,
             onQuoteClick = emptyStringLambda,
             onImageClick = onImageClick,
-            onLongClick = { confirmDelete = true }
+            onLongClick = { confirmDelete = true },
+            compactPreviewBlankLines = true
         )
         if (item.newReplyCount > 0) {
             Badge(
@@ -460,7 +478,8 @@ private fun RemoteBookmarkRow(
         onThreadClick = onClick,
         onQuoteClick = emptyStringLambda,
         onImageClick = onImageClick,
-        onLongClick = { confirmDelete = true }
+        onLongClick = { confirmDelete = true },
+        compactPreviewBlankLines = true
     )
     if (confirmDelete) {
         AlertDialog(

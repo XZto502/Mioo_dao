@@ -18,6 +18,9 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
@@ -44,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.local.HistoryType
 import com.mioo.dao.data.model.effectiveTitle
+import com.mioo.dao.ui.components.homePageColor
+import com.mioo.dao.ui.components.homeCardColor
 import com.mioo.dao.ui.components.HtmlContent
 import com.mioo.dao.ui.components.HtmlParseCache
 import com.mioo.dao.ui.components.LocalDicePreset
@@ -99,7 +104,7 @@ fun HistoryScreen(
 
     Box(modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = Color.Transparent,
+            containerColor = homePageColor(),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopAppBar(
@@ -144,17 +149,21 @@ fun HistoryScreen(
             snackbarHost = { SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(bottom = 104.dp)) }
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-                PrimaryScrollableTabRow(selectedTabIndex = pager.targetPage, edgePadding = 8.dp, divider = {}) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     types.forEachIndexed { index, entry ->
-                        Tab(selected = pager.targetPage == index, onClick = {
-                            if (pager.targetPage != index) {
+                        val selected = pager.targetPage == index
+                        Surface(onClick = {
+                            if (!selected) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
                             }
-                        }, text = { Text(entry.label, maxLines = 1, softWrap = false) })
+                        }, shape = CircleShape, color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent) {
+                            Text(entry.label, Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                fontSize = 13.5.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
-                HorizontalDivider()
 
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
@@ -226,8 +235,8 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
     val date = formatReadingTimestamp(item.timestamp, includeSeconds = false)
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = readingCardBorder()
+        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = homeCardColor()),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -251,8 +260,8 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
             }
             val bodyStyle = readingBodyStyle()
             if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = bodyStyle,
-                maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false)
-            else Text(item.content, style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false, compactBlankLines = true)
+            else Text(item.content.replace(Regex("(\\r?\\n\\s*){2,}"), "\n"), style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",

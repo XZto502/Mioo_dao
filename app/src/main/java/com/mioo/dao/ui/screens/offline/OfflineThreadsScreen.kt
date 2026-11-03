@@ -302,16 +302,16 @@ fun OfflineThreadCard(
     onClick: () -> Unit,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    forumName: String = summary.forumName
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = readingCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = readingCardBorder()
+        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.components.homeCardColor()),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             // 头行：PO 饼干 + 板块名 …… 串号
@@ -321,7 +321,7 @@ fun OfflineThreadCard(
                     isAdmin = summary.poUserHash.equals("Admin", ignoreCase = true)))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = summary.forumName,
+                    text = forumName,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
@@ -345,7 +345,7 @@ fun OfflineThreadCard(
                 Spacer(modifier = Modifier.height(6.dp))
             }
             if (summary.contentSummary.isNotBlank()) {
-                Text(summary.contentSummary, style = readingBodyStyle(), maxLines = 5, overflow = TextOverflow.Ellipsis)
+                Text(summary.contentSummary.replace(Regex("(\\r?\\n\\s*){2,}"), "\n"), style = readingBodyStyle(), maxLines = 5, overflow = TextOverflow.Ellipsis)
             }
             summary.coverFile?.takeIf { it.isNotBlank() }?.let { cover ->
                 val coverFile = remember(cover, offlineImageDir) { File(offlineImageDir, cover) }

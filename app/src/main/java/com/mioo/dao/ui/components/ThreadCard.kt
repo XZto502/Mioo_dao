@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,6 +44,26 @@ import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.graphicsPressScale
 import com.mioo.dao.ui.theme.rememberPressScale
+
+@Composable
+fun homePageColor(): Color {
+    val background = MaterialTheme.colorScheme.background
+    return when {
+        background == Color.Black -> Color.Black
+        background.luminance() < 0.5f -> Color(0xFF0E1015)
+        else -> Color(0xFFF0F1F4)
+    }
+}
+
+@Composable
+fun homeCardColor(): Color {
+    val background = MaterialTheme.colorScheme.background
+    return when {
+        background == Color.Black -> Color(0xFF121318)
+        background.luminance() < 0.5f -> Color(0xFF16181E)
+        else -> Color.White
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -68,9 +89,9 @@ fun ThreadCard(
     showImage: Boolean = true,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
 ) {
-    val border = readingCardBorder()
+    val border: androidx.compose.foundation.BorderStroke? = null
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
-    val cardColors = CardDefaults.cardColors(containerColor = readingCardColor())
+    val cardColors = CardDefaults.cardColors(containerColor = homeCardColor())
     val cardElevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     val cardShape = shape
     val bodyStyle = readingBodyStyle()
@@ -131,11 +152,8 @@ fun ThreadCard(
 
             // HTML content — list mode skips gesture plumbing (card handles clicks)
             HtmlContent(
-                html = remember(postData.content, compactPreviewBlankLines) {
-                    if (compactPreviewBlankLines) {
-                        postData.content.replace(Regex("(?i)(?:<br\\s*/?>|\\r?\\n)(?:[ \t\r\n]*(?:<br\\s*/?>|\\r?\\n))+"), "<br>")
-                    } else postData.content
-                },
+                html = postData.content,
+                compactBlankLines = compactPreviewBlankLines,
                 onQuoteClick = onQuoteClick,
                 style = bodyStyle,
                 modifier = Modifier.fillMaxWidth(),

@@ -454,7 +454,8 @@ fun HtmlContent(
      * When false, skip pointerInput gesture setup (parent Card already handles click/long-press).
      * Use for dense forum/timeline lists to cut cold-start scroll work.
      */
-    enableGestures: Boolean = true
+    enableGestures: Boolean = true,
+    compactBlankLines: Boolean = false
 ) {
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     val quoteColorArgb = quoteLinkColor.toArgb()
@@ -464,8 +465,20 @@ fun HtmlContent(
         HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme, dicePreset)
     }
     val paragraphScale = MaterialTheme.typography.bodyMedium.lineHeight.value / 20f
-    val annotatedString = remember(parsed.annotated, paragraphScale) {
-        parsed.annotated.withReadingParagraphGaps(paragraphScale)
+    val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines) {
+        if (compactBlankLines) {
+            val source = parsed.annotated
+            val breaks = Regex("(\\r?\\n\\s*){2,}")
+            buildAnnotatedString {
+                var start = 0
+                breaks.findAll(source.text).forEach { match ->
+                    append(source.subSequence(start, match.range.first))
+                    append("\n")
+                    start = match.range.last + 1
+                }
+                append(source.subSequence(start, source.length))
+            }
+        } else parsed.annotated.withReadingParagraphGaps(paragraphScale)
     }
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
