@@ -25,6 +25,12 @@ class SettingsRepository @Inject constructor(
     // cancels the scope root and every later settings write becomes a silent no-op.
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    val forumPreviewLines = settingsDataStore.forumPreviewLinesFlow
+
+    fun updateForumPreviewLines(lines: Int) {
+        repositoryScope.launch { settingsDataStore.saveForumPreviewLines(lines) }
+    }
+
     val settings: StateFlow<UserSettings> = combine(
         combine(
             settingsDataStore.userHashFlow,

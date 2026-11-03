@@ -111,6 +111,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val forumPreviewLines by viewModel.forumPreviewLines.collectAsState()
     var authMenuExpanded by remember { mutableStateOf(false) }
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
@@ -401,6 +402,20 @@ fun SettingsScreen(
         }
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text("板块列表预览行数", style = settingsItemStyle())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(5, 8, 10, 15).forEach { lines ->
+                    FilterChip(
+                        selected = forumPreviewLines == lines,
+                        onClick = { viewModel.updateForumPreviewLines(lines) },
+                        label = { Text("${lines} 行") },
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    )
+                }
+            }
+        }
+        SettingsGroupDivider()
         // 6. Font Size Configuration (字体大小)
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),

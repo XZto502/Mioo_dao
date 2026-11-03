@@ -27,6 +27,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_LAST_FORUM_ID = stringPreferencesKey("last_forum_id")
         val KEY_LAST_FORUM_NAME = stringPreferencesKey("last_forum_name")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_FORUM_PREVIEW_LINES = intPreferencesKey("forum_preview_lines")
         val KEY_FONT_SIZE_SCALE = floatPreferencesKey("font_size_scale")
         val KEY_LINE_HEIGHT_SCALE = floatPreferencesKey("line_height_scale")
         val KEY_CHINESE_FONT = stringPreferencesKey("chinese_font")
@@ -63,6 +64,15 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NETWORK_COMPATIBILITY = booleanPreferencesKey("network_compatibility")
         val KEY_DATA_SAVER_ENABLED = booleanPreferencesKey("data_saver_enabled")
         val KEY_KAOMOJI_ORDER = stringPreferencesKey("kaomoji_order")
+    }
+
+    val forumPreviewLinesFlow: Flow<Int> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[KEY_FORUM_PREVIEW_LINES]?.takeIf { it in listOf(5, 8, 10, 15) } ?: 10 }
+
+    suspend fun saveForumPreviewLines(lines: Int) {
+        require(lines in listOf(5, 8, 10, 15))
+        context.dataStore.edit { it[KEY_FORUM_PREVIEW_LINES] = lines }
     }
 
     val networkCompatibilityFlow: Flow<Boolean> = context.dataStore.data

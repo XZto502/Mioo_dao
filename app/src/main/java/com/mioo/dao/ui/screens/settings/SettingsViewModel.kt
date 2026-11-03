@@ -57,6 +57,11 @@ class SettingsViewModel @Inject constructor(
     private val backupRepository: BackupRepository
 ) : ViewModel() {
 
+    val forumPreviewLines: StateFlow<Int> = settingsRepository.forumPreviewLines
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
+
+    fun updateForumPreviewLines(lines: Int) = settingsRepository.updateForumPreviewLines(lines)
+
     val settingsState: StateFlow<UserSettings> = settingsRepository.settings
         .stateIn(
             scope = viewModelScope,

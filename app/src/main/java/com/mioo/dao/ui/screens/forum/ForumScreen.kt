@@ -127,6 +127,7 @@ fun ForumScreen(
     val uiState by viewModel.uiState.collectAsState()
     // Pins + cookies only — theme/font changes must not recompose the board list
     val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
+    val previewMaxLines by settingsViewModel.forumPreviewLines.collectAsState()
     val context = LocalContext.current
     // Per-board scroll: rememberSaveable survives navigate→thread→back so position is restored.
     val currentForumId = viewModel.forumId
@@ -543,8 +544,8 @@ fun ForumScreen(
                         focusedElevation = 0.dp,
                         hoveredElevation = 0.dp
                     ),
-                    containerColor = DaoTheme.colors.fabBg,
-                    contentColor = DaoTheme.colors.fabContent,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     shape = androidx.compose.foundation.shape.CircleShape
                 ) {
                     Icon(
@@ -568,6 +569,7 @@ fun ForumScreen(
                 key(currentForumId) {
                     ForumThreadListPane(
                         forumKey = currentForumId,
+                        previewMaxLines = previewMaxLines,
                         displayItems = uiState.displayItems,
                         isLoading = uiState.isLoading,
                         isRefreshing = uiState.isRefreshing,
@@ -776,6 +778,7 @@ private fun ForumDrawerItem(
 @Composable
 private fun ForumThreadListPane(
     forumKey: String,
+    previewMaxLines: Int,
     displayItems: List<ThreadListItem>,
     isLoading: Boolean,
     isRefreshing: Boolean,
@@ -990,6 +993,7 @@ private fun ForumThreadListPane(
         ) { item ->
             ForumThreadRow(
                 item = item,
+                previewMaxLines = previewMaxLines,
                 showImage = showImages,
                 emptyStringLambda = emptyStringLambda,
                 onNavigateToThread = onNavigateToThread,
@@ -1060,6 +1064,7 @@ private fun ForumThreadListPane(
 @Composable
 private fun ForumThreadRow(
     item: ThreadListItem,
+    previewMaxLines: Int,
     showImage: Boolean,
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
@@ -1079,8 +1084,8 @@ private fun ForumThreadRow(
         onQuoteClick = emptyStringLambda,
         onImageClick = onImageClickRemembered,
         onLongClick = onLongClick,
-        // Shorter body = cheaper measure on high-refresh fling
-        contentMaxLines = 5,
+        contentMaxLines = previewMaxLines,
+        compactPreviewBlankLines = true,
         showImage = showImage && item.hasImage
     )
 }

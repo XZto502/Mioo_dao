@@ -56,6 +56,7 @@ fun ThreadCard(
     onLongClick: (() -> Unit)? = null,
     /** Truncate body in list for cheaper measure/layout on cold scroll. */
     contentMaxLines: Int = 8,
+    compactPreviewBlankLines: Boolean = false,
     /** List cards let the parent Card handle gestures — skip HtmlContent pointerInput. */
     enableHtmlGestures: Boolean = false,
     /**
@@ -130,7 +131,11 @@ fun ThreadCard(
 
             // HTML content — list mode skips gesture plumbing (card handles clicks)
             HtmlContent(
-                html = postData.content,
+                html = remember(postData.content, compactPreviewBlankLines) {
+                    if (compactPreviewBlankLines) {
+                        postData.content.replace(Regex("(?i)(?:<br\\s*/?>|\\r?\\n)(?:[ \t\r\n]*(?:<br\\s*/?>|\\r?\\n))+"), "<br>")
+                    } else postData.content
+                },
                 onQuoteClick = onQuoteClick,
                 style = bodyStyle,
                 modifier = Modifier.fillMaxWidth(),
