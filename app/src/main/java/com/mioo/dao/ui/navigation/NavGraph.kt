@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -207,37 +208,44 @@ fun MiooDaoNavGraph(
     val bottomBarSlide = remember { Animatable(0f) }
     val hideAfterPx = with(density) { 36.dp.toPx() }
     val showAfterPx = with(density) { 16.dp.toPx() }
+    val composerOpenState = rememberUpdatedState(isComposerOpen)
+    val bottomBarScrollAway = remember { floatArrayOf(0f) }
+    LaunchedEffect(isComposerOpen) {
+        bottomBarScrollAway[0] = 0f
+        bottomBarVisible = true
+    }
     val bottomBarScroll = remember(hideAfterPx, showAfterPx) {
-        var away = 0f
         object : NestedScrollConnection {
             override fun onPostScroll(
                 consumed: Offset,
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
+                // Scrolling the composer or its picker must not hide the home navigation.
+                if (composerOpenState.value) return Offset.Zero
                 // Compose 1.6 only reports Drag and Fling. Both should move the bar.
                 if (source != NestedScrollSource.Drag && source != NestedScrollSource.Fling) {
                     return Offset.Zero
                 }
                 // Overscroll at the top: the list did not consume a downward drag.
                 if (available.y > 0f && consumed.y == 0f) {
-                    away = 0f
+                    bottomBarScrollAway[0] = 0f
                     bottomBarVisible = true
                     return Offset.Zero
                 }
                 val dy = consumed.y
                 if (dy < 0f) {
-                    if (away < 0f) away = 0f
-                    away += -dy
-                    if (away >= hideAfterPx) {
-                        away = 0f
+                    if (bottomBarScrollAway[0] < 0f) bottomBarScrollAway[0] = 0f
+                    bottomBarScrollAway[0] += -dy
+                    if (bottomBarScrollAway[0] >= hideAfterPx) {
+                        bottomBarScrollAway[0] = 0f
                         bottomBarVisible = false
                     }
                 } else if (dy > 0f) {
-                    if (away > 0f) away = 0f
-                    away -= dy
-                    if (-away >= showAfterPx) {
-                        away = 0f
+                    if (bottomBarScrollAway[0] > 0f) bottomBarScrollAway[0] = 0f
+                    bottomBarScrollAway[0] -= dy
+                    if (-bottomBarScrollAway[0] >= showAfterPx) {
+                        bottomBarScrollAway[0] = 0f
                         bottomBarVisible = true
                     }
                 }
