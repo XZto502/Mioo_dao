@@ -96,7 +96,9 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
         closing = true
         visibility.targetState = false
     }
-    LaunchedEffect(Unit) { visibility.targetState = true }
+    LaunchedEffect(parsedText) {
+        if (parsedText != null && !closing) visibility.targetState = true
+    }
     LaunchedEffect(visibility.currentState, visibility.targetState, visibility.isIdle, closing) {
         if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
     }
@@ -143,7 +145,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                     Spacer(Modifier.height(12.dp))
                     Divider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     Spacer(Modifier.height(12.dp))
-                    if (parsedText != null && (visibility.isIdle || closing || reducedMotion)) {
+                    if (parsedText != null) {
                         SelectionContainer {
                             Text(cleanText, fontSize = 15.5.sp, lineHeight = 25.sp, letterSpacing = 0.25.sp,
                                 fontWeight = FontWeight.Normal, color = if (dark) Color(0xFFE3E6EA) else Color(0xFF22262C))
