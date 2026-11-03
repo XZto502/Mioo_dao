@@ -145,7 +145,8 @@ fun ForumScreen(
     val composerVisibility = remember { MutableTransitionState(false) }
     composerVisibility.targetState = showCreateDialog
     val reducedComposerMotion = isReducedMotionEnabled()
-    SideEffect { onComposerOpenChange(composerVisibility.currentState || composerVisibility.targetState) }
+    val composerCoversNavigation = composerVisibility.currentState || composerVisibility.targetState
+    SideEffect { onComposerOpenChange(composerCoversNavigation) }
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose { onComposerOpenChange(false) }
     }
