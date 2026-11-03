@@ -272,67 +272,65 @@ fun MiooDaoNavGraph(
 
     Scaffold(
         bottomBar = {
-            if (showBottomBar && !isComposerOpen) {
-                // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
-                AnimatedVisibility(
-                    visible = !forumDrawerOpen && !isImageViewerOpen,
-                    enter = slideInVertically { it } + fadeIn(),
-                    exit = slideOutVertically { it } + fadeOut()
+            // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
+            AnimatedVisibility(
+                visible = showBottomBar && !forumDrawerOpen && !isImageViewerOpen && !isComposerOpen,
+                enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
+                exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
+            ) {
+                // Outer box draws into the gesture nav area so the 小白条 is immersive;
+                // capsule itself stays above the system inset.
+                // offset (not graphicsLayer) moves the touch target with the slide.
+                val slideFraction = bottomBarSlide.value
+                val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
+                val pageBgColor = readingBackground()
+                Box(
+                    modifier = Modifier
+                        .onSizeChanged { bottomBarHeightPx = it.height }
+                        .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
+                        .fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    // Outer box draws into the gesture nav area so the 小白条 is immersive;
-                    // capsule itself stays above the system inset.
-                    // offset (not graphicsLayer) moves the touch target with the slide.
-                    val slideFraction = bottomBarSlide.value
-                    val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
-                    val pageBgColor = readingBackground()
-                    Box(
+                    NavigationBar(
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                        containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
+                        tonalElevation = 0.dp,
                         modifier = Modifier
-                            .onSizeChanged { bottomBarHeightPx = it.height }
-                            .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
                             .fillMaxWidth()
-                            .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
-                            .navigationBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                            .border(
+                                width = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                            )
                     ) {
-                        NavigationBar(
-                            windowInsets = WindowInsets(0, 0, 0, 0),
-                            containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
-                            tonalElevation = 0.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-                                .border(
-                                    width = 0.5.dp,
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-                                )
-                        ) {
-                            bottomBarItems.forEach { (index, icon, label) ->
-                                NavigationBarItem(
-                                    icon = {
-                                        val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
-                                            0 -> Icons.Outlined.Home
-                                            1 -> Icons.Outlined.BookmarkBorder
-                                            3 -> Icons.Outlined.Settings
-                                            else -> icon
-                                        }
-                                        Icon(displayIcon, contentDescription = label)
-                                    },
-                                    label = { Text(label) },
-                                    selected = tabPagerState.targetPage == index,
-                                    onClick = {
-                                        if (index == 2) historyOpenGeneration++
-                                        if (tabPagerState.targetPage == index) return@NavigationBarItem
-                                        tabScope.launch {
-                                            if (reducedMotion) {
-                                                tabPagerState.scrollToPage(index)
-                                            } else {
-                                                tabPagerState.animateHomeTabTo(index)
-                                            }
+                        bottomBarItems.forEach { (index, icon, label) ->
+                            NavigationBarItem(
+                                icon = {
+                                    val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
+                                        0 -> Icons.Outlined.Home
+                                        1 -> Icons.Outlined.BookmarkBorder
+                                        3 -> Icons.Outlined.Settings
+                                        else -> icon
+                                    }
+                                    Icon(displayIcon, contentDescription = label)
+                                },
+                                label = { Text(label) },
+                                selected = tabPagerState.targetPage == index,
+                                onClick = {
+                                    if (index == 2) historyOpenGeneration++
+                                    if (tabPagerState.targetPage == index) return@NavigationBarItem
+                                    tabScope.launch {
+                                        if (reducedMotion) {
+                                            tabPagerState.scrollToPage(index)
+                                        } else {
+                                            tabPagerState.animateHomeTabTo(index)
                                         }
                                     }
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                 }
