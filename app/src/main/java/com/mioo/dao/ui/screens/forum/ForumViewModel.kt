@@ -147,6 +147,28 @@ class ForumViewModel @Inject constructor(
         }
     }
 
+    suspend fun refreshVisibleReplyCounts(ids: List<Long>) {
+        val requestForumId = forumId
+        val requestGeneration = listGeneration
+        for (id in ids.take(6)) {
+            if (forumId != requestForumId || listGeneration != requestGeneration) return
+            val count = threadRepository.fetchLiveReplyCount(id.toString())
+            if (forumId != requestForumId || listGeneration != requestGeneration) return
+            if (count != null) {
+                _uiState.update { state ->
+                    state.copy(
+                        threads = state.threads.map { thread ->
+                            if (thread.idStr == id.toString()) thread.copy(replyCount = count) else thread
+                        },
+                        displayItems = state.displayItems.map { item ->
+                            if (item.id == id) item.copy(replyCount = count) else item
+                        }
+                    )
+                }
+            }
+            delay(500)
+        }
+    }
     private fun rebuildDisplayItems() {
         viewModelScope.launch {
             val threads = _uiState.value.threads
