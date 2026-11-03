@@ -3,18 +3,10 @@ package com.mioo.dao.ui.components
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.MutableTransitionState
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -62,7 +54,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
     val clipboard = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val visibility = remember { MutableTransitionState(false) }
+    val progress = remember { Animatable(0f) }
     val reducedMotion = isReducedMotionEnabled()
     var closing by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
@@ -94,20 +86,25 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
     fun close() {
         if (closing) return
         closing = true
-        visibility.targetState = false
     }
-    LaunchedEffect(parsedText) {
-        if (parsedText != null && !closing) visibility.targetState = true
-    }
-    LaunchedEffect(visibility.currentState, visibility.targetState, visibility.isIdle, closing) {
-        if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
+    LaunchedEffect(parsedText, closing, reducedMotion) {
+        if (closing) {
+            progress.animateTo(0f, tween(if (reducedMotion) 0 else MiooMotion.DurationExitFast, easing = MiooMotion.EaseOut))
+            withFrameNanos { }
+            onDismiss()
+        } else if (parsedText != null) {
+            withFrameNanos { }
+            progress.animateTo(1f, tween(if (reducedMotion) 0 else MiooMotion.DurationModal, easing = MiooMotion.EaseOut))
+        }
     }
     BackHandler { close() }
-    AnimatedVisibility(visibleState = visibility,
-        enter = MiooMotion.modalEnter(reducedMotion),
-        exit = MiooMotion.modalExit(reducedMotion),
-        modifier = Modifier.fillMaxSize().zIndex(100f)) {
-    Box(Modifier.fillMaxSize().background(pageColor)) {
+    if (parsedText == null) return
+    Box(Modifier.fillMaxSize().zIndex(100f).graphicsLayer {
+        alpha = progress.value
+        val startScale = if (reducedMotion) 1f else MiooMotion.ScaleEnterFrom
+        scaleX = startScale + (1f - startScale) * alpha
+        scaleY = scaleX
+    }.background(pageColor)) {
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp),
@@ -175,6 +172,5 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                 }
             }
         }
-    }
     }
 }
