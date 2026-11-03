@@ -531,8 +531,9 @@ fun HtmlContent(
     }
 
     var revealedSpoilers by remember(html) { mutableStateOf(emptySet<String>()) }
-    val hiddenColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val displayText = remember(annotatedString, revealedSpoilers, hiddenColor) {
+    val spoilerBackground = MaterialTheme.colorScheme.secondaryContainer
+    val spoilerTextColor = MaterialTheme.colorScheme.onSecondaryContainer
+    val displayText = remember(annotatedString, revealedSpoilers, spoilerBackground, spoilerTextColor, enableGestures) {
         val ranges = annotatedString.getStringAnnotations("SPOILER", 0, annotatedString.length)
             .filter { it.item !in revealedSpoilers }.sortedBy { it.start }
         if (ranges.isEmpty()) annotatedString else buildAnnotatedString {
@@ -540,10 +541,8 @@ fun HtmlContent(
             ranges.forEach { range ->
                 append(annotatedString.subSequence(start, range.start))
                 val hiddenStart = length
-                append(annotatedString.text.substring(range.start, range.end).map {
-                    if (it.isWhitespace()) it else '█'
-                }.joinToString(""))
-                addStyle(SpanStyle(color = hiddenColor, background = hiddenColor), hiddenStart, length)
+                append(if (enableGestures) "  剧透内容 · 点击查看  " else "  剧透内容  ")
+                addStyle(SpanStyle(color = spoilerTextColor, background = spoilerBackground, fontWeight = FontWeight.Medium), hiddenStart, length)
                 addStringAnnotation("SPOILER", range.item, hiddenStart, length)
                 start = range.end
             }
