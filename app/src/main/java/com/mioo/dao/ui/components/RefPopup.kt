@@ -2,6 +2,8 @@ package com.mioo.dao.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
@@ -51,6 +53,8 @@ import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 
+private data class ReferenceContent(val id: String, val post: PostData?, val loading: Boolean, val error: String?)
+
 @Composable
 fun RefPopup(
     postId: String,
@@ -85,12 +89,21 @@ fun RefPopup(
         }
         BoxWithConstraints(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { onDismiss() }, contentAlignment = Alignment.Center) {
         val maxCardHeight = minOf(LocalConfiguration.current.screenHeightDp.dp * 0.65f, 460.dp)
-        val contentScroll = remember(postId) { ScrollState(0) }
         AnimatedVisibility(
             visibleState = visibleState,
             enter = MiooMotion.modalEnter(reducedMotion),
             exit = MiooMotion.modalExit(reducedMotion)
         ) {
+        AnimatedContent(
+            targetState = ReferenceContent(postId, postData, isLoading, errorMessage),
+            contentKey = { it.id },
+            transitionSpec = { MiooMotion.modalEnter(reducedMotion) togetherWith MiooMotion.modalExit(reducedMotion) },
+            label = "referenceTransition"
+        ) { reference ->
+        val postData = reference.post
+        val isLoading = reference.loading
+        val errorMessage = reference.error
+        val contentScroll = remember(reference.id) { ScrollState(0) }
         Card(
             modifier = modifier
                 .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {}
@@ -199,6 +212,7 @@ fun RefPopup(
                     }
                 }
             }
+        }
         }
         }
         }
