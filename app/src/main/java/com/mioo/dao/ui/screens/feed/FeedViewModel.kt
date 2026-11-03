@@ -172,14 +172,13 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    /** feed 接口不带回复数：对已知计数缺失的串逐个补抓第 1 页并缓存，250ms 限速。 */
+    /** feed 接口不带回复数：逐个刷新串的第 1 页并缓存回复数，250ms 限速。 */
     private fun enrichRemoteReplyCounts(uuid: String, threads: List<Thread>) {
         replyCountJob?.cancel()
         replyCountJob = viewModelScope.launch {
             var consecutiveFailures = 0
             for (thread in threads.take(REPLY_COUNT_ENRICH_LIMIT)) {
                 if (_uiState.value.selectedFolderId != uuid) return@launch
-                if ((_uiState.value.remoteReplyCounts[thread.idStr] ?: 0) > 0) continue
                 val count = threadRepository.refreshCloudFeedReplyCount(thread.idStr)
                 if (count != null) {
                     consecutiveFailures = 0
@@ -205,7 +204,7 @@ class FeedViewModel @Inject constructor(
     ): List<ThreadListItem> {
         val withCounts = threads.map { thread ->
             counts[thread.idStr]
-                ?.takeIf { it > (thread.replyCount ?: 0) }
+                ?.takeIf { it >= 0 }
                 ?.let { thread.copy(replyCount = it) }
                 ?: thread
         }
