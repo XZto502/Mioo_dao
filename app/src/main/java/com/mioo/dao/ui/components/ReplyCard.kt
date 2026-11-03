@@ -37,8 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.luminance
 import com.mioo.dao.ui.theme.readingQuoteStyle
@@ -217,11 +218,19 @@ fun QuotedPostBox(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.05f else 0.035f)
     ) {
-        Row(Modifier.height(IntrinsicSize.Min).padding(horizontal = 12.dp, vertical = 9.dp)) {
-            Box(Modifier.width(2.5.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)))
-            Spacer(Modifier.width(9.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val stripeColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)
+        Box(
+            Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+                .drawBehind {
+                    val width = 2.5.dp.toPx()
+                    drawRoundRect(
+                        color = stripeColor,
+                        size = Size(width, size.height),
+                        cornerRadius = CornerRadius(width / 2)
+                    )
+                }
+        ) {
+            Column(Modifier.fillMaxWidth().padding(start = 11.5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("No.${quote.id}", style = readingTextStyle(11f, 16f).copy(fontFeatureSettings = "tnum"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                 val previewContent = remember(quote.content) {

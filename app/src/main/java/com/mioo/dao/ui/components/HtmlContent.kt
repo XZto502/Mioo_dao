@@ -405,6 +405,9 @@ private fun AnnotatedString.Builder.appendQuote(
 
 /** Cache key includes night mode so lifted font colors do not stick across theme changes.
  *  骰点规则参与键：同一楼在不同规则下胶囊配色不同。 */
+private fun Char.isQuoteEdgeWhitespace(): Boolean =
+    isWhitespace() || this == '\u200B' || this == '\uFEFF'
+
 private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val darkTheme: Boolean, val dicePreset: String)
 
 /**
@@ -502,8 +505,8 @@ fun HtmlContent(
     val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines, trimOuterWhitespace) {
         val source = if (trimOuterWhitespace) {
             val value = parsed.annotated.text
-            val start = value.indexOfFirst { !it.isWhitespace() }
-            if (start < 0) AnnotatedString("") else parsed.annotated.subSequence(start, value.trimEnd().length)
+            val start = value.indexOfFirst { !it.isQuoteEdgeWhitespace() }
+            if (start < 0) AnnotatedString("") else parsed.annotated.subSequence(start, value.indexOfLast { !it.isQuoteEdgeWhitespace() } + 1)
         } else parsed.annotated
         if (compactBlankLines) {
             val breaks = Regex("(\\r?\\n\\s*){2,}")
