@@ -16,7 +16,10 @@ object ContentBlockSplitter {
             val trimmed = text.replace(edgeBreaks, "")
             if (trimmed.isNotBlank()) blocks.add(PostContentBlock.Text(trimmed))
         }
+        val spoilers = Regex("\\[h\\][\\s\\S]*?\\[/h\\]", RegexOption.IGNORE_CASE)
+            .findAll(html).map { it.range }.toList()
         for (match in reference.findAll(html)) {
+            if (spoilers.any { match.range.first in it }) continue
             val quote = resolved[match.groupValues[1]] ?: continue
             addText(html.substring(cursor, match.range.first))
             blocks.add(PostContentBlock.Quote(quote))

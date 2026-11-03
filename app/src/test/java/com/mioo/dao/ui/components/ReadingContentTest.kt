@@ -76,4 +76,18 @@ class ReadingContentTest {
         assertEquals("甲\n乙", parse("甲\n乙").text)
     }
 
+    @Test fun spoilerRangesKeepRichContentAndSeparateMultipleSections() {
+        val text = parse("开头 [h]秘密<br>>>No.22[/h] 中间 [H]结局[/H] 尾部")
+        assertEquals("开头 秘密\n>>No.22 中间 结局 尾部", text.text)
+        val spoilers = text.getStringAnnotations("SPOILER", 0, text.length)
+        assertEquals(listOf("秘密\n>>No.22", "结局"), spoilers.map { text.text.substring(it.start, it.end) })
+        assertEquals("22", text.getStringAnnotations("QUOTE_CLICK", 0, text.length).single().item)
+        assertEquals("未闭合 [h]原文", parse("未闭合 [h]原文").text)
+    }
+
+    @Test fun resolvedQuotesInsideSpoilersAreNotExpanded() {
+        val html = "[h]>>No.22[/h] 正文 >>No.11"
+        val blocks = ContentBlockSplitter.split(html, listOf(post("22"), post("11")))
+        assertEquals(listOf(PostContentBlock.Text("[h]>>No.22[/h] 正文"), PostContentBlock.Quote(post("11"))), blocks)
+    }
 }

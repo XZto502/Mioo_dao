@@ -168,12 +168,32 @@ fun parseHtmlToAnnotatedString(
         .replace("\r\n", "\n").replace(PARAGRAPH_BREAKS, "\n\n")
     val ctx = dicePreset?.let { DiceParseCtx(preset = it) }
     val annotated = buildAnnotatedString {
-        val matcher = HTML_PATTERN.matcher(cleaned)
+        var cursor = 0
+        SPOILER_PATTERN.findAll(cleaned).forEachIndexed { index, match ->
+            appendHtmlFragment(cleaned.substring(cursor, match.range.first), quoteLinkColor, defaultGreenColor, darkTheme, ctx)
+            val start = length
+            // Avoid inline dice exposing the hidden content before it is revealed.
+            appendHtmlFragment(match.groupValues[1], quoteLinkColor, defaultGreenColor, darkTheme, null)
+            if (length > start) addStringAnnotation("SPOILER", index.toString(), start, length)
+            cursor = match.range.last + 1
+        }
+        appendHtmlFragment(cleaned.substring(cursor), quoteLinkColor, defaultGreenColor, darkTheme, ctx)
+    }
+    return ParsedContent(annotated = annotated, diceBadges = ctx?.badges ?: emptyList())
+}
+
+private val SPOILER_PATTERN = Regex("\\[h\\]([\\s\\S]*?)\\[/h\\]", RegexOption.IGNORE_CASE)
+
+private fun AnnotatedString.Builder.appendHtmlFragment(
+    fragment: String, quoteLinkColor: Color, defaultGreenColor: Color,
+    darkTheme: Boolean, ctx: DiceParseCtx?
+) {
+        val matcher = HTML_PATTERN.matcher(fragment)
 
         var lastIndex = 0
         while (matcher.find()) {
             appendRichText(
-                text = cleaned.substring(lastIndex, matcher.start()),
+                text = fragment.substring(lastIndex, matcher.start()),
                 baseColor = null,
                 quoteLinkColor = quoteLinkColor,
                 ctx = ctx
@@ -212,11 +232,9 @@ fun parseHtmlToAnnotatedString(
             lastIndex = matcher.end()
         }
 
-        if (lastIndex < cleaned.length) {
-            appendRichText(cleaned.substring(lastIndex), null, quoteLinkColor, ctx)
+        if (lastIndex < fragment.length) {
+            appendRichText(fragment.substring(lastIndex), null, quoteLinkColor, ctx)
         }
-    }
-    return ParsedContent(annotated = annotated, diceBadges = ctx?.badges ?: emptyList())
 }
 
 /** 一次解析里的骰点判定上下文（仅 dicePreset 非空时创建）。 */
@@ -512,6 +530,27 @@ fun HtmlContent(
         }
     }
 
+    var revealedSpoilers by remember(html) { mutableStateOf(emptySet<String>()) }
+    val hiddenColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val displayText = remember(annotatedString, revealedSpoilers, hiddenColor) {
+        val ranges = annotatedString.getStringAnnotations("SPOILER", 0, annotatedString.length)
+            .filter { it.item !in revealedSpoilers }.sortedBy { it.start }
+        if (ranges.isEmpty()) annotatedString else buildAnnotatedString {
+            var start = 0
+            ranges.forEach { range ->
+                append(annotatedString.subSequence(start, range.start))
+                val hiddenStart = length
+                append(annotatedString.text.substring(range.start, range.end).map {
+                    if (it.isWhitespace()) it else '█'
+                }.joinToString(""))
+                addStyle(SpanStyle(color = hiddenColor, background = hiddenColor), hiddenStart, length)
+                addStringAnnotation("SPOILER", range.item, hiddenStart, length)
+                start = range.end
+            }
+            append(annotatedString.subSequence(start, annotatedString.length))
+        }
+    }
+
     val textModifier = if (!enableGestures) {
         modifier
     } else {
@@ -531,22 +570,28 @@ fun HtmlContent(
         val finalLinkClickState = rememberUpdatedState(finalLinkClick)
         val onDiceClickState = rememberUpdatedState(LocalDiceRuleMenu.current)
 
-        modifier.pointerInput(annotatedString) {
+        modifier.pointerInput(displayText) {
             detectTapGestures(
                 onTap = { pos ->
                     layoutResult?.let { layout ->
                         val offset = layout.getOffsetForPosition(pos)
-                        val quoteAnnotation = annotatedString.getStringAnnotations(
+                        val spoilerAnnotation = displayText.getStringAnnotations(
+                            tag = "SPOILER", start = offset, end = offset
+                        ).firstOrNull()
+                        val quoteAnnotation = displayText.getStringAnnotations(
                             tag = "QUOTE_CLICK", start = offset, end = offset
                         ).firstOrNull()
-                        val linkAnnotation = annotatedString.getStringAnnotations(
+                        val linkAnnotation = displayText.getStringAnnotations(
                             tag = "LINK_CLICK", start = offset, end = offset
                         ).firstOrNull()
-                        val diceAnnotation = annotatedString.getStringAnnotations(
+                        val diceAnnotation = displayText.getStringAnnotations(
                             tag = "DICE_CLICK", start = offset, end = offset
                         ).firstOrNull()
 
                         when {
+                            spoilerAnnotation != null -> {
+                                revealedSpoilers = if (spoilerAnnotation.item in revealedSpoilers) revealedSpoilers - spoilerAnnotation.item else revealedSpoilers + spoilerAnnotation.item
+                            }
                             diceAnnotation != null -> onDiceClickState.value?.invoke()
                             quoteAnnotation != null -> onQuoteClickState.value(quoteAnnotation.item)
                             linkAnnotation != null -> finalLinkClickState.value(linkAnnotation.item)
@@ -562,7 +607,7 @@ fun HtmlContent(
     }
 
     Text(
-        text = annotatedString,
+        text = displayText,
         modifier = textModifier,
         style = mergedStyle,
         maxLines = maxLines,
