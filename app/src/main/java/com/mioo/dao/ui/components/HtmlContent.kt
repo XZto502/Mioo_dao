@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -547,19 +549,25 @@ fun HtmlContent(
     val spoilerRanges = remember(annotatedString) {
         annotatedString.getStringAnnotations("SPOILER", 0, annotatedString.length)
     }
+    val reducedMotion = isReducedMotionEnabled()
     val spoilerProgress = spoilerRanges.map { range ->
         key(range.item) {
             animateFloatAsState(
                 targetValue = if (range.item in revealedSpoilers) 1f else 0f,
-                animationSpec = tween(durationMillis = 180), label = "spoilerReveal"
+                animationSpec = tween(durationMillis = if (reducedMotion) 0 else 240, easing = FastOutSlowInEasing), label = "spoilerReveal"
             )
         }
     }
-    val displayText = remember(annotatedString, revealedSpoilers) {
+    val spoilerAlphas = spoilerProgress.map { it.value }
+    val displayText = remember(annotatedString, spoilerAlphas, mergedStyle.color) {
         buildAnnotatedString {
             append(annotatedString)
-            spoilerRanges.filter { it.item !in revealedSpoilers }.forEach { range ->
-                addStyle(SpanStyle(color = Color.Transparent), range.start, range.end)
+            spoilerRanges.forEachIndexed { index, range ->
+                val alpha = spoilerAlphas[index]
+                if (alpha < 1f) addStyle(
+                    SpanStyle(color = mergedStyle.color.copy(alpha = mergedStyle.color.alpha * alpha)),
+                    range.start, range.end
+                )
             }
         }
     }
@@ -588,7 +596,7 @@ fun HtmlContent(
         val finalLinkClickState = rememberUpdatedState(finalLinkClick)
         val onDiceClickState = rememberUpdatedState(LocalDiceRuleMenu.current)
 
-        modifier.pointerInput(displayText) {
+        modifier.pointerInput(annotatedString) {
             detectTapGestures(
                 onTap = { pos ->
                     layoutResult?.let { layout ->
