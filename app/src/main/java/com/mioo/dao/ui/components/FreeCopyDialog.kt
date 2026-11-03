@@ -67,7 +67,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
     val quickItems = remember(cleanText, postId) {
         (listOfNotNull(postId.takeIf { it.isNotBlank() }?.let { "No.$it" }) +
             Regex("https?://[^\\s\\u4e00-\\u9fa5\"<>]+|>>No\\.\\d+")
-                .findAll(cleanText).map { it.value }.toList()).distinct()
+                .findAll(cleanText).map { it.value.removePrefix(">>") }.toList()).distinct()
     }
     val view = LocalView.current
     val activity = LocalContext.current as? Activity
