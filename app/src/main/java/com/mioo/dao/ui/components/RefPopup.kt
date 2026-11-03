@@ -88,6 +88,7 @@ fun RefPopup(
         val contentScroll = remember(postId) { ScrollState(0) }
         AnimatedVisibility(
             visibleState = visibleState,
+            modifier = Modifier.fillMaxWidth(0.87f),
             enter = MiooMotion.modalEnter(reducedMotion),
             exit = MiooMotion.modalExit(reducedMotion)
         ) {
