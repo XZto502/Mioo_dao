@@ -166,6 +166,8 @@ fun RefPopup(
                             html = postData.content,
                             onQuoteClick = onQuoteClick,
                             style = readingBodyStyle(),
+                            compactBlankLines = true,
+                            trimOuterWhitespace = true,
                             modifier = Modifier.fillMaxWidth()
                         )
 
