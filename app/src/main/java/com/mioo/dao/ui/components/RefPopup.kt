@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.window.Dialog
 import com.mioo.dao.ui.theme.readingBodyStyle
 import com.mioo.dao.ui.theme.readingCardColor
@@ -82,7 +83,7 @@ fun RefPopup(
             if (canGoBack) onBack() else onDismiss()
         }
         BoxWithConstraints(Modifier.fillMaxWidth().safeDrawingPadding()) {
-        val maxCardHeight = minOf(maxHeight * 0.65f, 460.dp)
+        val maxCardHeight = minOf(LocalConfiguration.current.screenHeightDp.dp * 0.65f, 460.dp)
         val contentScroll = remember(postId) { ScrollState(0) }
         AnimatedVisibility(
             visibleState = visibleState,
@@ -103,11 +104,15 @@ fun RefPopup(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                // 标题与关闭按钮固定；正文、附图与原串入口共用可滚动区域。
+                // Keep the identity visible while the body and image scroll independently.
+                if (!isLoading && errorMessage == null && postData != null) {
+                    ReadingPostHeader(postData)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
                 Column(
                     modifier = Modifier
-                        .weight(1f, fill = false)
                         .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .verticalScroll(contentScroll)
                 ) {
                 // Content State Machine
@@ -147,11 +152,6 @@ fun RefPopup(
                         }
                     }
                     postData != null -> {
-                        // Reuse the board card header for identity, badges, time and number.
-                        ReadingPostHeader(postData)
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
                         // Title if exists
                         if (!postData.title.isNullOrBlank()) {
                             Text(
@@ -182,10 +182,17 @@ fun RefPopup(
                                     .clickable { onImageClick(imageUrl) }
                             )
                         }
-
-
                     }
                 }
+                }
+                if (!isLoading && errorMessage == null && postData != null) {
+                    val originalThreadId = postData.resto?.takeIf { it.isNotBlank() && it != "0" && it != "null" }
+                        ?: postData.id.takeIf { it.isNotBlank() }
+                    if (originalThreadId != null && originalThreadId != currentThreadId) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { onViewThreadClick(originalThreadId) }) { Text("跳转原串") }
+                        }
+                    }
                 }
             }
         }
