@@ -2,6 +2,11 @@ package com.mioo.dao.ui.screens.forum
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -137,7 +142,10 @@ fun ForumScreen(
     }
     val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }
-    SideEffect { onComposerOpenChange(showCreateDialog) }
+    val composerVisibility = remember { MutableTransitionState(false) }
+    composerVisibility.targetState = showCreateDialog
+    val reducedComposerMotion = isReducedMotionEnabled()
+    SideEffect { onComposerOpenChange(composerVisibility.currentState || composerVisibility.targetState) }
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose { onComposerOpenChange(false) }
     }
@@ -646,7 +654,9 @@ fun ForumScreen(
         }
     }
 
-    if (showCreateDialog) {
+    AnimatedVisibility(visibleState = composerVisibility,
+        enter = fadeIn(tween(if (reducedComposerMotion) 0 else 220)) + slideInVertically(tween(if (reducedComposerMotion) 0 else 220)) { it / 12 },
+        exit = fadeOut(tween(if (reducedComposerMotion) 0 else 180)) + slideOutVertically(tween(if (reducedComposerMotion) 0 else 180)) { it / 12 }) {
         val postDrafts by viewModel.postDrafts.collectAsState()
         key(composerSession) {
         val initialDraft = pendingPostDraft?.let { PostDraftContent.from(it) } ?: PostDraftContent("", "", "")
@@ -664,10 +674,13 @@ fun ForumScreen(
             // 草稿箱开关关闭时不提供「存草稿」按钮（参数为 null 时对话框隐藏该入口）
             onSaveDraft = if (forumSettings.draftBoxEnabled) {
                 { draftTitle: String, draftAuthor: String, draftContent: String, onDone: (Boolean) -> Unit ->
-                    viewModel.savePostDraft(draftTitle, draftAuthor, draftContent) { saved ->
-                        if (saved) settingsViewModel.clearNewThreadDraft()
-                        Toast.makeText(context, if (saved) "已存入草稿箱" else "草稿保存失败，请重试", Toast.LENGTH_SHORT).show()
-                        onDone(saved)
+                    viewModel.savePostDraft(draftTitle, draftAuthor, draftContent, pendingPostDraft?.id ?: 0) { id ->
+                        if (id != null) {
+                            pendingPostDraft = PostDraftContent(draftTitle, draftAuthor, draftContent).toDraft(viewModel.forumId, uiState.currentForumName).copy(id = id)
+                            settingsViewModel.clearNewThreadDraft()
+                        }
+                        Toast.makeText(context, if (id != null) "已存入草稿箱" else "草稿保存失败，请重试", Toast.LENGTH_SHORT).show()
+                        onDone(id != null)
                     }
                 }
             } else null,
@@ -693,7 +706,6 @@ fun ForumScreen(
                                 settingsViewModel.clearNewThreadDraft()
                                 pendingPostDraft?.let { viewModel.deleteDraft(it.id) }
                                 pendingPostDraft = null
-                                viewModel.deletePostDraftsForCurrentBoard()
                                 showCreateDialog = false
                                 Toast.makeText(context, "发串成功", Toast.LENGTH_SHORT).show()
                             } else {

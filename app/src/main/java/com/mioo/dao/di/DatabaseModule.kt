@@ -124,6 +124,13 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP INDEX IF EXISTS index_drafts_type_targetId")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_drafts_type_targetId ON drafts(type, targetId)")
+        }
+    }
+
     @Provides
     @Singleton
     fun providePostActionHistoryDao(database: AppDatabase): com.mioo.dao.data.local.PostActionHistoryDao = database.postActionHistoryDao()
@@ -142,7 +149,7 @@ object DatabaseModule {
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
             // 侧载分发下用户可能回滚安装旧版：降级重建好过访问 DB 即崩溃循环
             .fallbackToDestructiveMigrationOnDowngrade()
-            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())

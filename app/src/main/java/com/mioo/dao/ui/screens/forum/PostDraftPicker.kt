@@ -59,7 +59,7 @@ internal fun PostDraftPicker(
                     Text("选择发串草稿", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "恢复标题、名称和正文，并切换到原板块。每个板块保留一份发串草稿。",
+                        "恢复标题、名称和正文，并切换到原板块。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

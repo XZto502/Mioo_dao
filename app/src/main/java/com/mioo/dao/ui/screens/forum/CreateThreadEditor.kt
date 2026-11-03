@@ -6,6 +6,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -77,6 +85,8 @@ fun CreateThreadEditor(
     onSubmit: (String, String, String, Uri?, String?) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val reducedMotion = isReducedMotionEnabled()
+    val scope = rememberCoroutineScope()
     // Follow the app theme, including an explicit light/dark override in settings.
     val isDark = scheme.background.luminance() < 0.5f
     val pageBg = if (isDark) Color(0xFF0E1015) else Color(0xFFF0F2F6)
@@ -249,7 +259,7 @@ fun CreateThreadEditor(
                             }, shape = CircleShape,
                             color = scheme.onSurface.copy(alpha = 0.05f), modifier = Modifier.widthIn(max = 140.dp)
                         ) {
-                            Text("署名: ${name.ifBlank { "无名氏" }} ✎", Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            Text("署名: ${name.ifBlank { "无名氏" }}", Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                 fontSize = 11.5.sp, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -310,10 +320,17 @@ fun CreateThreadEditor(
                 )
             }
         }
-        if (draftsOpen) PostDraftPicker(drafts, onDismiss = { draftsOpen = false }, onSelect = { draft ->
-            draftsOpen = false
-            if (dirty) { draftToOpen = draft; confirmLeave = true } else onSelectDraft(draft)
-        })
+        AnimatedVisibility(visible = draftsOpen,
+            enter = fadeIn(tween(if (reducedMotion) 0 else 200)) + slideInVertically(tween(if (reducedMotion) 0 else 220)) { it / 5 },
+            exit = fadeOut(tween(if (reducedMotion) 0 else 160)) + slideOutVertically(tween(if (reducedMotion) 0 else 180)) { it / 5 }) {
+            PostDraftPicker(drafts, onDismiss = { draftsOpen = false }, onSelect = { draft ->
+                draftsOpen = false
+                scope.launch {
+                    if (!reducedMotion) delay(180)
+                    if (dirty) { draftToOpen = draft; confirmLeave = true } else onSelectDraft(draft)
+                }
+            })
+        }
     }
     }
     if (showCookieConfirmation) {
@@ -340,9 +357,9 @@ fun CreateThreadEditor(
             })
         },
         confirmButton = { if (onSaveDraft != null) FilledTonalButton(onClick = { save(true) }, enabled = fields.hasContent && !saving) { Text(if (saving) "保存中…" else "保存草稿") } },
-        dismissButton = { Row {
-            TextButton(onClick = { confirmLeave = false; draftToOpen = null }, enabled = !saving) { Text("继续编辑") }
-            TextButton(onClick = { finishAction() }, enabled = !saving) { Text("放弃", color = scheme.error) }
-        } }
+        dismissButton = {
+            FilledTonalButton(onClick = { finishAction() }, enabled = !saving,
+                colors = ButtonDefaults.filledTonalButtonColors(containerColor = scheme.surfaceVariant, contentColor = scheme.onSurfaceVariant)) { Text("放弃") }
+        }
     )
 }

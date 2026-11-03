@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         OfflineThreadEntity::class,
         PostActionHistoryEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

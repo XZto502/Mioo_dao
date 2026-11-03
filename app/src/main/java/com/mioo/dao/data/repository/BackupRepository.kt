@@ -320,8 +320,9 @@ class BackupRepository @Inject constructor(
                     content = o.optString("content"),
                     updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
                 )
-                // 按 (type, targetId) 合并已有草稿的 id，避免重复导入产生重复行
-                val existing = draftDao.find(parsed.type, parsed.targetId)
+                // 回复草稿按串合并；发串草稿仅在内容和时间完全相同时去重。
+                val existing = if (parsed.type == DraftEntity.TYPE_REPLY) draftDao.find(parsed.type, parsed.targetId)
+                    else draftDao.findIdentical(parsed.type, parsed.targetId, parsed.title, parsed.name, parsed.content, parsed.updatedAt)
                 draftDao.upsert(if (existing != null) parsed.copy(id = existing.id) else parsed)
                 count++
             }

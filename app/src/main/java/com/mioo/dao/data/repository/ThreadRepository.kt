@@ -156,7 +156,7 @@ interface ThreadRepository {
     fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>>
     suspend fun getReplyDraftContent(threadId: String): String
     suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String)
-    suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String)
+    suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String, draftId: Long = 0): Long
     suspend fun deleteDraft(id: Long)
     /** 删除某板块的全部发串草稿（发送成功后清理，防止草稿箱残留已发内容）。 */
     suspend fun deletePostDrafts(boardId: String)
@@ -1036,6 +1036,7 @@ class ThreadRepositoryImpl @Inject constructor(
         } else {
             draftDao.upsert(
                 com.mioo.dao.data.local.DraftEntity(
+                    id = draftDao.find(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)?.id ?: 0,
                     type = com.mioo.dao.data.local.DraftEntity.TYPE_REPLY,
                     targetId = threadId,
                     targetName = threadTitle ?: "",
@@ -1045,14 +1046,11 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String) {
+    override suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String, draftId: Long): Long {
         ensureDraftsMigrated()
         val fields = com.mioo.dao.data.local.PostDraftContent(title.orEmpty(), name.orEmpty(), content)
-        if (!fields.hasContent) {
-            draftDao.deleteFor(com.mioo.dao.data.local.DraftEntity.TYPE_POST, boardId)
-        } else {
-            draftDao.upsert(fields.toDraft(boardId, boardName))
-        }
+        require(fields.hasContent)
+        return draftDao.upsert(fields.toDraft(boardId, boardName).copy(id = draftId))
     }
 
     override suspend fun deleteDraft(id: Long) {

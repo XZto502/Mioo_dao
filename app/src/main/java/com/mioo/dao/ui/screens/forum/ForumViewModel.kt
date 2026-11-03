@@ -484,17 +484,17 @@ class ForumViewModel @Inject constructor(
         draftPrefillBus.consume()
     }
 
-    fun savePostDraft(title: String, author: String, content: String, onDone: (Boolean) -> Unit) {
+    fun savePostDraft(title: String, author: String, content: String, draftId: Long, onDone: (Long?) -> Unit) {
         val boardId = forumId
         val boardName = _uiState.value.currentForumName
         viewModelScope.launch {
             try {
-                threadRepository.savePostDraft(boardId, boardName, author, title, content)
-                onDone(true)
+                val id = threadRepository.savePostDraft(boardId, boardName, author, title, content, draftId)
+                onDone(id)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                onDone(false)
+                onDone(null)
             }
         }
     }

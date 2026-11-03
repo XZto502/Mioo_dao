@@ -6,11 +6,11 @@ import androidx.room.PrimaryKey
 
 /**
  * 发言草稿箱 entry: a reply draft (keyed by thread) or a new-thread draft
- * (keyed by board). One draft per (type, targetId) — re-saving replaces it.
+ * (keyed by board). Posts can have several drafts per board.
  */
 @Entity(
     tableName = "drafts",
-    indices = [Index(value = ["type", "targetId"], unique = true)]
+    indices = [Index(value = ["type", "targetId"])]
 )
 data class DraftEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
