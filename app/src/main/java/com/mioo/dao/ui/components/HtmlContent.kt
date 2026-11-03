@@ -488,7 +488,8 @@ fun HtmlContent(
      * Use for dense forum/timeline lists to cut cold-start scroll work.
      */
     enableGestures: Boolean = true,
-    compactBlankLines: Boolean = false
+    compactBlankLines: Boolean = false,
+    trimOuterWhitespace: Boolean = false
 ) {
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     val quoteColorArgb = quoteLinkColor.toArgb()
@@ -498,9 +499,13 @@ fun HtmlContent(
         HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme, dicePreset)
     }
     val paragraphScale = MaterialTheme.typography.bodyMedium.lineHeight.value / 20f
-    val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines) {
+    val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines, trimOuterWhitespace) {
+        val source = if (trimOuterWhitespace) {
+            val value = parsed.annotated.text
+            val start = value.indexOfFirst { !it.isWhitespace() }
+            if (start < 0) AnnotatedString("") else parsed.annotated.subSequence(start, value.trimEnd().length)
+        } else parsed.annotated
         if (compactBlankLines) {
-            val source = parsed.annotated
             val breaks = Regex("(\\r?\\n\\s*){2,}")
             buildAnnotatedString {
                 var start = 0
@@ -511,7 +516,7 @@ fun HtmlContent(
                 }
                 append(source.subSequence(start, source.length))
             }
-        } else parsed.annotated.withReadingParagraphGaps(paragraphScale)
+        } else source.withReadingParagraphGaps(paragraphScale)
     }
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).

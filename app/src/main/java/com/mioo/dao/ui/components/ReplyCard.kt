@@ -229,7 +229,7 @@ fun QuotedPostBox(
                 }
                 if (previewContent.isBlank()) Text("（图片或空内容）", style = readingQuoteStyle())
                 else HtmlContent(html = previewContent, onQuoteClick = {}, style = readingQuoteStyle(),
-                    maxLines = 3, overflow = TextOverflow.Ellipsis, enableGestures = false)
+                    maxLines = 3, overflow = TextOverflow.Ellipsis, enableGestures = false, trimOuterWhitespace = true)
             }
         }
     }
