@@ -92,8 +92,8 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
         if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
     }
     BackHandler { close() }
-    AnimatedVisibility(visibleState = visibility, enter = MiooMotion.pageEnter(reducedMotion),
-        exit = MiooMotion.pagePopExit(reducedMotion), modifier = Modifier.fillMaxSize().zIndex(100f)) {
+    AnimatedVisibility(visibleState = visibility, enter = MiooMotion.modalEnter(reducedMotion),
+        exit = MiooMotion.modalExit(reducedMotion), modifier = Modifier.fillMaxSize().zIndex(100f)) {
     Box(Modifier.fillMaxSize().background(pageColor)) {
         Column(Modifier.fillMaxSize()) {
             Row(
