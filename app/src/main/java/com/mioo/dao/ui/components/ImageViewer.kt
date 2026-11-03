@@ -451,27 +451,18 @@ fun ImageViewer(
                     )
                 }
             }
-            if (pagerState.currentPage <= 1 && firstLoadedPage > 1 && (isLoadingMore || previousPageError != null)) {
+            if (pagerState.currentPage <= 1 && firstLoadedPage > 1 && !isLoadingMore && previousPageError != null) {
                 Surface(color = palette.dockBg, shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.align(Alignment.CenterStart).padding(12.dp)) {
-                    Text(if (isLoadingMore) "正在查找前面的图片" else "加载失败，点击重试",
-                        color = palette.icon,
-                        modifier = Modifier.clickable(enabled = !isLoadingMore) { requestPrevious() }.padding(12.dp))
+                    Text("加载失败，点击重试", color = palette.icon,
+                        modifier = Modifier.clickable { requestPrevious() }.padding(12.dp))
                 }
             }
-            if (pagerState.currentPage >= currentImages.lastIndex && hasMorePages) {
+            if (pagerState.currentPage >= currentImages.lastIndex && hasMorePages && !isLoadingMore && pageLoadError != null) {
                 Surface(color = palette.dockBg, shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp)) {
-                    if (isLoadingMore) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("正在查找后续图片", color = palette.icon)
-                        }
-                    } else if (pageLoadError != null) {
-                        Text("加载失败，点击重试", color = palette.icon,
-                            modifier = Modifier.clickable { requestedPage = loadedPage; requestMore() }.padding(12.dp))
-                    }
+                    Text("加载失败，点击重试", color = palette.icon,
+                        modifier = Modifier.clickable { requestedPage = loadedPage; requestMore() }.padding(12.dp))
                 }
             }
 
