@@ -245,6 +245,8 @@ fun ThreadScreen(
     var referenceImageOpen by remember { mutableStateOf(false) }
     var showBookmarkMenu by remember { mutableStateOf(false) }
     var freeCopyText by remember { mutableStateOf<String?>(null) }
+    var freeCopyId by remember { mutableStateOf("") }
+    var freeCopyHash by remember { mutableStateOf("") }
     // 串内举报：目标楼层 id（该楼自身），null = 对话框关闭
     var sharePostId by remember { mutableStateOf<String?>(null) }
     var reportTargetNo by remember { mutableStateOf<String?>(null) }
@@ -723,6 +725,8 @@ fun ThreadScreen(
                                         settingsViewModel.addBlockedUser(mainThread.userHash)
                                     },
                                     onCopy = {
+                                        freeCopyId = mainThread.idStr
+                                        freeCopyHash = mainThread.userHash
                                         freeCopyText = mainThread.content
                                     },
                                     blockThreadLabel = "屏蔽此串 (No.${mainThread.idStr})",
@@ -783,7 +787,7 @@ fun ThreadScreen(
                             onBlockUser = {
                                 settingsViewModel.addBlockedUser(item.userHash)
                             },
-                            onFreeCopy = { freeCopyText = item.rawContent },
+                            onFreeCopy = { freeCopyId = item.idStr; freeCopyHash = item.userHash; freeCopyText = item.rawContent },
                             onReport = { reportTargetNo = item.idStr },
                             onShareCard = { sharePostId = item.idStr },
                             onOpenDiceRule = { showDiceRuleMenu = true }
@@ -833,13 +837,6 @@ fun ThreadScreen(
                 )
             }
 
-            freeCopyText?.let { text ->
-                FreeCopyDialog(
-                    text = text,
-                    onDismiss = { freeCopyText = null }
-                )
-            }
-
             // Own collector: open/close ref never invalidates the LazyColumn parent
             ThreadRefPopupHost(
                 viewModel = viewModel,
@@ -851,6 +848,14 @@ fun ThreadScreen(
                 onNavigateToThread = onNavigateToThread
             )
         }
+        }
+        freeCopyText?.let { text ->
+            FreeCopyDialog(
+                text = text,
+                postId = freeCopyId,
+                userHash = freeCopyHash,
+                onDismiss = { freeCopyText = null }
+            )
         }
     }
 

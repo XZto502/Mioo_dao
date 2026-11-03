@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -73,7 +74,7 @@ fun RefPopup(
     Dialog(
         onDismissRequest = onDismiss,
         properties = immersiveDialogProperties(
-            usePlatformDefaultWidth = true,
+            usePlatformDefaultWidth = false,
             dismissOnBackPress = false,
             dismissOnClickOutside = true
         )
@@ -82,7 +83,7 @@ fun RefPopup(
         BackHandler {
             if (canGoBack) onBack() else onDismiss()
         }
-        BoxWithConstraints(Modifier.fillMaxWidth().safeDrawingPadding()) {
+        BoxWithConstraints(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { onDismiss() }, contentAlignment = Alignment.Center) {
         val maxCardHeight = minOf(LocalConfiguration.current.screenHeightDp.dp * 0.65f, 460.dp)
         val contentScroll = remember(postId) { ScrollState(0) }
         AnimatedVisibility(
@@ -92,6 +93,7 @@ fun RefPopup(
         ) {
         Card(
             modifier = modifier
+                .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {}
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 24.dp)
                 .heightIn(max = maxCardHeight),
