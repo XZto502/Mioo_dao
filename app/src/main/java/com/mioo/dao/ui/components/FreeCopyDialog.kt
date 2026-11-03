@@ -3,6 +3,10 @@ package com.mioo.dao.ui.components
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -44,7 +48,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "", userHash: String = "") {
+fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val pageColor = if (dark) {
         if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else Color(0xFF0E1015)
@@ -52,15 +56,16 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "", use
     val clipboard = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val progress = remember { Animatable(0f) }
+    val visibility = remember { MutableTransitionState(false) }
+    val reducedMotion = isReducedMotionEnabled()
     var closing by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
     val cleanText = remember(text) {
         android.text.Html.fromHtml(text, android.text.Html.FROM_HTML_MODE_LEGACY)
             .toString().trim()
     }
-    val quickItems = remember(cleanText, postId, userHash) {
-        (listOfNotNull(userHash.takeIf { it.isNotBlank() }, postId.takeIf { it.isNotBlank() }?.let { "No.$it" }) +
+    val quickItems = remember(cleanText, postId) {
+        (listOfNotNull(postId.takeIf { it.isNotBlank() }?.let { "No.$it" }) +
             Regex("https?://[^\\s\\u4e00-\\u9fa5\"<>]+|>>No\\.\\d+")
                 .findAll(cleanText).map { it.value }.toList()).distinct()
     }
@@ -80,23 +85,19 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "", use
     fun close() {
         if (closing) return
         closing = true
-        scope.launch {
-            progress.animateTo(0f, tween(180, easing = FastOutLinearInEasing))
-            onDismiss()
-        }
+        visibility.targetState = false
     }
-    LaunchedEffect(Unit) { progress.animateTo(1f, tween(240, easing = FastOutSlowInEasing)) }
+    LaunchedEffect(Unit) { visibility.targetState = true }
+    LaunchedEffect(visibility.currentState, visibility.targetState, visibility.isIdle, closing) {
+        if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
+    }
     BackHandler { close() }
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    Box(Modifier.fillMaxSize().zIndex(100f).background(pageColor.copy(alpha = progress.value))) {
+    AnimatedVisibility(visibleState = visibility, enter = MiooMotion.pageEnter(reducedMotion),
+        exit = MiooMotion.pagePopExit(reducedMotion), modifier = Modifier.fillMaxSize().zIndex(100f)) {
+    Box(Modifier.fillMaxSize().background(pageColor)) {
         Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().statusBarsPadding().graphicsLayer {
-                    alpha = progress.value
-                    scaleX = 0.92f + 0.08f * progress.value
-                    scaleY = scaleX
-                    translationY = (1f - progress.value) * with(density) { 20.dp.toPx() }
-                }.padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { close() }) { Icon(Icons.Default.ArrowBack, "返回") }
@@ -119,12 +120,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "", use
             }
             Surface(
                 Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 12.dp, vertical = 8.dp)
-                    .graphicsLayer {
-                        alpha = progress.value
-                        scaleX = 0.92f + 0.08f * progress.value
-                        scaleY = scaleX
-                        translationY = (1f - progress.value) * with(density) { 20.dp.toPx() }
-                    },
+                    ,
                 shape = RoundedCornerShape(20.dp),
                 color = if (dark) Color(0xFF16181E) else Color.White
             ) {
@@ -143,10 +139,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "", use
                 }
             }
             LazyRow(
-                Modifier.fillMaxWidth().navigationBarsPadding().graphicsLayer {
-                    alpha = progress.value
-                    translationY = (1f - progress.value) * with(density) { 32.dp.toPx() }
-                }.padding(horizontal = 14.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(quickItems, key = { it }) { value ->
@@ -167,5 +160,6 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "", use
                 }
             }
         }
+    }
     }
 }
