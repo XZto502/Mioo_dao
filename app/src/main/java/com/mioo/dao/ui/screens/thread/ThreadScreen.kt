@@ -1155,6 +1155,7 @@ private fun Md3MenuPillItem(
     }
 }
 
+<<<<<<< HEAD
 /** 看图器楼层摘要：剥标签/实体后取前 48 字。 */
 private fun plainTextSnippet(html: String): String {
     if (html.isBlank()) return ""
@@ -1168,6 +1169,8 @@ private fun plainTextSnippet(html: String): String {
     return text.replace(Regex("\\s+"), " ").trim().take(48)
 }
 
+=======
+>>>>>>> origin/main
 /**
  * Collects [ThreadViewModel.chromeUiState] so bookmark / download toggles do not
  * recompose the list body (which only watches [ThreadViewModel.listUiState]).
@@ -1319,6 +1322,7 @@ private fun ThreadChromeActions(
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
             Md3MenuPillItem(
+<<<<<<< HEAD
                 label = if (isLoading) "正在加载…" else "刷新",
                 leadingIcon = Icons.Default.Refresh,
                 enabled = !isLoading,
@@ -1328,6 +1332,8 @@ private fun ThreadChromeActions(
                 }
             )
             Md3MenuPillItem(
+=======
+>>>>>>> origin/main
                 label = "分享",
                 leadingIcon = Icons.Outlined.Share,
                 onClick = {
@@ -1336,6 +1342,7 @@ private fun ThreadChromeActions(
                 }
             )
             Md3MenuPillItem(
+<<<<<<< HEAD
                 label = diceRuleLabel,
                 leadingIcon = Icons.Default.Casino,
                 onClick = {
@@ -1344,6 +1351,8 @@ private fun ThreadChromeActions(
                 }
             )
             Md3MenuPillItem(
+=======
+>>>>>>> origin/main
                 label = "只看图片",
                 leadingIcon = Icons.Outlined.Image,
                 selected = showImagesOnly,
