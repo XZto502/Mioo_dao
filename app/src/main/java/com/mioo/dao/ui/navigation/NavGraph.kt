@@ -460,8 +460,9 @@ private fun MainTabs(
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
-        // Neighbor stays composed so a two-page jump can slide across it.
-        beyondBoundsPageCount = 1,
+        // Keep all four tabs composed: on a More → Forum transition, composing
+        // the forum as it enters the viewport can interrupt the animation tail.
+        beyondBoundsPageCount = 3,
         userScrollEnabled = false,
         // This pager is controlled only by the dock. The default nested-scroll
         // connection still moves a partially animated pager when a child is dragged.
