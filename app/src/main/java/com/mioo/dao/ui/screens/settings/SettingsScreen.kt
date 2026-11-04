@@ -1344,7 +1344,10 @@ fun SettingsScreen(
                 Row(modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (settings.networkCompatibilityEnabled) "已开启" else "已关闭")
+                    Text(
+                        text = if (settings.networkCompatibilityEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                     androidx.compose.material3.Switch(
                         checked = settings.networkCompatibilityEnabled,
                         onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
