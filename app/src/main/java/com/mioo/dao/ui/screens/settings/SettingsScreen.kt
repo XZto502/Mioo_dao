@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cookie
@@ -1030,15 +1031,16 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的串",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedThreads.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的串",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.5.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 } else {
@@ -1070,15 +1072,16 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的发言饼干 ID",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedUsers.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的 ID",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.5.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 } else {
@@ -1110,9 +1113,9 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的关键字",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -1659,37 +1662,60 @@ fun SettingsScreen(
         }
         androidx.compose.material3.AlertDialog(
             modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
+            shape = RoundedCornerShape(22.dp),
+            tonalElevation = 0.dp,
+            containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF181A20) else Color.White,
             onDismissRequest = { closeFolderDialog() },
             properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
             title = {
                 com.mioo.dao.ui.theme.ImmersiveDialogEffect()
-                Text(if (editingFolderUuid == null) "添加云端收藏夹" else "编辑云端收藏夹")
+                Text(if (editingFolderUuid == null) "添加云端收藏夹" else "编辑云端收藏夹", fontSize = 17.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
                 Column {
-                    OutlinedTextField(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
-                        value = newFolderName,
-                        onValueChange = { newFolderName = it },
-                        label = { Text("收藏夹名称") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    val fieldColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF22252D) else Color(0xFFF2F4F8)
+                    val fieldColors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = fieldColor, unfocusedContainerColor = fieldColor,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                        unfocusedBorderColor = Color.Transparent
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("收藏夹名称", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
-                        value = newFolderUuid,
-                        onValueChange = { newFolderUuid = it },
-                        label = { Text("订阅 UUID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        value = newFolderName, onValueChange = { newFolderName = it },
+                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
+                        singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(Modifier.height(14.dp))
+                    Text("订阅 UUID", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = newFolderUuid, onValueChange = { newFolderUuid = it },
+                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            Box(Modifier.size(48.dp).clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null
+                            ) { newFolderUuid = java.util.UUID.randomUUID().toString().replace("-", "").take(16) },
+                                contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.Refresh, "随机生成订阅 ID", Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    )
+                    Text("可填入已有订阅 ID 多端同步，或点右侧图标随机生成",
+                        Modifier.padding(start = 2.dp, top = 6.dp), fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    if (newFolderUuid.isNotBlank() && settings.feedFolders.any { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
+                        Text("该订阅 ID 已存在", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                    }
                 }
             },
             confirmButton = {
-                FolderActionButton(
+                FolderActionButton(tonal = true,
                     onClick = {
                         if (newFolderName.isNotBlank() && newFolderUuid.isNotBlank() && settings.feedFolders.none { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
                             if (editingFolderUuid == null) viewModel.addFeedFolder(newFolderName.trim(), newFolderUuid.trim())
@@ -1923,13 +1949,14 @@ private fun SettingsGroupDivider() {
 }
 
 @Composable
-private fun FolderActionButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun FolderActionButton(onClick: () -> Unit, tonal: Boolean = false, content: @Composable () -> Unit) {
     Box(
         modifier = Modifier.clip(RoundedCornerShape(20.dp))
+            .background(if (tonal) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
             .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
-        androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.primary), content = content)
+        androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(color = if (tonal) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant), content = content)
     }
 }
