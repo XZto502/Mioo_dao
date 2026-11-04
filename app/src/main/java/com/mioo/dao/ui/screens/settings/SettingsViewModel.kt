@@ -210,6 +210,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.addFeedFolder(com.mioo.dao.data.model.FeedFolder(name, uuid))
     }
 
+    fun updateFeedFolder(oldUuid: String, name: String, uuid: String) {
+        settingsRepository.updateFeedFolder(oldUuid, com.mioo.dao.data.model.FeedFolder(name, uuid))
+    }
+
     fun removeFeedFolder(uuid: String) {
         settingsRepository.removeFeedFolder(uuid)
     }

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
@@ -89,6 +90,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -115,6 +117,8 @@ fun SettingsScreen(
     var authMenuExpanded by remember { mutableStateOf(false) }
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var editingFolderUuid by remember { mutableStateOf<String?>(null) }
+    var deletingFolder by remember { mutableStateOf<com.mioo.dao.data.model.FeedFolder?>(null) }
     var newFolderName by remember { mutableStateOf("") }
     var newFolderUuid by remember { mutableStateOf("") }
 
@@ -1198,7 +1202,7 @@ fun SettingsScreen(
                         style = settingsItemStyle()
                     )
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { showAddFolderDialog = true }) {
+                    Box(modifier = Modifier.size(48.dp).clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { editingFolderUuid = null; newFolderName = ""; newFolderUuid = ""; showAddFolderDialog = true }, contentAlignment = Alignment.Center) {
                         Icon(androidx.compose.material.icons.Icons.Default.Add, contentDescription = "添加收藏夹")
                     }
                 }
@@ -1214,6 +1218,9 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
+                                editingFolderUuid = folder.uuid; newFolderName = folder.name; newFolderUuid = folder.uuid; showAddFolderDialog = true
+                            }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1221,7 +1228,7 @@ fun SettingsScreen(
                             Text(text = folder.name, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                             Text(text = folder.uuid, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = { viewModel.removeFeedFolder(folder.uuid) }) {
+                        Box(modifier = Modifier.size(48.dp).clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { deletingFolder = folder }, contentAlignment = Alignment.Center) {
                             Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -1640,12 +1647,23 @@ fun SettingsScreen(
 }
 
     if (showAddFolderDialog) {
+        var dialogVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { dialogVisible = true }
+        val dialogScale by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (dialogVisible) 1f else 0.96f,
+            animationSpec = androidx.compose.animation.core.tween(220), label = "folderDialog"
+        )
+        fun closeFolderDialog() {
+            dialogVisible = false
+            scope.launch { kotlinx.coroutines.delay(220); showAddFolderDialog = false }
+        }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showAddFolderDialog = false },
+            modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
+            onDismissRequest = { closeFolderDialog() },
             properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
             title = {
                 com.mioo.dao.ui.theme.ImmersiveDialogEffect()
-                Text("添加云端收藏夹")
+                Text(if (editingFolderUuid == null) "添加云端收藏夹" else "编辑云端收藏夹")
             },
             text = {
                 Column {
@@ -1671,27 +1689,52 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                FolderActionButton(
                     onClick = {
-                        if (newFolderName.isNotBlank() && newFolderUuid.isNotBlank()) {
-                            viewModel.addFeedFolder(newFolderName, newFolderUuid)
-                            showAddFolderDialog = false
+                        if (newFolderName.isNotBlank() && newFolderUuid.isNotBlank() && settings.feedFolders.none { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
+                            if (editingFolderUuid == null) viewModel.addFeedFolder(newFolderName.trim(), newFolderUuid.trim())
+                            else viewModel.updateFeedFolder(editingFolderUuid!!, newFolderName.trim(), newFolderUuid.trim())
+                            closeFolderDialog()
                             newFolderName = ""
                             newFolderUuid = ""
                         }
                     }
                 ) {
-                    Text("添加")
+                    Text(if (editingFolderUuid == null) "添加" else "保存")
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showAddFolderDialog = false }) {
+                FolderActionButton(onClick = { closeFolderDialog() }) {
                     Text("取消")
                 }
             }
         )
     }
 
+    deletingFolder?.let { folder ->
+        var dialogVisible by remember(folder.uuid) { mutableStateOf(false) }
+        LaunchedEffect(folder.uuid) { dialogVisible = true }
+        val dialogScale by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (dialogVisible) 1f else 0.96f,
+            animationSpec = androidx.compose.animation.core.tween(220), label = "deleteFolderDialog"
+        )
+        fun closeDeleteDialog() {
+            dialogVisible = false
+            scope.launch { kotlinx.coroutines.delay(220); deletingFolder = null }
+        }
+        androidx.compose.material3.AlertDialog(
+            modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
+            onDismissRequest = { closeDeleteDialog() },
+            title = { Text("删除云端收藏夹？") },
+            text = { Text("确定删除“${folder.name}”吗？") },
+            confirmButton = {
+                FolderActionButton(onClick = { viewModel.removeFeedFolder(folder.uuid); closeDeleteDialog() }) { Text("删除") }
+            },
+            dismissButton = {
+                FolderActionButton(onClick = { closeDeleteDialog() }) { Text("取消") }
+            }
+        )
+    }
     if (showBackupPicker) {
         val sectionLabels = listOf(
             "cookies" to "发言饼干（含备注/鉴权/选中）",
@@ -1877,4 +1920,16 @@ private fun SettingsHeaderIcon(imageVector: ImageVector, contentDescription: Str
 @Composable
 private fun SettingsGroupDivider() {
     HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+}
+
+@Composable
+private fun FolderActionButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(20.dp))
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.primary), content = content)
+    }
 }
