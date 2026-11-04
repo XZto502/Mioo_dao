@@ -27,6 +27,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_LAST_FORUM_ID = stringPreferencesKey("last_forum_id")
         val KEY_LAST_FORUM_NAME = stringPreferencesKey("last_forum_name")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_FORUM_PREVIEW_LINES = intPreferencesKey("forum_preview_lines")
         val KEY_FONT_SIZE_SCALE = floatPreferencesKey("font_size_scale")
         val KEY_LINE_HEIGHT_SCALE = floatPreferencesKey("line_height_scale")
         val KEY_CHINESE_FONT = stringPreferencesKey("chinese_font")
@@ -37,6 +38,8 @@ class SettingsDataStore(private val context: Context) {
         val KEY_SELECTED_COOKIE_INDEX = intPreferencesKey("selected_cookie_index")
         val KEY_AUTH_COOKIE = stringPreferencesKey("auth_cookie")
         val KEY_FEED_FOLDERS = stringPreferencesKey("feed_folders")
+        val KEY_LAST_FEED_FOLDER = stringPreferencesKey("last_feed_folder")
+        val KEY_LAST_HISTORY_TYPE = stringPreferencesKey("last_history_type")
         val KEY_BLOCKED_THREADS = stringPreferencesKey("blocked_threads")
         val KEY_BLOCKED_USERS = stringPreferencesKey("blocked_users")
         val KEY_PINNED_FORUMS = stringPreferencesKey("pinned_forums")
@@ -44,6 +47,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_BLOCKED_KEYWORDS = stringPreferencesKey("blocked_keywords")
         val KEY_THREAD_DRAFTS = stringPreferencesKey("thread_drafts")
         val KEY_THREAD_COOKIE_MAP = stringPreferencesKey("thread_cookie_map")
+        val KEY_THREAD_DICE_PRESETS = stringPreferencesKey("thread_dice_presets")
         val KEY_NEW_THREAD_DRAFT = stringPreferencesKey("new_thread_draft")
         val KEY_DRAFTS_MIGRATED = booleanPreferencesKey("drafts_migrated")
         val KEY_SMART_PRELOAD_MODE = stringPreferencesKey("smart_preload_mode")
@@ -51,12 +55,58 @@ class SettingsDataStore(private val context: Context) {
         val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
         val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
         val KEY_GLASS_EFFECT_ENABLED = booleanPreferencesKey("glass_effect_enabled")
+        val KEY_DICE_BADGES_ENABLED = booleanPreferencesKey("dice_badges_enabled")
         val KEY_CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
         /** last-notified replyCount snapshot for X-island feed/bookmark poll: "tid:count,tid:count" */
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
+        val KEY_SHARE_CARD_BRANDING = booleanPreferencesKey("show_share_card_branding")
+        val KEY_CONFIRM_COOKIE_BEFORE_SEND = booleanPreferencesKey("confirm_cookie_before_send")
         val KEY_DRAFT_BOX_ENABLED = booleanPreferencesKey("draft_box_enabled")
         val KEY_QUOTE_AUTO_DISPLAY = booleanPreferencesKey("quote_auto_display")
+        val KEY_NETWORK_COMPATIBILITY = booleanPreferencesKey("network_compatibility")
         val KEY_DATA_SAVER_ENABLED = booleanPreferencesKey("data_saver_enabled")
+        val KEY_KAOMOJI_ORDER = stringPreferencesKey("kaomoji_order")
+    }
+
+    val lastFeedFolderFlow: Flow<String> = context.dataStore.data.map { it[KEY_LAST_FEED_FOLDER] ?: "" }
+    val lastHistoryTypeFlow: Flow<String> = context.dataStore.data.map { it[KEY_LAST_HISTORY_TYPE] ?: "BROWSE" }
+
+    suspend fun saveLastFeedFolder(uuid: String?) {
+        context.dataStore.edit { it[KEY_LAST_FEED_FOLDER] = uuid.orEmpty() }
+    }
+
+    suspend fun saveLastHistoryType(type: String) {
+        context.dataStore.edit { it[KEY_LAST_HISTORY_TYPE] = type }
+    }
+
+    val forumPreviewLinesFlow: Flow<Int> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[KEY_FORUM_PREVIEW_LINES]?.takeIf { it in listOf(5, 8, 10, 15) } ?: 10 }
+
+    suspend fun saveForumPreviewLines(lines: Int) {
+        require(lines in listOf(5, 8, 10, 15))
+        context.dataStore.edit { it[KEY_FORUM_PREVIEW_LINES] = lines }
+    }
+
+    val networkCompatibilityFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_NETWORK_COMPATIBILITY] ?: false }
+
+    suspend fun saveNetworkCompatibility(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_NETWORK_COMPATIBILITY] = enabled }
+    }
+
+    val kaomojiOrderFlow: Flow<List<String>> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences ->
+            runCatching {
+                val array = org.json.JSONArray(preferences[KEY_KAOMOJI_ORDER] ?: "[]")
+                List(array.length()) { array.getString(it) }
+            }.getOrDefault(emptyList())
+        }
+
+    suspend fun saveKaomojiOrder(ids: List<String>) {
+        context.dataStore.edit { it[KEY_KAOMOJI_ORDER] = org.json.JSONArray(ids).toString() }
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data
@@ -471,6 +521,22 @@ class SettingsDataStore(private val context: Context) {
             )
         }
 
+    val showShareCardBrandingFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_SHARE_CARD_BRANDING] ?: true }
+
+    suspend fun setShowShareCardBranding(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_SHARE_CARD_BRANDING] = enabled }
+    }
+
+    val confirmCookieBeforeSendFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_CONFIRM_COOKIE_BEFORE_SEND] ?: false }
+
+    suspend fun saveConfirmCookieBeforeSend(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_CONFIRM_COOKIE_BEFORE_SEND] = enabled }
+    }
+
     val draftBoxEnabledFlow: Flow<Boolean> = context.dataStore.data
         .catch { exception ->
             if (exception is IOException) {
@@ -546,6 +612,24 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveGlassEffectEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_GLASS_EFFECT_ENABLED] = enabled
+        }
+    }
+
+    val diceBadgesEnabledFlow: Flow<Boolean> = context.dataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_DICE_BADGES_ENABLED] ?: true
+        }
+
+    suspend fun saveDiceBadgesEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_DICE_BADGES_ENABLED] = enabled
         }
     }
 
@@ -830,6 +914,42 @@ class SettingsDataStore(private val context: Context) {
                 keyList.forEach { jsonObject.remove(it) }
             }
             preferences[KEY_THREAD_COOKIE_MAP] = jsonObject.toString()
+        }
+    }
+
+    /** 串 → 骰点规则（存枚举名；未设置过返回 null，调用方回退默认纯色）。 */
+    suspend fun getThreadDicePreset(threadId: String): com.mioo.dao.utils.DiceRulePreset? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val jsonStr = context.dataStore.data.first()[KEY_THREAD_DICE_PRESETS] ?: return@withContext null
+            try {
+                org.json.JSONObject(jsonStr).optString(threadId, "").takeIf { it.isNotEmpty() }
+                    ?.let { name -> com.mioo.dao.utils.DiceRulePreset.fromStored(name) }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    suspend fun saveThreadDicePreset(threadId: String, preset: com.mioo.dao.utils.DiceRulePreset) {
+        context.dataStore.edit { preferences ->
+            val jsonStr = preferences[KEY_THREAD_DICE_PRESETS] ?: ""
+            val jsonObject = if (jsonStr.isNotEmpty()) {
+                try {
+                    org.json.JSONObject(jsonStr)
+                } catch (_: Exception) {
+                    org.json.JSONObject()
+                }
+            } else {
+                org.json.JSONObject()
+            }
+            jsonObject.put(threadId, preset.name)
+            // 防无限膨胀：超 500 条时丢掉最早插入的 100 条
+            if (jsonObject.length() > 500) {
+                val keyList = mutableListOf<String>()
+                val keys = jsonObject.keys()
+                while (keys.hasNext() && keyList.size < 100) keyList.add(keys.next())
+                keyList.forEach { jsonObject.remove(it) }
+            }
+            preferences[KEY_THREAD_DICE_PRESETS] = jsonObject.toString()
         }
     }
 

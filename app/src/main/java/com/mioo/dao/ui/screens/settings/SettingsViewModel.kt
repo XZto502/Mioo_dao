@@ -31,8 +31,11 @@ import kotlinx.coroutines.launch
 data class ThreadScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
+    val cookieNotes: Map<String, String> = emptyMap(),
+    val confirmCookieBeforeSend: Boolean = false,
     val blockedThreads: List<String> = emptyList(),
-    val quoteAutoDisplayEnabled: Boolean = true
+    val quoteAutoDisplayEnabled: Boolean = true,
+    val diceBadgesEnabled: Boolean = true
 )
 
 /** Minimal slice for ForumScreen — pins + compose cookies only. */
@@ -40,6 +43,8 @@ data class ThreadScreenSettings(
 data class ForumScreenSettings(
     val cookiesList: List<String> = emptyList(),
     val selectedCookieIndex: Int = 0,
+    val cookieNotes: Map<String, String> = emptyMap(),
+    val confirmCookieBeforeSend: Boolean = false,
     val pinnedForums: List<String> = emptyList(),
     val expandedForumGroups: List<String> = emptyList(),
     val draftBoxEnabled: Boolean = true
@@ -51,6 +56,11 @@ class SettingsViewModel @Inject constructor(
     private val threadRepository: ThreadRepository,
     private val backupRepository: BackupRepository
 ) : ViewModel() {
+
+    val forumPreviewLines: StateFlow<Int> = settingsRepository.forumPreviewLines
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
+
+    fun updateForumPreviewLines(lines: Int) = settingsRepository.updateForumPreviewLines(lines)
 
     val settingsState: StateFlow<UserSettings> = settingsRepository.settings
         .stateIn(
@@ -64,8 +74,11 @@ class SettingsViewModel @Inject constructor(
             ThreadScreenSettings(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
+                cookieNotes = it.cookieNotes,
+                confirmCookieBeforeSend = it.confirmCookieBeforeSend,
                 blockedThreads = it.blockedThreads,
-                quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled
+                quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled,
+                diceBadgesEnabled = it.diceBadgesEnabled
             )
         }
         .distinctUntilChanged()
@@ -80,6 +93,8 @@ class SettingsViewModel @Inject constructor(
             ForumScreenSettings(
                 cookiesList = it.cookiesList,
                 selectedCookieIndex = it.selectedCookieIndex,
+                cookieNotes = it.cookieNotes,
+                confirmCookieBeforeSend = it.confirmCookieBeforeSend,
                 pinnedForums = it.pinnedForums,
                 expandedForumGroups = it.expandedForumGroups,
                 draftBoxEnabled = it.draftBoxEnabled
@@ -193,6 +208,10 @@ class SettingsViewModel @Inject constructor(
 
     fun addFeedFolder(name: String, uuid: String) {
         settingsRepository.addFeedFolder(com.mioo.dao.data.model.FeedFolder(name, uuid))
+    }
+
+    fun updateFeedFolder(oldUuid: String, name: String, uuid: String) {
+        settingsRepository.updateFeedFolder(oldUuid, com.mioo.dao.data.model.FeedFolder(name, uuid))
     }
 
     fun removeFeedFolder(uuid: String) {
@@ -335,12 +354,28 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateGlassEffectEnabled(enabled)
     }
 
+    fun updateDiceBadgesEnabled(enabled: Boolean) {
+        settingsRepository.updateDiceBadgesEnabled(enabled)
+    }
+
+    fun setShowShareCardBranding(enabled: Boolean) {
+        settingsRepository.setShowShareCardBranding(enabled)
+    }
+
+    fun updateConfirmCookieBeforeSend(enabled: Boolean) {
+        settingsRepository.updateConfirmCookieBeforeSend(enabled)
+    }
+
     fun updateDraftBoxEnabled(enabled: Boolean) {
         settingsRepository.updateDraftBoxEnabled(enabled)
     }
 
     fun updateQuoteAutoDisplay(enabled: Boolean) {
         settingsRepository.updateQuoteAutoDisplay(enabled)
+    }
+
+    fun updateNetworkCompatibility(enabled: Boolean) {
+        settingsRepository.updateNetworkCompatibility(enabled)
     }
 
     fun updateDataSaverEnabled(enabled: Boolean) {

@@ -66,6 +66,13 @@ import com.mioo.dao.data.local.OfflineThreadSummary
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.readingCardColor
+import com.mioo.dao.ui.theme.readingCardBorder
+import com.mioo.dao.ui.theme.readingBodyStyle
+import com.mioo.dao.ui.theme.readingMetaStyle
+import com.mioo.dao.ui.components.PostData
+import com.mioo.dao.ui.components.ReadingIdentity
+import com.mioo.dao.ui.screens.settings.secondaryPageBackground
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -160,8 +167,8 @@ fun OfflineThreadsScreen(
                     Column {
                         Text(
                             text = "已离线串",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                         if (totalCount > 0) {
                             Text(
@@ -195,7 +202,7 @@ fun OfflineThreadsScreen(
                 )
             )
         },
-        containerColor = Color.Transparent,
+        containerColor = secondaryPageBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { paddingValues ->
@@ -295,92 +302,60 @@ fun OfflineThreadCard(
     onClick: () -> Unit,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    forumName: String = summary.forumName
 ) {
-    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.small,
-        colors = CardDefaults.cardColors(containerColor = DaoTheme.colors.threadCardBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, outline)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.components.homeCardColor()),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             // 头行：PO 饼干 + 板块名 …… 串号
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = summary.poUserHash.ifBlank { "???" },
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    ),
-                    color = DaoTheme.colors.po,
-                    modifier = Modifier
-                        .background(DaoTheme.colors.po.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
+                ReadingIdentity(PostData(id = summary.threadId, userId = summary.poUserHash.ifBlank { "???" },
+                    createdAt = "", content = "", isPo = false,
+                    isAdmin = summary.poUserHash.equals("Admin", ignoreCase = true)))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = summary.forumName,
+                    text = forumName,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = "No.${summary.threadId}",
-                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    style = readingMetaStyle(), maxLines = 1, softWrap = false,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 中段：摘要 + 首图缩略图
-            Row(verticalAlignment = Alignment.Top) {
-                Column(modifier = Modifier.weight(1f)) {
-                    summary.title?.let { title ->
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                    }
-                    if (summary.contentSummary.isNotBlank()) {
-                        Text(
-                            text = summary.contentSummary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = if (summary.title != null) 2 else 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                val cover = summary.coverFile
-                if (!cover.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.width(10.dp))
-                    val coverFile = remember(cover, offlineImageDir) { File(offlineImageDir, cover) }
-                    if (coverFile.isFile) {
-                        AsyncImage(
-                            model = coverFile,
-                            contentDescription = "首图缩略图",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(width = 72.dp, height = 56.dp)
-                                .clip(MaterialTheme.shapes.extraSmall)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                        )
-                    }
+            // Match the board card: title, body, then its thumbnail below.
+            summary.title?.takeIf { it.isNotBlank() && it != "无标题" }?.let { title ->
+                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+            if (summary.contentSummary.isNotBlank()) {
+                Text(summary.contentSummary.replace(Regex("(\\r?\\n\\s*){2,}"), "\n"), style = readingBodyStyle(), maxLines = 5, overflow = TextOverflow.Ellipsis)
+            }
+            summary.coverFile?.takeIf { it.isNotBlank() }?.let { cover ->
+                val coverFile = remember(cover, offlineImageDir) { File(offlineImageDir, cover) }
+                if (coverFile.isFile) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    AsyncImage(model = coverFile, contentDescription = "首图缩略图", contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(120.dp).clip(RoundedCornerShape(10.dp)))
                 }
             }
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // 底行：缓存胶囊 + 下载时间 …… 更新 / 删除
             Row(verticalAlignment = Alignment.CenterVertically) {

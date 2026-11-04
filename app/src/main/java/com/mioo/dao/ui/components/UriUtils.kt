@@ -186,7 +186,16 @@ val KAOMOJI_LIST = listOf(
     "(ベ ˇωˇ)べ 摔低低",
     "(`ヮ´ )σ`∀´) ﾟ∀ﾟ)σ",
     "( ﾟ∀。)∀。)∀。)",
-    // --- 多行 / 图形 ---
+    // --- 从鄂尔多斯开始，按简称顺序保留完整图形 ---
+    """
+Σ( ﾟдﾟ)´ﾟДﾟ)　ﾟдﾟ)))
+""".trimIndent(),
+    """
+( ﾟ∀。)∀。)∀。)
+""".trimIndent(),
+    """
+(　ˇωˇ )◕∀◕｡)^ω^)
+""".trimIndent(),
     """
 　σ　σ
 σ(　´ρ`)σ[F5]
@@ -221,9 +230,11 @@ c(　╹^╹)
  / 　>
 """.trimIndent(),
     """
-　　　　_∧＿∧_            ((∀｀/ 　)       /⌒　　 ／         /(__ノ＼_ノ          (_ノ ||| 举高高~~
-""".trimIndent(),
-    """
+　　　　_∧＿∧_ 　　　　
+            ((∀｀/ 　) 　　
+　       /⌒　　 ／ 　　
+         /(__ノ＼_ノ 　　
+          (_ノ ||| 举高高~~
 　∧＿∧　∧＿∧
  (( ・∀・ ))・∀・) )
  `＼　　 ∧ 　　ノ
@@ -238,8 +249,6 @@ c(　╹^╹)
  ╭┻━━━━━━━━┻╮
  ┃╱╲╱╲╱╲╱╲╱╲┃
  ┗━━━━━━━━━━┛
-""".trimIndent(),
-    """
  　　　∧＿∧　∧＿∧
 　　(( ・∀・ ))・∀・) )
  　　`＼　　 ∧ 　　ノ
@@ -247,9 +256,12 @@ c(　╹^╹)
  　　（＿ノ＿)_ノL＿)
 """.trimIndent(),
     """
-. 　　　　   　.★ * ★.. 　.*★　*.　*..*　　　★ 　★　　　　　　 ★     ‘*. *'　 ʜᴀᴘᴘʏ 肥肥 ᴅᴀʏ         ‘★.　　 ★’
-""".trimIndent(),
-    """
+. 　　　　   　.★ * ★.. 　
+ 　.*★　*.　*..*　　　★ 　
+ 　★　　　　　　 ★ 　　
+     ‘*. *'　 ʜᴀᴘᴘʏ 肥肥 ᴅᴀʏ 　　　
+         ‘★.　　 ★’ 　　　　 　　
+               ‘*..★
 ┊┊┊┊☆☆☆☆☆☆☆☆┊┊┊┊
 ┊┊┊╭┻┻┻┻┻┻┻┻╮┊┊┊
 ┊┊┊┃╱╲╱╲╱╲╱╲┃┊┊┊
@@ -297,13 +309,30 @@ c(　╹^╹)
 　　　 　　.· ´¸.·*´¨) ¸.·*¨)
 　　　　　　　 　(¸.·´ (¸.·’*
 """.trimIndent(),
+    "\u3000", // 全角空格，点选后插入原字符
 )
 
 /** 预计算预览文案，避免面板每次重组时扫多行字符串 */
 data class KaomojiItem(val raw: String, val preview: String)
 
-val KAOMOJI_ITEMS: List<KaomojiItem> = KAOMOJI_LIST.map { raw ->
-    val preview = if (raw.contains('\n')) {
+// 从指定条目起，按选择面板截图的阅读顺序命名；简称不影响插入原文。
+private val KAOMOJI_SHORT_NAMES = listOf(
+    "齐齐哈尔", "呼伦悲尔", "鄂尔多斯", "智利",
+    "阴山山脉", "F5欧拉", "UK酱", "白羊",
+    "兔兔", "neko", "给你", "举高高",
+    "举糕糕", "Happy肥肥Day", "举高高2", "大嘘",
+    "催更喵gkd", "巴拉巴拉", "全角空格"
+)
+
+private val KAOMOJI_SHORT_NAME_START = KAOMOJI_LIST.indexOf("(`ヮ´ )σ`∀´) ﾟ∀ﾟ)σ")
+
+val KAOMOJI_ITEMS: List<KaomojiItem> = KAOMOJI_LIST.mapIndexed { index, raw ->
+    val shortName = if (KAOMOJI_SHORT_NAME_START >= 0) {
+        KAOMOJI_SHORT_NAMES.getOrNull(index - KAOMOJI_SHORT_NAME_START)
+    } else {
+        null
+    }
+    val preview = shortName ?: if (raw.contains('\n')) {
         raw.lineSequence()
             .firstOrNull { it.isNotBlank() }
             ?.trim()

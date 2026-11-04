@@ -105,6 +105,36 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE thread_progress ADD COLUMN scrollOffset INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE thread_progress ADD COLUMN anchorPostId TEXT")
+        }
+    }
+
+    private val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE history ADD COLUMN forumName TEXT NOT NULL DEFAULT ''")
+            db.execSQL("""CREATE TABLE IF NOT EXISTS post_action_history (
+                id TEXT NOT NULL PRIMARY KEY, type TEXT NOT NULL, threadId TEXT, forumId TEXT,
+                forumName TEXT NOT NULL, cookieHash TEXT NOT NULL, threadTitle TEXT, threadSummary TEXT NOT NULL,
+                title TEXT, authorName TEXT, content TEXT NOT NULL, imageUrl TEXT, imagePath TEXT,
+                timestamp INTEGER NOT NULL, minimumThreadId INTEGER)""")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_post_action_history_type_timestamp ON post_action_history(type, timestamp)")
+        }
+    }
+
+    private val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP INDEX IF EXISTS index_drafts_type_targetId")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_drafts_type_targetId ON drafts(type, targetId)")
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun providePostActionHistoryDao(database: AppDatabase): com.mioo.dao.data.local.PostActionHistoryDao = database.postActionHistoryDao()
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -119,7 +149,7 @@ object DatabaseModule {
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
             // 侧载分发下用户可能回滚安装旧版：降级重建好过访问 DB 即崩溃循环
             .fallbackToDestructiveMigrationOnDowngrade()
-            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())

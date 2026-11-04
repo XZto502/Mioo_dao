@@ -25,6 +25,12 @@ class SettingsRepository @Inject constructor(
     // cancels the scope root and every later settings write becomes a silent no-op.
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    val forumPreviewLines = settingsDataStore.forumPreviewLinesFlow
+
+    fun updateForumPreviewLines(lines: Int) {
+        repositoryScope.launch { settingsDataStore.saveForumPreviewLines(lines) }
+    }
+
     val settings: StateFlow<UserSettings> = combine(
         combine(
             settingsDataStore.userHashFlow,
@@ -122,7 +128,20 @@ class SettingsRepository @Inject constructor(
             draftBoxEnabled = draftBoxEnabled,
             quoteAutoDisplayEnabled = quoteAutoDisplay
         )
-    }.stateIn(
+    }
+        .combine(settingsDataStore.confirmCookieBeforeSendFlow) { settings, enabled ->
+            settings.copy(confirmCookieBeforeSend = enabled)
+        }
+        .combine(settingsDataStore.showShareCardBrandingFlow) { settings, branding ->
+            settings.copy(showShareCardBranding = branding)
+        }
+        .combine(settingsDataStore.diceBadgesEnabledFlow) { settings, diceBadgesEnabled ->
+            settings.copy(diceBadgesEnabled = diceBadgesEnabled)
+        }
+        .combine(settingsDataStore.networkCompatibilityFlow) { settings, enabled ->
+            settings.copy(networkCompatibilityEnabled = enabled)
+        }
+        .stateIn(
         scope = repositoryScope,
         started = SharingStarted.Eagerly,
         initialValue = UserSettings()
@@ -152,6 +171,20 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    fun updateDiceBadgesEnabled(enabled: Boolean) {
+        repositoryScope.launch {
+            settingsDataStore.saveDiceBadgesEnabled(enabled)
+        }
+    }
+
+    fun setShowShareCardBranding(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.setShowShareCardBranding(enabled) }
+    }
+
+    fun updateConfirmCookieBeforeSend(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.saveConfirmCookieBeforeSend(enabled) }
+    }
+
     fun updateDraftBoxEnabled(enabled: Boolean) {
         repositoryScope.launch {
             settingsDataStore.saveDraftBoxEnabled(enabled)
@@ -162,6 +195,10 @@ class SettingsRepository @Inject constructor(
         repositoryScope.launch {
             settingsDataStore.saveQuoteAutoDisplay(enabled)
         }
+    }
+
+    fun updateNetworkCompatibility(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.saveNetworkCompatibility(enabled) }
     }
 
     fun updateDataSaverEnabled(enabled: Boolean) {
@@ -257,6 +294,16 @@ class SettingsRepository @Inject constructor(
     suspend fun getThreadCookie(threadId: String): String? =
         settingsDataStore.getThreadCookie(threadId)
 
+    /** 串 → 骰点高亮规则（null = 未设置，调用方回退智能模式）。 */
+    suspend fun getThreadDicePreset(threadId: String): com.mioo.dao.utils.DiceRulePreset? =
+        settingsDataStore.getThreadDicePreset(threadId)
+
+    fun saveThreadDicePreset(threadId: String, preset: com.mioo.dao.utils.DiceRulePreset) {
+        repositoryScope.launch {
+            settingsDataStore.saveThreadDicePreset(threadId, preset)
+        }
+    }
+
     fun saveThreadCookie(threadId: String, cookie: String) {
         repositoryScope.launch {
             settingsDataStore.saveThreadCookie(threadId, cookie)
@@ -316,6 +363,17 @@ class SettingsRepository @Inject constructor(
             if (currentList.none { it.uuid == folder.uuid }) {
                 currentList.add(folder)
                 settingsDataStore.saveFeedFolders(currentList)
+            }
+        }
+    }
+
+    fun updateFeedFolder(oldUuid: String, folder: com.mioo.dao.data.model.FeedFolder) {
+        repositoryScope.launch {
+            val current = settingsDataStore.feedFoldersFlow.first().toMutableList()
+            val index = current.indexOfFirst { it.uuid == oldUuid }
+            if (index >= 0 && current.none { it.uuid == folder.uuid && it.uuid != oldUuid }) {
+                current[index] = folder
+                settingsDataStore.saveFeedFolders(current)
             }
         }
     }

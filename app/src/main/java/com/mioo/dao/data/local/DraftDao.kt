@@ -15,8 +15,11 @@ interface DraftDao {
     @Query("SELECT * FROM drafts WHERE type = :type AND targetId = :targetId LIMIT 1")
     suspend fun find(type: String, targetId: String): DraftEntity?
 
+    @Query("SELECT * FROM drafts WHERE type = :type AND targetId = :targetId AND title IS :title AND name IS :name AND content = :content AND updatedAt = :updatedAt LIMIT 1")
+    suspend fun findIdentical(type: String, targetId: String, title: String?, name: String?, content: String, updatedAt: Long): DraftEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(draft: DraftEntity)
+    suspend fun upsert(draft: DraftEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(drafts: List<DraftEntity>)

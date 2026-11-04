@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.mioo.dao.data.api.XdApiService
+import com.mioo.dao.data.api.CookieInterceptor
 import com.mioo.dao.data.api.GithubApiService
 import com.mioo.dao.data.api.extractQuotedJsonString
 import com.mioo.dao.data.api.isXdBusinessPlainString
@@ -13,6 +14,10 @@ import com.mioo.dao.data.local.CacheDao
 import com.mioo.dao.data.local.CacheEntity
 import com.mioo.dao.data.local.HistoryDao
 import com.mioo.dao.data.local.HistoryEntity
+import com.mioo.dao.data.local.BrowseHistoryRecord
+import com.mioo.dao.data.local.HistoryType
+import com.mioo.dao.data.local.PostActionHistoryDao
+import com.mioo.dao.data.local.PostActionHistoryEntity
 import com.mioo.dao.data.local.ProgressDao
 import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.local.ThreadProgressEntity
@@ -28,6 +33,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -59,6 +67,7 @@ data class BookmarkNewReply(
 )
 
 interface ThreadRepository {
+    suspend fun shareForumName(fid: String?): String
     fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>>
     fun getTimeline(id: String, page: Int): Flow<XdResponse<List<Thread>>>
     fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>>
@@ -72,7 +81,9 @@ interface ThreadRepository {
         email: String?,
         content: String,
         imageFile: File?,
-        cookie: String? = null
+        cookie: String? = null,
+        forumName: String? = null,
+        recordHistory: Boolean = true
     ): Flow<XdResponse<String>>
 
     fun doReplyThread(
@@ -87,6 +98,13 @@ interface ThreadRepository {
 
     // Local DB operations
     fun getHistory(): Flow<List<HistoryEntity>>
+    fun observeBrowsingHistory(query: String): Flow<List<BrowseHistoryRecord>>
+    fun observePostActions(type: HistoryType, query: String): Flow<List<PostActionHistoryEntity>>
+    suspend fun deleteBrowsingHistory(id: String)
+    suspend fun deletePostAction(id: String)
+    suspend fun clearPostActions(type: HistoryType)
+    suspend fun resolvePostAction(id: String): String?
+    suspend fun resolvePendingPostActions()
     suspend fun saveToHistory(thread: Thread)
     suspend fun clearHistory()
     fun getBookmarks(): Flow<List<BookmarkEntity>>
@@ -104,7 +122,7 @@ interface ThreadRepository {
     suspend fun pollSubscriptionUpdatesForNotification(limit: Int = 30): List<BookmarkNewReply>
 
     // Reading progress
-    suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int)
+    suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int, scrollOffset: Int = 0, anchorPostId: String? = null)
     suspend fun getThreadProgress(threadId: String): ThreadProgressEntity?
     suspend fun clearThreadProgress(threadId: String)
 
@@ -138,7 +156,7 @@ interface ThreadRepository {
     fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>>
     suspend fun getReplyDraftContent(threadId: String): String
     suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String)
-    suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String)
+    suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String, draftId: Long = 0): Long
     suspend fun deleteDraft(id: Long)
     /** 删除某板块的全部发串草稿（发送成功后清理，防止草稿箱残留已发内容）。 */
     suspend fun deletePostDrafts(boardId: String)
@@ -177,6 +195,7 @@ class ThreadRepositoryImpl @Inject constructor(
     private val apiService: XdApiService,
     private val githubApiService: GithubApiService,
     private val historyDao: HistoryDao,
+    private val postActionHistoryDao: PostActionHistoryDao,
     private val cacheDao: CacheDao,
     private val progressDao: ProgressDao,
     private val cloudFeedDao: com.mioo.dao.data.local.CloudFeedDao,
@@ -316,6 +335,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
                     "该板块或串不存在"
@@ -348,6 +368,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 val msg = if (e is com.squareup.moshi.JsonDataException && e.message?.contains("Expected BEGIN_") == true) {
                     "该串不存在或已被删除"
@@ -385,6 +406,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
             }
@@ -412,6 +434,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             if (!emittedCache) {
                 emit(XdResponse.Error(message = mapThreadException(e), throwable = e))
             }
@@ -453,9 +476,13 @@ class ThreadRepositoryImpl @Inject constructor(
         email: String?,
         content: String,
         imageFile: File?,
-        cookie: String?
+        cookie: String?,
+        forumName: String?,
+        recordHistory: Boolean
     ): Flow<XdResponse<String>> = flow {
         try {
+            val usedCookie = selectedWritingCookie(cookie)
+            val previousMaxId = if (recordHistory) runCatching { apiService.showf(fid, 1).maxOfOrNull { it.id } ?: 0L }.getOrNull() else null
             val fidBody = fid.toRequestBody("text/plain".toMediaTypeOrNull())
             val titleBody = title?.toRequestBody("text/plain".toMediaTypeOrNull())
             val nameBody = name?.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -464,13 +491,21 @@ class ThreadRepositoryImpl @Inject constructor(
 
             val imagePart = imageFile?.asImagePart()
 
-            val response = apiService.doPostThread(cookie, fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
-            emit(interpretForumWriteResponse(response.string()))
+            val response = apiService.doPostThread(CookieInterceptor.extractHash(usedCookie), fidBody, titleBody, nameBody, emailBody, contentBody, imagePart)
+            val raw = response.string()
+            val result = interpretForumWriteResponse(raw)
+            if (result is XdResponse.Success && result.data != "已提交") {
+                if (recordHistory) recordSuccessfulAction(PostActionHistoryEntity(
+                    type = HistoryType.NEW_THREAD.name, threadId = createdThreadId(raw), forumId = fid, forumName = forumName.orEmpty(),
+                    cookieHash = historyCookieIdentity(usedCookie), title = title, authorName = name,
+                    content = content, minimumThreadId = previousMaxId
+                ), imageFile)
+                imageFile?.delete()
+            }
+            emit(result)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            emit(XdResponse.Error(message = e.localizedMessage ?: "发串失败", throwable = e))
-        } finally {
-            imageFile?.delete()
+            emit(XdResponse.Error(message = forumWriteNetworkError(e), throwable = e))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -484,6 +519,7 @@ class ThreadRepositoryImpl @Inject constructor(
         cookie: String?
     ): Flow<XdResponse<String>> = flow {
         try {
+            val usedCookie = selectedWritingCookie(cookie)
             val response = if (imageFile != null) {
                 // Use Multipart when there's an image
                 val titleBody = title?.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -492,11 +528,11 @@ class ThreadRepositoryImpl @Inject constructor(
                 val contentBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
                 val parentBody = parent.toRequestBody("text/plain".toMediaTypeOrNull())
                 val imagePart = imageFile.asImagePart()
-                apiService.doReplyThread(cookie, null, titleBody, nameBody, emailBody, contentBody, parentBody, imagePart)
+                apiService.doReplyThread(CookieInterceptor.extractHash(usedCookie), null, titleBody, nameBody, emailBody, contentBody, parentBody, imagePart)
             } else {
                 // Use FormUrlEncoded for text-only replies (more reliable)
                 apiService.doReplyThreadText(
-                    cookieOverride = cookie,
+                    cookieOverride = CookieInterceptor.extractHash(usedCookie),
                     resto = parent,
                     content = content,
                     name = name,
@@ -504,34 +540,121 @@ class ThreadRepositoryImpl @Inject constructor(
                     email = email
                 )
             }
-            emit(interpretForumWriteResponse(response.string()))
+            val result = interpretForumWriteResponse(response.string())
+            if (result is XdResponse.Success && result.data != "已提交") {
+                recordSuccessfulAction(PostActionHistoryEntity(
+                    type = HistoryType.REPLY.name, threadId = parent,
+                    cookieHash = historyCookieIdentity(usedCookie), title = title, authorName = name, content = content
+                ), imageFile)
+                imageFile?.delete()
+            }
+            emit(result)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (com.mioo.dao.BuildConfig.DEBUG) {
                 android.util.Log.e("ThreadRepo", "Reply failed", e)
             }
-            emit(XdResponse.Error(message = e.localizedMessage ?: "回复失败", throwable = e))
-        } finally {
-            imageFile?.delete()
+            emit(XdResponse.Error(message = forumWriteNetworkError(e), throwable = e))
         }
     }.flowOn(Dispatchers.IO)
 
     // --- History & Bookmarks ---
+
+    private val actionResolveMutex = Mutex()
+
+    private suspend fun selectedWritingCookie(override: String?): String? {
+        if (!override.isNullOrBlank()) return override
+        val cookies = settingsDataStore.cookiesListFlow.first()
+        return cookies.getOrNull(settingsDataStore.selectedCookieIndexFlow.first())
+            ?: settingsDataStore.userHashFlow.first()?.takeIf { it.isNotBlank() }
+    }
+
+    private suspend fun recordSuccessfulAction(record: PostActionHistoryEntity, image: File?) = withContext(NonCancellable) {
+        // The server has already accepted the post. Local bookkeeping must never
+        // turn that success into a send error (and invite a duplicate submission).
+        try {
+            val parent = record.threadId?.let { historyDao.getHistoryById(it) }
+            val cachedParent = if (parent == null && record.type == HistoryType.REPLY.name) record.threadId?.let { id ->
+                cacheDao.getLatestPage("thread_$id")?.jsonResponse?.let { runCatching { parseThreadBody(it) }.getOrNull() }
+            } else null
+            val fid = record.forumId ?: parent?.fid ?: cachedParent?.fidStr
+            val savedImage = image?.let { source -> runCatching {
+                actionHistoryImageFile(context, record.id, source.extension).also { source.copyTo(it, overwrite = true) }.absolutePath
+            }.getOrNull() }
+            val saved = record.copy(forumId = fid,
+                forumName = record.forumName.takeIf { it.isNotBlank() }
+                    ?: parent?.forumName?.takeIf { it.isNotBlank() } ?: lookupForumName(fid),
+                threadTitle = parent?.title ?: cachedParent?.title,
+                threadSummary = parent?.content ?: cachedParent?.content.orEmpty(), imagePath = savedImage)
+            postActionHistoryDao.upsert(saved)
+            if (saved.type == HistoryType.NEW_THREAD.name && saved.threadId == null) {
+                preloadScope.launch { resolvePostAction(saved.id) }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ActionHistory", "Unable to store successful post", e)
+        }
+    }
+
+    override fun observeBrowsingHistory(query: String): Flow<List<BrowseHistoryRecord>> = flow {
+        historyDao.missingForumIds().forEach { fid -> historyDao.fillForumName(fid, lookupForumName(fid)) }
+        emitAll(historyDao.observeBrowsing(query))
+    }.flowOn(Dispatchers.IO)
+
+    override fun observePostActions(type: HistoryType, query: String) = postActionHistoryDao.observe(type.name, query)
+
+    override suspend fun deleteBrowsingHistory(id: String) = historyDao.deleteHistoryById(id)
+
+    override suspend fun deletePostAction(id: String) {
+        val record = postActionHistoryDao.get(id)
+        postActionHistoryDao.delete(id)
+        deleteActionHistoryImage(context, record?.imagePath)
+    }
+
+    override suspend fun clearPostActions(type: HistoryType) {
+        if (type == HistoryType.BROWSE) return
+        val records = postActionHistoryDao.observe(type.name).first()
+        postActionHistoryDao.clear(type.name)
+        records.forEach { deleteActionHistoryImage(context, it.imagePath) }
+    }
+
+    override suspend fun resolvePostAction(id: String): String? = actionResolveMutex.withLock {
+        var record = postActionHistoryDao.get(id) ?: return@withLock null
+        record.threadId?.let { return@withLock it }
+        if (record.type != HistoryType.NEW_THREAD.name) return@withLock null
+        val fid = record.forumId ?: return@withLock null
+        repeat(3) { attempt ->
+            if (attempt > 0) delay(1200L * attempt)
+            record = postActionHistoryDao.get(id) ?: return@withLock null
+            val candidates = try { apiService.showf(fid, 1) } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                emptyList()
+            }
+            val matched = matchCreatedThread(record, candidates)
+            if (matched != null) {
+                postActionHistoryDao.resolve(id, matched.idStr, matched.userHash, matched.imageUrl)
+                return@withLock matched.idStr
+            }
+        }
+        null
+    }
+
+    override suspend fun resolvePendingPostActions() {
+        postActionHistoryDao.pendingThreads().forEach { resolvePostAction(it.id) }
+    }
 
     override fun getHistory(): Flow<List<HistoryEntity>> = historyDao.getAllHistory()
 
     override suspend fun saveToHistory(thread: Thread) {
         val existing = historyDao.getHistoryById(thread.idStr)
         if (existing != null) {
-            // Content unchanged: only bump timestamp if older than 2 minutes
+            // Keep the actual visit time even when the thread content is unchanged.
             val contentSame =
                 existing.content == thread.content &&
                     existing.title == thread.title &&
-                    existing.userid == thread.userHash
+                    existing.userid == thread.userHash && existing.forumName.isNotBlank() &&
+                    existing.forumName != "板块 ${thread.fidStr}"
             if (contentSame) {
-                if (System.currentTimeMillis() - existing.timestamp > 120_000L) {
-                    historyDao.touchHistory(thread.idStr)
-                }
+                historyDao.touchHistory(thread.idStr)
                 return
             }
         }
@@ -543,7 +666,8 @@ class ThreadRepositoryImpl @Inject constructor(
                 userid = thread.userHash,
                 now = thread.now,
                 title = thread.title,
-                name = thread.name
+                name = thread.name,
+                forumName = lookupForumName(thread.fidStr)
             )
         )
     }
@@ -701,12 +825,14 @@ class ThreadRepositoryImpl @Inject constructor(
         return updates.values.toList()
     }
 
-    override suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int) {
+    override suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int, scrollOffset: Int, anchorPostId: String?) {
         progressDao.upsert(
             ThreadProgressEntity(
                 threadId = threadId,
                 page = page.coerceAtLeast(1),
-                firstVisibleIndex = firstVisibleIndex.coerceAtLeast(0)
+                firstVisibleIndex = firstVisibleIndex.coerceAtLeast(0),
+                scrollOffset = scrollOffset.coerceAtLeast(0),
+                anchorPostId = anchorPostId
             )
         )
     }
@@ -910,6 +1036,7 @@ class ThreadRepositoryImpl @Inject constructor(
         } else {
             draftDao.upsert(
                 com.mioo.dao.data.local.DraftEntity(
+                    id = draftDao.find(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)?.id ?: 0,
                     type = com.mioo.dao.data.local.DraftEntity.TYPE_REPLY,
                     targetId = threadId,
                     targetName = threadTitle ?: "",
@@ -919,22 +1046,11 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String) {
+    override suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String, draftId: Long): Long {
         ensureDraftsMigrated()
-        if (content.isBlank() && title.isNullOrBlank()) {
-            draftDao.deleteFor(com.mioo.dao.data.local.DraftEntity.TYPE_POST, boardId)
-        } else {
-            draftDao.upsert(
-                com.mioo.dao.data.local.DraftEntity(
-                    type = com.mioo.dao.data.local.DraftEntity.TYPE_POST,
-                    targetId = boardId,
-                    targetName = boardName,
-                    name = name?.takeIf { it.isNotBlank() },
-                    title = title?.takeIf { it.isNotBlank() },
-                    content = content
-                )
-            )
-        }
+        val fields = com.mioo.dao.data.local.PostDraftContent(title.orEmpty(), name.orEmpty(), content)
+        require(fields.hasContent)
+        return draftDao.upsert(fields.toDraft(boardId, boardName).copy(id = draftId))
     }
 
     override suspend fun deleteDraft(id: Long) {
@@ -1000,7 +1116,7 @@ class ThreadRepositoryImpl @Inject constructor(
     override suspend fun refreshCloudFeedReplyCount(tid: String): Int? =
         withContext(Dispatchers.IO) {
             try {
-                val count = fetchThread(tid, 1).replyCount?.takeIf { it > 0 } ?: return@withContext null
+                val count = fetchThread(tid, 1).replyCount ?: return@withContext null
                 cloudFeedDao.updateReplyCount(tid, count)
                 count
             } catch (_: Exception) {
@@ -1283,7 +1399,9 @@ class ThreadRepositoryImpl @Inject constructor(
     }
 
     /** fid → 板块名。列表在线抓一次后内存缓存；离线/失败退化为「板块 <fid>」。 */
-    private val forumNameCache = LinkedHashMap<String, String>()
+    private val forumNameCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    override suspend fun shareForumName(fid: String?): String = lookupForumName(fid)
 
     private suspend fun lookupForumName(fid: String?): String {
         if (fid.isNullOrBlank()) return "板块"

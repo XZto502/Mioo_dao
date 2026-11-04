@@ -24,12 +24,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FormatLineSpacing
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.FontDownload
@@ -81,6 +91,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -90,6 +101,8 @@ import com.mioo.dao.data.model.ImageCacheLimit
 import com.mioo.dao.data.model.ThemeMode
 import com.mioo.dao.data.repository.BackupRepository
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.settingsItemStyle
+import com.mioo.dao.ui.theme.settingsDescriptionStyle
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
 
@@ -101,12 +114,15 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val forumPreviewLines by viewModel.forumPreviewLines.collectAsState()
     var authMenuExpanded by remember { mutableStateOf(false) }
-    
+
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var editingFolderUuid by remember { mutableStateOf<String?>(null) }
+    var deletingFolder by remember { mutableStateOf<com.mioo.dao.data.model.FeedFolder?>(null) }
     var newFolderName by remember { mutableStateOf("") }
     var newFolderUuid by remember { mutableStateOf("") }
-    
+
     val context = LocalContext.current
 
     val scanLauncher = rememberLauncherForActivityResult(
@@ -196,7 +212,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("应用设置", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+                title = { Text("应用设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(
@@ -211,7 +227,7 @@ fun SettingsScreen(
             )
         },
         modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
+        containerColor = secondaryPageBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Column(
@@ -220,33 +236,527 @@ fun SettingsScreen(
                 .padding(paddingValues)
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-        // 1. Cookie Configuration (饼干设置)
-        Card(
+        Text("外观与主题", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+        // 3. Dark Mode Toggle (显示模式)
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Cookie, contentDescription = "饼干设置")
+                    SettingsHeaderIcon(Icons.Default.DarkMode, contentDescription = "显示模式")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "显示模式", style = settingsItemStyle())
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                // 系统实时深色状态 + 当前生效的深色状态（点击回调里不能调 Composable，提前算好）
+                val systemDark = isSystemInDarkTheme()
+                val darkNow = when (settings.themeMode) {
+                    ThemeMode.DARK -> true
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.SYSTEM -> systemDark
+                }
+
+                ThemeMode.values().forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                // 纯黑 (AMOLED) 仅深色可用：切到浅色（含跟随系统的浅色）时回落动态取色；
+                                // 跟随系统分支用系统实时深色判断，与当前模式无关
+                                val newDark = when (mode) {
+                                    ThemeMode.DARK -> true
+                                    ThemeMode.LIGHT -> false
+                                    ThemeMode.SYSTEM -> systemDark
+                                }
+                                if (!newDark && settings.themeColor == "amoled") {
+                                    viewModel.updateThemeColor("dynamic")
+                                }
+                                viewModel.updateThemeMode(mode)
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = settings.themeMode == mode,
+                            onClick = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = when(mode) {
+                                ThemeMode.SYSTEM -> "跟随系统"
+                                ThemeMode.LIGHT -> "浅色主题"
+                                ThemeMode.DARK -> "深色主题"
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        }
+
+        SettingsGroupDivider()
+        // 4. Theme Color Selection (主题颜色)
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = "主题颜色"
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "主题色选择", style = settingsItemStyle())
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 纯黑 (AMOLED) 仅在深色模式（含跟随系统的深色）下提供
+                val darkNow = when (settings.themeMode) {
+                    ThemeMode.DARK -> true
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                }
+                val colors = listOf(
+                    "dynamic" to "动态取色 (Material You)",
+                    "classic" to "经典紫色 (Classic M3)",
+                    "teal" to "青蓝色 (Cyan)",
+                    "pink" to "樱花粉 (Sakura Pink)",
+                    "green" to "森林绿 (Forest Green)"
+                ) + if (darkNow) {
+                    listOf("amoled" to "纯黑 (AMOLED)")
+                } else {
+                    emptyList()
+                }
+
+
+                colors.forEach { (colorKey, colorLabel) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.updateThemeColor(colorKey) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = settings.themeColor == colorKey,
+                            onClick = null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = colorLabel,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        }
+
+        SettingsGroupDivider()
+        // 5. Glass effect (毛玻璃特效)
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(
+                        imageVector = Icons.Default.BlurOn,
+                        contentDescription = "毛玻璃特效"
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "毛玻璃特效",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。完整模糊效果需 Android 12+，更低版本会自动使用约 95% 不透明底色。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateGlassEffectEnabled(!settings.glassEffectEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.glassEffectEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.glassEffectEnabled,
+                        onCheckedChange = { viewModel.updateGlassEffectEnabled(it) }
+                    )
+                }
+            }
+        }
+
+        }
+        Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text("板块列表预览行数", style = settingsItemStyle())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(5, 8, 10, 15).forEach { lines ->
+                    FilterChip(
+                        selected = forumPreviewLines == lines,
+                        onClick = { viewModel.updateForumPreviewLines(lines) },
+                        label = { Text("${lines} 行") },
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    )
+                }
+            }
+        }
+        SettingsGroupDivider()
+        // 6. Font Size Configuration (字体大小)
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.FormatSize, contentDescription = "字体大小")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "字体大小", style = settingsItemStyle())
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "滑动缩放以调整帖子和回复的内容文本字号大小。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "最小", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = "${(settings.fontSizeScale * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(text = "最大", style = MaterialTheme.typography.bodySmall)
+                }
+
+                Slider(
+                    value = settings.fontSizeScale,
+                    onValueChange = { viewModel.updateFontSize(it) },
+                    valueRange = 0.8f..1.5f,
+                    steps = 6
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "预览文字：欢迎来到喵岛讨论区！",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+
+
+        SettingsGroupDivider()
+        // 行间距
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.FormatLineSpacing, contentDescription = "行间距")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "行间距", style = settingsItemStyle())
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "滑动调整行与行之间的距离，与字体大小独立生效，全应用即时应用。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "最小", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = "${(settings.lineHeightScale * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(text = "最大", style = MaterialTheme.typography.bodySmall)
+                }
+
+                Slider(
+                    value = settings.lineHeightScale,
+                    onValueChange = { viewModel.updateLineHeight(it) },
+                    valueRange = 0.8f..2.0f,
+                    steps = 11
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "预览文字：欢迎来到喵岛讨论区！\n行间距越大，正文越舒展，阅读长串更轻松。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+
+
+        SettingsGroupDivider()
+        // 自定义字体
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.FontDownload, contentDescription = "自定义字体")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "自定义字体", style = settingsItemStyle())
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "导入手机存储中的 ttf/otf/ttc 字体文件，可分别为中文与英文指定：英文负责字母数字，中文负责汉字；未指定则用系统默认。英文字体请选纯拉丁字体——含汉字的字体（会标注）放英文槽时，汉字也会跟着变。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(onClick = {
+                    importFontLauncher.launch(
+                        arrayOf("font/ttf", "font/otf", "font/ttc", "application/octet-stream", "*/*")
+                    )
+                }) { Text("导入字体文件") }
+
+                val fonts by viewModel.fontsState.collectAsState()
+                LaunchedEffect(Unit) { viewModel.refreshFonts(context) }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                if (fonts.isEmpty()) {
+                    Text(
+                        text = "尚未导入字体，点上方按钮从文件管理器/网盘选择字体文件",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+                fonts.forEach { name ->
+                    val preview = remember(name) {
+                        runCatching {
+                            androidx.compose.ui.text.font.FontFamily(
+                                android.graphics.Typeface.createFromFile(
+                                    java.io.File(com.mioo.dao.utils.FontStore.dir(context), name)
+                                )
+                            )
+                        }.getOrNull()
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "预览 Aa喵岛 $name",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = preview,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        IconButton(onClick = { viewModel.deleteFont(context, name) }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "删除字体",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(text = "中文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.updateChineseFont(value) }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = settings.chineseFont == value, onClick = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "英文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
+                    // 含汉字字形的字体放英文槽会连中文一起接管（回退链按顺序命中），标注提醒
+                    val hanWarn = remember(value) {
+                        value.isNotEmpty() && com.mioo.dao.utils.FontStore.containsHan(
+                            java.io.File(com.mioo.dao.utils.FontStore.dir(context), value)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.updateEnglishFont(value) }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = settings.englishFont == value, onClick = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+                        if (hanWarn) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "含汉字·会连中文一起变",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+
+
+        SettingsGroupDivider()
+        // 引用自动显示开关
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.FormatQuote, contentDescription = "引用自动显示")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "引用自动显示",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateQuoteAutoDisplay(!settings.quoteAutoDisplayEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.quoteAutoDisplayEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.quoteAutoDisplayEnabled,
+                        onCheckedChange = { viewModel.updateQuoteAutoDisplay(it) }
+                    )
+                }
+            }
+        }
+
+
+
+
+
+
+        }
+        // 骰点高亮（跑团/安科）
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.Casino, contentDescription = "骰点高亮")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "骰点高亮（跑团/安科）",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDiceBadgesEnabled(!settings.diceBadgesEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.diceBadgesEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.diceBadgesEnabled,
+                        onCheckedChange = { viewModel.updateDiceBadgesEnabled(it) }
+                    )
+                }
+            }
+        }
+        Text("发帖与饼干", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1. Cookie Configuration (饼干设置)
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "饼干设置")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "发言饼干管理 (User Hash)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "在此添加并选择您发帖和回复时使用的发言饼干 (userhash)。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
@@ -279,9 +789,9 @@ fun SettingsScreen(
                         Text("相册选图扫码")
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 // List of speaking cookies
                 if (settings.cookiesList.isEmpty()) {
                     Text(
@@ -348,6 +858,8 @@ fun SettingsScreen(
                                 )
                             }
                             OutlinedTextField(
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
+                                shape = RoundedCornerShape(16.dp),
                                 value = note,
                                 onValueChange = { viewModel.setCookieNote(cookie, it) },
                                 modifier = Modifier
@@ -361,16 +873,15 @@ fun SettingsScreen(
                     }
                 }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+
                 // 2. Auth Cookie (鉴权饼干)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Cookie, contentDescription = "鉴权饼干")
+                    SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = "鉴权饼干")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "高级：鉴权饼干 (Auth)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -391,6 +902,7 @@ fun SettingsScreen(
                     }
 
                     OutlinedTextField(
+                        shape = RoundedCornerShape(16.dp),
                         value = authDisplayName,
                         onValueChange = {},
                         label = { Text("当前鉴权饼干") },
@@ -399,7 +911,8 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth().clickable { authMenuExpanded = true },
                         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledBorderColor = Color.Transparent,
+                            disabledContainerColor = secondaryCardBackground(),
                             disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         trailingIcon = {
@@ -443,67 +956,38 @@ fun SettingsScreen(
                 }
             }
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 备份与恢复
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Backup, contentDescription = "备份与恢复")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "备份与恢复",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                SettingsHeaderIcon(Icons.Default.Cookie, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("发送前确认饼干", style = settingsItemStyle())
+                    Text("发送回复或新串前选择饼干", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "自选内容导出为一个 JSON 文件，可在此设备或另一台设备恢复；旧版纯饼干备份文件也可恢复",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        pendingBackupSections = BackupRepository.ALL_SECTIONS.toSet()
-                        showBackupPicker = true
-                    }) { Text("备份") }
-                    OutlinedButton(onClick = {
-                        importBackupFileLauncher.launch(
-                            arrayOf("application/json", "text/plain", "application/octet-stream")
-                        )
-                    }) { Text("恢复") }
-                }
+                androidx.compose.material3.Switch(checked = settings.confirmCookieBeforeSend,
+                    onCheckedChange = viewModel::updateConfirmCookieBeforeSend)
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         // 草稿箱开关
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Save, contentDescription = "草稿箱")
+                    SettingsHeaderIcon(Icons.Default.Save, contentDescription = "草稿箱")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "草稿箱",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "关闭后，未发送的回复与新串内容不再自动保存到草稿箱",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "关闭后，回复不再自动保存，发串界面不再提供保存草稿功能",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -526,510 +1010,37 @@ fun SettingsScreen(
                 }
             }
         }
-
-        // 3. Dark Mode Toggle (显示模式)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DarkMode, contentDescription = "显示模式")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "显示模式", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                // 系统实时深色状态 + 当前生效的深色状态（点击回调里不能调 Composable，提前算好）
-                val systemDark = isSystemInDarkTheme()
-                val darkNow = when (settings.themeMode) {
-                    ThemeMode.DARK -> true
-                    ThemeMode.LIGHT -> false
-                    ThemeMode.SYSTEM -> systemDark
-                }
-
-                ThemeMode.values().forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                // 纯黑 (AMOLED) 仅深色可用：切到浅色（含跟随系统的浅色）时回落动态取色；
-                                // 跟随系统分支用系统实时深色判断，与当前模式无关
-                                val newDark = when (mode) {
-                                    ThemeMode.DARK -> true
-                                    ThemeMode.LIGHT -> false
-                                    ThemeMode.SYSTEM -> systemDark
-                                }
-                                if (!newDark && settings.themeColor == "amoled") {
-                                    viewModel.updateThemeColor("dynamic")
-                                }
-                                viewModel.updateThemeMode(mode)
-                            }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.themeMode == mode,
-                            onClick = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = when(mode) {
-                                ThemeMode.SYSTEM -> "跟随系统"
-                                ThemeMode.LIGHT -> "浅色主题"
-                                ThemeMode.DARK -> "深色主题"
-                            },
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-        }
-
-        // 4. Theme Color Selection (主题颜色)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = "主题颜色"
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "主题色选择", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 纯黑 (AMOLED) 仅在深色模式（含跟随系统的深色）下提供
-                val darkNow = when (settings.themeMode) {
-                    ThemeMode.DARK -> true
-                    ThemeMode.LIGHT -> false
-                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                }
-                val colors = listOf(
-                    "dynamic" to "动态取色 (Material You)",
-                    "classic" to "经典紫色 (Classic M3)",
-                    "teal" to "青蓝色 (Cyan)",
-                    "pink" to "樱花粉 (Sakura Pink)",
-                    "green" to "森林绿 (Forest Green)"
-                ) + if (darkNow) {
-                    listOf("amoled" to "纯黑 (AMOLED)")
-                } else {
-                    emptyList()
-                }
-
-                
-                colors.forEach { (colorKey, colorLabel) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.updateThemeColor(colorKey) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.themeColor == colorKey,
-                            onClick = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = colorLabel,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-        }
-
-        // 5. Glass effect (毛玻璃特效)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.BlurOn,
-                        contentDescription = "毛玻璃特效"
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "毛玻璃特效",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。完整模糊效果需 Android 12+，更低版本会自动使用约 95% 不透明底色。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateGlassEffectEnabled(!settings.glassEffectEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.glassEffectEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.glassEffectEnabled,
-                        onCheckedChange = { viewModel.updateGlassEffectEnabled(it) }
-                    )
-                }
-            }
-        }
-
-        // 6. Font Size Configuration (字体大小)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FormatSize, contentDescription = "字体大小")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "字体大小", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "滑动缩放以调整帖子和回复的内容文本字号大小。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = "最小", style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        text = "${(settings.fontSizeScale * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(text = "最大", style = MaterialTheme.typography.bodySmall)
-                }
-                
-                Slider(
-                    value = settings.fontSizeScale,
-                    onValueChange = { viewModel.updateFontSize(it) },
-                    valueRange = 0.8f..1.5f,
-                    steps = 6
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "预览文字：欢迎来到喵岛讨论区！",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 行间距
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FormatLineSpacing, contentDescription = "行间距")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "行间距", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "滑动调整行与行之间的距离，与字体大小独立生效，全应用即时应用。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = "最小", style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        text = "${(settings.lineHeightScale * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(text = "最大", style = MaterialTheme.typography.bodySmall)
-                }
-
-                Slider(
-                    value = settings.lineHeightScale,
-                    onValueChange = { viewModel.updateLineHeight(it) },
-                    valueRange = 0.8f..2.0f,
-                    steps = 11
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "预览文字：欢迎来到喵岛讨论区！\n行间距越大，正文越舒展，阅读长串更轻松。",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 自定义字体
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FontDownload, contentDescription = "自定义字体")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "自定义字体", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "导入手机存储中的 ttf/otf/ttc 字体文件，可分别为中文与英文指定：英文负责字母数字，中文负责汉字；未指定则用系统默认。英文字体请选纯拉丁字体——含汉字的字体（会标注）放英文槽时，汉字也会跟着变。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedButton(onClick = {
-                    importFontLauncher.launch(
-                        arrayOf("font/ttf", "font/otf", "font/ttc", "application/octet-stream", "*/*")
-                    )
-                }) { Text("导入字体文件") }
-
-                val fonts by viewModel.fontsState.collectAsState()
-                LaunchedEffect(Unit) { viewModel.refreshFonts(context) }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                if (fonts.isEmpty()) {
-                    Text(
-                        text = "尚未导入字体，点上方按钮从文件管理器/网盘选择字体文件",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-                fonts.forEach { name ->
-                    val preview = remember(name) {
-                        runCatching {
-                            androidx.compose.ui.text.font.FontFamily(
-                                android.graphics.Typeface.createFromFile(
-                                    java.io.File(com.mioo.dao.utils.FontStore.dir(context), name)
-                                )
-                            )
-                        }.getOrNull()
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "预览 Aa喵岛 $name",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontFamily = preview,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        IconButton(onClick = { viewModel.deleteFont(context, name) }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "删除字体",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(text = "中文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.updateChineseFont(value) }
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = settings.chineseFont == value, onClick = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "英文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
-                    // 含汉字字形的字体放英文槽会连中文一起接管（回退链按顺序命中），标注提醒
-                    val hanWarn = remember(value) {
-                        value.isNotEmpty() && com.mioo.dao.utils.FontStore.containsHan(
-                            java.io.File(com.mioo.dao.utils.FontStore.dir(context), value)
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.updateEnglishFont(value) }
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = settings.englishFont == value, onClick = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-                        if (hanWarn) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "含汉字·会连中文一起变",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 引用自动显示开关
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FormatQuote, contentDescription = "引用自动显示")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "引用自动显示",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateQuoteAutoDisplay(!settings.quoteAutoDisplayEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.quoteAutoDisplayEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.quoteAutoDisplayEnabled,
-                        onCheckedChange = { viewModel.updateQuoteAutoDisplay(it) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 省流量模式开关
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudOff, contentDescription = "省流量模式")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "省流量模式",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateDataSaverEnabled(!settings.dataSaverEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.dataSaverEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.dataSaverEnabled,
-                        onCheckedChange = { viewModel.updateDataSaverEnabled(it) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         // 7. Block Management (屏蔽管理)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
+                    SettingsHeaderIcon(
                         imageVector = Icons.Default.Block,
                         contentDescription = "屏蔽管理"
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "屏蔽管理",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
                     text = "已屏蔽的串",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedThreads.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的串",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.5.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 } else {
@@ -1053,7 +1064,7 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                     }
                 }
 
@@ -1061,15 +1072,16 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的发言饼干 ID",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedUsers.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的 ID",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.5.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 } else {
@@ -1093,7 +1105,7 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                     }
                 }
 
@@ -1101,29 +1113,29 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的关键字",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 13.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                
+
                 var newKeyword by remember { mutableStateOf("") }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
+                        shape = RoundedCornerShape(16.dp),
                         value = newKeyword,
                         onValueChange = { newKeyword = it },
                         placeholder = { Text("输入要屏蔽的关键字...", style = MaterialTheme.typography.bodyMedium) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
+                            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = secondaryCardBackground(),
+                            unfocusedContainerColor = secondaryCardBackground()
                         )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1142,9 +1154,9 @@ fun SettingsScreen(
                         )
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 if (settings.blockedKeywords.isEmpty()) {
                     Text(
                         text = "暂无屏蔽的关键字",
@@ -1173,36 +1185,35 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                     }
                 }
             }
         }
-
+        Text("收藏与分享", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 3. Multiple Feed Folders (多云端收藏夹)
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(androidx.compose.material.icons.Icons.Default.Save, contentDescription = "云端收藏夹")
+                    SettingsHeaderIcon(androidx.compose.material.icons.Icons.Default.Save, contentDescription = "云端收藏夹")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "云端收藏夹",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        style = settingsItemStyle()
                     )
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(onClick = { showAddFolderDialog = true }) {
+                    Box(modifier = Modifier.size(48.dp).clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { editingFolderUuid = null; newFolderName = ""; newFolderUuid = ""; showAddFolderDialog = true }, contentAlignment = Alignment.Center) {
                         Icon(androidx.compose.material.icons.Icons.Default.Add, contentDescription = "添加收藏夹")
                     }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "添加额外的收藏夹UUID，可在收藏界面作为卡片独立浏览。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -1210,6 +1221,9 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
+                                editingFolderUuid = folder.uuid; newFolderName = folder.name; newFolderUuid = folder.uuid; showAddFolderDialog = true
+                            }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1217,15 +1231,14 @@ fun SettingsScreen(
                             Text(text = folder.name, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                             Text(text = folder.uuid, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = { viewModel.removeFeedFolder(folder.uuid) }) {
+                        Box(modifier = Modifier.size(48.dp).clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { deletingFolder = folder }, contentAlignment = Alignment.Center) {
                             Icon(androidx.compose.material.icons.Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
                         }
                     }
-                    androidx.compose.material3.HorizontalDivider()
+                    androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 }
             }
         }
-
         // 5. Subscription notifications (蓝岛-style local poll)
         val notifPermissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
@@ -1239,26 +1252,25 @@ fun SettingsScreen(
             }
         }
 
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = "订阅通知")
+                    SettingsHeaderIcon(Icons.Default.Info, contentDescription = "订阅通知")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "X岛订阅新回复通知",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "后台定期向 X岛 官方接口查询：云端订阅夹（feed UUID）与本地收藏串是否有新回复，有更新则发系统通知。\n" +
                         "说明：岛方未对第三方开放实时推送通道，蓝岛等客户端也是本地轮询同一套订阅数据，并非互相收对方 App 的推送。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
@@ -1308,33 +1320,139 @@ fun SettingsScreen(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("分享卡片显示品牌水印", style = settingsItemStyle())
+                    Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = settings.showShareCardBranding,
+                    onCheckedChange = viewModel::setShowShareCardBranding)
+            }
+        }
+        Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("网络兼容模式", style = settingsItemStyle())
+                Spacer(Modifier.height(8.dp))
+                Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
+                Spacer(Modifier.height(12.dp))
+                Row(modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (settings.networkCompatibilityEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.networkCompatibilityEnabled,
+                        onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
+                    )
+                }
+            }
+        }
+        // 省流量模式开关
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.CloudOff, contentDescription = "省流量模式")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "省流量模式",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.updateDataSaverEnabled(!settings.dataSaverEnabled)
+                        },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (settings.dataSaverEnabled) "已开启" else "已关闭",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = settings.dataSaverEnabled,
+                        onCheckedChange = { viewModel.updateDataSaverEnabled(it) }
+                    )
+                }
+            }
+        }
+        // 备份与恢复
+        SettingsGroupCard(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(0.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Default.Backup, contentDescription = "备份与恢复")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "备份与恢复",
+                        style = settingsItemStyle()
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "自选内容导出为一个 JSON 文件，可在此设备或另一台设备恢复；旧版纯饼干备份文件也可恢复",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        pendingBackupSections = BackupRepository.ALL_SECTIONS.toSet()
+                        showBackupPicker = true
+                    }) { Text("备份") }
+                    OutlinedButton(onClick = {
+                        importBackupFileLauncher.launch(
+                            arrayOf("application/json", "text/plain", "application/octet-stream")
+                        )
+                    }) { Text("恢复") }
+                }
+            }
+        }
         // 6. Offline and Caching Settings (离线与缓存设置)
         val cacheSize by viewModel.cacheSizeState.collectAsState()
         val isPreloading by viewModel.isPreloadingState.collectAsState()
         val preloadProgress by viewModel.preloadProgressState.collectAsState()
 
-        Card(
+        SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Save, contentDescription = "离线缓存")
+                    SettingsHeaderIcon(Icons.Default.Save, contentDescription = "离线缓存")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "离线阅读与智能预加载",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        style = settingsItemStyle()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "开启后会在网络连接可用时预先下载帖子，方便您在无网环境下进行阅读。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -1412,8 +1530,8 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "只限制图片磁盘缓存，默认 1024 MB。超出后自动删掉最久没看的图片，松手后立即生效。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
                 Slider(
                     value = cacheLimitDraft,
@@ -1439,7 +1557,7 @@ fun SettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Smart Preload Mode
@@ -1449,7 +1567,7 @@ fun SettingsScreen(
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1492,7 +1610,7 @@ fun SettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Preload Bookmarks — 正式版屏蔽批量缓存，避免对岛服务器造成过大负担
@@ -1530,66 +1648,128 @@ fun SettingsScreen(
                 }
             }
         }
-
-
-
         Spacer(modifier = Modifier.height(100.dp))
     }
 }
 
     if (showAddFolderDialog) {
+        var dialogVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { dialogVisible = true }
+        val dialogScale by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (dialogVisible) 1f else 0.96f,
+            animationSpec = androidx.compose.animation.core.tween(220), label = "folderDialog"
+        )
+        fun closeFolderDialog() {
+            dialogVisible = false
+            scope.launch { kotlinx.coroutines.delay(220); showAddFolderDialog = false }
+        }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showAddFolderDialog = false },
+            modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
+            shape = RoundedCornerShape(22.dp),
+            tonalElevation = 0.dp,
+            containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF181A20) else Color.White,
+            onDismissRequest = { closeFolderDialog() },
             properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
             title = {
                 com.mioo.dao.ui.theme.ImmersiveDialogEffect()
-                Text("添加云端收藏夹")
+                Text(if (editingFolderUuid == null) "添加云端收藏夹" else "编辑云端收藏夹", fontSize = 17.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
                 Column {
-                    OutlinedTextField(
-                        value = newFolderName,
-                        onValueChange = { newFolderName = it },
-                        label = { Text("收藏夹名称") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    val fieldColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF22252D) else Color(0xFFF2F4F8)
+                    val fieldColors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = fieldColor, unfocusedContainerColor = fieldColor,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                        unfocusedBorderColor = Color.Transparent
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("收藏夹名称", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
-                        value = newFolderUuid,
-                        onValueChange = { newFolderUuid = it },
-                        label = { Text("订阅 UUID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        value = newFolderName, onValueChange = { newFolderName = it },
+                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
+                        singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(Modifier.height(14.dp))
+                    Text("订阅 UUID", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = newFolderUuid, onValueChange = { newFolderUuid = it },
+                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            Box(Modifier.size(48.dp).clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null
+                            ) { newFolderUuid = java.util.UUID.randomUUID().toString().replace("-", "").take(16) },
+                                contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.Refresh, "随机生成订阅 ID", Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    )
+                    Text("可填入已有订阅 ID 多端同步，或点右侧图标随机生成",
+                        Modifier.padding(start = 2.dp, top = 6.dp), fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                    if (newFolderUuid.isNotBlank() && settings.feedFolders.any { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
+                        Text("该订阅 ID 已存在", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                    }
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
+                FolderActionButton(tonal = true,
                     onClick = {
-                        if (newFolderName.isNotBlank() && newFolderUuid.isNotBlank()) {
-                            viewModel.addFeedFolder(newFolderName, newFolderUuid)
-                            showAddFolderDialog = false
+                        if (newFolderName.isNotBlank() && newFolderUuid.isNotBlank() && settings.feedFolders.none { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
+                            if (editingFolderUuid == null) viewModel.addFeedFolder(newFolderName.trim(), newFolderUuid.trim())
+                            else viewModel.updateFeedFolder(editingFolderUuid!!, newFolderName.trim(), newFolderUuid.trim())
+                            closeFolderDialog()
                             newFolderName = ""
                             newFolderUuid = ""
                         }
                     }
                 ) {
-                    Text("添加")
+                    Text(if (editingFolderUuid == null) "添加" else "保存")
                 }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showAddFolderDialog = false }) {
+                FolderActionButton(onClick = { closeFolderDialog() }) {
                     Text("取消")
                 }
             }
         )
     }
 
+    deletingFolder?.let { folder ->
+        var dialogVisible by remember(folder.uuid) { mutableStateOf(false) }
+        LaunchedEffect(folder.uuid) { dialogVisible = true }
+        val dialogScale by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (dialogVisible) 1f else 0.96f,
+            animationSpec = androidx.compose.animation.core.tween(220), label = "deleteFolderDialog"
+        )
+        fun closeDeleteDialog() {
+            dialogVisible = false
+            scope.launch { kotlinx.coroutines.delay(220); deletingFolder = null }
+        }
+        androidx.compose.material3.AlertDialog(
+            modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
+            onDismissRequest = { closeDeleteDialog() },
+            title = { Text("删除云端收藏夹？") },
+            text = { Text("确定删除“${folder.name}”吗？") },
+            confirmButton = {
+                FolderActionButton(onClick = { viewModel.removeFeedFolder(folder.uuid); closeDeleteDialog() }) { Text("删除") }
+            },
+            dismissButton = {
+                FolderActionButton(onClick = { closeDeleteDialog() }) { Text("取消") }
+            }
+        )
+    }
     if (showBackupPicker) {
         val sectionLabels = listOf(
             "cookies" to "发言饼干（含备注/鉴权/选中）",
-            "history" to "浏览历史",
+            "history" to "浏览历史（含阅读位置）",
+            "replyHistory" to "发言历史（含附图）",
+            "newThreadHistory" to "发串历史（含附图）",
             "bookmarks" to "本地收藏",
             "drafts" to "草稿箱",
             "settings" to "应用设置（主题/字体/开关等）",
@@ -1600,7 +1780,7 @@ fun SettingsScreen(
             properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
             title = { com.mioo.dao.ui.theme.ImmersiveDialogEffect(); Text("选择备份内容") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     sectionLabels.forEach { (key, label) ->
                         Row(
                             modifier = Modifier.fillMaxWidth()
@@ -1641,6 +1821,8 @@ fun SettingsScreen(
                     else {
                         if (r.cookies >= 0) add("发言饼干：${r.cookies} 个")
                         if (r.history >= 0) add("浏览历史：${r.history} 条")
+                        if (r.replyHistory >= 0) add("发言历史：${r.replyHistory} 条")
+                        if (r.newThreadHistory >= 0) add("发串历史：${r.newThreadHistory} 条")
                         if (r.bookmarks >= 0) add("本地收藏：${r.bookmarks} 条")
                         if (r.drafts >= 0) add("草稿箱：${r.drafts} 条")
                         if (r.settings) add("应用设置：已恢复")
@@ -1736,5 +1918,48 @@ private fun decodeQrFromUri(context: Context, uri: Uri): String? {
         com.google.zxing.qrcode.QRCodeReader().decode(binaryBitmap).text
     } finally {
         bitmap.recycle()
+    }
+}
+
+
+@Composable
+internal fun secondaryPageBackground(): Color {
+    val bg = MaterialTheme.colorScheme.background
+    return when { bg == Color.Black -> Color.Black; bg.luminance() < 0.5f -> Color(0xFF0E1015); else -> Color(0xFFF0F1F4) }
+}
+
+@Composable
+internal fun secondaryCardBackground(): Color {
+    val bg = MaterialTheme.colorScheme.background
+    return when { bg == Color.Black -> Color(0xFF121318); bg.luminance() < 0.5f -> Color(0xFF16181E); else -> Color.White }
+}
+
+@Composable
+private fun SettingsGroupCard(modifier: Modifier = Modifier, elevation: androidx.compose.material3.CardElevation = CardDefaults.cardElevation(0.dp), content: @Composable ColumnScope.() -> Unit) {
+    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground()), elevation = elevation, content = content)
+}
+
+@Composable
+private fun SettingsHeaderIcon(imageVector: ImageVector, contentDescription: String?) {
+    Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+        Icon(imageVector, contentDescription, modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
+private fun SettingsGroupDivider() {
+    HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+}
+
+@Composable
+private fun FolderActionButton(onClick: () -> Unit, tonal: Boolean = false, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(20.dp))
+            .background(if (tonal) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(color = if (tonal) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant), content = content)
     }
 }

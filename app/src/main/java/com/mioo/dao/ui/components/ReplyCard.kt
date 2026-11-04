@@ -1,7 +1,9 @@
 package com.mioo.dao.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -16,8 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
@@ -26,6 +26,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -36,14 +37,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.luminance
+import com.mioo.dao.ui.theme.readingQuoteStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mioo.dao.ui.theme.readingBodyStyle
+import com.mioo.dao.ui.theme.readingMetaStyle
+import com.mioo.dao.ui.theme.readingTextStyle
+import com.mioo.dao.ui.theme.readingCardColor
+import com.mioo.dao.ui.theme.readingCardBorder
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import com.mioo.dao.ui.theme.graphicsPressScale
 import com.mioo.dao.ui.theme.rememberPressScale
 
@@ -65,7 +78,8 @@ fun ReplyCard(
     onViewThreadClick: (String) -> Unit = {},
     currentThreadId: String? = null,
     /** Dense reply lists skip press-scale to cut animateFloatAsState work. */
-    enablePressScale: Boolean = false
+    enablePressScale: Boolean = false,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     // Do not call rememberPressScale when disabled — it still subscribes to press + animateFloat.
@@ -80,7 +94,7 @@ fun ReplyCard(
             .graphicsPressScale(pressScale)
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null,
                 onClick = onCardClick,
                 onLongClick = onCardLongClick
             )
@@ -89,20 +103,17 @@ fun ReplyCard(
             .fillMaxWidth()
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null,
                 onClick = onCardClick,
                 onLongClick = onCardLongClick
             )
     }
-    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
-    val border = remember(outline) {
-        androidx.compose.foundation.BorderStroke(0.5.dp, outline)
-    }
+    val border = readingCardBorder()
     Card(
         modifier = cardModifier,
-        shape = MaterialTheme.shapes.small,
+        shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = DaoTheme.colors.replyCardBg
+            containerColor = readingCardColor()
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = border
@@ -110,96 +121,11 @@ fun ReplyCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            // Header Row (User ID, badges, timestamp, reply ID)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // User ID tag
-                val idBgColor = when {
-                    postData.isAdmin -> DaoTheme.colors.admin.copy(alpha = 0.15f)
-                    postData.isPo -> DaoTheme.colors.po.copy(alpha = 0.15f)
-                    else -> MaterialTheme.colorScheme.surfaceVariant
-                }
-                val idTextColor = when {
-                    postData.isAdmin -> DaoTheme.colors.admin
-                    postData.isPo -> DaoTheme.colors.po
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
+            ReadingPostHeader(postData)
 
-                Text(
-                    text = postData.userId,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    ),
-                    color = idTextColor,
-                    modifier = Modifier
-                        .background(idBgColor, shape = RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-
-                // PO Badge
-                if (postData.isPo) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "PO",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(DaoTheme.colors.po, shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Admin Badge
-                if (postData.isAdmin) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "ADMIN",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(DaoTheme.colors.admin, shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Sage Badge
-                if (postData.isSage) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "SAGE",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White,
-                        modifier = Modifier
-                            .background(DaoTheme.colors.sage, shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Date/Time
-                Text(
-                    text = postData.createdAt,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Reply ID number
-                Text(
-                    text = "No.${postData.id}",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Reply Subject (highly rare but possible in some formats)
             if (!postData.title.isNullOrBlank()) {
@@ -219,7 +145,8 @@ fun ReplyCard(
             }
 
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 contentBlocks.forEach { block ->
                     when (block) {
@@ -227,7 +154,7 @@ fun ReplyCard(
                             HtmlContent(
                                 html = block.html,
                                 onQuoteClick = onQuoteClick,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = readingBodyStyle(),
                                 modifier = Modifier.fillMaxWidth(),
                                 onTextClick = onCardClick,
                                 onLongClick = onCardLongClick
@@ -255,8 +182,9 @@ fun ReplyCard(
                 Box(
                     modifier = Modifier
                         .size(100.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable { onImageClick(imageUrl) }
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) }
                 ) {
                     ListThumbAsyncImage(
                         imageUrl = imageUrl,
@@ -282,154 +210,37 @@ fun QuotedPostBox(
     modifier: Modifier = Modifier,
     currentThreadId: String? = null
 ) {
-    val isDeleted = quote.content.contains("该引用不存在") || quote.content.contains("该帖不存在") || quote.content.contains("已被删除")
-
-    Box(modifier = modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
-        // The main bordered container
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, quoteColor, RoundedCornerShape(4.dp))
-                .clip(RoundedCornerShape(4.dp))
-                .combinedClickable(
-                    onClick = { },
-                    onLongClick = onLongClick
-                )
-                .padding(12.dp)
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    Surface(
+        modifier = modifier.fillMaxWidth().combinedClickable(
+            interactionSource = remember { MutableInteractionSource() }, indication = null,
+            onClick = { onQuoteClick(quote.id) }, onLongClick = onLongClick),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.05f else 0.035f)
+    ) {
+        val stripeColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.40f)
+        Box(
+            Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+                .drawBehind {
+                    val width = 2.5.dp.toPx()
+                    drawRoundRect(
+                        color = stripeColor,
+                        size = Size(width, size.height),
+                        cornerRadius = CornerRadius(width / 2)
+                    )
+                }
         ) {
-            Spacer(modifier = Modifier.height(2.dp)) // space for the overlapping label
-            
-            var expanded by rememberSaveable(quote.id) { mutableStateOf(false) }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = { expanded = !expanded },
-                        onLongClick = onLongClick
-                    )
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (!expanded) {
-                    Text(
-                        text = remember(quote.content) { quotePreviewPlain(quote.content) },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
+            Column(Modifier.fillMaxWidth().padding(start = 11.5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("No.${quote.id}", style = readingTextStyle(11f, 16f).copy(fontFeatureSettings = "tnum"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                val previewContent = remember(quote.content) {
+                    quote.content.replace(Regex("(?i)(?:\\s|<br\\s*/?>|&nbsp;)+$"), "")
                 }
-                Icon(
-                    imageVector = Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "收起引用" else "展开引用",
-                    tint = quoteColor,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .rotate(if (expanded) 180f else 0f)
-                )
-            }
-            if (expanded) {
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // User ID and PO badge
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val idColor = when {
-                        quote.isAdmin -> DaoTheme.colors.admin
-                        quote.isPo -> DaoTheme.colors.po
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    Text(
-                        text = quote.userId,
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        color = idColor
-                    )
-                    if (quote.isPo) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "PO",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                            color = Color.White,
-                            modifier = Modifier
-                                .background(DaoTheme.colors.po, shape = RoundedCornerShape(2.dp))
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-
-                // SAGE big red text
-                if (quote.isSage) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "已SAGE",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = DaoTheme.colors.sageTag
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                HtmlContent(
-                    html = quote.content,
-                    onQuoteClick = onQuoteClick,
-                    onLongClick = onLongClick,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Attached Image
-                quote.imageUrl?.let { imageUrl ->
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(MaterialTheme.shapes.medium)
-                            .clickable { onImageClick(imageUrl) }
-                    ) {
-                        ListThumbAsyncImage(
-                            imageUrl = imageUrl,
-                            contentDescription = "Quote Image",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.matchParentSize()
-                        )
-                    }
-                }
-
-                // View Original Thread button
-                val targetThreadId = quote.resto
-                val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
-                val hasValidThread = !targetThreadId.isNullOrBlank() && targetThreadId != "0" && targetThreadId != "null"
-                if (!isDeleted && hasValidThread && !isCurrentThread) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onViewThreadClick(targetThreadId!!) }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Text(
-                            text = "跳转原串",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                        )
-                    }
-                }
+                if (previewContent.isBlank()) Text("（图片或空内容）", style = readingQuoteStyle())
+                else HtmlContent(html = previewContent, onQuoteClick = {}, style = readingQuoteStyle(),
+                    maxLines = 3, overflow = TextOverflow.Ellipsis, enableGestures = false, compactBlankLines = true, trimOuterWhitespace = true)
             }
         }
-
-        // Overlapping Quote Number Label
-        Text(
-            text = "No.${quote.id}",
-            style = MaterialTheme.typography.labelSmall,
-            color = quoteColor,
-            modifier = Modifier
-                .offset(x = 12.dp, y = (-7).dp)
-                .background(DaoTheme.colors.replyCardBg)
-                .padding(horizontal = 4.dp)
-        )
     }
 }
 

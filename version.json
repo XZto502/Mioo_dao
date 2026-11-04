@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.1.3",
-  "name": "v1.1.3",
-  "body": "喵岛 v1.1.3 带来离线阅读与多项体验优化：\n\n- 新增整串离线保存：可下载整串内容和图片，在收藏页查看、更新或删除离线串；本地收藏也会在后台逐步同步为离线内容。\n- 支持从具体楼层发起举报，自动引用目标楼层，并可选择饼干发送至值班室。\n- 看图体验升级：双击可按触点放大，放大后拖动限制在图片边界内；修复缩略图切换错位及带日期目录图片加载问题。\n- 优化长串阅读、页码跳转、翻页与 PO 查看过程，减少切换时的空白闪屏并改善加载反馈。\n- 优化板块抽屉和顶栏胶囊菜单的动画、定位与宽度。\n- 统一发串、回复和举报的饼干选择体验，改善发串输入栏与键盘/表情面板的配合。\n- 修复订阅串回复数显示，并优化 AMOLED 配色与系统主题切换。\n- 加固本地数据库升级兼容性，升级时自动迁移数据。",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.3",
+  "tag_name": "v1.1.4",
+  "name": "v1.1.4",
+  "body": "喵岛 v1.1.4 带来历史记录、草稿与阅读体验升级：\n\n- 主页新增历史 Tab，整合浏览、发言与发串历史，支持搜索、删除和备份恢复。\n- 收藏夹支持左右滑动切换；收藏与历史记住上次选择的分类，重启应用后仍可恢复。\n- 重构新串编辑与草稿选择，支持同一板块保存多个草稿，并按当前板块筛选。\n- 新增发送前确认饼干的可选设置，支持编辑云端收藏夹名称和订阅 UUID。\n- 支持防剧透语法及原位揭开，优化引用阅读弹窗、长内容滚动、图片查看与自由复制。\n- 统一主页及设置等页面的 Material Design 3 配色、卡片、字体和过渡动画，改进分享卡片和选楼体验。\n- 修复分页、阅读位置恢复、缓存刷新、回复数更新及引用摘要空行等问题。\n- 优化底部导航切换、发帖和详情页进退场体验。\n\n**Full Changelog**: https://github.com/XZto502/Mioo_dao/compare/v1.1.3...v1.1.4",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.4",
   "assets": [
     {
       "name": "app-release.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.3/app-release.apk",
-      "size": 5108581
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.4/app-release.apk",
+      "size": 5298437
     }
   ]
 }

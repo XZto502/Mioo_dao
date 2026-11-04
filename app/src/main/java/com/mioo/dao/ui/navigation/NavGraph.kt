@@ -11,12 +11,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.navigation.NavBackStackEntry
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
+import com.mioo.dao.ui.theme.readingBackground
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -29,6 +31,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -42,6 +48,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -82,7 +90,6 @@ import com.mioo.dao.ui.screens.thread.ThreadViewModel
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object SettingsDetail : Screen("settings_detail")
-    object BrowsingHistory : Screen("browsing_history")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
     object Thread : Screen("thread/{threadId}") {
@@ -153,7 +160,7 @@ fun MiooDaoNavGraph(
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
 
     // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
-    // 板块 / 收藏 / 更多 share one pager and spring across, including through the middle page.
+    // All four home tabs share one pager and slide continuously through intermediate pages.
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         MiooMotion.pageEnter(reducedMotion)
     }
@@ -168,19 +175,32 @@ fun MiooDaoNavGraph(
     }
     val density = LocalDensity.current
     val tabScope = rememberCoroutineScope()
-    val tabPagerState = rememberPagerState(initialPage = 0) { 3 }
+    val tabPagerState = rememberPagerState(initialPage = 0) { 4 }
+    var historyOpenGeneration by remember { mutableIntStateOf(0) }
+    var previousRoute by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == Screen.Home.route && previousRoute == Screen.Thread.route &&
+            tabPagerState.currentPage == 2) {
+            historyOpenGeneration++
+        }
+        previousRoute = currentRoute
+    }
 
     val bottomBarItems = remember {
         listOf(
             Triple(0, Icons.Default.Home, "板块"),
             Triple(1, Icons.Default.Bookmark, "收藏"),
-            Triple(2, Icons.Default.Settings, "更多")
+            Triple(2, Icons.Default.History, "历史"),
+            Triple(3, Icons.Default.Settings, "更多")
         )
     }
 
     val showBottomBar = currentRoute == Screen.Home.route
     // 切换板块抽屉打开/正在打开时收起悬浮 dock：不遮抽屉、不拦点击
     var forumDrawerOpen by remember { mutableStateOf(false) }
+    // 大图查看器打开时收起悬浮 dock：不遮查看器底部药丸、不拦点击
+    var isImageViewerOpen by remember { mutableStateOf(false) }
+    var isComposerOpen by remember { mutableStateOf(false) }
     // Scroll the feed downward (finger up) and the tab capsule slides off the bottom.
     // A short reverse drag, or hitting the top, brings it back.
     var bottomBarVisible by remember { mutableStateOf(true) }
@@ -188,37 +208,44 @@ fun MiooDaoNavGraph(
     val bottomBarSlide = remember { Animatable(0f) }
     val hideAfterPx = with(density) { 36.dp.toPx() }
     val showAfterPx = with(density) { 16.dp.toPx() }
+    val composerOpenState = rememberUpdatedState(isComposerOpen)
+    val bottomBarScrollAway = remember { floatArrayOf(0f) }
+    LaunchedEffect(isComposerOpen) {
+        bottomBarScrollAway[0] = 0f
+        bottomBarVisible = true
+    }
     val bottomBarScroll = remember(hideAfterPx, showAfterPx) {
-        var away = 0f
         object : NestedScrollConnection {
             override fun onPostScroll(
                 consumed: Offset,
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
+                // Scrolling the composer or its picker must not hide the home navigation.
+                if (composerOpenState.value) return Offset.Zero
                 // Compose 1.6 only reports Drag and Fling. Both should move the bar.
                 if (source != NestedScrollSource.Drag && source != NestedScrollSource.Fling) {
                     return Offset.Zero
                 }
                 // Overscroll at the top: the list did not consume a downward drag.
                 if (available.y > 0f && consumed.y == 0f) {
-                    away = 0f
+                    bottomBarScrollAway[0] = 0f
                     bottomBarVisible = true
                     return Offset.Zero
                 }
                 val dy = consumed.y
                 if (dy < 0f) {
-                    if (away < 0f) away = 0f
-                    away += -dy
-                    if (away >= hideAfterPx) {
-                        away = 0f
+                    if (bottomBarScrollAway[0] < 0f) bottomBarScrollAway[0] = 0f
+                    bottomBarScrollAway[0] += -dy
+                    if (bottomBarScrollAway[0] >= hideAfterPx) {
+                        bottomBarScrollAway[0] = 0f
                         bottomBarVisible = false
                     }
                 } else if (dy > 0f) {
-                    if (away > 0f) away = 0f
-                    away -= dy
-                    if (-away >= showAfterPx) {
-                        away = 0f
+                    if (bottomBarScrollAway[0] > 0f) bottomBarScrollAway[0] = 0f
+                    bottomBarScrollAway[0] -= dy
+                    if (-bottomBarScrollAway[0] >= showAfterPx) {
+                        bottomBarScrollAway[0] = 0f
                         bottomBarVisible = true
                     }
                 }
@@ -232,7 +259,7 @@ fun MiooDaoNavGraph(
     // 260ms EaseOut dumped the travel into the first frames. 560ms felt slow.
     // 340ms FastOutSlowIn keeps the slide visible without dragging.
     val bottomBarSlideSpec = remember {
-        tween<Float>(durationMillis = 340, easing = FastOutSlowInEasing)
+        MiooMotion.bottomBarTween<Float>()
     }
     LaunchedEffect(bottomBarVisible, reducedMotion) {
         val target = if (bottomBarVisible) 0f else 1f
@@ -245,59 +272,65 @@ fun MiooDaoNavGraph(
 
     Scaffold(
         bottomBar = {
-            if (showBottomBar) {
-                // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
-                AnimatedVisibility(
-                    visible = !forumDrawerOpen,
-                    enter = slideInVertically { it } + fadeIn(),
-                    exit = slideOutVertically { it } + fadeOut()
+            // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
+            AnimatedVisibility(
+                visible = showBottomBar && !forumDrawerOpen && !isImageViewerOpen && !isComposerOpen,
+                enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
+                exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
+            ) {
+                // Outer box draws into the gesture nav area so the 小白条 is immersive;
+                // capsule itself stays above the system inset.
+                // offset (not graphicsLayer) moves the touch target with the slide.
+                val slideFraction = bottomBarSlide.value
+                val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
+                val pageBgColor = readingBackground()
+                Box(
+                    modifier = Modifier
+                        .onSizeChanged { bottomBarHeightPx = it.height }
+                        .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
+                        .fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    // Outer box draws into the gesture nav area so the 小白条 is immersive;
-                    // capsule itself stays above the system inset.
-                    // offset (not graphicsLayer) moves the touch target with the slide.
-                    val slideFraction = bottomBarSlide.value
-                    val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
-                    Box(
+                    NavigationBar(
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                        containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
+                        tonalElevation = 0.dp,
                         modifier = Modifier
-                            .onSizeChanged { bottomBarHeightPx = it.height }
-                            .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
                             .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                            .border(
+                                width = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                            )
                     ) {
-                        NavigationBar(
-                            windowInsets = WindowInsets(0, 0, 0, 0),
-                            containerColor = DaoTheme.colors.glassNavBar,
-                            tonalElevation = 0.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-                                .border(
-                                    width = 0.5.dp,
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-                                )
-                        ) {
-                            bottomBarItems.forEach { (index, icon, label) ->
-                                NavigationBarItem(
-                                    icon = { Icon(icon, contentDescription = label) },
-                                    label = { Text(label) },
-                                    selected = tabPagerState.targetPage == index,
-                                    onClick = {
-                                        if (tabPagerState.targetPage == index) return@NavigationBarItem
-                                        tabScope.launch {
-                                            if (reducedMotion) {
-                                                tabPagerState.scrollToPage(index)
-                                            } else {
-                                                tabPagerState.animateScrollToPage(
-                                                    page = index,
-                                                    animationSpec = MiooMotion.tabPagerSpring()
-                                                )
-                                            }
+                        bottomBarItems.forEach { (index, icon, label) ->
+                            NavigationBarItem(
+                                icon = {
+                                    val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
+                                        0 -> Icons.Outlined.Home
+                                        1 -> Icons.Outlined.BookmarkBorder
+                                        3 -> Icons.Outlined.Settings
+                                        else -> icon
+                                    }
+                                    Icon(displayIcon, contentDescription = label)
+                                },
+                                label = { Text(label) },
+                                selected = tabPagerState.targetPage == index,
+                                onClick = {
+                                    if (index == 2) historyOpenGeneration++
+                                    if (tabPagerState.targetPage == index) return@NavigationBarItem
+                                    tabScope.launch {
+                                        if (reducedMotion) {
+                                            tabPagerState.scrollToPage(index)
+                                        } else {
+                                            tabPagerState.animateHomeTabTo(index)
                                         }
                                     }
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                 }
@@ -325,15 +358,15 @@ fun MiooDaoNavGraph(
             ) { _ ->
                 MainTabs(
                     pagerState = tabPagerState,
+                    historyOpenGeneration = historyOpenGeneration,
                     onNavigateToThread = navigateToThread,
                     onColdStartContentReady = onColdStartContentReady,
                     dockSinkFraction = { bottomBarSlide.value },
                     onForumDrawerOpenChange = { forumDrawerOpen = it },
+                    onImageViewerOpenChange = { isImageViewerOpen = it },
+                    onComposerOpenChange = { isComposerOpen = it },
                     onNavigateToSettings = {
                         navController.navigate(Screen.SettingsDetail.route)
-                    },
-                    onNavigateToHistory = {
-                        navController.navigate(Screen.BrowsingHistory.route)
                     },
                     onNavigateToDrafts = {
                         navController.navigate(Screen.DraftBox.route)
@@ -367,19 +400,6 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.BrowsingHistory.route) { _ ->
-                PageBackdrop {
-                    val viewModel: SettingsViewModel = hiltViewModel()
-                    HistoryScreen(
-                        viewModel = viewModel,
-                        onBackClick = {
-                            navController.popBackStack()
-                        },
-                        onNavigateToThread = navigateToThread
-                    )
-                }
-            }
-
             composable(route = Screen.DraftBox.route) { _ ->
                 PageBackdrop {
                     val viewModel: com.mioo.dao.ui.screens.drafts.DraftViewModel = hiltViewModel()
@@ -407,9 +427,9 @@ fun MiooDaoNavGraph(
                 arguments = listOf(
                     navArgument("threadId") { type = NavType.StringType }
                 ),
-            ) { _ ->
+            ) { entry ->
                 PageBackdrop {
-                    val viewModel: ThreadViewModel = hiltViewModel()
+                    val viewModel: ThreadViewModel = hiltViewModel(entry)
                     ThreadScreen(
                         viewModel = viewModel,
                         onBackClick = { navController.popBackStack() },
@@ -425,23 +445,31 @@ fun MiooDaoNavGraph(
 @Composable
 private fun MainTabs(
     pagerState: PagerState,
+    historyOpenGeneration: Int,
     onNavigateToThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float = { 0f },
     onForumDrawerOpenChange: (Boolean) -> Unit = {},
+    onImageViewerOpenChange: (Boolean) -> Unit = {},
+    onComposerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
-    onNavigateToHistory: () -> Unit,
     onNavigateToDrafts: () -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
+    val tabState = rememberSaveableStateHolder()
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
-        // Neighbor stays composed so a two-page jump can slide across it.
-        beyondBoundsPageCount = 1,
+        // Keep all four tabs composed: on a More → Forum transition, composing
+        // the forum as it enters the viewport can interrupt the animation tail.
+        beyondBoundsPageCount = 3,
         userScrollEnabled = false,
+        // This pager is controlled only by the dock. The default nested-scroll
+        // connection still moves a partially animated pager when a child is dragged.
+        pageNestedScrollConnection = remember { object : NestedScrollConnection {} },
         key = { it }
     ) { page ->
+        tabState.SaveableStateProvider(page) {
         PageBackdrop {
             when (page) {
                 0 -> {
@@ -451,27 +479,31 @@ private fun MainTabs(
                         onNavigateToThread = onNavigateToThread,
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = dockSinkFraction,
-                        onDrawerOpenChange = onForumDrawerOpenChange
+                        onDrawerOpenChange = onForumDrawerOpenChange,
+                        onImageViewerOpenChange = onImageViewerOpenChange,
+                        onComposerOpenChange = onComposerOpenChange
                     )
                 }
                 1 -> {
                     val viewModel: FeedViewModel = hiltViewModel()
                     FeedScreen(
                         viewModel = viewModel,
-                        onNavigateToThread = onNavigateToThread
+                        onNavigateToThread = onNavigateToThread,
+                        onImageViewerOpenChange = onImageViewerOpenChange
                     )
                 }
+                2 -> HistoryScreen(onNavigateToThread = onNavigateToThread, onImageViewerOpenChange = onImageViewerOpenChange, openGeneration = historyOpenGeneration)
                 else -> {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     MoreScreen(
                         viewModel = viewModel,
                         onNavigateToSettings = onNavigateToSettings,
-                        onNavigateToHistory = onNavigateToHistory,
                         onNavigateToDrafts = onNavigateToDrafts,
                         onNavigateToSearch = onNavigateToSearch
                     )
                 }
             }
+        }
         }
     }
 }

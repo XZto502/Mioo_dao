@@ -1,6 +1,12 @@
 package com.mioo.dao.ui.screens.drafts
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
+import com.mioo.dao.ui.screens.settings.secondaryPageBackground
+import com.mioo.dao.ui.screens.settings.secondaryCardBackground
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -88,7 +94,7 @@ fun DraftBoxScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("草稿箱") },
+                title = { Text("草稿箱", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -99,7 +105,7 @@ fun DraftBoxScreen(
                 )
             )
         },
-        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        containerColor = secondaryPageBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { paddingValues ->
@@ -111,7 +117,7 @@ fun DraftBoxScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "暂无草稿\n回复时输入的内容会自动存到这里；发串可点顶部\"存草稿\"",
+                    text = "暂无草稿\n回复内容会自动保存；发串时可点保存按钮，或退出时选择“保存草稿”",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -157,6 +163,8 @@ private fun DraftRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(secondaryCardBackground())
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically

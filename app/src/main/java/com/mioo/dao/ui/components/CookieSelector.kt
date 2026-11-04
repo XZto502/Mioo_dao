@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.mioo.dao.ui.theme.settingsItemStyle
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 
 /**
  * 回复栏 / 举报对话框 / 发表新串共用的饼干选择器：40dp MD3 胶囊 + 自绘弹出菜单。
@@ -66,15 +68,17 @@ fun CookieSelector(
     selectedIndex: Int,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    onSelect: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh
 ) {
+    val reducedMotion = isReducedMotionEnabled()
     val currentCookie = cookies.getOrNull(selectedIndex) ?: "选择饼干"
     val displayName = remember(currentCookie) { parseCookieName(currentCookie) }
     val displayText = if (displayName.length > 8) displayName.take(8) + "..." else displayName
     // 胶囊色不透明：透出下层文字的 alpha 色会在玻璃底栏上糊字
     val capsuleColor by animateColorAsState(
         targetValue = if (expanded) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        else containerColor,
         label = "cookieCapsule"
     )
     val capsuleBorderColor = if (expanded) {
@@ -140,15 +144,15 @@ fun CookieSelector(
                 AnimatedVisibility(
                     visibleState = menuState,
                     enter = scaleIn(
-                        initialScale = 0.9f,
-                        animationSpec = tween(160),
+                        initialScale = if (reducedMotion) 1f else 0.97f,
+                        animationSpec = tween(if (reducedMotion) 0 else 180),
                         transformOrigin = TransformOrigin(0f, 0f)
-                    ) + fadeIn(tween(120)),
+                    ) + fadeIn(tween(if (reducedMotion) 0 else 120)),
                     exit = scaleOut(
-                        targetScale = 0.94f,
-                        animationSpec = tween(140),
+                        targetScale = if (reducedMotion) 1f else 0.98f,
+                        animationSpec = tween(if (reducedMotion) 0 else 140),
                         transformOrigin = TransformOrigin(0f, 0f)
-                    ) + fadeOut(tween(120))
+                    ) + fadeOut(tween(if (reducedMotion) 0 else 120))
                 ) {
                     Surface(
                         shape = RoundedCornerShape(18.dp),
@@ -190,8 +194,7 @@ fun CookieSelector(
                                     ) {
                                         Text(
                                             text = parseCookieName(cookie),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            style = settingsItemStyle(),
                                             color = if (isSelected) {
                                                 MaterialTheme.colorScheme.onSecondaryContainer
                                             } else {

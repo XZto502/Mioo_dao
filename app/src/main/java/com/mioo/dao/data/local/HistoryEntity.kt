@@ -3,6 +3,7 @@ package com.mioo.dao.data.local
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity(
     tableName = "history",
@@ -16,5 +17,6 @@ data class HistoryEntity(
     val now: String,
     val title: String?,
     val name: String?,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "''") val forumName: String = ""
 )

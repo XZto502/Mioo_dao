@@ -82,7 +82,9 @@ fun HomeScreen(
     val tabs = remember { listOf("Timeline", "Forums") }
     val timelineListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var activeImageUrl by remember { mutableStateOf<String?>(null) }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -140,7 +142,8 @@ fun HomeScreen(
                         listState = timelineListState,
                         onThreadClick = onNavigateToThread,
                         onBlockThread = { settingsViewModel.addBlockedThread(it) },
-                        onBlockUser = { settingsViewModel.addBlockedUser(it) }
+                        onBlockUser = { settingsViewModel.addBlockedUser(it) },
+                        onImageClick = { activeImageUrl = it }
                     )
                     1 -> ForumList(
                         forumGroups = uiState.forumGroups,
@@ -152,6 +155,13 @@ fun HomeScreen(
             }
         }
     }
+    activeImageUrl?.let { imageUrl ->
+        ImageViewer(
+            imageUrl = imageUrl,
+            onDismiss = { activeImageUrl = null }
+        )
+    }
+    }
 }
 
 @Composable
@@ -160,10 +170,10 @@ fun TimelineList(
     listState: LazyListState,
     onThreadClick: (String) -> Unit,
     onBlockThread: (String) -> Unit,
-    onBlockUser: (String) -> Unit
+    onBlockUser: (String) -> Unit,
+    onImageClick: (String) -> Unit
 ) {
     var freeCopyText by remember { mutableStateOf<String?>(null) }
-    var activeImageUrl by remember { mutableStateOf<String?>(null) }
     val emptyStringLambda = remember { { _: String -> } }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
 
@@ -262,8 +272,8 @@ fun TimelineList(
                 val onThreadClickRemembered = remember(item.idStr) {
                     { onThreadClick(item.idStr) }
                 }
-                val onImageClickRemembered = remember {
-                    { imageUrl: String -> activeImageUrl = imageUrl }
+                val onImageClickRemembered = remember(onImageClick) {
+                    { imageUrl: String -> onImageClick(imageUrl) }
                 }
 
                 ThreadCard(
@@ -285,12 +295,6 @@ fun TimelineList(
         )
     }
 
-    activeImageUrl?.let { imageUrl ->
-        ImageViewer(
-            imageUrl = imageUrl,
-            onDismiss = { activeImageUrl = null }
-        )
-    }
 }
 
 @Composable

@@ -6,6 +6,12 @@ import com.mioo.dao.data.local.DraftEntity
 import com.mioo.dao.data.local.HistoryDao
 import com.mioo.dao.data.local.HistoryEntity
 import com.mioo.dao.data.local.SettingsDataStore
+import com.mioo.dao.data.local.PostActionHistoryDao
+import com.mioo.dao.data.local.ProgressDao
+import com.mioo.dao.data.local.ThreadProgressEntity
+import com.mioo.dao.data.local.HistoryType
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -19,26 +25,33 @@ import javax.inject.Singleton
 class BackupRepository @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val historyDao: HistoryDao,
-    private val draftDao: DraftDao
+    private val draftDao: DraftDao,
+    private val postActionHistoryDao: PostActionHistoryDao,
+    private val progressDao: ProgressDao,
+    @ApplicationContext private val context: Context
 ) {
     companion object {
         const val SECTION_COOKIES = "cookies"
         const val SECTION_HISTORY = "history"
+        const val SECTION_REPLIES = "replyHistory"
+        const val SECTION_NEW_THREADS = "newThreadHistory"
         const val SECTION_BOOKMARKS = "bookmarks"
         const val SECTION_DRAFTS = "drafts"
         const val SECTION_SETTINGS = "settings"
         const val SECTION_BLOCKS = "blocks"
         val ALL_SECTIONS = listOf(
-            SECTION_COOKIES, SECTION_HISTORY, SECTION_BOOKMARKS,
+            SECTION_COOKIES, SECTION_HISTORY, SECTION_REPLIES, SECTION_NEW_THREADS, SECTION_BOOKMARKS,
             SECTION_DRAFTS, SECTION_SETTINGS, SECTION_BLOCKS
         )
-        private const val VERSION = 2
+        private const val VERSION = 3
     }
 
     /** 各段恢复条数，-1 表示文件里没有该段。 */
     data class ImportResult(
         val cookies: Int = -1,
         val history: Int = -1,
+        val replyHistory: Int = -1,
+        val newThreadHistory: Int = -1,
         val bookmarks: Int = -1,
         val drafts: Int = -1,
         val settings: Boolean = false,
@@ -78,9 +91,25 @@ class BackupRepository @Inject constructor(
                 o.put("title", h.title ?: JSONObject.NULL)
                 o.put("name", h.name ?: JSONObject.NULL)
                 o.put("timestamp", h.timestamp)
+                o.put("forumName", h.forumName)
                 arr.put(o)
             }
             root.put(SECTION_HISTORY, arr)
+            val positions = JSONArray()
+            progressDao.getAll().forEach { p -> positions.put(JSONObject().apply {
+                put("threadId", p.threadId); put("page", p.page); put("firstVisibleIndex", p.firstVisibleIndex)
+                put("scrollOffset", p.scrollOffset); put("anchorPostId", p.anchorPostId ?: JSONObject.NULL)
+                put("updatedAt", p.updatedAt)
+            }) }
+            root.put("readingProgress", positions)
+        }
+
+        listOf(SECTION_REPLIES to HistoryType.REPLY, SECTION_NEW_THREADS to HistoryType.NEW_THREAD).forEach { (key, type) ->
+            if (key in sections) {
+                val array = JSONArray()
+                postActionHistoryDao.observe(type.name).first().forEach { array.put(encodePostAction(it)) }
+                root.put(key, array)
+            }
         }
 
         if (SECTION_BOOKMARKS in sections) {
@@ -127,10 +156,13 @@ class BackupRepository @Inject constructor(
             o.put("lineHeightScale", settingsDataStore.lineHeightScaleFlow.first().toDouble())
             o.put("chineseFont", settingsDataStore.chineseFontFlow.first())
             o.put("englishFont", settingsDataStore.englishFontFlow.first())
+            o.put("networkCompatibilityEnabled", settingsDataStore.networkCompatibilityFlow.first())
             o.put("dataSaverEnabled", settingsDataStore.dataSaverEnabledFlow.first())
             o.put("glassEffectEnabled", settingsDataStore.glassEffectEnabledFlow.first())
             o.put("quoteAutoDisplayEnabled", settingsDataStore.quoteAutoDisplayFlow.first())
+            o.put("showShareCardBranding", settingsDataStore.showShareCardBrandingFlow.first())
             o.put("draftBoxEnabled", settingsDataStore.draftBoxEnabledFlow.first())
+            o.put("confirmCookieBeforeSend", settingsDataStore.confirmCookieBeforeSendFlow.first())
             o.put("smartPreloadMode", settingsDataStore.smartPreloadModeFlow.first())
             o.put("preloadCount", settingsDataStore.preloadCountFlow.first())
             o.put("subscriptionNotificationsEnabled", settingsDataStore.subscriptionNotificationsFlow.first())
@@ -184,6 +216,8 @@ class BackupRepository @Inject constructor(
         // v2：按文件里实际存在的段恢复
         var cookiesCount = -1
         var historyCount = -1
+        var replyCount = -1
+        var newThreadCount = -1
         var bookmarksCount = -1
         var draftsCount = -1
         var settingsRestored = false
@@ -222,12 +256,32 @@ class BackupRepository @Inject constructor(
                         now = o.optString("now"),
                         title = o.optNullableString("title"),
                         name = o.optNullableString("name"),
-                        timestamp = o.optLong("timestamp", System.currentTimeMillis())
+                        timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+                        forumName = o.optString("forumName")
                     )
                 )
             }
             if (entities.isNotEmpty()) historyDao.insertHistories(entities)
             historyCount = entities.size
+        }
+
+        root.optJSONArray("readingProgress")?.let { array ->
+            val positions = (0 until array.length()).mapNotNull { index ->
+                val o = array.optJSONObject(index) ?: return@mapNotNull null
+                val id = o.optString("threadId").takeIf { it.toLongOrNull()?.let { n -> n > 0 } == true } ?: return@mapNotNull null
+                ThreadProgressEntity(id, o.optInt("page", 1).coerceAtLeast(1), o.optInt("firstVisibleIndex", 0).coerceAtLeast(0),
+                    o.optInt("scrollOffset", 0).coerceAtLeast(0), o.optNullableString("anchorPostId"), o.optLong("updatedAt", System.currentTimeMillis()))
+            }
+            progressDao.upsertAll(positions)
+        }
+        listOf(SECTION_REPLIES to HistoryType.REPLY, SECTION_NEW_THREADS to HistoryType.NEW_THREAD).forEach { (key, type) ->
+            root.optJSONArray(key)?.let { array ->
+                val records = (0 until array.length()).mapNotNull { index ->
+                    array.optJSONObject(index)?.let { decodePostAction(it, context, type) }
+                }
+                postActionHistoryDao.upsertAll(records)
+                if (type == HistoryType.REPLY) replyCount = records.size else newThreadCount = records.size
+            }
         }
 
         root.optJSONArray(SECTION_BOOKMARKS)?.let { arr ->
@@ -266,8 +320,9 @@ class BackupRepository @Inject constructor(
                     content = o.optString("content"),
                     updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
                 )
-                // 按 (type, targetId) 合并已有草稿的 id，避免重复导入产生重复行
-                val existing = draftDao.find(parsed.type, parsed.targetId)
+                // 回复草稿按串合并；发串草稿仅在内容和时间完全相同时去重。
+                val existing = if (parsed.type == DraftEntity.TYPE_REPLY) draftDao.find(parsed.type, parsed.targetId)
+                    else draftDao.findIdentical(parsed.type, parsed.targetId, parsed.title, parsed.name, parsed.content, parsed.updatedAt)
                 draftDao.upsert(if (existing != null) parsed.copy(id = existing.id) else parsed)
                 count++
             }
@@ -282,10 +337,13 @@ class BackupRepository @Inject constructor(
             if (o.has("lineHeightScale")) settingsDataStore.saveLineHeightScale(o.optDouble("lineHeightScale").toFloat())
             if (o.has("chineseFont")) settingsDataStore.saveChineseFont(o.optString("chineseFont"))
             if (o.has("englishFont")) settingsDataStore.saveEnglishFont(o.optString("englishFont"))
+            if (o.has("networkCompatibilityEnabled")) settingsDataStore.saveNetworkCompatibility(o.optBoolean("networkCompatibilityEnabled"))
             if (o.has("dataSaverEnabled")) settingsDataStore.saveDataSaverEnabled(o.optBoolean("dataSaverEnabled"))
             if (o.has("glassEffectEnabled")) settingsDataStore.saveGlassEffectEnabled(o.optBoolean("glassEffectEnabled"))
             if (o.has("quoteAutoDisplayEnabled")) settingsDataStore.saveQuoteAutoDisplay(o.optBoolean("quoteAutoDisplayEnabled"))
+            if (o.has("showShareCardBranding")) settingsDataStore.setShowShareCardBranding(o.optBoolean("showShareCardBranding", true))
             if (o.has("draftBoxEnabled")) settingsDataStore.saveDraftBoxEnabled(o.optBoolean("draftBoxEnabled"))
+            if (o.has("confirmCookieBeforeSend")) settingsDataStore.saveConfirmCookieBeforeSend(o.optBoolean("confirmCookieBeforeSend"))
             if (o.has("smartPreloadMode")) settingsDataStore.saveSmartPreloadMode(o.optString("smartPreloadMode"))
             if (o.has("preloadCount")) settingsDataStore.savePreloadCount(o.optInt("preloadCount"))
             if (o.has("subscriptionNotificationsEnabled")) settingsDataStore.saveSubscriptionNotifications(o.optBoolean("subscriptionNotificationsEnabled"))
@@ -306,6 +364,8 @@ class BackupRepository @Inject constructor(
         ImportResult(
             cookies = cookiesCount,
             history = historyCount,
+            replyHistory = replyCount,
+            newThreadHistory = newThreadCount,
             bookmarks = bookmarksCount,
             drafts = draftsCount,
             settings = settingsRestored,

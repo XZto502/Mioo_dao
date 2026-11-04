@@ -28,8 +28,8 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 25
-        versionName = "1.1.3"
+        versionCode = 26
+        versionName = "1.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "BETA", "false")
@@ -143,6 +143,7 @@ ksp {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
@@ -174,6 +175,8 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:4.11.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.11.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.11.0")
 
     // Moshi

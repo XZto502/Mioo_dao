@@ -1,0 +1,294 @@
+package com.mioo.dao.ui.components
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.mioo.dao.utils.DiceRulePreset
+import com.mioo.dao.utils.PostShareCardExporter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PostShareCardDialog(
+    initialPostId: String, posts: List<PostData>, threadId: String, title: String,
+    boardName: String, mainPost: PostData?,
+    resolveContexts: suspend (List<PostData>) -> Map<String, PostData>,
+    showBranding: Boolean, onBrandingChange: (Boolean) -> Unit,
+    dicePreset: DiceRulePreset?, onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val parent = rememberCompositionContext()
+    var selectedIds by rememberSaveable(initialPostId) { mutableStateOf(listOf(initialPostId)) }
+    var theme by remember { mutableStateOf(ShareCardTheme.PAPER) }
+    var hideCookie by rememberSaveable { mutableStateOf(false) }
+    var includeContext by rememberSaveable { mutableStateOf(true) }
+    var branding by rememberSaveable { mutableStateOf(showBranding) }
+    var showSelection by rememberSaveable { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+    val selectedPosts = remember(posts, selectedIds) { posts.filter { it.id in selectedIds } }
+    var contextPosts by remember { mutableStateOf(posts.associateBy { it.id }) }
+    var contextLoading by remember { mutableStateOf(true) }
+    LaunchedEffect(selectedPosts, includeContext) {
+        contextLoading = true
+        try {
+            contextPosts = if (includeContext) resolveContexts(selectedPosts) else emptyMap()
+        } finally { contextLoading = false }
+    }
+    val qr = remember(threadId) { PostShareCardExporter.qrCode(threadId) }
+
+    var preview by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var previewError by remember { mutableStateOf<String?>(null) }
+    var previewLoading by remember { mutableStateOf(true) }
+    var previewRetry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(previewRetry, selectedPosts, theme, hideCookie, includeContext, branding, contextPosts, boardName) {
+        previewLoading = true
+        previewError = null
+        try {
+            val images = PostShareCardExporter.loadImages(context, selectedPosts)
+            preview = PostShareCardExporter.render(context, parent) {
+                PostShareCardContent(selectedPosts, threadId, boardName, title, theme,
+                    hideCookie, includeContext, branding, contextPosts, mainPost, qr,
+                    dicePreset, Modifier.width(360.dp), imageBitmaps = images)
+            }
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (error: Exception) { previewError = error.message ?: "预览生成失败"
+        } catch (_: OutOfMemoryError) { previewError = "图片过大，请减少勾选楼层后重试"
+        } finally { previewLoading = false }
+    }
+
+    val reducedMotion = isReducedMotionEnabled()
+    val visibility = remember { MutableTransitionState(false) }
+    var closing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visibility.targetState = true }
+    LaunchedEffect(closing, visibility.isIdle, visibility.currentState) {
+        if (closing && visibility.isIdle && !visibility.currentState) onDismiss()
+    }
+    fun requestDismiss() {
+        if (!exporting && !closing) {
+            closing = true
+            visibility.targetState = false
+        }
+    }
+
+    fun export(save: Boolean) {
+        if (exporting || (includeContext && contextLoading) || selectedPosts.isEmpty()) return
+        exporting = true
+        // Capture one immutable export configuration; later UI changes cannot change the image midway.
+        val exportPosts = selectedPosts
+        val exportTheme = theme
+        val exportHide = hideCookie
+        val exportContext = includeContext
+        val exportBranding = branding
+        val exportContexts = contextPosts
+        scope.launch {
+            var bitmap: android.graphics.Bitmap? = null
+            var completed = false
+            try {
+                val images = PostShareCardExporter.loadImages(context, exportPosts)
+                bitmap = PostShareCardExporter.render(context, parent) {
+                    PostShareCardContent(exportPosts, threadId, boardName, title, exportTheme,
+                        exportHide, exportContext, exportBranding, exportContexts,
+                        mainPost, qr, dicePreset, Modifier.width(360.dp), imageBitmaps = images)
+                }
+                val savedUri = PostShareCardExporter.saveToAlbum(context, bitmap)
+                Toast.makeText(context, "已保存至 Pictures/MiooDao", Toast.LENGTH_LONG).show()
+                if (!save) PostShareCardExporter.shareImage(context, savedUri)
+                completed = true
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                Toast.makeText(context, error.message ?: "生成失败，请重试", Toast.LENGTH_LONG).show()
+            } catch (_: OutOfMemoryError) {
+                Toast.makeText(context, "图片过大，请减少勾选楼层后重试", Toast.LENGTH_LONG).show()
+            } finally {
+                bitmap?.recycle()
+                exporting = false
+            }
+            if (completed) requestDismiss()
+        }
+    }
+    var pendingSaveOnly by remember { mutableStateOf(true) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) export(pendingSaveOnly) else Toast.makeText(context, "保存和分享图片需要存储权限，仍可分享文本链接", Toast.LENGTH_LONG).show()
+    }
+    fun requestExport(saveOnly: Boolean) {
+        pendingSaveOnly = saveOnly
+        if (Build.VERSION.SDK_INT < 29 && ContextCompat.checkSelfPermission(context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            permission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else export(saveOnly)
+    }
+    BackHandler { requestDismiss() }
+    AnimatedVisibility(visibleState = visibility,
+        enter = if (reducedMotion) fadeIn(tween(0)) else fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 12 },
+        exit = if (reducedMotion) fadeOut(tween(0)) else fadeOut(tween(180)) + slideOutVertically(tween(220)) { it / 12 },
+        modifier = Modifier.fillMaxSize().zIndex(100f)) {
+    Box(Modifier.fillMaxSize().zIndex(100f).background(MaterialTheme.colorScheme.surface)
+        .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+            indication = null) { }) {
+        Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("生成分享卡片", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                val arrowRotation by animateFloatAsState(if (showSelection) 180f else 0f, label = "floorPickerArrow")
+                Surface(onClick = { showSelection = !showSelection }, enabled = !exporting,
+                    shape = CircleShape, color = if (showSelection) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+                    Row(Modifier.padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("选楼 ${selectedPosts.size}/8", fontSize = 12.5.sp, fontWeight = FontWeight.Medium,
+                            maxLines = 1, softWrap = false)
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null,
+                            modifier = Modifier.size(18.dp).rotate(arrowRotation))
+                    }
+                }
+                IconButton(onClick = { requestDismiss() }, enabled = !exporting && !closing) { Icon(Icons.Default.Close, "关闭") }
+            }
+            AnimatedVisibility(visible = showSelection,
+                enter = if (reducedMotion) fadeIn(tween(0)) else fadeIn(tween(180)) + expandVertically(tween(220)),
+                exit = if (reducedMotion) fadeOut(tween(0)) else fadeOut(tween(150)) + shrinkVertically(tween(200))) {
+                val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                Surface(modifier = Modifier.fillMaxWidth().heightIn(max = 176.dp).padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(16.dp), color = if (dark) Color(0xFF16181E) else Color(0xFFF0F2F6)) {
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(4.dp)) {
+                        posts.forEach { post ->
+                            val checked = post.id in selectedIds
+                            val enabled = !exporting && (checked && selectedIds.size > 1 || !checked && selectedIds.size < 8)
+                            val summary = remember(post.content) {
+                                post.content.replace(Regex("<[^>]*>"), " ").decodeHtmlEntities().replace(Regex("\\s+"), " ").trim()
+                            }
+                            Surface(onClick = { selectedIds = if (checked) selectedIds - post.id else selectedIds + post.id },
+                                enabled = enabled, shape = RoundedCornerShape(10.dp),
+                                color = if (checked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text("#${post.id} · ${if (hideCookie) "匿名岛民" else post.userId}",
+                                        fontSize = 11.5.sp, fontWeight = FontWeight.Medium,
+                                        color = if (checked) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
+                                        maxLines = 1, softWrap = false)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(summary, modifier = Modifier.weight(1f), fontSize = 13.sp,
+                                        fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.width(8.dp))
+                                    Icon(if (checked) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                                        contentDescription = if (checked) "已选" else "未选",
+                                        tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                        modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                preview?.let { bitmap ->
+                    Image(bitmap.asImageBitmap(), "分享卡片预览", contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(bitmap.width.toFloat() / bitmap.height))
+                }
+                if (previewLoading || includeContext && contextLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                previewError?.let { message ->
+                    TextButton(onClick = { previewRetry++ }) { Text("$message · 点击重试", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(Modifier.fillMaxWidth().height(40.dp), shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+                    Row(Modifier.fillMaxSize().padding(3.dp)) {
+                        ShareCardTheme.entries.forEach { option ->
+                            Surface(Modifier.weight(1f).fillMaxHeight(), shape = CircleShape,
+                                color = if (theme == option) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent) {
+                                Box(Modifier.fillMaxSize().clickable(enabled = !exporting, role = Role.RadioButton) { theme = option },
+                                    contentAlignment = Alignment.Center) {
+                                    Text(option.label, fontSize = 12.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ShareOption("隐藏饼干", hideCookie, !exporting, Modifier.weight(1f)) { hideCookie = it }
+                    ShareOption("品牌标识", branding, !exporting, Modifier.weight(1f)) {
+                        branding = it; onBrandingChange(it)
+                    }
+                    ShareOption("附带引用", includeContext, !exporting, Modifier.weight(1f)) { includeContext = it }
+                }
+            }
+            if (exporting) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { PostShareCardExporter.shareLink(context, threadId, title); requestDismiss() }, enabled = !exporting) { Text("仅分享链接") }
+                FilledTonalButton(onClick = { requestExport(true) }, enabled = !exporting && !previewLoading && previewError == null && (!includeContext || !contextLoading)) { Text("保存相册") }
+                Button(onClick = { requestExport(false) }, enabled = !exporting && !previewLoading && previewError == null && (!includeContext || !contextLoading)) { Text("分享卡片图") }
+            }
+        }
+    }
+    }
+}
+
+@Composable private fun ShareOption(
+    label: String, checked: Boolean, enabled: Boolean, modifier: Modifier, onChange: (Boolean) -> Unit
+) {
+    Surface(modifier.height(36.dp), shape = RoundedCornerShape(18.dp),
+        color = if (checked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
+        Row(Modifier.fillMaxSize().clickable(enabled = enabled, role = Role.Checkbox) { onChange(!checked) }
+            .padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center) {
+            if (checked) {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(3.dp))
+            }
+            Text(label, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}

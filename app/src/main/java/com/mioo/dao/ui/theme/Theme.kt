@@ -14,6 +14,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.material.ripple.LocalRippleTheme
+import androidx.compose.material.ripple.RippleAlpha
+import androidx.compose.material.ripple.RippleTheme
+import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -28,13 +33,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.mioo.dao.ui.theme.isActivitySystemBarsOverridden
 import kotlinx.coroutines.delay
 
+
+private object NoRippleTheme : RippleTheme {
+    @Composable override fun defaultColor(): Color = Color.Transparent
+    @Composable override fun rippleAlpha() = RippleAlpha(0f, 0f, 0f, 0f)
+}
 
 private val LightColorScheme = lightColorScheme(
     primary = LightPrimary,
@@ -86,6 +99,19 @@ private val DarkColorScheme = darkColorScheme(
     outline = DarkOutline
 )
 
+// Derive matching container roles for each fixed accent; leave Android dynamic palettes intact.
+private fun ColorScheme.withAccentContainers(dark: Boolean): ColorScheme {
+    val base = if (dark) Color(0xFF16181E) else Color.White
+    return copy(
+        secondary = primary,
+        onSecondary = onPrimary,
+        secondaryContainer = primary.copy(alpha = if (dark) 0.22f else 0.14f).compositeOver(base),
+        onSecondaryContainer = primary,
+        primaryContainer = primary.copy(alpha = if (dark) 0.28f else 0.18f).compositeOver(base),
+        onPrimaryContainer = primary
+    )
+}
+
 // 1. Custom Teal Color Scheme (PO Teal accent)
 private val LightTealColorScheme = lightColorScheme(
     primary = Color(0xFF00796B),
@@ -98,7 +124,7 @@ private val LightTealColorScheme = lightColorScheme(
     onSurface = LightOnSurface,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightOnSurfaceVariant
-)
+).withAccentContainers(false)
 
 private val DarkTealColorScheme = darkColorScheme(
     primary = Color(0xFF80CBC4),
@@ -111,7 +137,7 @@ private val DarkTealColorScheme = darkColorScheme(
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkOnSurfaceVariant
-)
+).withAccentContainers(true)
 
 // 2. Custom Pink Color Scheme (Sakura Pink accent)
 private val LightPinkColorScheme = lightColorScheme(
@@ -125,7 +151,7 @@ private val LightPinkColorScheme = lightColorScheme(
     onSurface = LightOnSurface,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightOnSurfaceVariant
-)
+).withAccentContainers(false)
 
 private val DarkPinkColorScheme = darkColorScheme(
     primary = Color(0xFFF48FB1),
@@ -138,7 +164,7 @@ private val DarkPinkColorScheme = darkColorScheme(
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkOnSurfaceVariant
-)
+).withAccentContainers(true)
 
 // 3. Custom Green Color Scheme (Forest Green accent)
 private val LightGreenColorScheme = lightColorScheme(
@@ -152,7 +178,7 @@ private val LightGreenColorScheme = lightColorScheme(
     onSurface = LightOnSurface,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightOnSurfaceVariant
-)
+).withAccentContainers(false)
 
 private val DarkGreenColorScheme = darkColorScheme(
     primary = Color(0xFFA5D6A7),
@@ -165,7 +191,7 @@ private val DarkGreenColorScheme = darkColorScheme(
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkOnSurfaceVariant
-)
+).withAccentContainers(true)
 
 // AMOLED 纯黑：深色下背景/表面纯黑省电，其余颜色跟随动态取色；
 // 浅色模式退回经典色板（选择入口也仅在深色模式下出现）
@@ -216,7 +242,7 @@ fun MiooDaoTheme(
                     background = Color(0xFF000000),
                     surface = Color(0xFF000000),
                     surfaceVariant = Color(0xFF1A1A1E)
-                )
+                ).withAccentContainers(dark = true)
             } else {
                 LightColorScheme
             }
@@ -282,6 +308,7 @@ fun MiooDaoTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
+            if (isActivitySystemBarsOverridden) return@SideEffect
             val window = (view.context as Activity).window
             val transparent = Color.Transparent.toArgb()
             window.statusBarColor = transparent
@@ -368,8 +395,10 @@ fun MiooDaoTheme(
                     .background(colorScheme.background)
             }
 
-            Box(modifier = rootModifier) {
-                content()
+            CompositionLocalProvider(LocalIndication provides rememberRipple(color = Color.Transparent), LocalRippleTheme provides NoRippleTheme) {
+                Box(modifier = rootModifier) {
+                    content()
+                }
             }
         }
     }

@@ -89,6 +89,10 @@ object MiooMotion {
     fun <T> tweenExit(durationMillis: Int = DurationExitFast): TweenSpec<T> =
         tween(durationMillis = durationMillis, easing = EaseOut)
 
+    /** Shared timing for the home dock and the thread reply bar. */
+    fun <T> bottomBarTween(): TweenSpec<T> =
+        tween(durationMillis = DurationMedium, easing = FastOutSlowInEasing)
+
     // --- Small chrome ---
 
     fun softEnter(reducedMotion: Boolean = false): EnterTransition {

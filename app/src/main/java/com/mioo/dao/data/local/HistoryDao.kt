@@ -10,6 +10,22 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface HistoryDao {
 
+    @Query("""SELECT h.*, COALESCE(p.page, 1) AS lastReadPage FROM history h
+        LEFT JOIN thread_progress p ON p.threadId = h.id
+        WHERE :query = '' OR h.content LIKE '%' || :query || '%' OR IFNULL(h.title, '') LIKE '%' || :query || '%'
+        OR h.id LIKE '%' || :query || '%' OR h.userid LIKE '%' || :query || '%'
+        OR h.forumName LIKE '%' || :query || '%' ORDER BY h.timestamp DESC""")
+    fun observeBrowsing(query: String = ""): Flow<List<BrowseHistoryRecord>>
+
+    @Query("DELETE FROM history WHERE id = :id")
+    suspend fun deleteHistoryById(id: String)
+
+    @Query("SELECT DISTINCT fid FROM history WHERE forumName = '' AND fid IS NOT NULL")
+    suspend fun missingForumIds(): List<String>
+
+    @Query("UPDATE history SET forumName = :name WHERE fid = :fid AND forumName = ''")
+    suspend fun fillForumName(fid: String, name: String)
+
     // --- History operations ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

@@ -2,14 +2,21 @@ package com.mioo.dao.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.foundation.background
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -31,20 +38,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.window.Dialog
-import coil.compose.AsyncImage
-import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.readingBodyStyle
+import com.mioo.dao.ui.theme.readingCardColor
+import com.mioo.dao.ui.theme.readingCardBorder
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
+
+private data class ReferenceContent(val id: String, val post: PostData?, val loading: Boolean, val error: String?)
 
 @Composable
 fun RefPopup(
@@ -69,7 +78,7 @@ fun RefPopup(
     Dialog(
         onDismissRequest = onDismiss,
         properties = immersiveDialogProperties(
-            usePlatformDefaultWidth = true,
+            usePlatformDefaultWidth = false,
             dismissOnBackPress = false,
             dismissOnClickOutside = true
         )
@@ -78,59 +87,49 @@ fun RefPopup(
         BackHandler {
             if (canGoBack) onBack() else onDismiss()
         }
+        BoxWithConstraints(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { onDismiss() }, contentAlignment = Alignment.Center) {
+        val maxCardHeight = minOf(LocalConfiguration.current.screenHeightDp.dp * 0.65f, 460.dp)
         AnimatedVisibility(
             visibleState = visibleState,
             enter = MiooMotion.modalEnter(reducedMotion),
             exit = MiooMotion.modalExit(reducedMotion)
         ) {
+        AnimatedContent(
+            targetState = ReferenceContent(postId, postData, isLoading, errorMessage),
+            contentKey = { it.id },
+            transitionSpec = { MiooMotion.modalEnter(reducedMotion) togetherWith MiooMotion.modalExit(reducedMotion) },
+            label = "referenceTransition"
+        ) { reference ->
+        val postData = reference.post
+        val isLoading = reference.loading
+        val errorMessage = reference.error
+        val contentScroll = remember(reference.id) { ScrollState(0) }
         Card(
             modifier = modifier
+                .clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) {}
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 24.dp),
-            shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 24.dp)
+                .heightIn(max = maxCardHeight),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) androidx.compose.ui.graphics.Color(0xFF16181E) else androidx.compose.ui.graphics.Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                // Header Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = ">>No.$postId",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (canGoBack) {
-                        TextButton(onClick = onBack) {
-                            Text("上一层")
-                        }
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close reference",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                // Keep the identity visible while the body and image scroll independently.
+                if (!isLoading && errorMessage == null && postData != null) {
+                    ReadingPostHeader(postData)
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(contentScroll)
+                ) {
                 // Content State Machine
                 when {
                     isLoading -> {
@@ -168,86 +167,6 @@ fun RefPopup(
                         }
                     }
                     postData != null -> {
-                        // User Info Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // User ID with dynamic coloring
-                            val idBgColor = when {
-                                postData.isAdmin -> DaoTheme.colors.admin.copy(alpha = 0.15f)
-                                postData.isPo -> DaoTheme.colors.po.copy(alpha = 0.15f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                            val idTextColor = when {
-                                postData.isAdmin -> DaoTheme.colors.admin
-                                postData.isPo -> DaoTheme.colors.po
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-
-                            Text(
-                                text = postData.userId,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
-                                ),
-                                color = idTextColor,
-                                modifier = Modifier
-                                    .background(idBgColor, shape = RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-
-                            // PO tag
-                            if (postData.isPo) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "PO",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(DaoTheme.colors.po, shape = RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            // Admin tag
-                            if (postData.isAdmin) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "ADMIN",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(DaoTheme.colors.admin, shape = RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            // Sage tag
-                            if (postData.isSage) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "SAGE",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                    modifier = Modifier
-                                        .background(DaoTheme.colors.sage, shape = RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.weight(1f))
-
-                            // Timestamp
-                            Text(
-                                text = postData.createdAt,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
                         // Title if exists
                         if (!postData.title.isNullOrBlank()) {
                             Text(
@@ -261,7 +180,9 @@ fun RefPopup(
                         HtmlContent(
                             html = postData.content,
                             onQuoteClick = onQuoteClick,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = readingBodyStyle(),
+                            compactBlankLines = true,
+                            trimOuterWhitespace = true,
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -273,35 +194,26 @@ fun RefPopup(
                                 contentDescription = "Attached Thumbnail",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(100.dp)
-                                    .clip(MaterialTheme.shapes.medium)
+                                    .size(120.dp)
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable { onImageClick(imageUrl) }
                             )
                         }
-
-                        // View Original Thread right aligned text
-                        val targetThreadId = postData.resto
-                        val isCurrentThread = currentThreadId != null && targetThreadId == currentThreadId
-                        val hasValidThread = !targetThreadId.isNullOrBlank() && targetThreadId != "0" && targetThreadId != "null"
-                        if (hasValidThread && !isCurrentThread) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onViewThreadClick(targetThreadId!!) }
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                Text(
-                                    text = "跳转原串",
-                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                    }
+                }
+                }
+                if (!isLoading && errorMessage == null && postData != null) {
+                    val originalThreadId = postData.resto?.takeIf { it.isNotBlank() && it != "0" && it != "null" }
+                        ?: postData.id.takeIf { it.isNotBlank() }
+                    if (originalThreadId != null && originalThreadId != currentThreadId) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { onViewThreadClick(originalThreadId) }) { Text("跳转原串") }
                         }
                     }
                 }
             }
+        }
+        }
         }
         }
     }

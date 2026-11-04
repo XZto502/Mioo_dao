@@ -20,7 +20,9 @@ data class PostData(
     val isPo: Boolean = false,
     val isAdmin: Boolean = false,
     val isSage: Boolean = false,
-    val resto: String? = null
+    val resto: String? = null,
+    /** 仅用于串内引用预留布局，不代表实际帖子内容，不写入缓存或分享图。 */
+    val isQuotePlaceholder: Boolean = false
 )
 
 /**
@@ -37,6 +39,9 @@ data class ReplyDisplayItem(
     val rawContent: String
 )
 
+/** Preserve the server's complete clock, including seconds, throughout display/export. */
+fun formatPostTime(raw: String): String = raw.trim()
+
 /**
  * Convert a Thread data model to a display-ready PostData.
  */
@@ -46,7 +51,7 @@ fun Thread.toPostData(): PostData {
         title = this.title.effectiveTitle(),
         userName = this.name ?: "Anonymous",
         userId = this.userHash,
-        createdAt = this.now,
+        createdAt = formatPostTime(this.now),
         content = this.content,
         imageUrl = IslandImage.url(this.imageUrl),
         isPo = false,
@@ -65,7 +70,7 @@ fun Reply.toPostData(isPo: Boolean): PostData {
         title = this.title.effectiveTitle(),
         userName = this.name ?: "Anonymous",
         userId = this.userHash,
-        createdAt = this.now,
+        createdAt = formatPostTime(this.now),
         content = this.content,
         imageUrl = IslandImage.url(this.imageUrl),
         isPo = isPo,
@@ -77,3 +82,8 @@ fun Reply.toPostData(isPo: Boolean): PostData {
 
 @Immutable
 data class StablePostList(val list: List<PostData>)
+
+internal fun pendingInlineQuote(id: String): PostData = PostData(
+    id = id, userId = "", createdAt = "", content = "点击查看引用内容",
+    isQuotePlaceholder = true
+)
