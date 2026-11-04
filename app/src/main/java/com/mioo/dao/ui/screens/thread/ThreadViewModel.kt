@@ -399,6 +399,17 @@ class ThreadViewModel @Inject constructor(
     fun jumpToPage(page: Int) {
         val total = totalPages
         if (page < 1 || page > total) return
+        val state = _listState.value
+        if (!state.isLoading) {
+            val index = state.displayItems.indexOfFirst { replyPages[it.idStr] == page }
+            if (page == 1 && state.startPage == 1 || index >= 0) {
+                resumePostId = null
+                resumeOffset = 0
+                stickyResumeIndex = null
+                _listState.update { it.copy(pendingScrollIndex = if (page == 1 && state.startPage == 1) 0 else index + 1, pendingScrollOffset = 0) }
+                return
+            }
+        }
         // Do not bail on isLoading — resume must cancel in-flight page-1 SWR via loadGeneration
 
         currentPage = page
@@ -539,9 +550,9 @@ class ThreadViewModel @Inject constructor(
                                     .filter { it in 1..totalPagesVal }
                                     .map { neighbor -> async {
                                         val result = if (_listState.value.showPoOnly) {
-                                            threadRepository.getPoDetail(threadId, neighbor).last()
+                                            threadRepository.getPoDetail(threadId, neighbor).first()
                                         } else {
-                                            threadRepository.getThreadDetail(threadId, neighbor).last()
+                                            threadRepository.getThreadDetail(threadId, neighbor).first()
                                         }
                                         neighbor to (result as? XdResponse.Success)?.data
                                     } }.awaitAll().forEach { (neighbor, data) ->
