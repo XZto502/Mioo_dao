@@ -38,6 +38,8 @@ class SettingsDataStore(private val context: Context) {
         val KEY_SELECTED_COOKIE_INDEX = intPreferencesKey("selected_cookie_index")
         val KEY_AUTH_COOKIE = stringPreferencesKey("auth_cookie")
         val KEY_FEED_FOLDERS = stringPreferencesKey("feed_folders")
+        val KEY_LAST_FEED_FOLDER = stringPreferencesKey("last_feed_folder")
+        val KEY_LAST_HISTORY_TYPE = stringPreferencesKey("last_history_type")
         val KEY_BLOCKED_THREADS = stringPreferencesKey("blocked_threads")
         val KEY_BLOCKED_USERS = stringPreferencesKey("blocked_users")
         val KEY_PINNED_FORUMS = stringPreferencesKey("pinned_forums")
@@ -64,6 +66,17 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NETWORK_COMPATIBILITY = booleanPreferencesKey("network_compatibility")
         val KEY_DATA_SAVER_ENABLED = booleanPreferencesKey("data_saver_enabled")
         val KEY_KAOMOJI_ORDER = stringPreferencesKey("kaomoji_order")
+    }
+
+    val lastFeedFolderFlow: Flow<String> = context.dataStore.data.map { it[KEY_LAST_FEED_FOLDER] ?: "" }
+    val lastHistoryTypeFlow: Flow<String> = context.dataStore.data.map { it[KEY_LAST_HISTORY_TYPE] ?: "BROWSE" }
+
+    suspend fun saveLastFeedFolder(uuid: String?) {
+        context.dataStore.edit { it[KEY_LAST_FEED_FOLDER] = uuid.orEmpty() }
+    }
+
+    suspend fun saveLastHistoryType(type: String) {
+        context.dataStore.edit { it[KEY_LAST_HISTORY_TYPE] = type }
     }
 
     val forumPreviewLinesFlow: Flow<Int> = context.dataStore.data
