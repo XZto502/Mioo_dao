@@ -212,6 +212,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -318,19 +319,27 @@ fun ThreadScreen(
     // A short last page (or an empty page) cannot move at all. Observe the user's
     // drag before consumption, rather than requiring a changed list position.
     var creatorButtonVisible by remember(viewModel) { mutableStateOf(true) }
-    val creatorScrollDensity = LocalDensity.current
-    val hideCreatorDistance = with(creatorScrollDensity) { 36.dp.toPx() }
-    val showCreatorDistance = with(creatorScrollDensity) { 16.dp.toPx() }
     val creatorSink by animateFloatAsState(
         targetValue = if (creatorButtonVisible) 0f else 1f,
         animationSpec = tween(if (reducedMotion) 0 else 340),
         label = "写作按钮"
     )
-    val edgePaging = remember(listState, viewModel, hideCreatorDistance, showCreatorDistance) {
+    LaunchedEffect(listState, creatorButtonVisible) {
+        if (!creatorButtonVisible) {
+            snapshotFlow { listState.isScrollInProgress }.collectLatest { scrolling ->
+                if (!scrolling) {
+                    delay(2500)
+                    creatorButtonVisible = true
+                }
+            }
+        }
+    }
+    val edgePaging = remember(listState, viewModel) {
         object : NestedScrollConnection {
-            private var directionDistance = 0f
-
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.Drag && available.y != 0f) {
+                    creatorButtonVisible = false
+                }
                 val state = viewModel.listUiState.value
                 if (shouldLoadPreviousAtEdge(
                         available.y, source == NestedScrollSource.Drag,
@@ -340,24 +349,6 @@ fun ThreadScreen(
                     saveProgressNow()
                     viewModel.allowPreviousLoad()
                     viewModel.loadPreviousPage()
-                }
-                if (source == NestedScrollSource.Drag && available.y > 0f && !listState.canScrollBackward) {
-                    creatorButtonVisible = true
-                    directionDistance = 0f
-                }
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (source != NestedScrollSource.Drag || consumed.y == 0f) return Offset.Zero
-                if (directionDistance * consumed.y < 0f) directionDistance = 0f
-                directionDistance += consumed.y
-                if (directionDistance <= -hideCreatorDistance) {
-                    creatorButtonVisible = false
-                    directionDistance = 0f
-                } else if (directionDistance >= showCreatorDistance) {
-                    creatorButtonVisible = true
-                    directionDistance = 0f
                 }
                 return Offset.Zero
             }
@@ -937,10 +928,7 @@ fun ThreadScreen(
                         .padding(end = 18.dp, bottom = 22.dp)
                         .graphicsLayer {
                             val fraction = creatorSink.coerceIn(0f, 1f)
-                            scaleX = 1f - 0.5f * fraction
-                            scaleY = 1f - 0.5f * fraction
-                            alpha = 1f - fraction
-                            translationY = 24.dp.toPx() * fraction
+                            translationY = 120.dp.toPx() * fraction
                         },
                     enabled = creatorButtonVisible,
                     onOpen = { creatorOpen = true }
