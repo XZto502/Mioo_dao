@@ -1,7 +1,8 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -730,8 +731,9 @@ fun ThreadScreen(
                         start = 12.dp,
                         end = 12.dp,
                         top = paddingValues.calculateTopPadding() + 12.dp,
-                        bottom = paddingValues.calculateBottomPadding() +
-                            if (threadSettings.enableCreatorMode) 88.dp else 16.dp
+                        bottom = if (threadSettings.enableCreatorMode)
+                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 28.dp
+                        else paddingValues.calculateBottomPadding() + 16.dp
                     )
                 ) {
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
@@ -902,8 +904,6 @@ fun ThreadScreen(
             )
             if (threadSettings.enableCreatorMode && !creatorOpen) {
                 ReplyCreatorButton(
-                    viewModel,
-                    replyEditor,
                     Modifier.align(Alignment.BottomEnd).zIndex(1f).navigationBarsPadding()
                         .padding(end = 18.dp, bottom = 22.dp),
                     onOpen = { creatorOpen = true }
@@ -2024,35 +2024,19 @@ private fun ReplyInputBar(
 
 @Composable
 private fun ReplyCreatorButton(
-    viewModel: ThreadViewModel,
-    editor: ReplyEditorState,
     modifier: Modifier,
     onOpen: () -> Unit
 ) {
-    val state by viewModel.composerState.collectAsState()
-    val hasDraft = state.replyText.isNotBlank() || state.quotedPostNo != null ||
-        state.title.isNotBlank() || state.name.isNotBlank() || editor.attachment.value != null
     Surface(
         onClick = onOpen,
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.size(56.dp),
+        shape = CircleShape,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shadowElevation = 3.dp
     ) {
-        Row(
-            modifier = Modifier.animateContentSize().then(
-                if (hasDraft) Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
-                else Modifier.size(56.dp)
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
+        Box(contentAlignment = Alignment.Center) {
             Icon(Icons.Outlined.Edit, contentDescription = "写回复", modifier = Modifier.size(24.dp))
-            if (hasDraft) {
-                Spacer(Modifier.width(8.dp))
-                Text("继续写作", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
         }
     }
 }

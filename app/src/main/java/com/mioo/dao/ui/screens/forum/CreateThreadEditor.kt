@@ -257,10 +257,10 @@ fun CreateThreadEditor(
                                 if (nameExpanded) { focus.clearFocus(); keyboard?.hide() }
                                 nameExpanded = !nameExpanded
                             }, shape = CircleShape,
-                            color = scheme.onSurface.copy(alpha = 0.05f), modifier = Modifier.widthIn(max = 140.dp)
+                            color = if (isDark) Color(0xFF22252D) else Color(0xFFF2F4F8), modifier = Modifier.widthIn(max = 140.dp)
                         ) {
-                            Text("署名: ${name.ifBlank { "无名氏" }}", Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                fontSize = 11.5.sp, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(name.ifBlank { "无名氏" }, Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     AnimatedVisibility(nameExpanded) {

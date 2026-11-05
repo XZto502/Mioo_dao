@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -353,9 +354,9 @@ internal fun ReplyInputArea(
                 color = if (fullScreen) paper else Color.Transparent,
                 shape = RoundedCornerShape(20.dp)
             ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = if (fullScreen) 0.dp else 12.dp, vertical = 8.dp)) {
                 if (fullScreen) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         BasicTextField(title, { onIdentityChange(it, name) }, Modifier.weight(1f),
                             enabled = !isReplying, singleLine = true,
                             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
@@ -367,14 +368,15 @@ internal fun ReplyInputArea(
                                 }
                             })
                         Surface(onClick = { showName = !showName }, shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            color = if (dark) Color(0xFF22252D) else Color(0xFFF2F4F8),
                             modifier = Modifier.weight(0.65f, fill = false)) {
-                            Text("署名：${name.ifBlank { "无名氏" }}", Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                                maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                            Text(name.ifBlank { "无名氏" }, Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     AnimatedVisibility(showName) {
-                        BasicTextField(name, { onIdentityChange(title, it) }, Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        BasicTextField(name, { onIdentityChange(title, it) }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                             enabled = !isReplying, singleLine = true,
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -385,11 +387,12 @@ internal fun ReplyInputArea(
                                 }
                             })
                     }
-                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                 }
                 val reducedMotion = isReducedMotionEnabled()
                 AnimatedVisibility(
                     visible = quotedPostNo != null,
+                    modifier = if (fullScreen) Modifier.padding(horizontal = 12.dp) else Modifier,
                     enter = MiooMotion.softExpandEnter(reducedMotion),
                     exit = MiooMotion.softExpandExit(reducedMotion)
                 ) {
@@ -426,6 +429,7 @@ internal fun ReplyInputArea(
                 // Image Preview (if attached)
                 AnimatedVisibility(
                     visible = attachedImageUri != null,
+                    modifier = if (fullScreen) Modifier.padding(horizontal = 12.dp) else Modifier,
                     enter = MiooMotion.softExpandEnter(reducedMotion),
                     exit = MiooMotion.softExpandExit(reducedMotion)
                 ) {
@@ -469,7 +473,7 @@ internal fun ReplyInputArea(
 
                 if (fullScreen) {
                     BasicTextField(textFieldValue, { applyEdit(it) },
-                        Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp)
+                        Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp, vertical = 8.dp)
                             .onFocusChanged { if (it.isFocused) closeToolPanels() },
                         enabled = !isReplying,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 25.sp,
@@ -481,7 +485,8 @@ internal fun ReplyInputArea(
                                 field()
                             }
                         })
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LazyRow(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         item {
                             IconButton({ restoreEdit(true) }, Modifier.size(32.dp), enabled = !isReplying && editorState.undo.isNotEmpty()) {
                                 Icon(Icons.Filled.Undo, "撤销", Modifier.size(18.dp))
@@ -497,10 +502,10 @@ internal fun ReplyInputArea(
                             Triple("——", "—", "—"), Triple("……", "…", "…"), Triple("防剧透", "[h]", "[/h]")
                         )) { (label, open, close) ->
                             Surface(onClick = { insertPair(open, close) }, enabled = !isReplying,
-                                shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer,
-                                modifier = Modifier.height(32.dp)) {
-                                Box(Modifier.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
-                                    Text(label, fontSize = 12.sp)
+                                shape = CircleShape, color = if (dark) Color(0xFF22252D) else Color(0xFFF2F4F8),
+                                modifier = Modifier.height(30.dp)) {
+                                Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
+                                    Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
