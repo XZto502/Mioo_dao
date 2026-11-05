@@ -317,8 +317,19 @@ fun ThreadScreen(
     BackHandler { leaveThread() }
     // A short last page (or an empty page) cannot move at all. Observe the user's
     // drag before consumption, rather than requiring a changed list position.
-    val edgePaging = remember(listState, viewModel) {
+    var creatorButtonVisible by remember(viewModel) { mutableStateOf(true) }
+    val creatorScrollDensity = LocalDensity.current
+    val hideCreatorDistance = with(creatorScrollDensity) { 36.dp.toPx() }
+    val showCreatorDistance = with(creatorScrollDensity) { 16.dp.toPx() }
+    val creatorSink by animateFloatAsState(
+        targetValue = if (creatorButtonVisible) 0f else 1f,
+        animationSpec = tween(if (reducedMotion) 0 else 340),
+        label = "写作按钮"
+    )
+    val edgePaging = remember(listState, viewModel, hideCreatorDistance, showCreatorDistance) {
         object : NestedScrollConnection {
+            private var directionDistance = 0f
+
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val state = viewModel.listUiState.value
                 if (shouldLoadPreviousAtEdge(
@@ -329,6 +340,24 @@ fun ThreadScreen(
                     saveProgressNow()
                     viewModel.allowPreviousLoad()
                     viewModel.loadPreviousPage()
+                }
+                if (source == NestedScrollSource.Drag && available.y > 0f && !listState.canScrollBackward) {
+                    creatorButtonVisible = true
+                    directionDistance = 0f
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.Drag || consumed.y == 0f) return Offset.Zero
+                if (directionDistance * consumed.y < 0f) directionDistance = 0f
+                directionDistance += consumed.y
+                if (directionDistance <= -hideCreatorDistance) {
+                    creatorButtonVisible = false
+                    directionDistance = 0f
+                } else if (directionDistance >= showCreatorDistance) {
+                    creatorButtonVisible = true
+                    directionDistance = 0f
                 }
                 return Offset.Zero
             }
@@ -905,7 +934,15 @@ fun ThreadScreen(
             if (threadSettings.enableCreatorMode && !creatorOpen) {
                 ReplyCreatorButton(
                     Modifier.align(Alignment.BottomEnd).zIndex(1f).navigationBarsPadding()
-                        .padding(end = 18.dp, bottom = 22.dp),
+                        .padding(end = 18.dp, bottom = 22.dp)
+                        .graphicsLayer {
+                            val fraction = creatorSink.coerceIn(0f, 1f)
+                            scaleX = 1f - 0.5f * fraction
+                            scaleY = 1f - 0.5f * fraction
+                            alpha = 1f - fraction
+                            translationY = 24.dp.toPx() * fraction
+                        },
+                    enabled = creatorButtonVisible,
                     onOpen = { creatorOpen = true }
                 )
             }
@@ -2025,15 +2062,17 @@ private fun ReplyInputBar(
 @Composable
 private fun ReplyCreatorButton(
     modifier: Modifier,
+    enabled: Boolean,
     onOpen: () -> Unit
 ) {
     Surface(
         onClick = onOpen,
+        enabled = enabled,
         modifier = modifier.size(56.dp),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shadowElevation = 3.dp
+        shadowElevation = 0.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(Icons.Outlined.Edit, contentDescription = "写回复", modifier = Modifier.size(24.dp))

@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -369,7 +370,7 @@ internal fun ReplyInputArea(
                             })
                         Surface(onClick = { showName = !showName }, shape = CircleShape,
                             color = if (dark) Color(0xFF22252D) else Color(0xFFF2F4F8),
-                            modifier = Modifier.weight(0.65f, fill = false)) {
+                            modifier = Modifier.widthIn(max = 140.dp)) {
                             Text(name.ifBlank { "无名氏" }, Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -486,20 +487,21 @@ internal fun ReplyInputArea(
                             }
                         })
                     LazyRow(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
                         item {
-                            IconButton({ restoreEdit(true) }, Modifier.size(32.dp), enabled = !isReplying && editorState.undo.isNotEmpty()) {
+                            IconButton({ restoreEdit(true) }, Modifier.size(40.dp), enabled = !isReplying && editorState.undo.isNotEmpty()) {
                                 Icon(Icons.Filled.Undo, "撤销", Modifier.size(18.dp))
                             }
                         }
                         item {
-                            IconButton({ restoreEdit(false) }, Modifier.size(32.dp), enabled = !isReplying && editorState.redo.isNotEmpty()) {
+                            IconButton({ restoreEdit(false) }, Modifier.size(40.dp), enabled = !isReplying && editorState.redo.isNotEmpty()) {
                                 Icon(Icons.Filled.Redo, "重做", Modifier.size(18.dp))
                             }
                         }
                         items(listOf(
                             Triple("「」", "「", "」"), Triple("『』", "『", "』"), Triple("【】", "【", "】"),
-                            Triple("——", "—", "—"), Triple("……", "…", "…"), Triple("防剧透", "[h]", "[/h]")
+                            Triple("——", "——", ""), Triple("……", "……", ""), Triple("防剧透", "[h]", "[/h]")
                         )) { (label, open, close) ->
                             Surface(onClick = { insertPair(open, close) }, enabled = !isReplying,
                                 shape = CircleShape, color = if (dark) Color(0xFF22252D) else Color(0xFFF2F4F8),
