@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.1.2",
-  "name": "v1.1.2",
-  "body": "专注修 bug 的一版：\n\n- 搜索引擎芯片只负责切换，不再误跳浏览器；全站搜索入口唯一化\n- 订阅夹大修：续读的串正确写入浏览历史、长按才可取消订阅（不再误触）、下滑加载全部订阅串（不止 10 条）、删除失败有提示\n- 回复/发串成功后自动收起键盘；附件图片可点开全屏预览\n\n从 v1.1.1 直接升级，数据无需迁移",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.2",
+  "tag_name": "v1.1.4",
+  "name": "v1.1.4",
+  "body": "喵岛 v1.1.4 带来历史记录、草稿与阅读体验升级：\n\n- 主页新增历史 Tab，整合浏览、发言与发串历史，支持搜索、删除和备份恢复。\n- 收藏夹支持左右滑动切换；收藏与历史记住上次选择的分类，重启应用后仍可恢复。\n- 重构新串编辑与草稿选择，支持同一板块保存多个草稿，并按当前板块筛选。\n- 新增发送前确认饼干的可选设置，支持编辑云端收藏夹名称和订阅 UUID。\n- 支持防剧透语法及原位揭开，优化引用阅读弹窗、长内容滚动、图片查看与自由复制。\n- 统一主页及设置等页面的 Material Design 3 配色、卡片、字体和过渡动画，改进分享卡片和选楼体验。\n- 修复分页、阅读位置恢复、缓存刷新、回复数更新及引用摘要空行等问题。\n- 优化底部导航切换、发帖和详情页进退场体验。\n\n**Full Changelog**: https://github.com/XZto502/Mioo_dao/compare/v1.1.3...v1.1.4",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.4",
   "assets": [
     {
       "name": "app-release.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.2/app-release.apk",
-      "size": 5069473
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.4/app-release.apk",
+      "size": 5298705
     }
   ]
 }

@@ -367,6 +367,17 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    fun updateFeedFolder(oldUuid: String, folder: com.mioo.dao.data.model.FeedFolder) {
+        repositoryScope.launch {
+            val current = settingsDataStore.feedFoldersFlow.first().toMutableList()
+            val index = current.indexOfFirst { it.uuid == oldUuid }
+            if (index >= 0 && current.none { it.uuid == folder.uuid && it.uuid != oldUuid }) {
+                current[index] = folder
+                settingsDataStore.saveFeedFolders(current)
+            }
+        }
+    }
+
     fun removeFeedFolder(uuid: String) {
         repositoryScope.launch {
             val currentList = settings.value.feedFolders.toMutableList()

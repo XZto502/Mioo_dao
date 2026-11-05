@@ -1116,7 +1116,7 @@ class ThreadRepositoryImpl @Inject constructor(
     override suspend fun refreshCloudFeedReplyCount(tid: String): Int? =
         withContext(Dispatchers.IO) {
             try {
-                val count = fetchThread(tid, 1).replyCount?.takeIf { it > 0 } ?: return@withContext null
+                val count = fetchThread(tid, 1).replyCount ?: return@withContext null
                 cloudFeedDao.updateReplyCount(tid, count)
                 count
             } catch (_: Exception) {

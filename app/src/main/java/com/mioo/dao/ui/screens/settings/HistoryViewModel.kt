@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.local.HistoryType
+import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.data.repository.ForumRepository
 import com.mioo.dao.data.model.XdResponse
@@ -28,8 +29,16 @@ data class HistoryItem(
 class HistoryViewModel @Inject constructor(
     private val repository: ThreadRepository,
     private val forums: ForumRepository,
-    private val savedState: SavedStateHandle
+    private val savedState: SavedStateHandle,
+    private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
+    val initialType = settingsDataStore.lastHistoryTypeFlow.map { value ->
+        HistoryType.values().firstOrNull { it.name == value } ?: HistoryType.BROWSE
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    fun saveSelectedType(type: HistoryType) {
+        viewModelScope.launch { settingsDataStore.saveLastHistoryType(type.name) }
+    }
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
     private val opening = mutableSetOf<String>()
     val messages = _messages.asSharedFlow()

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.local.BookmarkEntity
+import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.model.FeedFolder
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -48,6 +50,7 @@ data class FeedUiState(
     val feedFolders: List<FeedFolder> = emptyList(),
     val isLoading: Boolean = false,
     val selectedFolderId: String? = null,
+    val selectionReady: Boolean = false,
     /** 正在重新离线的串号（更新按钮转圈）。 */
     val offlineUpdatingIds: Set<String> = emptySet()
 )
@@ -55,7 +58,8 @@ data class FeedUiState(
 @HiltViewModel
 class FeedViewModel @Inject constructor(
     private val threadRepository: ThreadRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FeedUiState())
@@ -70,6 +74,14 @@ class FeedViewModel @Inject constructor(
     private var remoteEndReached = false
 
     init {
+        viewModelScope.launch {
+            val saved = settingsDataStore.lastFeedFolderFlow.first().ifBlank { null }
+            val folders = settingsDataStore.feedFoldersFlow.first()
+            val selected = saved?.takeIf { id -> folders.any { it.uuid == id } }
+            _uiState.update { it.copy(feedFolders = folders, selectedFolderId = selected, selectionReady = true) }
+            if (selected != null) loadRemoteFeed(selected)
+            if (saved != selected) settingsDataStore.saveLastFeedFolder(selected)
+        }
         // 「已离线」标签：离线串列表 + 尚未离线的存量收藏（后台巡检会逐串补齐）
         viewModelScope.launch {
             combine(
@@ -94,11 +106,14 @@ class FeedViewModel @Inject constructor(
 
         // Only folders — avoid full settings recompose noise
         viewModelScope.launch {
-            settingsRepository.settings
-                .map { it.feedFolders }
+            settingsDataStore.feedFoldersFlow
                 .distinctUntilChanged()
                 .collect { folders ->
                     _uiState.update { it.copy(feedFolders = folders) }
+                    val state = _uiState.value
+                    if (state.selectionReady && state.selectedFolderId != null && folders.none { it.uuid == state.selectedFolderId }) {
+                        selectFolder(null)
+                    }
                 }
         }
 
@@ -119,6 +134,7 @@ class FeedViewModel @Inject constructor(
     private var replyCountJob: kotlinx.coroutines.Job? = null
 
     fun selectFolder(uuid: String?) {
+        viewModelScope.launch { settingsDataStore.saveLastFeedFolder(uuid) }
         remoteFeedJob?.cancel()
         replyCountJob?.cancel()
         _uiState.update {
@@ -172,14 +188,13 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    /** feed 接口不带回复数：对已知计数缺失的串逐个补抓第 1 页并缓存，250ms 限速。 */
+    /** feed 接口不带回复数：逐个刷新串的第 1 页并缓存回复数，250ms 限速。 */
     private fun enrichRemoteReplyCounts(uuid: String, threads: List<Thread>) {
         replyCountJob?.cancel()
         replyCountJob = viewModelScope.launch {
             var consecutiveFailures = 0
             for (thread in threads.take(REPLY_COUNT_ENRICH_LIMIT)) {
                 if (_uiState.value.selectedFolderId != uuid) return@launch
-                if ((_uiState.value.remoteReplyCounts[thread.idStr] ?: 0) > 0) continue
                 val count = threadRepository.refreshCloudFeedReplyCount(thread.idStr)
                 if (count != null) {
                     consecutiveFailures = 0
@@ -205,7 +220,7 @@ class FeedViewModel @Inject constructor(
     ): List<ThreadListItem> {
         val withCounts = threads.map { thread ->
             counts[thread.idStr]
-                ?.takeIf { it > (thread.replyCount ?: 0) }
+                ?.takeIf { it >= 0 }
                 ?.let { thread.copy(replyCount = it) }
                 ?: thread
         }

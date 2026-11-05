@@ -87,6 +87,7 @@ fun FeedScreen(
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
     val uiState by viewModel.uiState.collectAsState()
+    if (!uiState.selectionReady) return
     val forumViewModel: ForumViewModel = hiltViewModel()
     val forumState by forumViewModel.uiState.collectAsState()
     LaunchedEffect(forumState.forumGroups.isEmpty()) {

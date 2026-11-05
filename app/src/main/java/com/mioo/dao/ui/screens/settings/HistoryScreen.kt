@@ -73,7 +73,12 @@ fun HistoryScreen(
 ) {
     val reducedMotion = isReducedMotionEnabled()
     val types = remember { HistoryType.values() }
-    val pager = rememberPagerState { types.size }
+    val initialType by viewModel.initialType.collectAsState()
+    val restoredType = initialType ?: return
+    val pager = rememberPagerState(initialPage = types.indexOf(restoredType).coerceAtLeast(0)) { types.size }
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.collect { viewModel.saveSelectedType(types[it]) }
+    }
     val type = types[pager.targetPage]
     val query by viewModel.query(type).collectAsState()
     var searching by rememberSaveable { mutableStateOf(false) }

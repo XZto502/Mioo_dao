@@ -405,6 +405,9 @@ private fun AnnotatedString.Builder.appendQuote(
 
 /** Cache key includes night mode so lifted font colors do not stick across theme changes.
  *  骰点规则参与键：同一楼在不同规则下胶囊配色不同。 */
+private fun Char.isQuoteEdgeWhitespace(): Boolean =
+    isWhitespace() || this == '\u200B' || this == '\uFEFF'
+
 private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val darkTheme: Boolean, val dicePreset: String)
 
 /**
@@ -488,7 +491,8 @@ fun HtmlContent(
      * Use for dense forum/timeline lists to cut cold-start scroll work.
      */
     enableGestures: Boolean = true,
-    compactBlankLines: Boolean = false
+    compactBlankLines: Boolean = false,
+    trimOuterWhitespace: Boolean = false
 ) {
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     val quoteColorArgb = quoteLinkColor.toArgb()
@@ -498,9 +502,13 @@ fun HtmlContent(
         HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme, dicePreset)
     }
     val paragraphScale = MaterialTheme.typography.bodyMedium.lineHeight.value / 20f
-    val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines) {
+    val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines, trimOuterWhitespace) {
+        val source = if (trimOuterWhitespace) {
+            val value = parsed.annotated.text
+            val start = value.indexOfFirst { !it.isQuoteEdgeWhitespace() }
+            if (start < 0) AnnotatedString("") else parsed.annotated.subSequence(start, value.indexOfLast { !it.isQuoteEdgeWhitespace() } + 1)
+        } else parsed.annotated
         if (compactBlankLines) {
-            val source = parsed.annotated
             val breaks = Regex("(\\r?\\n\\s*){2,}")
             buildAnnotatedString {
                 var start = 0
@@ -511,7 +519,7 @@ fun HtmlContent(
                 }
                 append(source.subSequence(start, source.length))
             }
-        } else parsed.annotated.withReadingParagraphGaps(paragraphScale)
+        } else source.withReadingParagraphGaps(paragraphScale)
     }
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
@@ -601,9 +609,17 @@ fun HtmlContent(
                 onTap = { pos ->
                     layoutResult?.let { layout ->
                         val offset = layout.getOffsetForPosition(pos)
-                        val spoilerAnnotation = displayText.getStringAnnotations(
-                            tag = "SPOILER", start = offset, end = offset
-                        ).firstOrNull()
+                        val visibleEnd = if (layout.lineCount > 0) layout.getLineEnd(layout.lineCount - 1) else 0
+                        val hitSlop = 8.dp.toPx()
+                        val spoilerAnnotation = spoilerRanges.firstOrNull { range ->
+                            val start = range.start.coerceAtLeast(0)
+                            val end = minOf(range.end, visibleEnd, layout.layoutInput.text.length)
+                            (start until end).any { index ->
+                                val bounds = layout.getBoundingBox(index)
+                                pos.x >= bounds.left - hitSlop && pos.x <= bounds.right + hitSlop &&
+                                    pos.y >= bounds.top - hitSlop && pos.y <= bounds.bottom + hitSlop
+                            }
+                        }
                         val quoteAnnotation = displayText.getStringAnnotations(
                             tag = "QUOTE_CLICK", start = offset, end = offset
                         ).firstOrNull()
@@ -638,9 +654,12 @@ fun HtmlContent(
         modifier = if (spoilerRanges.isEmpty()) textModifier else textModifier.drawBehind {
             val layout = layoutResult ?: return@drawBehind
             spoilerRanges.forEachIndexed { index, range ->
-                if (range.start >= layout.layoutInput.text.length) return@forEachIndexed
+                if (layout.lineCount == 0) return@forEachIndexed
+                val visibleEnd = layout.getLineEnd(layout.lineCount - 1)
+                val endOffset = minOf(range.end, visibleEnd, layout.layoutInput.text.length)
+                if (range.start < 0 || range.start >= endOffset) return@forEachIndexed
                 val firstLine = layout.getLineForOffset(range.start)
-                val lastOffset = (range.end - 1).coerceAtMost(layout.layoutInput.text.length - 1)
+                val lastOffset = endOffset - 1
                 val lastLine = layout.getLineForOffset(lastOffset)
                 val progress = spoilerProgress[index].value
                 val fill = androidx.compose.ui.graphics.lerp(spoilerHiddenColor, spoilerRevealedColor, progress)

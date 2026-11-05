@@ -160,7 +160,7 @@ fun MiooDaoNavGraph(
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
 
     // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
-    // All four home tabs share one pager and spring continuously through intermediate pages.
+    // All four home tabs share one pager and slide continuously through intermediate pages.
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         MiooMotion.pageEnter(reducedMotion)
     }
@@ -460,8 +460,9 @@ private fun MainTabs(
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
-        // Neighbor stays composed so a two-page jump can slide across it.
-        beyondBoundsPageCount = 1,
+        // Keep all four tabs composed: on a More → Forum transition, composing
+        // the forum as it enters the viewport can interrupt the animation tail.
+        beyondBoundsPageCount = 3,
         userScrollEnabled = false,
         // This pager is controlled only by the dock. The default nested-scroll
         // connection still moves a partially animated pager when a child is dragged.
