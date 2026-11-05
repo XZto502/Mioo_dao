@@ -1,6 +1,7 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -745,6 +746,7 @@ fun ThreadScreen(
                                     onDismiss = { showBlockDialog = false },
                                     onQuote = {
                                         viewModel.setQuotedPost(mainThread.idStr)
+                                        if (threadSettings.enableCreatorMode) creatorOpen = true
                                         Toast.makeText(context, "已引用 No.${mainThread.idStr}", Toast.LENGTH_SHORT).show()
                                     },
                                     onBlockThread = {
@@ -807,6 +809,7 @@ fun ThreadScreen(
                             onCardClick = emptyLambda,
                             onRequestQuote = {
                                 viewModel.setQuotedPost(item.idStr)
+                                if (threadSettings.enableCreatorMode) creatorOpen = true
                                 Toast.makeText(context, "已引用 No.${item.idStr}", Toast.LENGTH_SHORT).show()
                             },
                             onBlockThread = {
@@ -897,15 +900,16 @@ fun ThreadScreen(
                 },
                 onNavigateToThread = onNavigateToThread
             )
+            if (threadSettings.enableCreatorMode && !creatorOpen) {
+                ReplyCreatorButton(
+                    viewModel,
+                    replyEditor,
+                    Modifier.align(Alignment.BottomEnd).zIndex(1f).navigationBarsPadding()
+                        .padding(end = 18.dp, bottom = 22.dp),
+                    onOpen = { creatorOpen = true }
+                )
+            }
         }
-        }
-        if (threadSettings.enableCreatorMode && !creatorOpen) {
-            ReplyCreatorButton(
-                viewModel,
-                replyEditor,
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom = 16.dp, end = 16.dp),
-                onOpen = { creatorOpen = true }
-            )
         }
         AnimatedVisibility(
             visible = creatorOpen,
@@ -2026,23 +2030,30 @@ private fun ReplyCreatorButton(
     onOpen: () -> Unit
 ) {
     val state by viewModel.composerState.collectAsState()
-    if (state.replyText.isNotBlank() || state.title.isNotBlank() || state.name.isNotBlank() ||
-        editor.attachment.value != null) {
-        ExtendedFloatingActionButton(
-            onClick = onOpen,
-            modifier = modifier,
-            text = { Text("继续写作") },
-            icon = { Icon(Icons.Outlined.Edit, null) },
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-    } else {
-        FloatingActionButton(
-            onClick = onOpen,
-            modifier = modifier,
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        ) { Icon(Icons.Outlined.Edit, "写回复") }
+    val hasDraft = state.replyText.isNotBlank() || state.quotedPostNo != null ||
+        state.title.isNotBlank() || state.name.isNotBlank() || editor.attachment.value != null
+    Surface(
+        onClick = onOpen,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shadowElevation = 3.dp
+    ) {
+        Row(
+            modifier = Modifier.animateContentSize().then(
+                if (hasDraft) Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+                else Modifier.size(56.dp)
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(Icons.Outlined.Edit, contentDescription = "写回复", modifier = Modifier.size(24.dp))
+            if (hasDraft) {
+                Spacer(Modifier.width(8.dp))
+                Text("继续写作", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
 
