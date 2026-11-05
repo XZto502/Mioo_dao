@@ -104,6 +104,8 @@ data class ThreadRefPopupUiState(
 @Immutable
 data class ReplyComposerState(
     val replyText: String = "",
+    val title: String = "",
+    val name: String = "",
     val quotedPostNo: String? = null,
     val isReplying: Boolean = false,
     val replyError: String? = null
@@ -243,6 +245,10 @@ class ThreadViewModel @Inject constructor(
             return (replyCount + PAGE_SIZE - 1) / PAGE_SIZE
         }
 
+    val replyDrafts = threadRepository.getDrafts().map { drafts ->
+        drafts.filter { it.type == com.mioo.dao.data.local.DraftEntity.TYPE_REPLY && it.targetId == threadId }
+    }
+
     init {
         viewModelScope.launch {
             // 已收藏 = 本地收藏 或 云端收藏夹成员（云端状态来自 feed 列表缓存）
@@ -294,10 +300,8 @@ class ThreadViewModel @Inject constructor(
         // 草稿箱开关关闭时跳过恢复，避免关闭后旧草稿仍然回填输入框
         if (settingsRepository.settings.value.draftBoxEnabled) {
             viewModelScope.launch {
-                val draft = threadRepository.getReplyDraftContent(threadId)
-                if (draft.isNotEmpty()) {
-                    _composerState.update { it.copy(replyText = draft) }
-                }
+                val draft = replyDrafts.first().firstOrNull()
+                if (draft != null && _composerState.value == ReplyComposerState()) restoreReplyDraft(draft)
             }
         }
 
@@ -437,7 +441,7 @@ class ThreadViewModel @Inject constructor(
     private enum class LoadMode { REPLACE, APPEND, PREPEND }
 
     /** 原地刷新已加载页：不清空列表、不重新播种滚动位置、不删除阅读历史。 */
-    fun refreshThread(onResult: (String) -> Unit) {
+    fun refreshThread(tailOnly: Boolean = false, onResult: (String) -> Unit) {
         val before = _listState.value
         if (before.isLoading || before.thread == null) return
         val gen = ++loadGeneration
@@ -450,7 +454,9 @@ class ThreadViewModel @Inject constructor(
             try {
                 val pages = mutableListOf<Thread>()
                 val refreshedPages = mutableMapOf<String, Int>()
-                for (page in start..end) {
+                var page = if (tailOnly) end else start
+                var throughPage = end
+                while (page <= throughPage) {
                     val flow = if (before.showPoOnly) {
                         threadRepository.getPoDetail(threadId, page)
                     } else {
@@ -464,29 +470,42 @@ class ThreadViewModel @Inject constructor(
                             check(response.data.idStr == threadId) { "返回的串内容不匹配" }
                             pages += response.data
                             response.data.replies.orEmpty().forEach { refreshedPages[it.idStr] = page }
+                            if (tailOnly && response.data.replies.isNullOrEmpty()) {
+                                throughPage = page
+                            } else if (tailOnly) {
+                                val pageCount = ((response.data.replyCount ?: 0) + PAGE_SIZE - 1) / PAGE_SIZE
+                                throughPage = maxOf(throughPage, pageCount)
+                            }
                         }
                         is XdResponse.Error -> error(response.message)
                     }
+                    page++
                 }
                 val thread = pages.last()
-                val posts = pages.flatMap { it.replies.orEmpty() }.distinctBy { it.id }.sortedBy { it.id }
+                val retained = if (tailOnly) rawPosts.filter { (replyPages[it.idStr] ?: end) < end } else emptyList()
+                val posts = (retained + pages.flatMap { it.replies.orEmpty() }).distinctBy { it.id }.sortedBy { it.id }
+                val hasNewReplies = (thread.replyCount ?: 0) > (before.thread.replyCount ?: 0) ||
+                    posts.any { it.idStr !in replyPages }
+                if (tailOnly) retained.forEach { post -> replyPages[post.idStr]?.let { refreshedPages[post.idStr] = it } }
+                val loadedEnd = page - 1
                 val items = buildCurrentDisplayItems(posts, thread.userHash)
                 if (gen != loadGeneration) return@launch
                 rawPosts = posts
                 replyPages.clear()
                 replyPages.putAll(refreshedPages)
                 val total = ((thread.replyCount ?: 0) + PAGE_SIZE - 1) / PAGE_SIZE
-                isLastPage = thread.replies.isNullOrEmpty() || end >= total.coerceAtLeast(1)
-                currentPage = if (isLastPage) end else end + 1
+                isLastPage = thread.replies.isNullOrEmpty() || loadedEnd >= total.coerceAtLeast(1)
+                currentPage = if (isLastPage) loadedEnd else loadedEnd + 1
                 _listState.update {
                     it.copy(thread = thread, mainPostData = thread.toPostData(), displayItems = items,
-                        isLastPage = isLastPage, errorMessage = null, nextPageError = null,
+                        currentPage = loadedEnd, isLastPage = isLastPage, errorMessage = null, nextPageError = null,
                         previousPageError = null)
                 }
                 seedLocalQuotes(posts, thread)
                 fetchQuotesForReplies(posts.takeLast(14))
-                onResult("已刷新，阅读位置已保留")
+                onResult(if (tailOnly && !hasNewReplies) "已是最新内容" else "已刷新，阅读位置已保留")
             } catch (e: CancellationException) {
+                if (tailOnly) onResult("")
                 throw e
             } catch (e: Exception) {
                 if (gen == loadGeneration) onResult("刷新失败：${e.localizedMessage ?: "请重试"}")
@@ -1099,6 +1118,39 @@ class ThreadViewModel @Inject constructor(
         scheduleDraftSave(text)
     }
 
+    fun restoreReplyDraft(draft: com.mioo.dao.data.local.DraftEntity) {
+        draftSaveJob?.cancel()
+        _composerState.update {
+            it.copy(replyText = draft.content, title = draft.title.orEmpty(), name = draft.name.orEmpty(),
+                quotedPostNo = Regex("^>>No[.](\\d+)").find(draft.content)?.groupValues?.get(1))
+        }
+    }
+
+    fun updateReplyIdentity(title: String, name: String) {
+        _composerState.update { it.copy(title = title, name = name) }
+        scheduleDraftSave(_composerState.value.replyText)
+    }
+
+    fun saveReplyDraft(onResult: (String) -> Unit) {
+        val snapshot = _composerState.value
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            try {
+                persistReplyDraft(snapshot)
+                onResult("草稿已保存")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                onResult("草稿保存失败")
+            }
+        }
+    }
+
+    private suspend fun persistReplyDraft(state: ReplyComposerState) {
+        threadRepository.saveReplyDraft(threadId, _listState.value.thread?.title, state.replyText,
+            state.title.ifBlank { null }, state.name.ifBlank { null })
+    }
+
     private fun scheduleDraftSave(text: String) {
         draftSaveJob?.cancel()
         draftSaveJob = viewModelScope.launch {
@@ -1108,11 +1160,7 @@ class ThreadViewModel @Inject constructor(
             // 二次确认：等待期间文本又变了（或已被发送成功清空）就不落盘旧值
             if (text != _composerState.value.replyText) return@launch
             // 草稿箱条目：随输入自动更新（同一串只保留一份）
-            threadRepository.saveReplyDraft(
-                threadId = threadId,
-                threadTitle = _listState.value.thread?.title,
-                content = text
-            )
+            persistReplyDraft(_composerState.value)
         }
     }
 
@@ -1159,8 +1207,8 @@ class ThreadViewModel @Inject constructor(
             try {
                 threadRepository.doReplyThread(
                     parent = threadId,
-                    title = null,
-                    name = null,
+                    title = currentComposer.title.ifBlank { null },
+                    name = currentComposer.name.ifBlank { null },
                     email = null,
                     content = currentComposer.replyText,
                     imageFile = imageFile,
@@ -1179,11 +1227,8 @@ class ThreadViewModel @Inject constructor(
                                 // 发送成功 → 草稿箱中该串草稿一并清除。
                                 // 走 draftSaveJob 槽位串行化：保证清空落在任何在途防抖写入之后
                                 draftSaveJob?.cancel()
-                                // 草稿箱开关关闭时不做清理写入
-                                if (settingsRepository.settings.value.draftBoxEnabled) {
-                                    draftSaveJob = viewModelScope.launch {
-                                        threadRepository.saveReplyDraft(threadId, null, "")
-                                    }
+                                draftSaveJob = viewModelScope.launch {
+                                    threadRepository.saveReplyDraft(threadId, null, "")
                                 }
                                 // 记录本串本次回复所用饼干（串级覆盖优先，其次全局选中），下次进串默认选中
                                 val usedCookie = threadCookie

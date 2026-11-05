@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -31,6 +33,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +43,40 @@ import com.mioo.dao.data.local.DraftEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+@Composable
+internal fun PostDraftCard(draft: DraftEntity, target: String, onClick: () -> Unit) {
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (dark) Color(0xFF22252D) else Color(0xFFF2F4F8))
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(draft.title?.takeIf { it.isNotBlank() } ?: "无标题草稿", Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (target.isNotBlank()) {
+                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.weight(0.8f, fill = false)) {
+                        Text(target, Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                val time = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(draft.updatedAt))
+                Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, softWrap = false)
+            }
+            if (draft.content.isNotBlank()) {
+                Text(draft.content, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
@@ -90,36 +128,7 @@ internal fun AnimatedVisibilityScope.PostDraftPicker(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(drafts, key = { it.id }) { draft ->
-                            Card(
-                                onClick = { onSelect(draft) },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = MaterialTheme.shapes.large,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                            ) {
-                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(
-                                        draft.title?.takeIf { it.isNotBlank() } ?: "无标题草稿",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        listOfNotNull(draft.targetName.takeIf { it.isNotBlank() }, draft.name?.takeIf { it.isNotBlank() }).joinToString(" · "),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (draft.content.isNotBlank()) Text(
-                                        draft.content, style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(draft.updatedAt)),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                            PostDraftCard(draft, draft.targetName) { onSelect(draft) }
                         }
                     }
                 }

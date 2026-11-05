@@ -61,6 +61,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
         val KEY_SHARE_CARD_BRANDING = booleanPreferencesKey("show_share_card_branding")
         val KEY_CONFIRM_COOKIE_BEFORE_SEND = booleanPreferencesKey("confirm_cookie_before_send")
+        val KEY_CREATOR_MODE = booleanPreferencesKey("enable_creator_mode")
         val KEY_DRAFT_BOX_ENABLED = booleanPreferencesKey("draft_box_enabled")
         val KEY_QUOTE_AUTO_DISPLAY = booleanPreferencesKey("quote_auto_display")
         val KEY_NETWORK_COMPATIBILITY = booleanPreferencesKey("network_compatibility")
@@ -637,6 +638,12 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[KEY_CACHE_LIMIT_MB] = ImageCacheLimit.coerce(mb)
         }
+    }
+
+    val creatorModeFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_CREATOR_MODE] ?: false }
+
+    suspend fun saveCreatorMode(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_CREATOR_MODE] = enabled }
     }
 
     suspend fun saveDraftBoxEnabled(enabled: Boolean) {

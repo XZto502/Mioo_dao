@@ -1,6 +1,20 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -431,6 +445,19 @@ fun ThreadScreen(
         viewModel.updateSearchQuery(searchFieldText)
     }
 
+    var creatorOpen by remember(viewModel) { mutableStateOf(false) }
+    val replyEditor = remember(viewModel) { ReplyEditorState() }
+    val selectedReplyCookie = viewModel.threadCookieIndex.collectAsState().value
+        ?.takeIf { it in threadSettings.cookiesList.indices } ?: threadSettings.selectedCookieIndex
+    var checkingTail by remember(viewModel) { mutableStateOf(false) }
+    var tailMessage by remember(viewModel) { mutableStateOf<String?>(null) }
+    LaunchedEffect(tailMessage) {
+        if (tailMessage != null) {
+            delay(1200)
+            tailMessage = null
+        }
+    }
+
     Box(Modifier.fillMaxSize().graphicsLayer { clip = true }.background(readingBackground())) {
     Scaffold(
         topBar = {
@@ -585,6 +612,7 @@ fun ThreadScreen(
             )
         },
         bottomBar = {
+            if (!threadSettings.enableCreatorMode) {
             val composerColor = readingComposerColor()
             Column {
                 // Feather only the seam above the solid composer, never the input/tools.
@@ -596,11 +624,12 @@ fun ThreadScreen(
                     cookies = threadSettings.cookiesList,
                     confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
                     cookieNotes = threadSettings.cookieNotes,
-                    selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
-                        ?.takeIf { it < threadSettings.cookiesList.size }
-                        ?: threadSettings.selectedCookieIndex,
-                    onCookieSelect = { viewModel.selectThreadCookie(it) }
+                    selectedCookieIndex = selectedReplyCookie,
+                    onCookieSelect = viewModel::selectThreadCookie,
+                    editor = replyEditor,
+                    onOpen = { creatorOpen = true }
                 )
+            }
             }
         },
         modifier = modifier,
@@ -700,7 +729,8 @@ fun ThreadScreen(
                         start = 12.dp,
                         end = 12.dp,
                         top = paddingValues.calculateTopPadding() + 12.dp,
-                        bottom = paddingValues.calculateBottomPadding() + 16.dp
+                        bottom = paddingValues.calculateBottomPadding() +
+                            if (threadSettings.enableCreatorMode) 88.dp else 16.dp
                     )
                 ) {
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
@@ -792,6 +822,28 @@ fun ThreadScreen(
                         )
                     }
 
+                    if (mainThread != null && listUi.isLastPage && !listUi.isReplacing &&
+                        (listUi.currentPage >= totalPages || listUi.showPoOnly)) {
+                        item(key = "thread_tail", contentType = "thread_tail") {
+                            ThreadTail(
+                                checking = checkingTail,
+                                message = tailMessage,
+                                enabled = !listUi.isLoading && !checkingTail,
+                                reducedMotion = reducedMotion,
+                                onRefresh = {
+                                    checkingTail = true
+                                    tailMessage = null
+                                    viewModel.refreshThread(tailOnly = true) { result ->
+                                        checkingTail = false
+                                        if (result.isNotBlank() && result != "已刷新，阅读位置已保留") {
+                                            tailMessage = result
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+
                     val filterHint = listUi.filterHint
                     if (!filterHint.isNullOrBlank() && !listUi.isLoading) {
                         item(key = "filter_hint", contentType = "hint") {
@@ -846,6 +898,32 @@ fun ThreadScreen(
                 onNavigateToThread = onNavigateToThread
             )
         }
+        }
+        if (threadSettings.enableCreatorMode && !creatorOpen) {
+            ReplyCreatorButton(
+                viewModel,
+                replyEditor,
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom = 16.dp, end = 16.dp),
+                onOpen = { creatorOpen = true }
+            )
+        }
+        AnimatedVisibility(
+            visible = creatorOpen,
+            modifier = Modifier.fillMaxSize().zIndex(1f),
+            enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(240)) { it / 12 },
+            exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 12 }
+        ) {
+            ReplyInputBar(
+                viewModel = viewModel,
+                cookies = threadSettings.cookiesList,
+                selectedCookieIndex = selectedReplyCookie,
+                confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
+                cookieNotes = threadSettings.cookieNotes,
+                onCookieSelect = viewModel::selectThreadCookie,
+                editor = replyEditor,
+                fullScreen = true,
+                onClose = { creatorOpen = false }
+            )
         }
         freeCopyText?.let { text ->
             FreeCopyDialog(
@@ -1895,8 +1973,14 @@ private fun ReplyInputBar(
     selectedCookieIndex: Int,
     confirmCookieBeforeSend: Boolean,
     cookieNotes: Map<String, String>,
-    onCookieSelect: (Int) -> Unit
+    onCookieSelect: (Int) -> Unit,
+    editor: ReplyEditorState,
+    fullScreen: Boolean = false,
+    onOpen: () -> Unit = {},
+    onClose: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val drafts = if (fullScreen) viewModel.replyDrafts.collectAsState(emptyList()).value else emptyList()
     val composerState by viewModel.composerState.collectAsState()
     ReplyInputArea(
         replyText = composerState.replyText,
@@ -1910,10 +1994,97 @@ private fun ReplyInputBar(
         onCookieSelect = onCookieSelect,
         onReplyTextChange = remember(viewModel) { { text: String -> viewModel.updateReplyText(text) } },
         onCancelQuote = remember(viewModel) { { viewModel.setQuotedPost(null) } },
-        onSend = remember(viewModel) {
-            { file: java.io.File?, cookie: String? ->
-                viewModel.submitReply(imageFile = file, cookieOverride = cookie)
+        editorState = editor,
+        fullScreen = fullScreen,
+        onOpen = onOpen,
+        onClose = onClose,
+        title = composerState.title,
+        name = composerState.name,
+        threadId = viewModel.threadId,
+        onIdentityChange = viewModel::updateReplyIdentity,
+        drafts = drafts,
+        onSaveDraft = {
+            viewModel.saveReplyDraft { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+        },
+        onSelectDraft = viewModel::restoreReplyDraft,
+        onSend = { file, cookie ->
+            viewModel.submitReply(imageFile = file, cookieOverride = cookie) {
+                editor.attachment.value = null
+                editor.text.value = TextFieldValue()
+                editor.clearHistory()
+                if (fullScreen) onClose()
             }
         }
     )
+}
+
+@Composable
+private fun ReplyCreatorButton(
+    viewModel: ThreadViewModel,
+    editor: ReplyEditorState,
+    modifier: Modifier,
+    onOpen: () -> Unit
+) {
+    val state by viewModel.composerState.collectAsState()
+    if (state.replyText.isNotBlank() || state.title.isNotBlank() || state.name.isNotBlank() ||
+        editor.attachment.value != null) {
+        ExtendedFloatingActionButton(
+            onClick = onOpen,
+            modifier = modifier,
+            text = { Text("继续写作") },
+            icon = { Icon(Icons.Outlined.Edit, null) },
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    } else {
+        FloatingActionButton(
+            onClick = onOpen,
+            modifier = modifier,
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ) { Icon(Icons.Outlined.Edit, "写回复") }
+    }
+}
+
+@Composable
+private fun ThreadTail(
+    checking: Boolean,
+    message: String?,
+    enabled: Boolean,
+    reducedMotion: Boolean,
+    onRefresh: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val rotation = if (checking && !reducedMotion) {
+        val angle by rememberInfiniteTransition(label = "追更")
+            .animateFloat(0f, 360f, infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart),
+                label = "刷新图标")
+        angle
+    } else 0f
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        HorizontalDivider(Modifier.weight(1f), thickness = 0.5.dp, color = lineColor)
+        Surface(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onRefresh()
+            },
+            enabled = enabled,
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Refresh, null, Modifier.size(14.dp).rotate(rotation))
+                Text(if (checking) "正在检查新回复" else message ?: "没有更多了 · 点击刷新",
+                    style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            }
+        }
+        HorizontalDivider(Modifier.weight(1f), thickness = 0.5.dp, color = lineColor)
+    }
 }

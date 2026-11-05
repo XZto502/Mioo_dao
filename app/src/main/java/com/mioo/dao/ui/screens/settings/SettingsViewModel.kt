@@ -35,7 +35,8 @@ data class ThreadScreenSettings(
     val confirmCookieBeforeSend: Boolean = false,
     val blockedThreads: List<String> = emptyList(),
     val quoteAutoDisplayEnabled: Boolean = true,
-    val diceBadgesEnabled: Boolean = true
+    val diceBadgesEnabled: Boolean = true,
+    val enableCreatorMode: Boolean = false
 )
 
 /** Minimal slice for ForumScreen — pins + compose cookies only. */
@@ -60,6 +61,10 @@ class SettingsViewModel @Inject constructor(
     val forumPreviewLines: StateFlow<Int> = settingsRepository.forumPreviewLines
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
 
+    fun updateCreatorMode(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.saveCreatorMode(enabled) }
+    }
+
     fun updateForumPreviewLines(lines: Int) = settingsRepository.updateForumPreviewLines(lines)
 
     val settingsState: StateFlow<UserSettings> = settingsRepository.settings
@@ -78,6 +83,7 @@ class SettingsViewModel @Inject constructor(
                 confirmCookieBeforeSend = it.confirmCookieBeforeSend,
                 blockedThreads = it.blockedThreads,
                 quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled,
+                enableCreatorMode = it.enableCreatorMode,
                 diceBadgesEnabled = it.diceBadgesEnabled
             )
         }

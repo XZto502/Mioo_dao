@@ -138,6 +138,9 @@ class SettingsRepository @Inject constructor(
         .combine(settingsDataStore.diceBadgesEnabledFlow) { settings, diceBadgesEnabled ->
             settings.copy(diceBadgesEnabled = diceBadgesEnabled)
         }
+        .combine(settingsDataStore.creatorModeFlow) { settings, enabled ->
+            settings.copy(enableCreatorMode = enabled)
+        }
         .combine(settingsDataStore.networkCompatibilityFlow) { settings, enabled ->
             settings.copy(networkCompatibilityEnabled = enabled)
         }
@@ -184,6 +187,8 @@ class SettingsRepository @Inject constructor(
     fun updateConfirmCookieBeforeSend(enabled: Boolean) {
         repositoryScope.launch { settingsDataStore.saveConfirmCookieBeforeSend(enabled) }
     }
+
+    suspend fun saveCreatorMode(enabled: Boolean) = settingsDataStore.saveCreatorMode(enabled)
 
     fun updateDraftBoxEnabled(enabled: Boolean) {
         repositoryScope.launch {

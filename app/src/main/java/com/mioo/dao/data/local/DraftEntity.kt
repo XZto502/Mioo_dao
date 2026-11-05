@@ -20,9 +20,9 @@ data class DraftEntity(
     val targetId: String,
     /** Thread title / board name for display. */
     val targetName: String = "",
-    /** POST only: thread title field. */
+    /** Optional title entered in the editor. */
     val title: String? = null,
-    /** POST only: name field (饼干名/昵称). */
+    /** Optional name entered in the editor. */
     val name: String? = null,
     val content: String,
     val updatedAt: Long = System.currentTimeMillis()

@@ -1332,6 +1332,26 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setShowShareCardBranding)
             }
         }
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("创作模式", style = settingsItemStyle())
+                    Text(
+                        "串详情页收起底部常驻回复栏，改为右下角悬浮按钮并使用全屏信纸写作台",
+                        style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = settings.enableCreatorMode,
+                    onCheckedChange = viewModel::updateCreatorMode
+                )
+            }
+        }
         Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {

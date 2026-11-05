@@ -5,6 +5,29 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.OpenInFull
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import com.mioo.dao.data.local.DraftEntity
+import com.mioo.dao.ui.screens.forum.PostDraftCard
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,8 +95,21 @@ import com.mioo.dao.ui.theme.readingComposerColor
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 
+internal class ReplyEditorState {
+    val text = mutableStateOf(TextFieldValue())
+    val attachment = mutableStateOf<Uri?>(null)
+    val undo = mutableStateListOf<TextFieldValue>()
+    val redo = mutableStateListOf<TextFieldValue>()
+
+    fun clearHistory() {
+        undo.clear()
+        redo.clear()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReplyInputArea(
+internal fun ReplyInputArea(
     replyText: String,
     quotedPostNo: String?,
     cookies: List<String>,
@@ -85,13 +121,26 @@ fun ReplyInputArea(
     onCookieSelect: (Int) -> Unit,
     onReplyTextChange: (String) -> Unit,
     onCancelQuote: () -> Unit,
-    onSend: (java.io.File?, String?) -> Unit
+    onSend: (java.io.File?, String?) -> Unit,
+    editorState: ReplyEditorState,
+    fullScreen: Boolean = false,
+    onOpen: () -> Unit = {},
+    onClose: () -> Unit = {},
+    threadId: String = "",
+    title: String = "",
+    name: String = "",
+    onIdentityChange: (String, String) -> Unit = { _, _ -> },
+    drafts: List<DraftEntity> = emptyList(),
+    onSaveDraft: () -> Unit = {},
+    onSelectDraft: (DraftEntity) -> Unit = {}
 ) {
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var showCookieConfirmation by remember { mutableStateOf(false) }
     var kaomojiMenuExpanded by remember { mutableStateOf(false) }
     var showDiceDialog by remember { mutableStateOf(false) }
-    var attachedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var attachedImageUri by editorState.attachment
+    var showDrafts by remember { mutableStateOf(false) }
+    var showName by remember { mutableStateOf(false) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -105,8 +154,33 @@ fun ReplyInputArea(
     val focusManager = LocalFocusManager.current
     val density = LocalDensity.current
     var wasReplying by remember { mutableStateOf(false) }
-    var textFieldValue by remember {
-        mutableStateOf(TextFieldValue(text = replyText, selection = TextRange(replyText.length)))
+    var textFieldValue by editorState.text
+    fun applyEdit(value: TextFieldValue) {
+        if (value.text != textFieldValue.text) {
+            editorState.undo.add(textFieldValue.copy(composition = null))
+            if (editorState.undo.size > 100) editorState.undo.removeAt(0)
+            editorState.redo.clear()
+        }
+        textFieldValue = value
+        if (value.text != replyText) onReplyTextChange(value.text)
+    }
+
+    fun restoreEdit(undo: Boolean) {
+        val source = if (undo) editorState.undo else editorState.redo
+        val destination = if (undo) editorState.redo else editorState.undo
+        if (source.isEmpty()) return
+        destination.add(textFieldValue.copy(composition = null))
+        textFieldValue = source.removeAt(source.lastIndex)
+        onReplyTextChange(textFieldValue.text)
+    }
+
+    fun insertPair(open: String, close: String) {
+        val value = textFieldValue
+        val start = value.selection.min
+        val end = value.selection.max
+        val selected = value.text.substring(start, end)
+        applyEdit(TextFieldValue(value.text.replaceRange(start, end, open + selected + close),
+            TextRange(start + open.length + selected.length)))
     }
 
     val hideSystemIme = remember(view, context, keyboardController, focusManager) {
@@ -127,23 +201,26 @@ fun ReplyInputArea(
     fun insertAtCursor(snippet: String) {
         val text = textFieldValue.text
         val selection = textFieldValue.selection
-        val start = selection.start.coerceIn(0, text.length)
-        val end = selection.end.coerceIn(0, text.length)
+        val start = selection.min.coerceIn(0, text.length)
+        val end = selection.max.coerceIn(0, text.length)
         val prefix = if (start > 0 && !text[start - 1].isWhitespace()) " " else ""
         val insert = prefix + snippet
         val newText = text.substring(0, start) + insert + text.substring(end)
         val newCursor = start + insert.length
-        textFieldValue = TextFieldValue(
-            text = newText,
-            selection = TextRange(newCursor)
-        )
-        onReplyTextChange(newText)
+        applyEdit(TextFieldValue(text = newText, selection = TextRange(newCursor)))
     }
 
     fun closeToolPanels() {
         if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
     }
 
+    fun minimize() {
+        hideSystemIme()
+        closeToolPanels()
+        onClose()
+    }
+
+    BackHandler(enabled = fullScreen && !kaomojiMenuExpanded) { minimize() }
     val toolPanelOpen = kaomojiMenuExpanded
     BackHandler(enabled = toolPanelOpen) {
         closeToolPanels()
@@ -179,6 +256,7 @@ fun ReplyInputArea(
     LaunchedEffect(replyText) {
         if (textFieldValue.text != replyText) {
             textFieldValue = textFieldValue.copy(
+                composition = null,
                 text = replyText,
                 selection = TextRange(replyText.length)
             )
@@ -205,22 +283,110 @@ fun ReplyInputArea(
         }
     }
 
+    val canSend = (replyText.isNotBlank() || attachedImageUri != null) && !isReplying
+    fun send() {
+        if (confirmCookieBeforeSend) {
+            hideSystemIme()
+            closeToolPanels()
+            showCookieConfirmation = true
+        } else {
+            val file = attachedImageUri?.toFile(context)
+            if (attachedImageUri != null && file == null) {
+                android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
+            } else onSend(file, null)
+        }
+    }
+
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val paper = if (dark) Color(0xFF16181E) else Color.White
+    val page = if (dark) Color(0xFF0E1015) else Color(0xFFF0F1F4)
+
     // 实心底座贴屏幕物理底边，由内容下方的共享槽位把控件顶起来：
     // 无键盘无面板时槽位 = 导航条高度（与现在贴导航条一致）；
     // 键盘/面板谁高用谁，背景始终不透明地铺到屏幕底。
     Surface(
-        color = readingComposerColor(),
+        color = if (fullScreen) page else readingComposerColor(),
         tonalElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
+        modifier = if (fullScreen) Modifier.fillMaxSize().clickable(
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+            indication = null, onClick = {}
+        ) else Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            if (fullScreen) {
+                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { minimize() }) { Icon(Icons.Default.Close, "收起写作台") }
+                    Column(Modifier.weight(1f)) {
+                        Text("回复串", fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+                            Text("No.$threadId", Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 11.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { hideSystemIme(); closeToolPanels(); showDrafts = true },
+                            enabled = !isReplying) {
+                            Icon(Icons.Outlined.Description, "选择草稿")
+                        }
+                        if (drafts.isNotEmpty()) Box(Modifier.align(Alignment.TopEnd).padding(9.dp)
+                            .size(6.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+                    }
+                    IconButton(onClick = onSaveDraft, enabled = !isReplying &&
+                        (replyText.isNotBlank() || title.isNotBlank() || name.isNotBlank())) {
+                        Icon(Icons.Outlined.Save, "保存草稿")
+                    }
+                    Button(onClick = { send() }, enabled = canSend, shape = CircleShape) {
+                        Text("发送", maxLines = 1)
+                        Spacer(Modifier.width(4.dp))
+                        if (isReplying) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Send, null, Modifier.size(16.dp))
+                    }
+                }
+            }
+            Surface(
+                modifier = if (fullScreen) Modifier.weight(1f).fillMaxWidth().padding(12.dp)
+                    else Modifier.fillMaxWidth(),
+                color = if (fullScreen) paper else Color.Transparent,
+                shape = RoundedCornerShape(20.dp)
             ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                if (fullScreen) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        BasicTextField(title, { onIdentityChange(it, name) }, Modifier.weight(1f),
+                            enabled = !isReplying, singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { field ->
+                                Box(Modifier.padding(vertical = 8.dp)) {
+                                    if (title.isEmpty()) Text("标题（选填）", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    field()
+                                }
+                            })
+                        Surface(onClick = { showName = !showName }, shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.weight(0.65f, fill = false)) {
+                            Text("署名：${name.ifBlank { "无名氏" }}", Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                        }
+                    }
+                    AnimatedVisibility(showName) {
+                        BasicTextField(name, { onIdentityChange(title, it) }, Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            enabled = !isReplying, singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { field ->
+                                Box {
+                                    if (name.isEmpty()) Text("名称（选填）", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    field()
+                                }
+                            })
+                    }
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                }
                 val reducedMotion = isReducedMotionEnabled()
                 AnimatedVisibility(
                     visible = quotedPostNo != null,
@@ -301,12 +467,52 @@ fun ReplyInputArea(
                     }
                 }
 
-                // 1. Outlined Text Field (full width)
-                OutlinedTextField(
+                if (fullScreen) {
+                    BasicTextField(textFieldValue, { applyEdit(it) },
+                        Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp)
+                            .onFocusChanged { if (it.isFocused) closeToolPanels() },
+                        enabled = !isReplying,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 25.sp,
+                            color = MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { field ->
+                            Box(Modifier.fillMaxSize()) {
+                                if (textFieldValue.text.isEmpty()) Text("正文内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                field()
+                            }
+                        })
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item {
+                            IconButton({ restoreEdit(true) }, Modifier.size(32.dp), enabled = !isReplying && editorState.undo.isNotEmpty()) {
+                                Icon(Icons.Filled.Undo, "撤销", Modifier.size(18.dp))
+                            }
+                        }
+                        item {
+                            IconButton({ restoreEdit(false) }, Modifier.size(32.dp), enabled = !isReplying && editorState.redo.isNotEmpty()) {
+                                Icon(Icons.Filled.Redo, "重做", Modifier.size(18.dp))
+                            }
+                        }
+                        items(listOf(
+                            Triple("「」", "「", "」"), Triple("『』", "『", "』"), Triple("【】", "【", "】"),
+                            Triple("——", "—", "—"), Triple("……", "…", "…"), Triple("防剧透", "[h]", "[/h]")
+                        )) { (label, open, close) ->
+                            Surface(onClick = { insertPair(open, close) }, enabled = !isReplying,
+                                shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.height(32.dp)) {
+                                Box(Modifier.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+                                    Text(label, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                } else OutlinedTextField(
                     value = textFieldValue,
-                    onValueChange = { newValue ->
-                        textFieldValue = newValue
-                        onReplyTextChange(newValue.text)
+                    onValueChange = { applyEdit(it) },
+                    enabled = !isReplying,
+                    trailingIcon = {
+                        IconButton(onClick = { hideSystemIme(); closeToolPanels(); onOpen() }) {
+                            Icon(Icons.Outlined.OpenInFull, "全屏创作", Modifier.size(18.dp))
+                        }
                     },
                     placeholder = { Text("回复...", style = MaterialTheme.typography.bodyMedium) },
                     modifier = Modifier
@@ -326,11 +532,11 @@ fun ReplyInputArea(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+            }
+            }
 
-                // 2. Control row
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Cookie selector
@@ -364,6 +570,7 @@ fun ReplyInputArea(
                         }
                     )
 
+                    if (!fullScreen) {
                     Spacer(modifier = Modifier.width(4.dp))
 
                     // Send Button
@@ -371,18 +578,7 @@ fun ReplyInputArea(
                     val sendIconColor = if (isSendActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 
                     IconButton(
-                        onClick = {
-                            if (confirmCookieBeforeSend) {
-                                hideSystemIme()
-                                closeToolPanels()
-                                showCookieConfirmation = true
-                            } else {
-                                val file = attachedImageUri?.toFile(context)
-                                if (attachedImageUri != null && file == null) {
-                                    android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
-                                } else onSend(file, null)
-                            }
-                        },
+                        onClick = { send() },
                         enabled = isSendActive
                     ) {
                         if (isReplying) {
@@ -399,8 +595,8 @@ fun ReplyInputArea(
                             )
                         }
                     }
+                    }
                 }
-            }
 
             // 【共享底部槽位】max(键盘, 面板)，绝不相加。面板开时直接填充槽位
             // （无收起动画，高度变化完全由槽位驱动 = 单一动画源，杜绝 ime+面板叠加过冲）。
@@ -419,6 +615,28 @@ fun ReplyInputArea(
                                 .toDp().value.roundToInt()
                         }
                     )
+                }
+            }
+        }
+    }
+
+    if (showDrafts) {
+        ModalBottomSheet(onDismissRequest = { showDrafts = false }, containerColor = paper) {
+            Text("选择回复草稿", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleMedium)
+            if (drafts.isEmpty()) {
+                Text("当前串暂无回复草稿", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LazyColumn(Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(drafts, key = { it.id }) { draft ->
+                        PostDraftCard(draft, "No.${draft.targetId}") {
+                            showDrafts = false
+                            editorState.clearHistory()
+                            textFieldValue = TextFieldValue(draft.content, TextRange(draft.content.length))
+                            onSelectDraft(draft)
+                        }
+                    }
                 }
             }
         }
