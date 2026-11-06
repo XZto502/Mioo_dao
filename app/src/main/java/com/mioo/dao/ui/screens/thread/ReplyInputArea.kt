@@ -92,7 +92,9 @@ import com.mioo.dao.ui.components.ConfirmSendCookieDialog
 import com.mioo.dao.ui.components.DiceDialog
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
-import com.mioo.dao.ui.components.toFile
+import com.mioo.dao.ui.components.compressImageUnder2MB
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.mioo.dao.ui.theme.readingComposerColor
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
@@ -100,6 +102,7 @@ import com.mioo.dao.ui.theme.isReducedMotionEnabled
 internal class ReplyEditorState {
     val text = mutableStateOf(TextFieldValue())
     val attachment = mutableStateOf<Uri?>(null)
+    val preparingAttachment = mutableStateOf(false)
     val undo = mutableStateListOf<TextFieldValue>()
     val redo = mutableStateListOf<TextFieldValue>()
 
@@ -285,17 +288,40 @@ internal fun ReplyInputArea(
         }
     }
 
-    val canSend = (replyText.isNotBlank() || attachedImageUri != null) && !isReplying
+    val scope = rememberCoroutineScope()
+    val preparingAttachment by editorState.preparingAttachment
+    val canSend = (replyText.isNotBlank() || attachedImageUri != null) && !isReplying && !preparingAttachment
+    fun submit(cookie: String?, index: Int? = null) {
+        if (preparingAttachment || isReplying) return
+        val uri = attachedImageUri
+        if (uri == null) {
+            index?.let(onCookieSelect)
+            onSend(null, cookie)
+            return
+        }
+        editorState.preparingAttachment.value = true
+        scope.launch {
+            try {
+                val file = compressImageUnder2MB(context, uri)
+                index?.let(onCookieSelect)
+                onSend(file, cookie)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                android.widget.Toast.makeText(context, "图片处理失败", android.widget.Toast.LENGTH_SHORT).show()
+            } finally {
+                editorState.preparingAttachment.value = false
+            }
+        }
+    }
+
     fun send() {
         if (confirmCookieBeforeSend) {
             hideSystemIme()
             closeToolPanels()
             showCookieConfirmation = true
         } else {
-            val file = attachedImageUri?.toFile(context)
-            if (attachedImageUri != null && file == null) {
-                android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
-            } else onSend(file, null)
+            submit(null)
         }
     }
 
@@ -427,50 +453,6 @@ internal fun ReplyInputArea(
                     Spacer(modifier = Modifier.height(6.dp))
                 }
 
-                // Image Preview (if attached)
-                AnimatedVisibility(
-                    visible = attachedImageUri != null,
-                    modifier = if (fullScreen) Modifier.padding(horizontal = 12.dp) else Modifier,
-                    enter = MiooMotion.softExpandEnter(reducedMotion),
-                    exit = MiooMotion.softExpandExit(reducedMotion)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(MaterialTheme.shapes.medium)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
-                        ) {
-                            Image(
-                                painter = rememberAsyncImagePainter(attachedImageUri),
-                                contentDescription = "Preview",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable { previewAttachedUri = attachedImageUri }
-                            )
-                            IconButton(
-                                onClick = { attachedImageUri = null },
-                                // 不要黑色圆底：只留白色 ×，靠图标自身可见性
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .align(Alignment.TopEnd)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Cancel,
-                                    contentDescription = "Remove",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-                }
 
                 if (fullScreen) {
                     BasicTextField(textFieldValue, { applyEdit(it) },
@@ -539,9 +521,14 @@ internal fun ReplyInputArea(
                     )
                 )
 
+                attachedImageUri?.let { uri ->
+                    com.mioo.dao.ui.components.LocalImagePreview(uri,
+                        modifier = Modifier.padding(horizontal = if (fullScreen) 12.dp else 0.dp, vertical = 6.dp),
+                        attachment = true, onClick = { previewAttachedUri = uri },
+                        onRemove = { attachedImageUri = null })
+                }
             }
             }
-
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -581,7 +568,7 @@ internal fun ReplyInputArea(
                     Spacer(modifier = Modifier.width(4.dp))
 
                     // Send Button
-                    val isSendActive = (replyText.isNotBlank() || attachedImageUri != null) && !isReplying
+                    val isSendActive = canSend
                     val sendIconColor = if (isSendActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 
                     IconButton(
@@ -663,13 +650,7 @@ internal fun ReplyInputArea(
         ConfirmSendCookieDialog(cookies = cookies, notes = cookieNotes, selectedIndex = selectedCookieIndex,
             onDismiss = { showCookieConfirmation = false }, onConfirm = { index, cookie ->
                 showCookieConfirmation = false
-                val file = attachedImageUri?.toFile(context)
-                if (attachedImageUri != null && file == null) {
-                    android.widget.Toast.makeText(context, "图片读取失败", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    onCookieSelect(index)
-                    onSend(file, cookie)
-                }
+                submit(cookie, index)
             })
     }
 

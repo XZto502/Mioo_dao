@@ -98,7 +98,7 @@ import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.homePageColor
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
-import com.mioo.dao.ui.components.toFile
+import com.mioo.dao.ui.components.compressImageUnder2MB
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.readingBackground
 import com.mioo.dao.ui.theme.readingTopBarColor
@@ -696,12 +696,20 @@ fun ForumScreen(
             },
             onSubmit = { title, author, content, imageUri, cookie ->
                 if (!isPostingThread) {
-                    val imageFile = imageUri?.toFile(context)
-                    if (imageUri != null && imageFile == null) {
-                        Toast.makeText(context, "图片读取失败", Toast.LENGTH_SHORT).show()
-                    } else {
-                        isPostingThread = true
+                    isPostingThread = true
+                    scope.launch {
+                        val imageFile = try {
+                            imageUri?.let { compressImageUnder2MB(context, it) }
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            isPostingThread = false
+                            throw e
+                        } catch (_: Exception) {
+                            isPostingThread = false
+                            Toast.makeText(context, "图片处理失败", Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
                         viewModel.createThread(title, author, content, imageFile, cookie) { ok, message ->
+                            imageFile?.delete()
                             isPostingThread = false
                             if (ok) {
                                 settingsViewModel.clearNewThreadDraft()

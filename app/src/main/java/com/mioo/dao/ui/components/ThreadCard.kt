@@ -168,20 +168,9 @@ fun ThreadCard(
             if (showImage) {
                 postData.imageUrl?.let { imageUrl ->
                     Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) }
-                    ) {
-                        ListThumbAsyncImage(
-                            imageUrl = imageUrl,
-                            contentDescription = "Thread Image",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.matchParentSize()
-                        )
-                    }
+                    ListThumbAsyncImage(imageUrl, "帖子附图", preserveRatio = true,
+                        modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
+                            indication = null) { onImageClick(imageUrl) })
                 }
             }
 

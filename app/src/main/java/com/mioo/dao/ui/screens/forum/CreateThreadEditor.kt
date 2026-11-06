@@ -287,13 +287,9 @@ fun CreateThreadEditor(
                         } }
                     )
                     image?.let { uri ->
-                        Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp).size(80.dp).clip(RoundedCornerShape(12.dp))) {
-                            AsyncImage(uri, contentDescription = "附图预览", contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().clickable { previewImage = uri })
-                            IconButton(onClick = { image = null }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).background(Color.Black.copy(alpha = 0.45f), CircleShape)) {
-                                Icon(Icons.Default.Close, contentDescription = "移除图片", tint = Color.White, modifier = Modifier.size(16.dp))
-                            }
-                        }
+                        com.mioo.dao.ui.components.LocalImagePreview(uri,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                            attachment = true, onClick = { previewImage = uri }, onRemove = { image = null })
                     }
                 }
             }

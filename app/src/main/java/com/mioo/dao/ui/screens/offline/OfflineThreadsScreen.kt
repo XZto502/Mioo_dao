@@ -352,8 +352,7 @@ fun OfflineThreadCard(
                 val coverFile = remember(cover, offlineImageDir) { File(offlineImageDir, cover) }
                 if (coverFile.isFile) {
                     Spacer(modifier = Modifier.height(10.dp))
-                    AsyncImage(model = coverFile, contentDescription = "首图缩略图", contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(120.dp).clip(RoundedCornerShape(10.dp)))
+                    com.mioo.dao.ui.components.LocalImagePreview(coverFile)
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))

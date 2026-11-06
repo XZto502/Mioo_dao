@@ -179,20 +179,9 @@ fun ReplyCard(
             // Attached Image Thumbnail
             postData.imageUrl?.let { imageUrl ->
                 Spacer(modifier = Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) }
-                ) {
-                    ListThumbAsyncImage(
-                        imageUrl = imageUrl,
-                        contentDescription = "Reply Image",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize()
-                    )
-                }
+                ListThumbAsyncImage(imageUrl, "回复附图", preserveRatio = true,
+                    modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
+                        indication = null) { onImageClick(imageUrl) })
             }
         }
     }
