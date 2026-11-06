@@ -174,12 +174,15 @@ fun LocalImagePreview(
             alignment = if (ratio < 0.45f) Alignment.TopCenter else Alignment.Center,
             onSuccess = { ratio = it.result.drawable.previewRatio() })
         if (onRemove != null) {
-            Surface(onClick = onRemove, shape = CircleShape, color = Color.Black.copy(alpha = 0.62f),
-                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f)),
-                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(22.dp)) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Close, "移除图片", Modifier.size(13.dp), tint = Color.White)
-                }
+            Box(
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)
+                    .size(18.dp).clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                    .clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Close, "移除图片", Modifier.size(11.dp), tint = Color.White)
             }
         }
     }
