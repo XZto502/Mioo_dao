@@ -95,6 +95,7 @@ fun SearchScreen(
         },
         modifier = modifier,
         containerColor = secondaryPageBackground(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
         Column(
@@ -123,7 +124,7 @@ fun SearchScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "输入关键词后可搜索 X 岛，也可查看本地历史、收藏和缓存。",
+                text = "全站搜索用搜索引擎 site: 限定 X 岛域名（无公开 Search API）。下方同时显示本地历史/收藏/缓存结果。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -212,38 +213,6 @@ fun SearchScreen(
                 }
 
                 if (uiState.query.isNotBlank()) {
-                    item(key = "remote_search") {
-                        Card(modifier = Modifier.fillMaxWidth().clickable(enabled = !uiState.remoteLoading) { viewModel.searchRemote() },
-                            shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground())) {
-                            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if (uiState.remoteLoading) "正在搜索 X 岛…" else "搜索 X 岛", modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                if (uiState.remoteLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            }
-                        }
-                    }
-                    uiState.remoteError?.let { error -> item(key = "remote_error") {
-                        Text("搜索失败：$error", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    } }
-                    if (uiState.remoteSearched && uiState.remoteError == null && uiState.remoteHits.isEmpty()) {
-                        item(key = "remote_empty") { Text("X 岛没有匹配结果", style = MaterialTheme.typography.bodyMedium) }
-                    }
-                    items(uiState.remoteHits, key = { "remote_${it.isReply}_${it.postId}" }) { hit ->
-                        Card(modifier = Modifier.fillMaxWidth().clickable { onNavigateToThread(hit.threadId) },
-                            shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground())) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("${if (hit.isReply) "回复" else "串"} · No.${hit.postId}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-                                hit.title.effectiveTitle()?.let { Text(it, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                                Text(hit.content.ifBlank { "（无正文）" }, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                    if (uiState.remoteHasMore) item(key = "remote_more") {
-                        androidx.compose.material3.TextButton(onClick = { viewModel.searchRemote(nextPage = true) }, enabled = !uiState.remoteLoading) { Text("加载更多") }
-                    }
-                }
-
-                if (uiState.query.isNotBlank()) {
                     item(key = "site_hint") {
                         Card(
                             modifier = Modifier
@@ -308,7 +277,7 @@ fun SearchScreen(
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "可点击「搜索 X 岛」查找全站内容",
+                                    text = "点上方「全站搜索」用搜索引擎 site: 检索岛上内容",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

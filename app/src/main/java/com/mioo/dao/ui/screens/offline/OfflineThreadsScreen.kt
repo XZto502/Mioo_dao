@@ -203,6 +203,7 @@ fun OfflineThreadsScreen(
             )
         },
         containerColor = secondaryPageBackground(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { paddingValues ->

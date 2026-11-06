@@ -228,6 +228,7 @@ fun SettingsScreen(
         },
         modifier = modifier.fillMaxSize(),
         containerColor = secondaryPageBackground(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Column(
@@ -1956,7 +1957,7 @@ internal fun secondaryCardBackground(): Color {
 
 @Composable
 private fun SettingsGroupCard(modifier: Modifier = Modifier, elevation: androidx.compose.material3.CardElevation = CardDefaults.cardElevation(0.dp), content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground()), elevation = elevation, content = content)
+    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground(), contentColor = MaterialTheme.colorScheme.onSurface), elevation = elevation, content = content)
 }
 
 @Composable
