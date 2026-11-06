@@ -93,11 +93,13 @@ fun ListThumbAsyncImage(
     previewMaxSize: androidx.compose.ui.unit.Dp = 120.dp
 ) {
     var ratio by remember(imageUrl) { mutableStateOf(1.2f) }
-    val frame = if (preserveRatio) modifier.previewFrame(ratio, previewMaxSize, previewMaxSize) else modifier
+    val frame = if (preserveRatio) Modifier.previewFrame(ratio, previewMaxSize, previewMaxSize) else modifier
+    val reservedSpace = if (preserveRatio) modifier.size(previewMaxSize) else Modifier
     val dataSaver = com.mioo.dao.ui.theme.LocalDataSaverEnabled.current
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
     if (dataSaver && !manualLoaded) {
         // 省流量模式：占位不加载，点击才拉这一张
+        Box(reservedSpace, contentAlignment = Alignment.CenterStart) {
         Box(
             modifier = frame
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
@@ -118,6 +120,7 @@ fun ListThumbAsyncImage(
                 )
             }
         }
+        }
         return@ListThumbAsyncImage
     }
     val context = LocalContext.current
@@ -129,6 +132,7 @@ fun ListThumbAsyncImage(
         ListThumbImage.request(context, currentUrl)
     }
 
+    Box(reservedSpace, contentAlignment = Alignment.CenterStart) {
     Box(modifier = frame.background(MaterialTheme.colorScheme.surfaceVariant)) {
         AsyncImage(
             model = request,
@@ -141,6 +145,7 @@ fun ListThumbAsyncImage(
                 if (!useFull) useFull = true
             }
         )
+    }
     }
 }
 
@@ -197,7 +202,8 @@ fun LocalImagePreview(
         return
     }
     var ratio by remember(model) { mutableStateOf(1.2f) }
-    Box(modifier.previewFrame(ratio, 120.dp, 120.dp)) {
+    Box(modifier.size(120.dp), contentAlignment = Alignment.CenterStart) {
+    Box(Modifier.previewFrame(ratio, 120.dp, 120.dp)) {
         AsyncImage(model, "附图预览",
             modifier = Modifier.matchParentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
             contentScale = if (ratio < 0.45f) ContentScale.Crop else ContentScale.Fit,
@@ -215,6 +221,7 @@ fun LocalImagePreview(
                 Icon(Icons.Default.Close, "移除图片", Modifier.size(11.dp), tint = Color.White)
             }
         }
+    }
     }
 }
 

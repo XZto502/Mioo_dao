@@ -165,12 +165,14 @@ fun ThreadCard(
             )
 
             // Attached Image Thumbnail (optional — off during cold first frames)
-            if (showImage) {
-                postData.imageUrl?.let { imageUrl ->
+            postData.imageUrl?.let { imageUrl ->
                     Spacer(modifier = Modifier.height(10.dp))
+                if (showImage) {
                     ListThumbAsyncImage(imageUrl, "帖子附图", preserveRatio = true,
                         modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
                             indication = null) { onImageClick(imageUrl) })
+                } else {
+                    Spacer(Modifier.size(120.dp))
                 }
             }
 
