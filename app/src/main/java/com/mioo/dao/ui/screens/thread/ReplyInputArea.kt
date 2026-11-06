@@ -463,7 +463,8 @@ internal fun ReplyInputArea(
                     attachedImageUri?.let { uri ->
                         com.mioo.dao.ui.components.LocalImagePreview(uri,
                             modifier = Modifier.padding(vertical = 6.dp),
-                            attachment = true, onClick = { previewAttachedUri = uri },
+                            attachment = true, attachmentBackground = if (fullScreen) paper else readingComposerColor(),
+                            onClick = { previewAttachedUri = uri },
                             onRemove = { attachedImageUri = null })
                     }
                 }

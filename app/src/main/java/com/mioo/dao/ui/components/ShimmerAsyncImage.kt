@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -161,13 +163,41 @@ fun LocalImagePreview(
     model: Any,
     modifier: Modifier = Modifier,
     attachment: Boolean = false,
+    attachmentBackground: Color = Color.Unspecified,
     onClick: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null
 ) {
+    if (attachment) {
+        val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val cardBg = if (attachmentBackground != Color.Unspecified) attachmentBackground
+            else if (dark) Color(0xFF16181E) else Color.White
+        val badgeBg = if (dark) Color(0xFF2C303A) else Color(0xFF3A3F4B)
+        val shape = RoundedCornerShape(12.dp)
+        Box(modifier.wrapContentSize()) {
+            AsyncImage(
+                model = model,
+                contentDescription = "已选图片",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.padding(top = 7.dp, end = 7.dp).size(80.dp)
+                    .clip(shape)
+                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), shape)
+                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            )
+            if (onRemove != null) {
+                Box(
+                    modifier = Modifier.align(Alignment.TopEnd).size(22.dp).clip(CircleShape)
+                        .background(badgeBg).border(2.dp, cardBg, CircleShape)
+                        .clickable(onClick = onRemove),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Close, "移除图片", Modifier.size(12.dp), tint = Color.White)
+                }
+            }
+        }
+        return
+    }
     var ratio by remember(model) { mutableStateOf(1.2f) }
-    val maxWidth = if (attachment) 80.dp else 120.dp
-    val maxHeight = if (attachment) 80.dp else 120.dp
-    Box(modifier.previewFrame(ratio, maxWidth, maxHeight)) {
+    Box(modifier.previewFrame(ratio, 120.dp, 120.dp)) {
         AsyncImage(model, "附图预览",
             modifier = Modifier.matchParentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
             contentScale = if (ratio < 0.45f) ContentScale.Crop else ContentScale.Fit,
