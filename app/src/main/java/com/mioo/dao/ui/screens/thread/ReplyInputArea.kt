@@ -454,6 +454,20 @@ internal fun ReplyInputArea(
                 }
 
 
+                AnimatedVisibility(
+                    visible = attachedImageUri != null,
+                    modifier = if (fullScreen) Modifier.padding(horizontal = 12.dp) else Modifier,
+                    enter = MiooMotion.softExpandEnter(reducedMotion),
+                    exit = MiooMotion.softExpandExit(reducedMotion)
+                ) {
+                    attachedImageUri?.let { uri ->
+                        com.mioo.dao.ui.components.LocalImagePreview(uri,
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            attachment = true, onClick = { previewAttachedUri = uri },
+                            onRemove = { attachedImageUri = null })
+                    }
+                }
+
                 if (fullScreen) {
                     BasicTextField(textFieldValue, { applyEdit(it) },
                         Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp, vertical = 8.dp)
@@ -521,12 +535,6 @@ internal fun ReplyInputArea(
                     )
                 )
 
-                attachedImageUri?.let { uri ->
-                    com.mioo.dao.ui.components.LocalImagePreview(uri,
-                        modifier = Modifier.padding(horizontal = if (fullScreen) 12.dp else 0.dp, vertical = 6.dp),
-                        attachment = true, onClick = { previewAttachedUri = uri },
-                        onRemove = { attachedImageUri = null })
-                }
             }
             }
                 Row(
