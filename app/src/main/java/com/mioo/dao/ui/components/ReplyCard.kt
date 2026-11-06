@@ -179,7 +179,7 @@ fun ReplyCard(
             // Attached Image Thumbnail
             postData.imageUrl?.let { imageUrl ->
                 Spacer(modifier = Modifier.height(10.dp))
-                ListThumbAsyncImage(imageUrl, "回复附图", preserveRatio = true,
+                ListThumbAsyncImage(imageUrl, "回复附图", preserveRatio = true, previewMaxSize = 100.dp,
                     modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
                         indication = null) { onImageClick(imageUrl) })
             }

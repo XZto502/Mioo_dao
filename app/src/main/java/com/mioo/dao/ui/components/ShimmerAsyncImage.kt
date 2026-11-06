@@ -87,10 +87,11 @@ fun ListThumbAsyncImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
-    preserveRatio: Boolean = false
+    preserveRatio: Boolean = false,
+    previewMaxSize: androidx.compose.ui.unit.Dp = 120.dp
 ) {
     var ratio by remember(imageUrl) { mutableStateOf(1.2f) }
-    val frame = if (preserveRatio) modifier.previewFrame(ratio, 190.dp, 230.dp) else modifier
+    val frame = if (preserveRatio) modifier.previewFrame(ratio, previewMaxSize, previewMaxSize) else modifier
     val dataSaver = com.mioo.dao.ui.theme.LocalDataSaverEnabled.current
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
     if (dataSaver && !manualLoaded) {
@@ -164,8 +165,8 @@ fun LocalImagePreview(
     onRemove: (() -> Unit)? = null
 ) {
     var ratio by remember(model) { mutableStateOf(1.2f) }
-    val maxWidth = if (attachment) 132.dp else 190.dp
-    val maxHeight = if (attachment) 112.dp else 230.dp
+    val maxWidth = if (attachment) 80.dp else 120.dp
+    val maxHeight = if (attachment) 80.dp else 120.dp
     Box(modifier.previewFrame(ratio, maxWidth, maxHeight)) {
         AsyncImage(model, "附图预览",
             modifier = Modifier.matchParentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
