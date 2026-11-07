@@ -8,7 +8,8 @@ import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.pager.PagerState
 import kotlin.math.roundToInt
 
-private val HomeTabEasing = CubicBezierEasing(0.33f, 0f, 0.67f, 1f)
+// Build momentum earlier, then settle continuously without overshooting the page.
+private val HomeTabEasing = CubicBezierEasing(0.28f, 0f, 0.28f, 1f)
 
 /** Four home tabs are close enough to animate the whole distance without a pre-jump. */
 @OptIn(ExperimentalFoundationApi::class)
