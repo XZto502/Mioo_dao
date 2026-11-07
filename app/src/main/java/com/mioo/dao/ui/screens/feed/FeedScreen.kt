@@ -313,11 +313,11 @@ fun FeedScreen(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 8.dp,
-                            end = 8.dp,
-                            top = 8.dp,
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = 12.dp,
                             bottom = 100.dp
                         )
                     ) {

@@ -13,10 +13,11 @@ import androidx.compose.ui.Modifier
  */
 @Composable
 internal fun PageBackdrop(
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
         propagateMinConstraints = true

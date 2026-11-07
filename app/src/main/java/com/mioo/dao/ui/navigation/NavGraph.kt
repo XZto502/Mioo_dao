@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -488,7 +489,7 @@ private fun MainTabs(
         key = { it }
     ) { page ->
         tabState.SaveableStateProvider(page) {
-        PageBackdrop {
+        PageBackdrop(Modifier.graphicsLayer()) {
             when (page) {
                 0 -> {
                     val viewModel: ForumViewModel = hiltViewModel()
