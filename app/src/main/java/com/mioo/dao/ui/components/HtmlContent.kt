@@ -702,7 +702,6 @@ fun HtmlContent(
 @Composable
 private fun DiceBadge(spec: DiceBadgeSpec) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val onBadgeClick = LocalDiceRuleMenu.current
     val normalBg = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
     val normalFg = MaterialTheme.colorScheme.onSecondaryContainer
     val colors = diceBadgeColors(spec.level, darkTheme, normalBg, normalFg)
@@ -718,7 +717,6 @@ private fun DiceBadge(spec: DiceBadgeSpec) {
                     Modifier
                 }
             )
-            .clickable { onBadgeClick?.invoke() }
             .padding(horizontal = 6.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

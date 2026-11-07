@@ -710,7 +710,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
+                    text = "开启后串正文里的骰子出目将显示为统一颜色的高亮胶囊。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )

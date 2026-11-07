@@ -205,7 +205,6 @@ import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.components.LocalDicePreset
-import com.mioo.dao.ui.components.LocalDiceRuleMenu
 import com.mioo.dao.utils.DiceRulePreset
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.CompositionLocalProvider
@@ -274,9 +273,7 @@ fun ThreadScreen(
     // Local text field value — do not write listUi on every keystroke
     var searchFieldText by remember { mutableStateOf("") }
     var showOverflowMenu by remember { mutableStateOf(false) }
-    // 骰点高亮规则：按串记忆；点任意骰子胶囊弹出切换微菜单
-    val dicePreset by viewModel.dicePreset.collectAsState()
-    var showDiceRuleMenu by remember { mutableStateOf(false) }
+    val dicePreset = DiceRulePreset.NEUTRAL_DEFAULT
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -618,9 +615,7 @@ fun ThreadScreen(
                             showBookmarkMenu = showBookmarkMenu,
                             onShowBookmarkMenuChange = { showBookmarkMenu = it },
                             showOverflowMenu = showOverflowMenu,
-                            onShowOverflowMenuChange = { showOverflowMenu = it },
-                            diceRuleLabel = "骰子规则: ${dicePreset.shortLabel}",
-                            onOpenDiceRule = { showDiceRuleMenu = true }
+                            onShowOverflowMenuChange = { showOverflowMenu = it }
                         )
                     }
                 },
@@ -661,8 +656,7 @@ fun ThreadScreen(
     ) { paddingValues ->
         CompositionLocalProvider(
             // 设置里的骰点高亮开关：关闭时不向渲染层下发规则（正文恢复纯文本）
-            LocalDicePreset provides if (threadSettings.diceBadgesEnabled) dicePreset else null,
-            LocalDiceRuleMenu provides { showDiceRuleMenu = true }
+            LocalDicePreset provides if (threadSettings.diceBadgesEnabled) dicePreset else null
         ) {
         Box(
             modifier = Modifier
@@ -789,11 +783,6 @@ fun ThreadScreen(
                                     onReport = { reportTargetNo = mainThread.idStr },
                                     onShareCard = {
                                         sharePostId = mainPostData.id
-                                    },
-                                    onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(mainThread.content)) {
-                                        { showDiceRuleMenu = true }
-                                    } else {
-                                        null
                                     }
                                 )
                             }
@@ -852,8 +841,7 @@ fun ThreadScreen(
                             },
                             onFreeCopy = { freeCopyId = item.idStr; freeCopyText = item.rawContent },
                             onReport = { reportTargetNo = item.idStr },
-                            onShareCard = { sharePostId = item.idStr },
-                            onOpenDiceRule = { showDiceRuleMenu = true }
+                            onShareCard = { sharePostId = item.idStr }
                         )
                     }
 
@@ -1044,7 +1032,7 @@ fun ThreadScreen(
             resolveContexts = viewModel::loadShareContexts,
             showBranding = settings.showShareCardBranding,
             onBrandingChange = settingsViewModel::setShowShareCardBranding,
-            dicePreset = dicePreset, onDismiss = { sharePostId = null }
+            dicePreset = if (threadSettings.diceBadgesEnabled) dicePreset else null, onDismiss = { sharePostId = null }
         )
     }
 
@@ -1059,38 +1047,6 @@ fun ThreadScreen(
             onJump = { page ->
                 viewModel.jumpToPage(page)
                 showPageJumpDialog = false
-            }
-        )
-    }
-
-    // 与回复栏骰娘同一套 AlertDialog：系统 dim 盖住整屏（含顶栏和底栏），不要自绘半屏遮罩。
-    if (showDiceRuleMenu) {
-        AlertDialog(
-            onDismissRequest = { showDiceRuleMenu = false },
-            properties = immersiveDialogProperties(),
-            title = {
-                ImmersiveDialogEffect()
-                Text("本串骰子规则")
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DiceRulePreset.entries.forEach { preset ->
-                        Md3MenuPillItem(
-                            label = preset.menuLabel,
-                            leadingIcon = Icons.Default.Casino,
-                            selected = preset == dicePreset,
-                            onClick = {
-                                viewModel.setDicePreset(preset)
-                                showDiceRuleMenu = false
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDiceRuleMenu = false }) {
-                    Text("取消")
-                }
             }
         )
     }
@@ -1300,9 +1256,7 @@ private fun ThreadChromeActions(
     showBookmarkMenu: Boolean,
     onShowBookmarkMenuChange: (Boolean) -> Unit,
     showOverflowMenu: Boolean,
-    onShowOverflowMenuChange: (Boolean) -> Unit,
-    diceRuleLabel: String,
-    onOpenDiceRule: () -> Unit
+    onShowOverflowMenuChange: (Boolean) -> Unit
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
@@ -1450,14 +1404,6 @@ private fun ThreadChromeActions(
                 onClick = {
                     onShowOverflowMenuChange(false)
                     onShare()
-                }
-            )
-            Md3MenuPillItem(
-                label = diceRuleLabel,
-                leadingIcon = Icons.Default.Casino,
-                onClick = {
-                    onShowOverflowMenuChange(false)
-                    onOpenDiceRule()
                 }
             )
             Md3MenuPillItem(
@@ -1805,8 +1751,7 @@ private fun ThreadReplyRow(
     onBlockUser: () -> Unit,
     onFreeCopy: () -> Unit,
     onReport: () -> Unit,
-    onShareCard: () -> Unit,
-    onOpenDiceRule: () -> Unit
+    onShareCard: () -> Unit
 ) {
     // 每个引用从首帧就拥有同样的预览槽位；缓存命中只替换槽位内容。
     val quotedPostsData = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1841,12 +1786,7 @@ private fun ThreadReplyRow(
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
             blockUserLabel = "屏蔽该饼干 (ID: ${item.userHash})",
             onReport = onReport,
-            onShareCard = onShareCard,
-            onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(item.rawContent)) {
-                onOpenDiceRule
-            } else {
-                null
-            }
+            onShareCard = onShareCard
         )
     }
 
@@ -1877,8 +1817,7 @@ private fun PostActionDialog(
     onReport: () -> Unit,
     blockThreadLabel: String,
     blockUserLabel: String,
-    onShareCard: (() -> Unit)? = null,
-    onSwitchDiceRule: (() -> Unit)? = null
+    onShareCard: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1892,12 +1831,6 @@ private fun PostActionDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (onSwitchDiceRule != null) {
-                    TextButton(
-                        onClick = { onSwitchDiceRule(); onDismiss() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("切换本串骰子规则") }
-                }
                 TextButton(
                     onClick = { onQuote(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
