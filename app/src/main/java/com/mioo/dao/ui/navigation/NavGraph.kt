@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -40,7 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -291,80 +291,10 @@ fun MiooDaoNavGraph(
         scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
         drawerContent = { boardDrawerSlot.content() }
     ) {
-    Scaffold(
-        bottomBar = {
-            // 底栏是抽屉底层页面的一部分，随 scrim 一起被压暗，不再因抽屉滑出
-            AnimatedVisibility(
-                visible = showBottomBar && !isImageViewerOpen && !isComposerOpen,
-                enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
-                exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
-            ) {
-                // Outer box draws into the gesture nav area so the 小白条 is immersive;
-                // capsule itself stays above the system inset.
-                // offset (not graphicsLayer) moves the touch target with the slide.
-                val slideFraction = bottomBarSlide.value
-                val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
-                val pageBgColor = readingBackground()
-                Box(
-                    modifier = Modifier
-                        .onSizeChanged { bottomBarHeightPx = it.height }
-                        .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
-                        .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    NavigationBar(
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
-                        tonalElevation = 0.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-                            .border(
-                                width = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-                            )
-                    ) {
-                        bottomBarItems.forEach { (index, icon, label) ->
-                            NavigationBarItem(
-                                icon = {
-                                    val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
-                                        0 -> Icons.Outlined.Home
-                                        1 -> Icons.Outlined.BookmarkBorder
-                                        3 -> Icons.Outlined.Settings
-                                        else -> icon
-                                    }
-                                    Icon(displayIcon, contentDescription = label)
-                                },
-                                label = { Text(label) },
-                                selected = tabPagerState.targetPage == index,
-                                onClick = {
-                                    if (index == 2) historyOpenGeneration++
-                                    if (tabPagerState.targetPage == index) return@NavigationBarItem
-                                    tabScope.launch {
-                                        if (reducedMotion) {
-                                            tabPagerState.scrollToPage(index)
-                                        } else {
-                                            tabPagerState.animateHomeTabTo(index)
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = Color.Transparent
-    ) { _ ->
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
-            modifier = Modifier.nestedScroll(bottomBarScroll),
+            modifier = Modifier.fillMaxSize(),
             // Intentionally no paddingValues: content scrolls behind the floating nav bar.
             enterTransition = pageEnter,
             exitTransition = pageHoldExit,
@@ -377,26 +307,92 @@ fun MiooDaoNavGraph(
                 enterTransition = { EnterTransition.None },
                 popEnterTransition = { EnterTransition.None }
             ) { _ ->
-                MainTabs(
-                    pagerState = tabPagerState,
-                    historyOpenGeneration = historyOpenGeneration,
-                    onNavigateToThread = navigateToThread,
-                    onColdStartContentReady = onColdStartContentReady,
-                    dockSinkFraction = { bottomBarSlide.value },
-                    drawerState = boardDrawerState,
-                    boardDrawerSlot = boardDrawerSlot,
-                    onImageViewerOpenChange = { isImageViewerOpen = it },
-                    onComposerOpenChange = { isComposerOpen = it },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.SettingsDetail.route)
-                    },
-                    onNavigateToDrafts = {
-                        navController.navigate(Screen.DraftBox.route)
-                    },
-                    onNavigateToSearch = {
-                        navController.navigate(Screen.Search.route)
+                Box(Modifier.fillMaxSize().nestedScroll(bottomBarScroll)) {
+                    MainTabs(
+                        pagerState = tabPagerState,
+                        historyOpenGeneration = historyOpenGeneration,
+                        onNavigateToThread = navigateToThread,
+                        onColdStartContentReady = onColdStartContentReady,
+                        dockSinkFraction = { bottomBarSlide.value },
+                        drawerState = boardDrawerState,
+                        boardDrawerSlot = boardDrawerSlot,
+                        onImageViewerOpenChange = { isImageViewerOpen = it },
+                        onComposerOpenChange = { isComposerOpen = it },
+                        onNavigateToSettings = {
+                            navController.navigate(Screen.SettingsDetail.route)
+                        },
+                        onNavigateToDrafts = {
+                            navController.navigate(Screen.DraftBox.route)
+                        },
+                        onNavigateToSearch = {
+                            navController.navigate(Screen.Search.route)
+                        }
+                    )
+                    // Keep the dock on the home layer so incoming destinations cover it.
+                    AnimatedVisibility(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        visible = showBottomBar && !isImageViewerOpen && !isComposerOpen,
+                        enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
+                        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
+                    ) {
+                        // Outer box draws into the gesture nav area so the 小白条 is immersive;
+                        // capsule itself stays above the system inset.
+                        // offset (not graphicsLayer) moves the touch target with the slide.
+                        val slideFraction = bottomBarSlide.value
+                        val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
+                        val pageBgColor = readingBackground()
+                        Box(
+                            modifier = Modifier
+                                .onSizeChanged { bottomBarHeightPx = it.height }
+                                .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
+                                .fillMaxWidth()
+                                .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
+                                .navigationBarsPadding()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            NavigationBar(
+                                windowInsets = WindowInsets(0, 0, 0, 0),
+                                containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
+                                tonalElevation = 0.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                                    .border(
+                                        width = 0.5.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                                    )
+                            ) {
+                                bottomBarItems.forEach { (index, icon, label) ->
+                                    NavigationBarItem(
+                                        icon = {
+                                            val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
+                                                0 -> Icons.Outlined.Home
+                                                1 -> Icons.Outlined.BookmarkBorder
+                                                3 -> Icons.Outlined.Settings
+                                                else -> icon
+                                            }
+                                            Icon(displayIcon, contentDescription = label)
+                                        },
+                                        label = { Text(label) },
+                                        selected = tabPagerState.targetPage == index,
+                                        onClick = {
+                                            if (index == 2) historyOpenGeneration++
+                                            if (tabPagerState.targetPage == index) return@NavigationBarItem
+                                            tabScope.launch {
+                                                if (reducedMotion) {
+                                                    tabPagerState.scrollToPage(index)
+                                                } else {
+                                                    tabPagerState.animateHomeTabTo(index)
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
-                )
+                }
             }
 
             composable(route = Screen.Search.route) { _ ->
@@ -460,7 +456,6 @@ fun MiooDaoNavGraph(
                 }
             }
         }
-    }
     }
 }
 
