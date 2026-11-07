@@ -15,12 +15,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Brush
 import com.mioo.dao.ui.theme.readingBackground
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -50,9 +52,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -75,7 +77,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import kotlinx.coroutines.launch
 import com.mioo.dao.ui.screens.feed.FeedScreen
 import com.mioo.dao.ui.screens.feed.FeedViewModel
 import com.mioo.dao.ui.screens.forum.BoardDrawerSlot
@@ -164,7 +165,7 @@ fun MiooDaoNavGraph(
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
 
     // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
-    // All four home tabs share one pager and slide continuously through intermediate pages.
+    // The four home tabs use a separate, short transition.
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         MiooMotion.pageEnter(reducedMotion)
     }
@@ -178,13 +179,12 @@ fun MiooDaoNavGraph(
         MiooMotion.pagePopExit(reducedMotion)
     }
     val density = LocalDensity.current
-    val tabScope = rememberCoroutineScope()
-    val tabPagerState = rememberPagerState(initialPage = 0) { 4 }
+    var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var historyOpenGeneration by remember { mutableIntStateOf(0) }
     var previousRoute by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentRoute) {
         if (currentRoute == Screen.Home.route && previousRoute == Screen.Thread.route &&
-            tabPagerState.currentPage == 2) {
+            currentTabIndex == 2) {
             historyOpenGeneration++
         }
         previousRoute = currentRoute
@@ -262,7 +262,7 @@ fun MiooDaoNavGraph(
             }
         }
     }
-    LaunchedEffect(tabPagerState.targetPage) {
+    LaunchedEffect(currentTabIndex) {
         bottomBarVisible = true
     }
     // 260ms EaseOut dumped the travel into the first frames. 560ms felt slow.
@@ -284,7 +284,7 @@ fun MiooDaoNavGraph(
         drawerState = boardDrawerState,
         gesturesEnabled = boardDrawerSlot.gesturesEnabled &&
             currentRoute == Screen.Home.route &&
-            tabPagerState.currentPage == 0 &&
+            currentTabIndex == 0 &&
             !isImageViewerOpen &&
             !isComposerOpen,
         scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
@@ -300,7 +300,7 @@ fun MiooDaoNavGraph(
             popEnterTransition = pageRevealEnter,
             popExitTransition = pagePopExit
         ) {
-            // Cold start stays put. Tab changes are the pager, not a NavHost transition.
+            // Home tab transitions are independent of the NavHost.
             composable(
                 route = Screen.Home.route,
                 enterTransition = { EnterTransition.None },
@@ -308,7 +308,8 @@ fun MiooDaoNavGraph(
             ) { _ ->
                 Box(Modifier.fillMaxSize().nestedScroll(bottomBarScroll)) {
                     MainTabs(
-                        pagerState = tabPagerState,
+                        currentTabIndex = currentTabIndex,
+                        reducedMotion = reducedMotion,
                         historyOpenGeneration = historyOpenGeneration,
                         onNavigateToThread = navigateToThread,
                         onColdStartContentReady = onColdStartContentReady,
@@ -365,7 +366,7 @@ fun MiooDaoNavGraph(
                                 bottomBarItems.forEach { (index, icon, label) ->
                                     NavigationBarItem(
                                         icon = {
-                                            val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
+                                            val displayIcon = if (currentTabIndex == index) icon else when (index) {
                                                 0 -> Icons.Outlined.Home
                                                 1 -> Icons.Outlined.BookmarkBorder
                                                 3 -> Icons.Outlined.Settings
@@ -374,17 +375,11 @@ fun MiooDaoNavGraph(
                                             Icon(displayIcon, contentDescription = label)
                                         },
                                         label = { Text(label) },
-                                        selected = tabPagerState.targetPage == index,
+                                        selected = currentTabIndex == index,
                                         onClick = {
                                             if (index == 2) historyOpenGeneration++
-                                            if (tabPagerState.targetPage == index) return@NavigationBarItem
-                                            tabScope.launch {
-                                                if (reducedMotion) {
-                                                    tabPagerState.scrollToPage(index)
-                                                } else {
-                                                    tabPagerState.animateHomeTabTo(index)
-                                                }
-                                            }
+                                            if (currentTabIndex == index) return@NavigationBarItem
+                                            currentTabIndex = index
                                         }
                                     )
                                 }
@@ -429,11 +424,7 @@ fun MiooDaoNavGraph(
                         onUsePostDraft = {
                             // 回到主界面并切到板块 tab，ForumScreen 会从总线取草稿打开发串框
                             navController.popBackStack()
-                            tabScope.launch {
-                                if (tabPagerState.currentPage != 0) {
-                                    tabPagerState.scrollToPage(0)
-                                }
-                            }
+                            currentTabIndex = 0
                         }
                     )
                 }
@@ -461,7 +452,8 @@ fun MiooDaoNavGraph(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainTabs(
-    pagerState: PagerState,
+    currentTabIndex: Int,
+    reducedMotion: Boolean,
     historyOpenGeneration: Int,
     onNavigateToThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
@@ -475,17 +467,22 @@ private fun MainTabs(
     onNavigateToSearch: () -> Unit
 ) {
     val tabState = rememberSaveableStateHolder()
-    HorizontalPager(
-        state = pagerState,
+    val slidePx = with(LocalDensity.current) { 20.dp.roundToPx() }
+    AnimatedContent(
+        targetState = currentTabIndex,
         modifier = Modifier.fillMaxSize(),
-        // Keep all four tabs composed: on a More → Forum transition, composing
-        // the forum as it enters the viewport can interrupt the animation tail.
-        beyondBoundsPageCount = 3,
-        userScrollEnabled = false,
-        // This pager is controlled only by the dock. The default nested-scroll
-        // connection still moves a partially animated pager when a child is dragged.
-        pageNestedScrollConnection = remember { object : NestedScrollConnection {} },
-        key = { it }
+        transitionSpec = {
+            if (reducedMotion) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                val direction = if (targetState >= initialState) 1 else -1
+                (fadeIn(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) {
+                        direction * slidePx
+                    }) togetherWith fadeOut(tween(70, easing = LinearEasing))
+            }
+        },
+        label = "home tab"
     ) { page ->
         tabState.SaveableStateProvider(page) {
         PageBackdrop {
