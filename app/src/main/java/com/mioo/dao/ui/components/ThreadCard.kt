@@ -87,7 +87,8 @@ fun ThreadCard(
     enablePressScale: Boolean = false,
     /** When false, skip thumbnail (cold-start: defer decode until list settles). */
     showImage: Boolean = true,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    onNumberClick: (() -> Unit)? = null
 ) {
     val border: androidx.compose.foundation.BorderStroke? = null
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
@@ -134,7 +135,7 @@ fun ThreadCard(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            ReadingPostHeader(postData)
+            ReadingPostHeader(postData, onNumberClick)
 
             Spacer(modifier = Modifier.height(10.dp))
 

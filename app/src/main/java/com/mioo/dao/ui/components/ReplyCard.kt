@@ -79,7 +79,8 @@ fun ReplyCard(
     currentThreadId: String? = null,
     /** Dense reply lists skip press-scale to cut animateFloatAsState work. */
     enablePressScale: Boolean = false,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    onNumberClick: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     // Do not call rememberPressScale when disabled — it still subscribes to press + animateFloat.
@@ -123,7 +124,7 @@ fun ReplyCard(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            ReadingPostHeader(postData)
+            ReadingPostHeader(postData, onNumberClick)
 
             Spacer(modifier = Modifier.height(10.dp))
 

@@ -797,6 +797,10 @@ fun ThreadScreen(
 
                             ThreadCard(
                                 postData = mainPostData,
+                                onNumberClick = {
+                                    viewModel.setQuotedPost(mainThread.idStr)
+                                    if (threadSettings.enableCreatorMode) creatorOpen = true
+                                },
                                 replyCount = mainThread.replyCount ?: 0,
                                 onThreadClick = emptyLambda,
                                 onQuoteClick = onQuoteClick,
@@ -1845,6 +1849,7 @@ private fun ThreadReplyRow(
         onImageClick = onImageClick,
         onCardClick = onCardClick,
         onCardLongClick = { showReplyBlockDialog = true },
+        onNumberClick = onRequestQuote,
         quotedPosts = quotedPostsData,
         onViewThreadClick = onViewThreadClick,
         currentThreadId = currentThreadId
