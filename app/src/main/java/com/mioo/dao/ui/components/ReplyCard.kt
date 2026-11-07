@@ -126,19 +126,7 @@ fun ReplyCard(
         ) {
             ReadingPostHeader(postData, onNumberClick)
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Reply Subject (highly rare but possible in some formats)
-            if (!postData.title.isNullOrBlank()) {
-                Text(
-                    text = postData.title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-            }
+            ReadingPostSubject(postData)
 
             // Cached pure split — avoids re-running regex on every unrelated recompose
             val contentBlocks = remember(postData.content, quotedPosts) {

@@ -137,19 +137,7 @@ fun ThreadCard(
         ) {
             ReadingPostHeader(postData, onNumberClick)
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Subject / Title (if present)
-            if (!postData.title.isNullOrBlank()) {
-                Text(
-                    text = postData.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-            }
+            ReadingPostSubject(postData)
 
             // HTML content — list mode skips gesture plumbing (card handles clicks)
             HtmlContent(

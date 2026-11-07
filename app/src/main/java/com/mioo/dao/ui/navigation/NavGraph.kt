@@ -35,10 +35,13 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -75,6 +78,7 @@ import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
 import com.mioo.dao.ui.screens.feed.FeedScreen
 import com.mioo.dao.ui.screens.feed.FeedViewModel
+import com.mioo.dao.ui.screens.forum.BoardDrawerSlot
 import com.mioo.dao.ui.screens.forum.ForumScreen
 import com.mioo.dao.ui.screens.forum.ForumViewModel
 import com.mioo.dao.ui.screens.search.SearchScreen
@@ -196,8 +200,14 @@ fun MiooDaoNavGraph(
     }
 
     val showBottomBar = currentRoute == Screen.Home.route
-    // 切换板块抽屉打开/正在打开时收起悬浮 dock：不遮抽屉、不拦点击
-    var forumDrawerOpen by remember { mutableStateOf(false) }
+    // 板块抽屉包在底栏外层：底栏留在抽屉 content 里，由 scrim 压暗，不再滑出隐藏
+    val boardDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val boardDrawerSlot = remember { BoardDrawerSlot() }
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != Screen.Home.route && boardDrawerState.currentValue != DrawerValue.Closed) {
+            boardDrawerState.close()
+        }
+    }
     // 大图查看器打开时收起悬浮 dock：不遮查看器底部药丸、不拦点击
     var isImageViewerOpen by remember { mutableStateOf(false) }
     var isComposerOpen by remember { mutableStateOf(false) }
@@ -270,11 +280,22 @@ fun MiooDaoNavGraph(
         }
     }
 
+    ModalNavigationDrawer(
+        modifier = modifier,
+        drawerState = boardDrawerState,
+        gesturesEnabled = boardDrawerSlot.gesturesEnabled &&
+            currentRoute == Screen.Home.route &&
+            tabPagerState.currentPage == 0 &&
+            !isImageViewerOpen &&
+            !isComposerOpen,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
+        drawerContent = { boardDrawerSlot.content() }
+    ) {
     Scaffold(
         bottomBar = {
-            // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
+            // 底栏是抽屉底层页面的一部分，随 scrim 一起被压暗，不再因抽屉滑出
             AnimatedVisibility(
-                visible = showBottomBar && !forumDrawerOpen && !isImageViewerOpen && !isComposerOpen,
+                visible = showBottomBar && !isImageViewerOpen && !isComposerOpen,
                 enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
                 exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
             ) {
@@ -336,7 +357,7 @@ fun MiooDaoNavGraph(
                 }
             }
         },
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = Color.Transparent
     ) { _ ->
@@ -362,7 +383,8 @@ fun MiooDaoNavGraph(
                     onNavigateToThread = navigateToThread,
                     onColdStartContentReady = onColdStartContentReady,
                     dockSinkFraction = { bottomBarSlide.value },
-                    onForumDrawerOpenChange = { forumDrawerOpen = it },
+                    drawerState = boardDrawerState,
+                    boardDrawerSlot = boardDrawerSlot,
                     onImageViewerOpenChange = { isImageViewerOpen = it },
                     onComposerOpenChange = { isComposerOpen = it },
                     onNavigateToSettings = {
@@ -439,6 +461,7 @@ fun MiooDaoNavGraph(
             }
         }
     }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -449,7 +472,8 @@ private fun MainTabs(
     onNavigateToThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float = { 0f },
-    onForumDrawerOpenChange: (Boolean) -> Unit = {},
+    drawerState: androidx.compose.material3.DrawerState,
+    boardDrawerSlot: BoardDrawerSlot,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
     onComposerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
@@ -479,7 +503,8 @@ private fun MainTabs(
                         onNavigateToThread = onNavigateToThread,
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = dockSinkFraction,
-                        onDrawerOpenChange = onForumDrawerOpenChange,
+                        drawerState = drawerState,
+                        boardDrawerSlot = boardDrawerSlot,
                         onImageViewerOpenChange = onImageViewerOpenChange,
                         onComposerOpenChange = onComposerOpenChange
                     )

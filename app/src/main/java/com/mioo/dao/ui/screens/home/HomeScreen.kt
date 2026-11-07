@@ -49,6 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -174,6 +176,7 @@ fun TimelineList(
     onImageClick: (String) -> Unit
 ) {
     var freeCopyText by remember { mutableStateOf<String?>(null) }
+    val haptics = LocalHapticFeedback.current
     val emptyStringLambda = remember { { _: String -> } }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
 
@@ -282,7 +285,10 @@ fun TimelineList(
                     onThreadClick = onThreadClickRemembered,
                     onQuoteClick = emptyStringLambda,
                     onImageClick = onImageClickRemembered,
-                    onLongClick = { showBlockDialog = true }
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        showBlockDialog = true
+                    }
                 )
             }
         }

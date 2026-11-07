@@ -278,6 +278,7 @@ fun ThreadScreen(
     val dicePreset by viewModel.dicePreset.collectAsState()
     var showDiceRuleMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val emptyLambda = remember { {} }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
@@ -796,7 +797,7 @@ fun ThreadScreen(
                             }
 
                             ThreadCard(
-                                postData = mainPostData,
+                                postData = mainPostData.copy(isPo = true),
                                 onNumberClick = {
                                     viewModel.setQuotedPost(mainThread.idStr)
                                     if (threadSettings.enableCreatorMode) creatorOpen = true
@@ -805,7 +806,10 @@ fun ThreadScreen(
                                 onThreadClick = emptyLambda,
                                 onQuoteClick = onQuoteClick,
                                 onImageClick = onImageClick,
-                                onLongClick = { showBlockDialog = true },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showBlockDialog = true
+                                },
                                 // 详情页主楼：完整正文 + 引用链接可点（列表预览才截断/关手势）
                                 contentMaxLines = Int.MAX_VALUE,
                                 enableHtmlGestures = true
@@ -1822,6 +1826,7 @@ private fun ThreadReplyRow(
         })
     }
 
+    val haptics = LocalHapticFeedback.current
     var showReplyBlockDialog by remember { mutableStateOf(false) }
     if (showReplyBlockDialog) {
         PostActionDialog(
@@ -1848,7 +1853,10 @@ private fun ThreadReplyRow(
         onQuoteClick = onQuoteClick,
         onImageClick = onImageClick,
         onCardClick = onCardClick,
-        onCardLongClick = { showReplyBlockDialog = true },
+        onCardLongClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            showReplyBlockDialog = true
+        },
         onNumberClick = onRequestQuote,
         quotedPosts = quotedPostsData,
         onViewThreadClick = onViewThreadClick,
