@@ -19,7 +19,29 @@ import java.io.IOException
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "mioo_settings")
 
+data class ThirdPartyConsent(
+    val hasShownComplianceDialog: Boolean = false,
+    val allowThirdPartyServices: Boolean = false
+)
+
 class SettingsDataStore(private val context: Context) {
+    private val hasShownComplianceDialogKey = booleanPreferencesKey("has_shown_compliance_dialog")
+    private val allowThirdPartyServicesKey = booleanPreferencesKey("allow_third_party_services")
+
+    val thirdPartyConsent: Flow<ThirdPartyConsent> = context.dataStore.data.map { preferences ->
+        ThirdPartyConsent(
+            hasShownComplianceDialog = preferences[hasShownComplianceDialogKey] ?: false,
+            allowThirdPartyServices = preferences[hasShownComplianceDialogKey] == true &&
+                preferences[allowThirdPartyServicesKey] == true
+        )
+    }
+
+    suspend fun saveThirdPartyConsent(allowed: Boolean) {
+        context.dataStore.edit {
+            it[hasShownComplianceDialogKey] = true
+            it[allowThirdPartyServicesKey] = allowed
+        }
+    }
 
     companion object {
         val KEY_USER_HASH = stringPreferencesKey("user_hash")

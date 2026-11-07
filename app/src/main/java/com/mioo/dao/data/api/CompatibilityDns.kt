@@ -19,6 +19,7 @@ class CompatibilityDns(
         cached?.let { if (now() - it.first < 60_000) return it.second }
         val resolved = mutableListOf<InetAddress>()
         for (resolver in secureResolvers) {
+            if (!enabled()) return system.lookup(hostname)
             try {
                 resolved += resolver.lookup(hostname)
             } catch (_: UnknownHostException) {

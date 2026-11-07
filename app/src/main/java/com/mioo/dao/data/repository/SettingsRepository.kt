@@ -25,6 +25,12 @@ class SettingsRepository @Inject constructor(
     // cancels the scope root and every later settings write becomes a silent no-op.
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    val thirdPartyConsent = settingsDataStore.thirdPartyConsent.stateIn(
+        repositoryScope, SharingStarted.Eagerly, null
+    )
+
+    suspend fun saveThirdPartyConsent(allowed: Boolean) = settingsDataStore.saveThirdPartyConsent(allowed)
+
     val forumPreviewLines = settingsDataStore.forumPreviewLinesFlow
 
     fun updateForumPreviewLines(lines: Int) {

@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.settings
 
+import com.mioo.dao.LocalThirdPartyServicesAllowed
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -45,6 +47,7 @@ fun MoreScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val allowThirdParty = LocalThirdPartyServicesAllowed.current
     var isCheckingUpdate by remember { mutableStateOf(false) }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val cardColor = homeCardColor()
@@ -85,7 +88,7 @@ fun MoreScreen(
                     MoreInfoRow("版本") {
                         MoreValue("v${com.mioo.dao.BuildConfig.VERSION_NAME}")
                         Spacer(Modifier.width(8.dp))
-                        Surface(onClick = {
+                        if (allowThirdParty) Surface(onClick = {
                                 isCheckingUpdate = true
                                 viewModel.checkUpdate { response ->
                                     isCheckingUpdate = false

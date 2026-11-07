@@ -1438,6 +1438,10 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun checkLatestRelease(): Flow<XdResponse<GithubRelease>> = flow {
         var lastError: Exception? = null
         for (url in RELEASE_MANIFEST_URLS) {
+            if (!settingsDataStore.thirdPartyConsent.first().allowThirdPartyServices) {
+                emit(XdResponse.Error(message = "第三方服务未启用"))
+                return@flow
+            }
             try {
                 val release = githubApiService.getLatestRelease(url)
                 if (release.tagName.isNotBlank()) {

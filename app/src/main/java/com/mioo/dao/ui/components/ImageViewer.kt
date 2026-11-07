@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.components
 
+import com.mioo.dao.LocalThirdPartyServicesAllowed
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -371,7 +373,11 @@ fun ImageViewer(
         qrTexts[currentUrl] = text
     }
 
-    val panelOpen = showTransformPanel || showSauceMenu
+    val allowThirdParty = LocalThirdPartyServicesAllowed.current
+    LaunchedEffect(allowThirdParty) {
+        if (!allowThirdParty) showSauceMenu = false
+    }
+    val panelOpen = showTransformPanel || (allowThirdParty && showSauceMenu)
     val hasAnyTransform = transform.isTransformed || zoomed
 
     val openProgress = remember { Animatable(0f) }
@@ -1313,7 +1319,7 @@ private fun ViewerDock(
                 active = lightCanvas,
                 onClick = onCanvas
             )
-            Box {
+            if (LocalThirdPartyServicesAllowed.current) Box {
                 ViewerIconButton(
                     icon = Icons.Outlined.ImageSearch,
                     description = "以图搜源",

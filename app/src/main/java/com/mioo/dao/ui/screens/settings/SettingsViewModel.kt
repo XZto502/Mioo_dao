@@ -58,6 +58,12 @@ class SettingsViewModel @Inject constructor(
     private val backupRepository: BackupRepository
 ) : ViewModel() {
 
+    val thirdPartyConsent = settingsRepository.thirdPartyConsent
+
+    fun updateThirdPartyServices(allowed: Boolean) {
+        viewModelScope.launch { settingsRepository.saveThirdPartyConsent(allowed) }
+    }
+
     val forumPreviewLines: StateFlow<Int> = settingsRepository.forumPreviewLines
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
 

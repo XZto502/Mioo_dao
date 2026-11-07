@@ -49,7 +49,10 @@ object NetworkModule {
         settingsRepository: SettingsRepository,
         @ApplicationContext appContext: Context
     ): OkHttpClient {
-        val compatible = { settingsRepository.settings.value.networkCompatibilityEnabled }
+        val compatible = {
+            settingsRepository.thirdPartyConsent.value?.allowThirdPartyServices == true &&
+                settingsRepository.settings.value.networkCompatibilityEnabled
+        }
         // 独立客户端：解析服务不会收到饼干、帖子内容，也不递归使用自身解析。
         val resolverClient = OkHttpClient.Builder()
             .connectTimeout(3, TimeUnit.SECONDS)

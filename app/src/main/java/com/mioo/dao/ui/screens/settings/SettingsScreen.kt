@@ -114,6 +114,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val consent by viewModel.thirdPartyConsent.collectAsState()
+    val allowThirdParty = consent?.allowThirdPartyServices == true
     val forumPreviewLines by viewModel.forumPreviewLines.collectAsState()
     var authMenuExpanded by remember { mutableStateOf(false) }
 
@@ -1355,6 +1357,26 @@ fun SettingsScreen(
         }
         Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("第三方服务", style = settingsItemStyle())
+                    Text(
+                        "允许检查和下载更新、外部搜索、以图搜源与网络兼容模式的第三方 DNS。",
+                        style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = allowThirdParty,
+                    enabled = consent?.hasShownComplianceDialog == true,
+                    onCheckedChange = viewModel::updateThirdPartyServices
+                )
+            }
+        }
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("网络兼容模式", style = settingsItemStyle())
                 Spacer(Modifier.height(8.dp))
@@ -1366,11 +1388,12 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (settings.networkCompatibilityEnabled) "已开启" else "已关闭",
+                        text = if (allowThirdParty && settings.networkCompatibilityEnabled) "已开启" else "已关闭",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     androidx.compose.material3.Switch(
-                        checked = settings.networkCompatibilityEnabled,
+                        checked = allowThirdParty && settings.networkCompatibilityEnabled,
+                        enabled = allowThirdParty,
                         onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
                     )
                 }
