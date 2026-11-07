@@ -62,6 +62,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+private const val BrushWidthKey = "brush_width"
+private const val EraserWidthKey = "eraser_width"
+private val brushWidthRange = 4f..42f
+
 private val inkColors = listOf(
     Color(0xFF1E2022) to "炭黑",
     Color(0xFFE53935) to "红色",
@@ -199,8 +203,17 @@ internal fun DoodlePadSheet(
     var loadFailed by remember { mutableStateOf(false) }
     var exportFailed by remember { mutableStateOf(false) }
     var color by remember { mutableStateOf(inkColors.first().first) }
-    var brushWidth by remember { mutableFloatStateOf(12f) }
+    val toolPreferences = remember(context) {
+        context.getSharedPreferences("doodle_tools", Context.MODE_PRIVATE)
+    }
+    var brushWidth by remember(toolPreferences) {
+        mutableFloatStateOf(toolPreferences.getFloat(BrushWidthKey, 12f).coerceIn(brushWidthRange))
+    }
+    var eraserWidth by remember(toolPreferences) {
+        mutableFloatStateOf(toolPreferences.getFloat(EraserWidthKey, 12f).coerceIn(brushWidthRange))
+    }
     var eraser by remember { mutableStateOf(false) }
+    val toolWidth = if (eraser) eraserWidth else brushWidth
     var active by remember { mutableStateOf<DoodlePath?>(null) }
     val busy = exporting || closing
     val canEdit = !busy && !loading && !loadFailed && board != IntSize.Zero
@@ -299,7 +312,7 @@ internal fun DoodlePadSheet(
                                 paths.isEmpty() && redoPaths.isEmpty() && active == null && !busy
                             ) board = it
                         }
-                        .pointerInput(canEdit, board, color, brushWidth, eraser) {
+                        .pointerInput(canEdit, board, color, toolWidth, eraser) {
                             if (!canEdit) return@pointerInput
                             val area = fitBoard(board, size.width.toFloat(), size.height.toFloat())
                             val scale = area.width() / board.width
@@ -310,7 +323,7 @@ internal fun DoodlePadSheet(
                                 val down = awaitFirstDown()
                                 if (!area.contains(down.position.x, down.position.y)) return@awaitEachGesture
                                 down.consume()
-                                val stroke = DoodlePath(color, brushWidth.dp.toPx() / scale, eraser, point(down.position))
+                                val stroke = DoodlePath(color, toolWidth.dp.toPx() / scale, eraser, point(down.position))
                                 active = stroke
                                 try {
                                     while (true) {
@@ -362,8 +375,19 @@ internal fun DoodlePadSheet(
                             }
                         }
                     }
-                    Slider(brushWidth, { brushWidth = it }, Modifier.weight(1f).padding(start = 12.dp),
-                        enabled = canEdit, valueRange = 4f..42f)
+                    Slider(
+                        value = toolWidth,
+                        onValueChange = { if (eraser) eraserWidth = it else brushWidth = it },
+                        modifier = Modifier.weight(1f).padding(start = 12.dp),
+                        enabled = canEdit,
+                        valueRange = brushWidthRange,
+                        onValueChangeFinished = {
+                            toolPreferences.edit()
+                                .putFloat(BrushWidthKey, brushWidth)
+                                .putFloat(EraserWidthKey, eraserWidth)
+                                .apply()
+                        }
+                    )
                 }
                 Row(Modifier.fillMaxWidth().height(36.dp).background(
                     if (dark) Color(0xFF22252D) else Color(0xFFF2F4F8), CircleShape

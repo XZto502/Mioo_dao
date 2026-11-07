@@ -233,7 +233,7 @@ class MainActivity : ComponentActivity() {
                         title = { Text("使用须知与第三方服务说明") },
                         text = {
                             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("本软件（喵岛）为第三方开发的客户端，不受 X 岛官方支持。使用时您的数据安全与数据泄露风险无法由 X 岛本身保证。",
+                                Text("本软件（喵岛）是由 Sanae-Koishi 开发的第三方客户端，不受 X 岛官方支持。使用时您的数据安全与数据泄露风险无法由 X 岛本身保证。",
                                     fontWeight = FontWeight.Bold)
                                 Text("论坛内容来自 X 岛（www.nmbxd.com）。饼干、浏览历史、本地收藏和草稿保存在手机上。发帖时，饼干和发帖内容会发送给 X 岛。云端收藏通过 X 岛服务同步。")
                                 Text("可选的第三方服务", fontWeight = FontWeight.Bold)
