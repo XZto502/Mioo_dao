@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.thread
 
+import com.mioo.dao.ui.components.DoodlePadSheet
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
@@ -952,6 +954,11 @@ fun ThreadScreen(
                 onClose = { creatorOpen = false }
             )
         }
+        if (replyEditor.showDoodlePad.value) DoodlePadSheet(
+            baseImageUri = replyEditor.attachment.value,
+            onDismiss = { replyEditor.showDoodlePad.value = false },
+            onExport = { replyEditor.attachment.value = it }
+        )
         freeCopyText?.let { text ->
             FreeCopyDialog(
                 text = text,

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,7 +25,7 @@ import com.mioo.dao.ui.theme.graphicsPressScale
 import com.mioo.dao.ui.theme.rememberPressScale
 
 /**
- * 发串 / 回复底栏：骰子 · 颜文字 · 图片 三连按钮（同一胶囊内）。
+ * 发串与回复共用的工具胶囊。
  */
 @Composable
 fun ComposerToolButtons(
@@ -34,6 +35,7 @@ fun ComposerToolButtons(
     onDiceClick: () -> Unit,
     onKaomojiClick: () -> Unit,
     onImageClick: () -> Unit,
+    onDoodleClick: () -> Unit,
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
 ) {
@@ -76,6 +78,9 @@ fun ComposerToolButtons(
                     tint = if (hasImage) active else idle,
                     modifier = Modifier.size(22.dp)
                 )
+            }
+            PressIconButton(onClick = onDoodleClick) {
+                Icon(Icons.Outlined.Brush, "涂鸦", Modifier.size(22.dp), tint = idle)
             }
         }
     }

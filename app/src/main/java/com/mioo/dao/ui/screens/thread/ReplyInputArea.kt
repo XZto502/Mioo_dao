@@ -82,10 +82,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
-import coil.compose.rememberAsyncImagePainter
 import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.ConfirmSendCookieDialog
@@ -102,6 +98,7 @@ import com.mioo.dao.ui.theme.isReducedMotionEnabled
 internal class ReplyEditorState {
     val text = mutableStateOf(TextFieldValue())
     val attachment = mutableStateOf<Uri?>(null)
+    val showDoodlePad = mutableStateOf(false)
     val preparingAttachment = mutableStateOf(false)
     val undo = mutableStateListOf<TextFieldValue>()
     val redo = mutableStateListOf<TextFieldValue>()
@@ -151,7 +148,6 @@ internal fun ReplyInputArea(
     ) { uri: Uri? ->
         if (uri != null) attachedImageUri = uri
     }
-    var previewAttachedUri by remember { mutableStateOf<Uri?>(null) }
     var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
     val context = LocalContext.current
     val view = LocalView.current
@@ -217,6 +213,12 @@ internal fun ReplyInputArea(
 
     fun closeToolPanels() {
         if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
+    }
+
+    fun openDoodlePad() {
+        hideSystemIme()
+        closeToolPanels()
+        editorState.showDoodlePad.value = true
     }
 
     fun minimize() {
@@ -464,7 +466,7 @@ internal fun ReplyInputArea(
                         com.mioo.dao.ui.components.LocalImagePreview(uri,
                             modifier = Modifier.padding(vertical = 6.dp),
                             attachment = true, attachmentBackground = if (fullScreen) paper else readingComposerColor(),
-                            onClick = { previewAttachedUri = uri },
+                            onClick = ::openDoodlePad,
                             onRemove = { attachedImageUri = null })
                     }
                 }
@@ -559,6 +561,7 @@ internal fun ReplyInputArea(
                         kaomojiSelected = kaomojiMenuExpanded,
                         hasImage = attachedImageUri != null,
                         onDiceClick = { showDiceDialog = true },
+                        onDoodleClick = ::openDoodlePad,
                         onKaomojiClick = {
                             val open = !kaomojiMenuExpanded
                             kaomojiMenuExpanded = open
@@ -663,25 +666,4 @@ internal fun ReplyInputArea(
             })
     }
 
-    previewAttachedUri?.let { uri ->
-        Dialog(
-            onDismissRequest = { previewAttachedUri = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.92f))
-                    .clickable { previewAttachedUri = null },
-                contentAlignment = Alignment.Center
-            ) {
-                AsyncImage(
-                    model = uri,
-                    contentDescription = "附件预览",
-                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-    }
 }

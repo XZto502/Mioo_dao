@@ -52,14 +52,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.view.WindowInsetsControllerCompat
-import coil.compose.AsyncImage
 import com.mioo.dao.data.local.DraftEntity
 import com.mioo.dao.data.local.PostDraftContent
 import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.ui.components.DoodlePadSheet
 import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.ConfirmSendCookieDialog
 import com.mioo.dao.ui.components.DiceDialog
-import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.findActivity
@@ -118,7 +117,12 @@ fun CreateThreadEditor(
     var body by remember { mutableStateOf(TextFieldValue(initialContent, TextRange(initialContent.length))) }
     var savedFields by remember { mutableStateOf(PostDraftContent(initialTitle, initialName, initialContent)) }
     var image by remember { mutableStateOf<Uri?>(null) }
-    var previewImage by remember { mutableStateOf<Uri?>(null) }
+    var showDoodlePad by remember { mutableStateOf(false) }
+    fun openDoodlePad() {
+        keyboard?.hide()
+        focus.clearFocus(force = true)
+        showDoodlePad = true
+    }
     var nameExpanded by remember { mutableStateOf(false) }
     var cookiesExpanded by remember { mutableStateOf(false) }
     var showCookieConfirmation by remember { mutableStateOf(false) }
@@ -181,12 +185,13 @@ fun CreateThreadEditor(
         val inserted = prefix + text
         body = TextFieldValue(body.text.replaceRange(start, end, inserted), TextRange(start + inserted.length))
     }
-    BackHandler(enabled = !confirmLeave && !diceOpen && previewImage == null) { requestClose() }
+    BackHandler(enabled = !confirmLeave && !diceOpen && !showDoodlePad) { requestClose() }
 
     // Background precedes all insets: both system-bar regions stay completely opaque.
     CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
+    Box(Modifier.fillMaxSize().zIndex(100f)) {
     Box(
-        Modifier.fillMaxSize().zIndex(100f).background(pageBg).imePadding()
+        Modifier.fillMaxSize().background(pageBg).imePadding()
             .pointerInput(Unit) { detectTapGestures { focus.clearFocus() } }
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -289,7 +294,7 @@ fun CreateThreadEditor(
                     image?.let { uri ->
                         com.mioo.dao.ui.components.LocalImagePreview(uri,
                             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                            attachment = true, onClick = { previewImage = uri }, onRemove = { image = null })
+                            attachment = true, onClick = ::openDoodlePad, onRemove = { image = null })
                     }
                 }
             }
@@ -312,6 +317,10 @@ fun CreateThreadEditor(
                         kaomojiExpanded = !kaomojiExpanded
                     },
                     onImageClick = { kaomojiExpanded = false; imagePicker.launch("image/*") },
+                    onDoodleClick = {
+                        kaomojiExpanded = false
+                        openDoodlePad()
+                    },
                     containerColor = capsuleColor
                 )
             }
@@ -328,6 +337,12 @@ fun CreateThreadEditor(
             })
         }
     }
+        if (showDoodlePad) DoodlePadSheet(
+            baseImageUri = image,
+            onDismiss = { showDoodlePad = false },
+            onExport = { image = it }
+        )
+    }
     }
     if (showCookieConfirmation) {
         ConfirmSendCookieDialog(cookies = cookies, notes = cookieNotes, selectedIndex = selectedCookieIndex,
@@ -338,7 +353,6 @@ fun CreateThreadEditor(
             })
     }
     if (diceOpen) DiceDialog(onDismiss = { diceOpen = false }, onInsert = { insert(it); diceOpen = false })
-    previewImage?.let { uri -> ImageViewer(imageUrl = uri.toString(), onDismiss = { previewImage = null }) }
     if (confirmLeave) AlertDialog(
         onDismissRequest = { if (!saving) { confirmLeave = false; draftToOpen = null } },
         properties = immersiveDialogProperties(),
