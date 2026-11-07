@@ -199,7 +199,6 @@ fun MiooDaoNavGraph(
         )
     }
 
-    val showBottomBar = currentRoute == Screen.Home.route
     // 板块抽屉包在底栏外层：底栏留在抽屉 content 里，由 scrim 压暗，不再滑出隐藏
     val boardDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val boardDrawerSlot = remember { BoardDrawerSlot() }
@@ -263,7 +262,7 @@ fun MiooDaoNavGraph(
             }
         }
     }
-    LaunchedEffect(currentRoute, tabPagerState.targetPage) {
+    LaunchedEffect(tabPagerState.targetPage) {
         bottomBarVisible = true
     }
     // 260ms EaseOut dumped the travel into the first frames. 560ms felt slow.
@@ -331,7 +330,7 @@ fun MiooDaoNavGraph(
                     // Keep the dock on the home layer so incoming destinations cover it.
                     AnimatedVisibility(
                         modifier = Modifier.align(Alignment.BottomCenter),
-                        visible = showBottomBar && !isImageViewerOpen && !isComposerOpen,
+                        visible = !isImageViewerOpen && !isComposerOpen,
                         enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
                         exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
                     ) {
