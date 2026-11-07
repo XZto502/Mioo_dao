@@ -752,8 +752,10 @@ fun ThreadScreen(
                         start = 12.dp,
                         end = 12.dp,
                         top = paddingValues.calculateTopPadding() + 12.dp,
+                        // Match the normal mode's 8 dp list inset plus the 10 dp
+                        // feather and 8 dp inset above its reply field.
                         bottom = if (threadSettings.enableCreatorMode)
-                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
+                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 26.dp
                         else paddingValues.calculateBottomPadding() + 8.dp
                     )
                 ) {
