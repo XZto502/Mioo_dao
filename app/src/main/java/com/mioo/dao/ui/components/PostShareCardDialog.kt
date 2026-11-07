@@ -62,7 +62,7 @@ fun PostShareCardDialog(
     initialPostId: String, posts: List<PostData>, threadId: String, title: String,
     boardName: String, mainPost: PostData?,
     resolveContexts: suspend (List<PostData>) -> Map<String, PostData>,
-    showBranding: Boolean, onBrandingChange: (Boolean) -> Unit,
+    showBranding: Boolean,
     dicePreset: DiceRulePreset?, onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -258,8 +258,8 @@ fun PostShareCardDialog(
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ShareOption("隐藏饼干", hideCookie, !exporting, Modifier.weight(1f)) { hideCookie = it }
-                    ShareOption("品牌标识", branding, !exporting, Modifier.weight(1f)) {
-                        branding = it; onBrandingChange(it)
+                    ShareOption("喵岛水印", branding, !exporting, Modifier.weight(1f)) {
+                        branding = it
                     }
                     ShareOption("附带引用", includeContext, !exporting, Modifier.weight(1f)) { includeContext = it }
                 }

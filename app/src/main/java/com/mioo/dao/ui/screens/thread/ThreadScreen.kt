@@ -1028,19 +1028,18 @@ fun ThreadScreen(
         )
     }
     sharePostId?.let { initialId ->
-        val settings by settingsViewModel.settingsState.collectAsState()
+        val brandingDefault by settingsViewModel.shareCardBrandingDefault.collectAsState()
         val posts = remember(listUi.thread, listUi.displayItems) { viewModel.sharePosts() }
         var board by remember { mutableStateOf("板块") }
         LaunchedEffect(listUi.thread?.fidStr) { board = viewModel.shareForumName() }
-        com.mioo.dao.ui.components.PostShareCardDialog(
+        brandingDefault?.let { defaultBranding -> com.mioo.dao.ui.components.PostShareCardDialog(
             initialPostId = initialId, posts = posts, threadId = viewModel.threadId,
             title = listUi.thread?.title.effectiveTitle() ?: "No.${viewModel.threadId}",
             boardName = board, mainPost = posts.firstOrNull { it.id == viewModel.threadId },
             resolveContexts = viewModel::loadShareContexts,
-            showBranding = settings.showShareCardBranding,
-            onBrandingChange = settingsViewModel::setShowShareCardBranding,
+            showBranding = defaultBranding,
             dicePreset = if (threadSettings.diceBadgesEnabled) dicePreset else null, onDismiss = { sharePostId = null }
-        )
+        ) }
     }
 
     }

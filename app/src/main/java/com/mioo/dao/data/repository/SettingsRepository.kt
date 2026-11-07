@@ -31,6 +31,10 @@ class SettingsRepository @Inject constructor(
 
     suspend fun saveThirdPartyConsent(allowed: Boolean) = settingsDataStore.saveThirdPartyConsent(allowed)
 
+    val shareCardBrandingDefault = settingsDataStore.showShareCardBrandingFlow.stateIn(
+        repositoryScope, SharingStarted.Eagerly, null
+    )
+
     val forumPreviewLines = settingsDataStore.forumPreviewLinesFlow
 
     fun updateForumPreviewLines(lines: Int) {

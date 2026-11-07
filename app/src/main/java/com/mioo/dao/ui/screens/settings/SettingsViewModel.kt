@@ -59,6 +59,7 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val thirdPartyConsent = settingsRepository.thirdPartyConsent
+    val shareCardBrandingDefault = settingsRepository.shareCardBrandingDefault
 
     fun updateThirdPartyServices(allowed: Boolean) {
         viewModelScope.launch { settingsRepository.saveThirdPartyConsent(allowed) }

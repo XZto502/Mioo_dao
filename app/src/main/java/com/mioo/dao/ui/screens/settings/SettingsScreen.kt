@@ -1326,7 +1326,7 @@ fun SettingsScreen(
         SettingsGroupCard(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("分享卡片显示品牌水印", style = settingsItemStyle())
+                    Text("分享卡片显示喵岛水印", style = settingsItemStyle())
                     Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
