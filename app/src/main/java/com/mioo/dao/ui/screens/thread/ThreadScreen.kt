@@ -742,8 +742,8 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
-                // The bottom padding includes both the solid composer and its 10dp
-                // feather so the last floor can scroll fully into the readable region.
+                // The list draws behind the Scaffold bars. The bottom padding must
+                // therefore include the measured bottom bar height exactly once.
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().nestedScroll(edgePaging),
@@ -753,8 +753,8 @@ fun ThreadScreen(
                         end = 12.dp,
                         top = paddingValues.calculateTopPadding() + 12.dp,
                         bottom = if (threadSettings.enableCreatorMode)
-                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 28.dp
-                        else paddingValues.calculateBottomPadding() + 16.dp
+                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
+                        else paddingValues.calculateBottomPadding() + 8.dp
                     )
                 ) {
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
@@ -2097,7 +2097,7 @@ private fun ThreadTail(
         angle
     } else 0f
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
