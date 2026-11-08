@@ -417,6 +417,11 @@ fun ImageViewer(
                 scope.launch { dismissProgress.animateTo(0f, spring()) }
             }
             override fun handleOnBackPressed() {
+                if (dismissProgress.value > 0f) {
+                    scope.launch {
+                        dismissProgress.animateTo(1f, if (reducedMotion) snap() else tween(180, easing = FastOutLinearInEasing))
+                    }
+                }
                 closeViewer.value()
             }
         }
@@ -442,7 +447,7 @@ fun ImageViewer(
                 color = palette.canvas,
                 alpha = backgroundAlpha,
                 openProgress = openProgress.asState(),
-                dismissProgress = dismissProgress.value
+                dismissProgress = dismissProgress.asState()
             )
             HorizontalPager(
                 state = pagerState,
@@ -691,9 +696,9 @@ private fun ViewerCanvas(
     color: Color,
     alpha: MutableFloatState,
     openProgress: State<Float>,
-    dismissProgress: Float
+    dismissProgress: State<Float>
 ) {
-    val fade = (openProgress.value * alpha.floatValue * (1f - dismissProgress * 0.65f)).coerceIn(0f, 1f)
+    val fade = (openProgress.value * alpha.floatValue * (1f - dismissProgress.value * 0.65f)).coerceIn(0f, 1f)
     Box(
         modifier = Modifier
             .fillMaxSize()
