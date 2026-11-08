@@ -47,8 +47,6 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import com.mioo.dao.ui.components.LocalOpenBareThread
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -292,7 +290,6 @@ fun MiooDaoNavGraph(
         scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
         drawerContent = { boardDrawerSlot.content() }
     ) {
-        CompositionLocalProvider(LocalOpenBareThread provides navigateToThread) {
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
@@ -448,7 +445,6 @@ fun MiooDaoNavGraph(
                     )
                 }
             }
-        }
         }
     }
 }

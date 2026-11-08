@@ -14,12 +14,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
@@ -69,6 +65,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import kotlin.math.atan2
+import kotlin.math.PI
 
 private const val BrushWidthKey = "brush_width"
 private const val EraserWidthKey = "eraser_width"
@@ -447,41 +445,90 @@ private fun DoodleColorDialog(
     var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
     var value by remember { mutableFloatStateOf(initialHsv[2]) }
     val selectedColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
-    val visibility = remember { MutableTransitionState(false) }
+    val visibility = remember { Animatable(0f) }
     var closing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { visibility.targetState = true }
+    LaunchedEffect(Unit) {
+        visibility.animateTo(1f, tween(if (reducedMotion) 0 else 200, easing = FastOutSlowInEasing))
+    }
     fun close() {
         if (closing) return
         closing = true
-        visibility.targetState = false
         scope.launch {
-            if (!reducedMotion) kotlinx.coroutines.delay(160)
+            visibility.animateTo(0f, tween(if (reducedMotion) 0 else 160, easing = FastOutSlowInEasing))
             onDismiss()
         }
     }
     Dialog(onDismissRequest = ::close) {
-        AnimatedVisibility(
-            visibleState = visibility,
-            enter = fadeIn(tween(if (reducedMotion) 0 else 180)) +
-                scaleIn(tween(if (reducedMotion) 0 else 180), initialScale = 0.96f),
-            exit = fadeOut(tween(if (reducedMotion) 0 else 160)) +
-                scaleOut(tween(if (reducedMotion) 0 else 160), targetScale = 0.96f)
-        ) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val alpha = visibility.value
+            Box(Modifier.graphicsLayer {
+                this.alpha = alpha
+                scaleX = 0.96f + 0.04f * alpha
+                scaleY = 0.96f + 0.04f * alpha
+            }) {
             Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                 Column(Modifier.fillMaxWidth().padding(20.dp)) {
                     Text("调色板", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(16.dp))
                     Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
                         .background(selectedColor).border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)))
+                    Spacer(Modifier.height(16.dp))
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Box(Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                            Canvas(Modifier.fillMaxSize().pointerInput(Unit) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown()
+                                    fun update(position: Offset) {
+                                        val angle = atan2(position.y - size.height / 2f, position.x - size.width / 2f)
+                                        hue = ((angle * 180f / PI.toFloat()) + 360f) % 360f
+                                    }
+                                    update(down.position)
+                                    down.consume()
+                                    while (true) {
+                                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                        update(change.position)
+                                        change.consume()
+                                        if (!change.pressed) break
+                                    }
+                                }
+                            }) {
+                                val stroke = 24.dp.toPx()
+                                val radius = (size.minDimension - stroke) / 2f
+                                val rainbow = (0..12).map { Color.hsv(it * 30f % 360f, 1f, 1f) }
+                                drawCircle(Brush.sweepGradient(rainbow), radius = radius, style = Stroke(stroke))
+                                val angle = hue * PI.toFloat() / 180f
+                                val marker = center + Offset(kotlin.math.cos(angle) * radius, kotlin.math.sin(angle) * radius)
+                                drawCircle(Color.White, radius = 7.dp.toPx(), center = marker)
+                                drawCircle(Color.Black.copy(alpha = 0.45f), radius = 7.dp.toPx(), center = marker, style = Stroke(1.dp.toPx()))
+                            }
+                            Canvas(Modifier.fillMaxSize(0.59f).clip(RoundedCornerShape(4.dp)).pointerInput(Unit) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown()
+                                    fun update(position: Offset) {
+                                        saturation = (position.x / size.width).coerceIn(0f, 1f)
+                                        value = (1f - position.y / size.height).coerceIn(0f, 1f)
+                                    }
+                                    update(down.position)
+                                    down.consume()
+                                    while (true) {
+                                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                        update(change.position)
+                                        change.consume()
+                                        if (!change.pressed) break
+                                    }
+                                }
+                            }) {
+                                drawRect(Brush.horizontalGradient(listOf(Color.White, Color.hsv(hue, 1f, 1f))))
+                                drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+                                val marker = Offset(saturation * size.width, (1f - value) * size.height)
+                                drawCircle(Color.White, radius = 6.dp.toPx(), center = marker, style = Stroke(2.dp.toPx()))
+                                drawCircle(Color.Black.copy(alpha = 0.6f), radius = 7.dp.toPx(), center = marker, style = Stroke(1.dp.toPx()))
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
-                    Text("色相", style = MaterialTheme.typography.labelMedium)
-                    Slider(hue, { hue = it }, valueRange = 0f..360f)
-                    Text("饱和度", style = MaterialTheme.typography.labelMedium)
-                    Slider(saturation, { saturation = it }, valueRange = 0f..1f)
-                    Text("亮度", style = MaterialTheme.typography.labelMedium)
-                    Slider(value, { value = it }, valueRange = 0f..1f)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = ::close, enabled = !closing) { Text("取消") }
                         Button(onClick = { onSelect(selectedColor); close() }, enabled = !closing, shape = CircleShape) {
@@ -489,6 +536,7 @@ private fun DoodleColorDialog(
                         }
                     }
                 }
+            }
             }
         }
     }

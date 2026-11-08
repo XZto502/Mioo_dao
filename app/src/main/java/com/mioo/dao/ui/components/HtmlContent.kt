@@ -76,7 +76,6 @@ import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
 private val BARE_THREAD_ID = Regex("(?<![A-Za-z0-9])\\d{8}(?![A-Za-z0-9])")
-val LocalOpenBareThread = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
 private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>[ \\t]*(?:\\r\\n|\\r|\\n)?")
 private val PARAGRAPH_BREAKS = Regex("\\n[ \\t]*(?:\\n[ \\t]*)+")
 private val KAOMOJI_PATTERN = Regex("""\([^()\n]{1,32}\)|\|[^|\n]{1,16}\)""")
@@ -617,7 +616,6 @@ fun HtmlContent(
         }
         val finalLinkClick = onLinkClick ?: defaultLinkClick
         val onQuoteClickState = rememberUpdatedState(onQuoteClick)
-        val onBareThreadState = rememberUpdatedState(LocalOpenBareThread.current)
         val onTextClickState = rememberUpdatedState(onTextClick)
         val onLongClickState = rememberUpdatedState(onLongClick)
         val finalLinkClickState = rememberUpdatedState(finalLinkClick)
@@ -660,7 +658,7 @@ fun HtmlContent(
                             diceAnnotation != null -> onDiceClickState.value?.invoke()
                             quoteAnnotation != null -> onQuoteClickState.value(quoteAnnotation.item)
                             linkAnnotation != null -> finalLinkClickState.value(linkAnnotation.item)
-                            bareThread != null -> onBareThreadState.value(bareThread.item)
+                            bareThread != null -> onQuoteClickState.value(bareThread.item)
                             else -> onTextClickState.value?.invoke()
                         }
                     }

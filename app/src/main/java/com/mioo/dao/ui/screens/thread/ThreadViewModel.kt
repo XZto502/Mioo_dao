@@ -45,7 +45,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.regex.Pattern
 import javax.inject.Inject
 
 /**
@@ -194,7 +193,6 @@ class ThreadViewModel @Inject constructor(
         private const val MAX_PARALLEL_QUOTE_FETCHES = 3
         /** Cap network quote resolves per page load (local/seeded quotes unlimited). */
         private const val MAX_NETWORK_QUOTES_PER_PAGE = 10
-        private val QUOTE_ID_PATTERN: Pattern = Pattern.compile(">>(?:No\\.)?(\\d+)")
         private const val MAX_FILTERED_SKIPS = 4
         private const val REPORT_BOARD_FID = "18" // 值班室
     }
@@ -855,21 +853,8 @@ class ThreadViewModel @Inject constructor(
 
     private fun extractQuoteIdsFromContent(content: String): List<String> {
         if (content.isEmpty()) return emptyList()
-        // Fast path: no quote marker after entity decode patterns
-        if (content.indexOf('>') < 0 && content.indexOf('&') < 0) return emptyList()
         quoteIdExtractCache.get(content)?.let { return it }
-        val decoded = content.decodeHtmlEntities()
-        val matcher = QUOTE_ID_PATTERN.matcher(decoded)
-        if (!matcher.find()) {
-            quoteIdExtractCache.put(content, emptyList())
-            return emptyList()
-        }
-        val list = ArrayList<String>(2)
-        matcher.reset()
-        while (matcher.find()) {
-            matcher.group(1)?.let { list.add(it) }
-        }
-        val result = if (list.isEmpty()) emptyList() else list
+        val result = com.mioo.dao.ui.components.ContentBlockSplitter.quoteIds(content)
         quoteIdExtractCache.put(content, result)
         return result
     }
