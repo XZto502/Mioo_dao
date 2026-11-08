@@ -749,6 +749,13 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
+    suspend fun saveGlobalFont(name: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_CHINESE_FONT] = name
+            preferences[KEY_ENGLISH_FONT] = ""
+        }
+    }
+
     suspend fun saveEnglishFont(name: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_ENGLISH_FONT] = name

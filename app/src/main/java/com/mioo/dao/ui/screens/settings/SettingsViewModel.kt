@@ -186,6 +186,10 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateChineseFont(name)
     }
 
+    fun updateGlobalFont(name: String) {
+        settingsRepository.updateGlobalFont(name)
+    }
+
     fun updateEnglishFont(name: String) {
         settingsRepository.updateEnglishFont(name)
     }

@@ -540,7 +540,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "导入手机存储中的 ttf/otf/ttc 字体文件，可分别为中文与英文指定：英文负责字母数字，中文负责汉字；未指定则用系统默认。英文字体请选纯拉丁字体——含汉字的字体（会标注）放英文槽时，汉字也会跟着变。",
+            text = "导入手机存储中的 ttf、otf 或 ttc 字体文件，选择后应用于全局文字。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -599,50 +599,23 @@ fun SettingsScreen(
                 HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Text(text = "中文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Text(text = "全局字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                 (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.updateChineseFont(value) }
+                            .clickable { viewModel.updateGlobalFont(value) }
                             .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = settings.chineseFont == value, onClick = null)
+                        RadioButton(selected = settings.chineseFont.ifBlank { settings.englishFont } == value, onClick = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(text = label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "英文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
-                    // 含汉字字形的字体放英文槽会连中文一起接管（回退链按顺序命中），标注提醒
-                    val hanWarn = remember(value) {
-                        value.isNotEmpty() && com.mioo.dao.utils.FontStore.containsHan(
-                            java.io.File(com.mioo.dao.utils.FontStore.dir(context), value)
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.updateEnglishFont(value) }
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = settings.englishFont == value, onClick = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-                        if (hanWarn) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "含汉字·会连中文一起变",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
+
             }
         }
 

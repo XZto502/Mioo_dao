@@ -272,6 +272,10 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    fun updateGlobalFont(name: String) {
+        repositoryScope.launch { settingsDataStore.saveGlobalFont(name) }
+    }
+
     fun updateEnglishFont(name: String) {
         repositoryScope.launch {
             settingsDataStore.saveEnglishFont(name)
