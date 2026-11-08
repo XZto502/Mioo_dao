@@ -132,6 +132,7 @@ fun MiooDaoNavGraph(
     onColdStartContentReady: () -> Unit = {}
 ) {
     val navController = rememberNavController()
+    val threadLeaveHandlers = remember { mutableMapOf<String, () -> Unit>() }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -327,7 +328,19 @@ fun MiooDaoNavGraph(
             }
         }
     ) {
-        ParallaxPageHost(navController, reducedMotion) { entry ->
+        ParallaxPageHost(
+            navController,
+            reducedMotion,
+            onCommitBack = { entry ->
+                val leave = threadLeaveHandlers[entry.id]
+                if (leave != null) {
+                    leave()
+                    navController.currentBackStackEntry != entry
+                } else {
+                    navController.popBackStack()
+                }
+            }
+        ) { entry ->
             when (entry.destination.route) {
             Screen.Home.route -> {
                 BackHandler(enabled = currentRoute == Screen.Home.route && currentTabIndex != 0 &&
@@ -464,7 +477,14 @@ fun MiooDaoNavGraph(
                     ThreadScreen(
                         viewModel = viewModel,
                         onBackClick = { navController.popBackStack() },
-                        onNavigateToThread = navigateToThread
+                        onNavigateToThread = navigateToThread,
+                        registerSystemBack = remember(entry.id) {
+                            { handler ->
+                                if (handler == null) threadLeaveHandlers.remove(entry.id)
+                                else threadLeaveHandlers[entry.id] = handler
+                                Unit
+                            }
+                        }
                     )
                 }
             }
@@ -485,6 +505,7 @@ private class PageBackPreview(
 private fun ParallaxPageHost(
     controller: NavHostController,
     reducedMotion: Boolean,
+    onCommitBack: (NavBackStackEntry) -> Boolean,
     content: @Composable (NavBackStackEntry) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -519,6 +540,7 @@ private fun ParallaxPageHost(
     val scope = rememberCoroutineScope()
     val backOwner = LocalOnBackPressedDispatcherOwner.current
     val latestReducedMotion = rememberUpdatedState(reducedMotion)
+    val latestCommitBack = rememberUpdatedState(onCommitBack)
     val callback = remember(controller, scope) {
         object : OnBackPressedCallback(false) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
@@ -548,14 +570,14 @@ private fun ParallaxPageHost(
             override fun handleOnBackPressed() {
                 val gesture = preview
                 if (gesture == null || latestEntries.value.lastOrNull() != gesture.front) {
-                    controller.popBackStack()
+                    latestEntries.value.lastOrNull()?.let { latestCommitBack.value(it) }
                     return
                 }
                 if (gesture.committing) return
                 gesture.committing = true
                 scope.launch {
                     gesture.progress.animateTo(1f, tween(180, easing = FastOutLinearInEasing))
-                    if (latestEntries.value.lastOrNull() != gesture.front || !controller.popBackStack()) {
+                    if (latestEntries.value.lastOrNull() != gesture.front || !latestCommitBack.value(gesture.front)) {
                         if (preview === gesture) preview = null
                     }
                 }

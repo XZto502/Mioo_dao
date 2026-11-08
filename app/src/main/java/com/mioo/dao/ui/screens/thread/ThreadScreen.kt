@@ -226,7 +226,8 @@ fun ThreadScreen(
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
     onNavigateToThread: (String) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    registerSystemBack: (((() -> Unit)?) -> Unit)? = null
 ) {
     // List-only slice — bookmark / download / ref-popup use separate collectors below
     val listUi by viewModel.listUiState.collectAsState()
@@ -315,7 +316,12 @@ fun ThreadScreen(
             onBackClick()
         }
     }
-    BackHandler { leaveThread() }
+    val currentLeaveThread by rememberUpdatedState(leaveThread)
+    DisposableEffect(registerSystemBack) {
+        registerSystemBack?.invoke { currentLeaveThread() }
+        onDispose { registerSystemBack?.invoke(null) }
+    }
+    BackHandler(enabled = registerSystemBack == null) { leaveThread() }
     // A short last page (or an empty page) cannot move at all. Observe the user's
     // drag before consumption, rather than requiring a changed list position.
     var creatorButtonVisible by remember(viewModel) { mutableStateOf(true) }
