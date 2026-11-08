@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.AutoFixNormal
 import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -213,6 +214,11 @@ internal fun DoodlePadSheet(
     val toolPreferences = remember(context) {
         context.getSharedPreferences("doodle_tools", Context.MODE_PRIVATE)
     }
+    var recentColors by remember(toolPreferences) {
+        mutableStateOf(toolPreferences.getString("recent_colors", "").orEmpty()
+            .split(',').mapNotNull { it.toIntOrNull() }.take(8))
+    }
+    var pickingColor by remember { mutableStateOf(false) }
     var brushWidth by remember(toolPreferences) {
         mutableFloatStateOf(toolPreferences.getFloat(BrushWidthKey, 12f).coerceIn(brushWidthRange))
     }
@@ -220,6 +226,13 @@ internal fun DoodlePadSheet(
         mutableFloatStateOf(toolPreferences.getFloat(EraserWidthKey, 12f).coerceIn(brushWidthRange))
     }
     var eraser by remember { mutableStateOf(false) }
+    fun useColor(selected: Color) {
+        color = selected
+        eraser = false
+        val argb = selected.toArgb()
+        recentColors = (listOf(argb) + recentColors.filterNot { it == argb }).take(8)
+        toolPreferences.edit().putString("recent_colors", recentColors.joinToString(",")).apply()
+    }
     val toolWidth = if (eraser) eraserWidth else brushWidth
     var active by remember { mutableStateOf<DoodlePath?>(null) }
     val busy = exporting || closing
@@ -255,7 +268,7 @@ internal fun DoodlePadSheet(
         }
     }
 
-    BackHandler { close() }
+    BackHandler { if (pickingColor) pickingColor = false else close() }
     Column(
         Modifier.fillMaxSize().zIndex(110f)
             .graphicsLayer { alpha = progress.value; translationY = (1f - progress.value) * 18.dp.toPx() }
@@ -319,7 +332,7 @@ internal fun DoodlePadSheet(
                                 paths.isEmpty() && redoPaths.isEmpty() && active == null && !busy
                             ) board = it
                         }
-                        .pointerInput(canEdit, board, color, toolWidth, eraser) {
+                        .pointerInput(canEdit, board, color, toolWidth, eraser, pickingColor) {
                             if (!canEdit) return@pointerInput
                             val area = fitBoard(board, size.width.toFloat(), size.height.toFloat())
                             val scale = area.width() / board.width
@@ -330,6 +343,20 @@ internal fun DoodlePadSheet(
                                 val down = awaitFirstDown()
                                 if (!area.contains(down.position.x, down.position.y)) return@awaitEachGesture
                                 down.consume()
+                                if (pickingColor) {
+                                    val sample = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+                                    try {
+                                        sample.eraseColor(android.graphics.Color.WHITE)
+                                        val canvas = BitmapCanvas(sample)
+                                        canvas.translate(0.5f - down.position.x, 0.5f - down.position.y)
+                                        renderer.draw(canvas, board, area, base, paths)
+                                        useColor(Color(sample.getPixel(0, 0)))
+                                    } finally {
+                                        sample.recycle()
+                                        pickingColor = false
+                                    }
+                                    return@awaitEachGesture
+                                }
                                 val stroke = DoodlePath(color, toolWidth.dp.toPx() / scale, eraser, point(down.position))
                                 active = stroke
                                 try {
@@ -357,6 +384,13 @@ internal fun DoodlePadSheet(
                 }
                 if (loading) CircularProgressIndicator()
                 if (loadFailed) Text("无法打开底图", color = Color(0xFF2B2F36))
+                if (pickingColor) Surface(
+                    Modifier.align(Alignment.TopCenter).padding(12.dp),
+                    shape = CircleShape,
+                    color = scheme.secondaryContainer
+                ) {
+                    Text("轻点画布吸取颜色", Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                }
             }
         }
         if (exportFailed) Text("保存失败，请重试", Modifier.padding(horizontal = 16.dp), color = scheme.error)
@@ -374,7 +408,7 @@ internal fun DoodlePadSheet(
                             Box(
                                 Modifier.size(26.dp).clip(CircleShape)
                                     .border(if (selected) 2.dp else 0.5.dp, if (selected) scheme.primary else scheme.outlineVariant, CircleShape)
-                                    .clickable(enabled = canEdit, onClickLabel = label) { color = swatch; eraser = false },
+                                    .clickable(enabled = canEdit, onClickLabel = label) { pickingColor = false; useColor(swatch) },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Box(Modifier.size(22.dp).graphicsLayer { scaleX = scale; scaleY = scale }
@@ -382,7 +416,7 @@ internal fun DoodlePadSheet(
                             }
                         }
                     }
-                    IconButton(onClick = { showPalette = true }, enabled = canEdit, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = { pickingColor = false; showPalette = true }, enabled = canEdit, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Outlined.Palette, contentDescription = "调色板", modifier = Modifier.size(20.dp),
                             tint = scheme.primary)
                     }
@@ -424,9 +458,11 @@ internal fun DoodlePadSheet(
     if (showPalette) {
         DoodleColorDialog(
             initialColor = color,
+            recentColors = recentColors,
             reducedMotion = reduced,
             onDismiss = { showPalette = false },
-            onSelect = { color = it; eraser = false }
+            onSelect = ::useColor,
+            onEyedropper = { pickingColor = true }
         )
     }
 }
@@ -434,9 +470,11 @@ internal fun DoodlePadSheet(
 @Composable
 private fun DoodleColorDialog(
     initialColor: Color,
+    recentColors: List<Int>,
     reducedMotion: Boolean,
     onDismiss: () -> Unit,
-    onSelect: (Color) -> Unit
+    onSelect: (Color) -> Unit,
+    onEyedropper: () -> Unit
 ) {
     val initialHsv = remember {
         FloatArray(3).also { android.graphics.Color.colorToHSV(initialColor.toArgb(), it) }
@@ -530,7 +568,27 @@ private fun DoodleColorDialog(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (recentColors.isNotEmpty()) {
+                        Text("最近使用", style = MaterialTheme.typography.labelMedium)
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            recentColors.forEachIndexed { index, argb ->
+                                Box(Modifier.size(26.dp).clip(CircleShape).background(Color(argb))
+                                    .border(0.5.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                    .clickable(enabled = !closing, onClickLabel = "最近颜色 ${index + 1}") {
+                                        val hsv = FloatArray(3)
+                                        android.graphics.Color.colorToHSV(argb, hsv)
+                                        hue = hsv[0]
+                                        saturation = hsv[1]
+                                        value = hsv[2]
+                                    })
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { onEyedropper(); close() }, enabled = !closing) {
+                            Icon(Icons.Outlined.Colorize, contentDescription = "颜色吸管")
+                        }
+                        Spacer(Modifier.weight(1f))
                         TextButton(onClick = ::close, enabled = !closing) { Text("取消") }
                         Button(onClick = { onSelect(selectedColor); close() }, enabled = !closing, shape = CircleShape) {
                             Text("使用颜色")

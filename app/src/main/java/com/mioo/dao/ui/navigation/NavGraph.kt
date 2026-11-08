@@ -559,7 +559,7 @@ private fun ParallaxPageHost(
     val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
     val latestCommitBack = rememberUpdatedState(onCommitBack)
     val enterEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
-    val exitEasing = remember { CubicBezierEasing(0.05f, 0f, 0.15f, 1f) }
+    val exitEasing = remember { CubicBezierEasing(0.2f, 0f, 0.25f, 1f) }
     var gesture by remember { mutableStateOf<PageBackGesture?>(null) }
     val backOwner = LocalOnBackPressedDispatcherOwner.current
 
@@ -575,7 +575,7 @@ private fun ParallaxPageHost(
                 layers.add(layer)
                 if (index > 0 && !reducedMotion) {
                     layer.animation = scope.launch {
-                        layer.transition.animateTo(1f, tween(280, easing = enterEasing))
+                        layer.transition.animateTo(1f, tween(300, easing = enterEasing))
                         finishTransitions()
                     }
                 }
@@ -603,8 +603,8 @@ private fun ParallaxPageHost(
         scope.launch {
             val remaining = active.layer.transition.value.coerceIn(0f, 1f)
             val duration = if (latestReducedMotion.value) 0 else if (predictive) {
-                (190 * remaining).toInt().coerceIn(85, 190)
-            } else 240
+                (240 * remaining).toInt().coerceIn(110, 240)
+            } else 280
             active.layer.transition.animateTo(0f, tween(duration, easing = if (predictive) exitEasing else enterEasing))
             if (latestEntries.value.lastOrNull()?.id == active.layer.entry.id) {
                 if (!latestCommitBack.value(active.layer.entry)) {
