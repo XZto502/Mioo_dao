@@ -28,7 +28,6 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.SideEffect
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.core.Animatable
@@ -82,6 +81,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -133,6 +133,8 @@ fun MiooDaoNavGraph(
 ) {
     val navController = rememberNavController()
     val threadLeaveHandlers = remember { mutableMapOf<String, () -> Unit>() }
+    var requestPageBack by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var committingPageBack by remember { mutableStateOf(false) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -331,13 +333,19 @@ fun MiooDaoNavGraph(
         ParallaxPageHost(
             navController,
             reducedMotion,
+            registerBackRequest = { requestPageBack = it },
             onCommitBack = { entry ->
-                val leave = threadLeaveHandlers[entry.id]
-                if (leave != null) {
-                    leave()
-                    navController.currentBackStackEntry != entry
-                } else {
-                    navController.popBackStack()
+                committingPageBack = true
+                try {
+                    val leave = threadLeaveHandlers[entry.id]
+                    if (leave != null) {
+                        leave()
+                        navController.currentBackStackEntry != entry
+                    } else {
+                        navController.popBackStack()
+                    }
+                } finally {
+                    committingPageBack = false
                 }
             }
         ) { entry ->
@@ -435,7 +443,7 @@ fun MiooDaoNavGraph(
                     val viewModel: SearchViewModel = hiltViewModel()
                     SearchScreen(
                         viewModel = viewModel,
-                        onBackClick = { navController.popBackStack() },
+                        onBackClick = { requestPageBack?.invoke() },
                         onNavigateToThread = navigateToThread
                     )
                 }
@@ -447,7 +455,7 @@ fun MiooDaoNavGraph(
                     SettingsScreen(
                         viewModel = viewModel,
                         onBackClick = {
-                            navController.popBackStack()
+                            requestPageBack?.invoke()
                         }
                     )
                 }
@@ -459,12 +467,12 @@ fun MiooDaoNavGraph(
                     com.mioo.dao.ui.screens.drafts.DraftBoxScreen(
                         viewModel = viewModel,
                         onBackClick = {
-                            navController.popBackStack()
+                            requestPageBack?.invoke()
                         },
                         onNavigateToThread = navigateToThread,
                         onUsePostDraft = {
                             // 回到主界面并切到板块 tab，ForumScreen 会从总线取草稿打开发串框
-                            navController.popBackStack()
+                            requestPageBack?.invoke()
                             currentTabIndex = 0
                         }
                     )
@@ -476,7 +484,9 @@ fun MiooDaoNavGraph(
                     val viewModel: ThreadViewModel = hiltViewModel(entry)
                     ThreadScreen(
                         viewModel = viewModel,
-                        onBackClick = { navController.popBackStack() },
+                        onBackClick = {
+                            if (committingPageBack) navController.popBackStack() else requestPageBack?.invoke()
+                        },
                         onNavigateToThread = navigateToThread,
                         registerSystemBack = remember(entry.id) {
                             { handler ->
@@ -493,18 +503,20 @@ fun MiooDaoNavGraph(
     }
 }
 
-private class PageBackPreview(
-    val front: NavBackStackEntry,
-    val behind: NavBackStackEntry
-) {
-    val progress = Animatable(0f)
-    var committing = false
+private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
+    val transition = Animatable(if (initiallyOpen) 1f else 0f)
+    var animation: kotlinx.coroutines.Job? = null
+}
+
+private class PageBackGesture(val layer: PageLayer, val startValue: Float) {
+    var finishing = false
 }
 
 @Composable
 private fun ParallaxPageHost(
     controller: NavHostController,
     reducedMotion: Boolean,
+    registerBackRequest: ((() -> Unit)?) -> Unit,
     onCommitBack: (NavBackStackEntry) -> Boolean,
     content: @Composable (NavBackStackEntry) -> Unit
 ) {
@@ -532,55 +544,103 @@ private fun ParallaxPageHost(
     }
 
     val entries by navigator.backStack.collectAsState()
-    val current = entries.lastOrNull() ?: return
     val latestEntries = rememberUpdatedState(entries)
     val stateHolder = rememberSaveableStateHolder()
-    var settled by remember { mutableStateOf(current) }
-    var preview by remember { mutableStateOf<PageBackPreview?>(null) }
+    val layers = remember { androidx.compose.runtime.mutableStateListOf<PageLayer>() }
     val scope = rememberCoroutineScope()
-    val backOwner = LocalOnBackPressedDispatcherOwner.current
     val latestReducedMotion = rememberUpdatedState(reducedMotion)
     val latestCommitBack = rememberUpdatedState(onCommitBack)
+    val enterEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
+    val exitEasing = remember { CubicBezierEasing(0.05f, 0f, 0.15f, 1f) }
+    var gesture by remember { mutableStateOf<PageBackGesture?>(null) }
+    val backOwner = LocalOnBackPressedDispatcherOwner.current
+
+    fun finishTransitions() {
+        controller.visibleEntries.value.forEach { navigator.onTransitionComplete(it) }
+    }
+
+    LaunchedEffect(entries) {
+        val activeIds = entries.map { it.id }.toSet()
+        entries.forEachIndexed { index, entry ->
+            if (layers.none { it.entry.id == entry.id }) {
+                val layer = PageLayer(entry, initiallyOpen = index == 0 || reducedMotion)
+                layers.add(layer)
+                if (index > 0 && !reducedMotion) {
+                    layer.animation = scope.launch {
+                        layer.transition.animateTo(1f, tween(280, easing = enterEasing))
+                        finishTransitions()
+                    }
+                }
+            }
+        }
+        val removed = layers.filter { it.entry.id !in activeIds }
+        for (layer in removed) {
+            layer.animation?.cancel()
+            layers.remove(layer)
+        }
+        if (layers.none { it.animation?.isActive == true }) finishTransitions()
+    }
+
+    fun beginBack(): PageBackGesture? {
+        val stack = latestEntries.value
+        if (stack.size < 2 || gesture?.finishing == true) return null
+        val layer = layers.lastOrNull { it.entry.id == stack.last().id } ?: return null
+        layer.animation?.cancel()
+        return PageBackGesture(layer, layer.transition.value.coerceIn(0f, 1f)).also { gesture = it }
+    }
+
+    fun finishBack(active: PageBackGesture, predictive: Boolean) {
+        if (active.finishing) return
+        active.finishing = true
+        scope.launch {
+            val remaining = active.layer.transition.value.coerceIn(0f, 1f)
+            val duration = if (latestReducedMotion.value) 0 else if (predictive) {
+                (190 * remaining).toInt().coerceIn(85, 190)
+            } else 240
+            active.layer.transition.animateTo(0f, tween(duration, easing = if (predictive) exitEasing else enterEasing))
+            if (latestEntries.value.lastOrNull()?.id == active.layer.entry.id) {
+                if (!latestCommitBack.value(active.layer.entry)) {
+                    active.layer.transition.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
+                    finishTransitions()
+                }
+            }
+            if (gesture === active) gesture = null
+        }
+    }
+
+    val latestBeginBack = rememberUpdatedState<() -> PageBackGesture?> { beginBack() }
+    val latestFinishBack = rememberUpdatedState<(PageBackGesture, Boolean) -> Unit> { active, predictive ->
+        finishBack(active, predictive)
+    }
     val callback = remember(controller, scope) {
         object : OnBackPressedCallback(false) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
-                val stack = latestEntries.value
-                val front = stack.lastOrNull() ?: return
-                val behind = stack.getOrNull(stack.lastIndex - 1) ?: return
-                if (front == settled && preview?.committing != true && !latestReducedMotion.value) {
-                    preview = PageBackPreview(front, behind)
-                }
+                latestBeginBack.value()
             }
 
             override fun handleOnBackProgressed(backEvent: BackEventCompat) {
-                val gesture = preview ?: return
-                if (!gesture.committing) scope.launch {
-                    gesture.progress.snapTo(backEvent.progress.coerceIn(0f, 1f))
+                val active = gesture ?: return
+                if (!active.finishing) scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    active.layer.transition.snapTo(
+                        (active.startValue * (1f - backEvent.progress.coerceIn(0f, 1f) * 0.92f)).coerceIn(0f, 1f)
+                    )
                 }
             }
 
             override fun handleOnBackCancelled() {
-                val gesture = preview ?: return
-                if (!gesture.committing) scope.launch {
-                    gesture.progress.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
-                    if (preview === gesture) preview = null
+                val active = gesture ?: return
+                if (!active.finishing) scope.launch {
+                    active.layer.transition.animateTo(
+                        1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+                    )
+                    finishTransitions()
+                    if (gesture === active) gesture = null
                 }
             }
 
             override fun handleOnBackPressed() {
-                val gesture = preview
-                if (gesture == null || latestEntries.value.lastOrNull() != gesture.front) {
-                    latestEntries.value.lastOrNull()?.let { latestCommitBack.value(it) }
-                    return
-                }
-                if (gesture.committing) return
-                gesture.committing = true
-                scope.launch {
-                    gesture.progress.animateTo(1f, tween(180, easing = FastOutLinearInEasing))
-                    if (latestEntries.value.lastOrNull() != gesture.front || !latestCommitBack.value(gesture.front)) {
-                        if (preview === gesture) preview = null
-                    }
-                }
+                val active = gesture ?: latestBeginBack.value() ?: return
+                latestFinishBack.value(active, true)
             }
         }
     }
@@ -589,47 +649,35 @@ private fun ParallaxPageHost(
         onDispose { callback.remove() }
     }
     SideEffect { callback.isEnabled = entries.size > 1 }
-
-    val inGesture = preview?.takeIf { it.front == current }
-    val fromGesture = preview?.takeIf { it.committing && it.behind == current }
-    val pageProgress = remember(settled, current) { Animatable(0f) }
-    val easing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
-    LaunchedEffect(current, reducedMotion) {
-        if (preview?.front != current) preview = null
-        if (settled != current && fromGesture == null && !reducedMotion) {
-            pageProgress.animateTo(1f, tween(300, easing = easing))
-        }
-        settled = current
-        controller.visibleEntries.value.forEach { navigator.onTransitionComplete(it) }
+    val requestBack = remember {
+        { latestBeginBack.value()?.let { latestFinishBack.value(it, false) }; Unit }
+    }
+    DisposableEffect(registerBackRequest, requestBack) {
+        registerBackRequest(requestBack)
+        onDispose { registerBackRequest(null) }
     }
 
-    val isPop = settled !in entries
-    val isTransitioning = settled != current && fromGesture == null && !reducedMotion
-    val behind = inGesture?.behind ?: if (isTransitioning) {
-        if (isPop) current else settled
-    } else null
-    val front = if (isTransitioning && isPop) settled else current
     Box(Modifier.fillMaxSize().clip(androidx.compose.ui.graphics.RectangleShape).background(readingBackground())) {
-        for (entry in listOfNotNull(behind, front)) {
-            key(entry.id) {
-                val isBehind = entry == behind
-                Box(Modifier.fillMaxSize().zIndex(if (isBehind) 0f else 1f).graphicsLayer {
-                    if (behind != null) {
-                        val progress = inGesture?.progress?.value ?: pageProgress.value
-                        val reveal = if (inGesture != null || isPop) progress else 1f - progress
-                        val fraction = reveal.coerceIn(0f, 1f)
-                        translationX = if (isBehind) -0.28f * size.width * (1f - fraction) else fraction * size.width
-                        alpha = if (isBehind) 0.85f + 0.15f * fraction else 1f
-                        if (!isBehind && inGesture != null) shadowElevation = 16.dp.toPx()
+        layers.forEachIndexed { index, layer ->
+            key(layer.entry.id) {
+                val next = layers.getOrNull(index + 1)
+                Box(Modifier.fillMaxSize().zIndex(index.toFloat()).pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent()
                     }
+                }.graphicsLayer {
+                    val currentProgress = layer.transition.value.coerceIn(0f, 1f)
+                    val coverProgress = next?.transition?.value?.coerceIn(0f, 1f) ?: 0f
+                    translationX = size.width * (1f - currentProgress - 0.28f * coverProgress)
+                    alpha = 1f - 0.15f * coverProgress
+                    shadowElevation = if (currentProgress > 0.001f && currentProgress < 0.999f) 16.dp.toPx() else 0f
                 }) {
-                    entry.LocalOwnersProvider(stateHolder) { content(entry) }
+                    layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
                 }
             }
         }
     }
 }
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainTabs(
