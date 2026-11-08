@@ -25,6 +25,13 @@ data class ThirdPartyConsent(
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val predictiveBackKey = booleanPreferencesKey("predictive_back_enabled")
+    val predictiveBackFlow: Flow<Boolean> = context.dataStore.data.map { it[predictiveBackKey] ?: false }
+
+    suspend fun savePredictiveBack(enabled: Boolean) {
+        context.dataStore.edit { it[predictiveBackKey] = enabled }
+    }
+
     private val hasShownComplianceDialogKey = booleanPreferencesKey("has_shown_compliance_dialog")
     private val allowThirdPartyServicesKey = booleanPreferencesKey("allow_third_party_services")
 

@@ -66,6 +66,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 val LocalThirdPartyServicesAllowed = staticCompositionLocalOf { false }
+val LocalPredictiveBackEnabled = staticCompositionLocalOf { false }
 
 /** Lazy resolve of ThreadRepository so MainActivity cold create does not require it. */
 @EntryPoint
@@ -174,6 +175,7 @@ class MainActivity : ComponentActivity() {
             val clipboardThreadId by clipboardThreadCandidate
 
             val consent by settingsRepository.thirdPartyConsent.collectAsState()
+            val predictiveBackEnabled by settingsRepository.predictiveBackEnabled.collectAsState()
             val allowThirdParty = consent?.allowThirdPartyServices == true
             // Restarting the effect cancels the startup check if consent is withdrawn.
             LaunchedEffect(allowThirdParty) {
@@ -216,7 +218,10 @@ class MainActivity : ComponentActivity() {
                 dataSaverEnabled = dataSaverEnabled,
                 glassEffectEnabled = glassEffectEnabled
             ) {
-                CompositionLocalProvider(LocalThirdPartyServicesAllowed provides allowThirdParty) {
+                CompositionLocalProvider(
+                    LocalThirdPartyServicesAllowed provides allowThirdParty,
+                    LocalPredictiveBackEnabled provides predictiveBackEnabled
+                ) {
                     MiooDaoNavGraph(
                         pendingThreadId = pendingThreadId,
                         onPendingThreadConsumed = { pendingThreadIdState.value = null },

@@ -1,6 +1,7 @@
 package com.mioo.dao.ui.navigation
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import com.mioo.dao.LocalPredictiveBackEnabled
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -186,6 +187,8 @@ fun MiooDaoNavGraph(
     // Read once per activity. Querying animator scale on every navigation janks the first frame.
     val context = LocalContext.current
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
+    val predictiveBackEnabled = LocalPredictiveBackEnabled.current
+    val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
 
     val density = LocalDensity.current
     var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -308,9 +311,11 @@ fun MiooDaoNavGraph(
             DisposableEffect(backOwner, lifecycleOwner, boardDrawerState.currentValue) {
                 val callback = object : OnBackPressedCallback(boardDrawerState.currentValue == DrawerValue.Open) {
                     override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                        if (!latestPredictiveBack.value) return
                         drawerScope.launch { drawerBackProgress.snapTo(backEvent.progress.coerceIn(0f, 1f)) }
                     }
                     override fun handleOnBackCancelled() {
+                        if (!latestPredictiveBack.value) return
                         drawerScope.launch { drawerBackProgress.animateTo(0f, spring()) }
                     }
                     override fun handleOnBackPressed() {
@@ -333,6 +338,7 @@ fun MiooDaoNavGraph(
         ParallaxPageHost(
             navController,
             reducedMotion,
+            predictiveBackEnabled,
             registerBackRequest = { requestPageBack = it },
             onCommitBack = { entry ->
                 committingPageBack = true
@@ -516,6 +522,7 @@ private class PageBackGesture(val layer: PageLayer, val startValue: Float) {
 private fun ParallaxPageHost(
     controller: NavHostController,
     reducedMotion: Boolean,
+    predictiveBackEnabled: Boolean,
     registerBackRequest: ((() -> Unit)?) -> Unit,
     onCommitBack: (NavBackStackEntry) -> Boolean,
     content: @Composable (NavBackStackEntry) -> Unit
@@ -549,6 +556,7 @@ private fun ParallaxPageHost(
     val layers = remember { androidx.compose.runtime.mutableStateListOf<PageLayer>() }
     val scope = rememberCoroutineScope()
     val latestReducedMotion = rememberUpdatedState(reducedMotion)
+    val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
     val latestCommitBack = rememberUpdatedState(onCommitBack)
     val enterEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
     val exitEasing = remember { CubicBezierEasing(0.05f, 0f, 0.15f, 1f) }
@@ -615,7 +623,7 @@ private fun ParallaxPageHost(
     val callback = remember(controller, scope) {
         object : OnBackPressedCallback(false) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
-                latestBeginBack.value()
+                if (latestPredictiveBack.value) latestBeginBack.value()
             }
 
             override fun handleOnBackProgressed(backEvent: BackEventCompat) {
@@ -639,8 +647,9 @@ private fun ParallaxPageHost(
             }
 
             override fun handleOnBackPressed() {
-                val active = gesture ?: latestBeginBack.value() ?: return
-                latestFinishBack.value(active, true)
+                val activeGesture = gesture
+                val active = activeGesture ?: latestBeginBack.value() ?: return
+                latestFinishBack.value(active, activeGesture != null)
             }
         }
     }

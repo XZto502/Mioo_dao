@@ -114,6 +114,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val predictiveBackEnabled by viewModel.predictiveBackEnabled.collectAsState()
     val consent by viewModel.thirdPartyConsent.collectAsState()
     val allowThirdParty = consent?.allowThirdPartyServices == true
     val forumPreviewLines by viewModel.forumPreviewLines.collectAsState()
@@ -1352,6 +1353,20 @@ fun SettingsScreen(
                 androidx.compose.material3.Switch(
                     checked = settings.enableCreatorMode,
                     onCheckedChange = viewModel::updateCreatorMode
+                )
+            }
+        }
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("预测性返回", style = settingsItemStyle())
+                    Text("侧滑返回时跟随手势预览上一页面", style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(
+                    checked = predictiveBackEnabled,
+                    onCheckedChange = viewModel::setPredictiveBackEnabled
                 )
             }
         }

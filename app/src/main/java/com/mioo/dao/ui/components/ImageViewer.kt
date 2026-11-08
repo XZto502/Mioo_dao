@@ -8,6 +8,7 @@ import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.activity.OnBackPressedCallback
+import com.mioo.dao.LocalPredictiveBackEnabled
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -405,15 +406,19 @@ fun ImageViewer(
     val backOwner = LocalOnBackPressedDispatcherOwner.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val closeViewer = rememberUpdatedState { triggerSmoothClose() }
+    val predictiveBackEnabled = rememberUpdatedState(LocalPredictiveBackEnabled.current)
     DisposableEffect(backOwner, lifecycleOwner) {
         val callback = object : OnBackPressedCallback(true) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                if (!predictiveBackEnabled.value) return
                 swipeDirection = if (backEvent.swipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
             }
             override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                if (!predictiveBackEnabled.value) return
                 scope.launch { dismissProgress.snapTo(backEvent.progress.coerceIn(0f, 1f)) }
             }
             override fun handleOnBackCancelled() {
+                if (!predictiveBackEnabled.value) return
                 scope.launch { dismissProgress.animateTo(0f, spring()) }
             }
             override fun handleOnBackPressed() {

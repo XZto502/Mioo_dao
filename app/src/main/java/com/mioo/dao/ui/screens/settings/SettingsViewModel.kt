@@ -59,6 +59,11 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val thirdPartyConsent = settingsRepository.thirdPartyConsent
+    val predictiveBackEnabled = settingsRepository.predictiveBackEnabled
+
+    fun setPredictiveBackEnabled(enabled: Boolean) {
+        settingsRepository.setPredictiveBackEnabled(enabled)
+    }
     val shareCardBrandingDefault = settingsRepository.shareCardBrandingDefault
 
     fun updateThirdPartyServices(allowed: Boolean) {
