@@ -14,6 +14,12 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +36,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AutoFixNormal
 import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,6 +51,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -203,6 +211,7 @@ internal fun DoodlePadSheet(
     var loadFailed by remember { mutableStateOf(false) }
     var exportFailed by remember { mutableStateOf(false) }
     var color by remember { mutableStateOf(inkColors.first().first) }
+    var showPalette by remember { mutableStateOf(false) }
     val toolPreferences = remember(context) {
         context.getSharedPreferences("doodle_tools", Context.MODE_PRIVATE)
     }
@@ -375,6 +384,10 @@ internal fun DoodlePadSheet(
                             }
                         }
                     }
+                    IconButton(onClick = { showPalette = true }, enabled = canEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Outlined.Palette, contentDescription = "调色板", modifier = Modifier.size(20.dp),
+                            tint = scheme.primary)
+                    }
                     Slider(
                         value = toolWidth,
                         onValueChange = { if (eraser) eraserWidth = it else brushWidth = it },
@@ -404,6 +417,75 @@ internal fun DoodlePadSheet(
                             val tint = if (selected) scheme.onSecondaryContainer else scheme.onSurfaceVariant
                             Icon(if (useEraser) Icons.Outlined.AutoFixNormal else Icons.Outlined.Brush, null, Modifier.size(16.dp), tint)
                             Text(if (useEraser) "橡皮擦" else "画笔", color = tint, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (showPalette) {
+        DoodleColorDialog(
+            initialColor = color,
+            reducedMotion = reduced,
+            onDismiss = { showPalette = false },
+            onSelect = { color = it; eraser = false }
+        )
+    }
+}
+
+@Composable
+private fun DoodleColorDialog(
+    initialColor: Color,
+    reducedMotion: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (Color) -> Unit
+) {
+    val initialHsv = remember {
+        FloatArray(3).also { android.graphics.Color.colorToHSV(initialColor.toArgb(), it) }
+    }
+    var hue by remember { mutableFloatStateOf(initialHsv[0]) }
+    var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
+    var value by remember { mutableFloatStateOf(initialHsv[2]) }
+    val selectedColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
+    val visibility = remember { MutableTransitionState(false) }
+    var closing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) { visibility.targetState = true }
+    fun close() {
+        if (closing) return
+        closing = true
+        visibility.targetState = false
+        scope.launch {
+            if (!reducedMotion) kotlinx.coroutines.delay(160)
+            onDismiss()
+        }
+    }
+    Dialog(onDismissRequest = ::close) {
+        AnimatedVisibility(
+            visibleState = visibility,
+            enter = fadeIn(tween(if (reducedMotion) 0 else 180)) +
+                scaleIn(tween(if (reducedMotion) 0 else 180), initialScale = 0.96f),
+            exit = fadeOut(tween(if (reducedMotion) 0 else 160)) +
+                scaleOut(tween(if (reducedMotion) 0 else 160), targetScale = 0.96f)
+        ) {
+            Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+                Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    Text("调色板", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(16.dp))
+                    Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
+                        .background(selectedColor).border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)))
+                    Spacer(Modifier.height(12.dp))
+                    Text("色相", style = MaterialTheme.typography.labelMedium)
+                    Slider(hue, { hue = it }, valueRange = 0f..360f)
+                    Text("饱和度", style = MaterialTheme.typography.labelMedium)
+                    Slider(saturation, { saturation = it }, valueRange = 0f..1f)
+                    Text("亮度", style = MaterialTheme.typography.labelMedium)
+                    Slider(value, { value = it }, valueRange = 0f..1f)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = ::close, enabled = !closing) { Text("取消") }
+                        Button(onClick = { onSelect(selectedColor); close() }, enabled = !closing, shape = CircleShape) {
+                            Text("使用颜色")
                         }
                     }
                 }

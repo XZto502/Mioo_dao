@@ -75,6 +75,8 @@ import com.mioo.dao.utils.DiceRoll
 import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
+private val BARE_THREAD_ID = Regex("(?<![A-Za-z0-9])\\d{8}(?![A-Za-z0-9])")
+val LocalOpenBareThread = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
 private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>[ \\t]*(?:\\r\\n|\\r|\\n)?")
 private val PARAGRAPH_BREAKS = Regex("\\n[ \\t]*(?:\\n[ \\t]*)+")
 private val KAOMOJI_PATTERN = Regex("""\([^()\n]{1,32}\)|\|[^|\n]{1,16}\)""")
@@ -521,6 +523,22 @@ fun HtmlContent(
             }
         } else source.withReadingParagraphGaps(paragraphScale)
     }
+    val linkedText = remember(annotatedString, quoteLinkColor) {
+        buildAnnotatedString {
+            append(annotatedString)
+            BARE_THREAD_ID.findAll(annotatedString.text).forEach { match ->
+                val start = match.range.first
+                val end = match.range.last + 1
+                val covered = listOf("QUOTE_CLICK", "LINK_CLICK", "DICE_CLICK").any {
+                    annotatedString.getStringAnnotations(it, start, end).isNotEmpty()
+                }
+                if (!covered) {
+                    addStyle(SpanStyle(color = quoteLinkColor, textDecoration = TextDecoration.Underline), start, end)
+                    addStringAnnotation("BARE_THREAD", match.value, start, end)
+                }
+            }
+        }
+    }
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
     var layoutResult by remember(html, enableGestures) {
@@ -554,8 +572,8 @@ fun HtmlContent(
     }
 
     var revealedSpoilers by remember(html) { mutableStateOf(emptySet<String>()) }
-    val spoilerRanges = remember(annotatedString) {
-        annotatedString.getStringAnnotations("SPOILER", 0, annotatedString.length)
+    val spoilerRanges = remember(linkedText) {
+        linkedText.getStringAnnotations("SPOILER", 0, linkedText.length)
     }
     val reducedMotion = isReducedMotionEnabled()
     val spoilerProgress = spoilerRanges.map { range ->
@@ -567,9 +585,9 @@ fun HtmlContent(
         }
     }
     val spoilerAlphas = spoilerProgress.map { it.value }
-    val displayText = remember(annotatedString, spoilerAlphas, mergedStyle.color) {
+    val displayText = remember(linkedText, spoilerAlphas, mergedStyle.color) {
         buildAnnotatedString {
-            append(annotatedString)
+            append(linkedText)
             spoilerRanges.forEachIndexed { index, range ->
                 val alpha = spoilerAlphas[index]
                 if (alpha < 1f) addStyle(
@@ -599,6 +617,7 @@ fun HtmlContent(
         }
         val finalLinkClick = onLinkClick ?: defaultLinkClick
         val onQuoteClickState = rememberUpdatedState(onQuoteClick)
+        val onBareThreadState = rememberUpdatedState(LocalOpenBareThread.current)
         val onTextClickState = rememberUpdatedState(onTextClick)
         val onLongClickState = rememberUpdatedState(onLongClick)
         val finalLinkClickState = rememberUpdatedState(finalLinkClick)
@@ -626,6 +645,9 @@ fun HtmlContent(
                         val linkAnnotation = displayText.getStringAnnotations(
                             tag = "LINK_CLICK", start = offset, end = offset
                         ).firstOrNull()
+                        val bareThread = displayText.getStringAnnotations(
+                            tag = "BARE_THREAD", start = offset, end = offset
+                        ).firstOrNull()
                         val diceAnnotation = displayText.getStringAnnotations(
                             tag = "DICE_CLICK", start = offset, end = offset
                         ).firstOrNull()
@@ -638,6 +660,7 @@ fun HtmlContent(
                             diceAnnotation != null -> onDiceClickState.value?.invoke()
                             quoteAnnotation != null -> onQuoteClickState.value(quoteAnnotation.item)
                             linkAnnotation != null -> finalLinkClickState.value(linkAnnotation.item)
+                            bareThread != null -> onBareThreadState.value(bareThread.item)
                             else -> onTextClickState.value?.invoke()
                         }
                     }
