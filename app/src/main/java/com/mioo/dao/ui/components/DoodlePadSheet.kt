@@ -476,7 +476,8 @@ private fun DoodleColorDialog(
                         .background(selectedColor).border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)))
                     Spacer(Modifier.height(16.dp))
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Box(Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                        BoxWithConstraints(Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                            val squareSize = ((maxWidth - 48.dp) / 1.4143f - 12.dp).coerceAtLeast(0.dp)
                             Canvas(Modifier.fillMaxSize().pointerInput(Unit) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown()
@@ -503,7 +504,7 @@ private fun DoodleColorDialog(
                                 drawCircle(Color.White, radius = 7.dp.toPx(), center = marker)
                                 drawCircle(Color.Black.copy(alpha = 0.45f), radius = 7.dp.toPx(), center = marker, style = Stroke(1.dp.toPx()))
                             }
-                            Canvas(Modifier.fillMaxSize(0.59f).clip(RoundedCornerShape(4.dp)).pointerInput(Unit) {
+                            Canvas(Modifier.size(squareSize).clip(RoundedCornerShape(4.dp)).pointerInput(Unit) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown()
                                     fun update(position: Offset) {

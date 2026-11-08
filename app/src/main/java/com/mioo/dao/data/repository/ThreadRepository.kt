@@ -71,6 +71,7 @@ interface ThreadRepository {
     fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>>
     fun getTimeline(id: String, page: Int): Flow<XdResponse<List<Thread>>>
     fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>>
+    suspend fun getThreadForQuote(tid: String): Thread?
     fun getPoDetail(tid: String, page: Int): Flow<XdResponse<Thread>>
     fun getRefPost(id: String): Flow<XdResponse<Reply>>
 
@@ -440,6 +441,16 @@ class ThreadRepositoryImpl @Inject constructor(
             }
         }
     }.flowOn(Dispatchers.IO)
+
+    override suspend fun getThreadForQuote(tid: String): Thread? {
+        return try {
+            fetchThread(tid, 1).takeIf { it.idStr == tid }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     override fun getRefPost(id: String): Flow<XdResponse<Reply>> = flow {
         try {

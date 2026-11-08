@@ -191,8 +191,6 @@ class ThreadViewModel @Inject constructor(
         private const val DRAFT_DEBOUNCE_MS = 400L
         /** Keep quote network low so open-thread first paint keeps bandwidth/CPU. */
         private const val MAX_PARALLEL_QUOTE_FETCHES = 3
-        /** Cap network quote resolves per page load (local/seeded quotes unlimited). */
-        private const val MAX_NETWORK_QUOTES_PER_PAGE = 10
         private const val MAX_FILTERED_SKIPS = 4
         private const val REPORT_BOARD_FID = "18" // 值班室
     }
@@ -500,7 +498,7 @@ class ThreadViewModel @Inject constructor(
                         previousPageError = null)
                 }
                 seedLocalQuotes(posts, thread)
-                fetchQuotesForReplies(posts.takeLast(14))
+                fetchQuotesForReplies(posts)
                 onResult(if (tailOnly && !hasNewReplies) "已是最新内容" else "已刷新，阅读位置已保留")
             } catch (e: CancellationException) {
                 if (tailOnly) onResult("")
@@ -694,8 +692,7 @@ class ThreadViewModel @Inject constructor(
                             if (gen != loadGeneration) return@launch
                             if (newPosts.isEmpty() || quotesScheduled) return@launch
                             quotesScheduled = true
-                            // Only resolve quotes for the head of the page over the network
-                            fetchQuotesForReplies(newPosts.take(14))
+                            fetchQuotesForReplies(rawPosts.toList())
                         }
 
                         // Advance bottom cursor only for replace/append, not prepend
@@ -916,8 +913,8 @@ class ThreadViewModel @Inject constructor(
 
             if (networkIds.isEmpty()) return@launch
 
-            // Cap concurrent + total network quote fetches (rest resolve on demand via popup)
-            val toFetch = networkIds.take(MAX_NETWORK_QUOTES_PER_PAGE)
+            // Limit concurrent requests while allowing all loaded replies to resolve.
+            val toFetch = networkIds
             val semaphore = Semaphore(MAX_PARALLEL_QUOTE_FETCHES)
             coroutineScope {
                 toFetch.map { id ->
@@ -949,7 +946,8 @@ class ThreadViewModel @Inject constructor(
                 is XdResponse.Error -> null
             }
         }
-        return result
+        if (result != null) return result
+        return threadRepository.getThreadForQuote(id)?.toReplyPlaceholder()
     }
 
     private fun quoteErrorText(message: String?): String {
