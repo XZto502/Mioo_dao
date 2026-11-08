@@ -1,7 +1,6 @@
 package com.mioo.dao.ui.navigation
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -9,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.activity.compose.BackHandler
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.BackEventCompat
@@ -22,6 +20,17 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.ComposeNavigator
+import androidx.navigation.compose.LocalOwnersProvider
+import androidx.navigation.createGraph
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
+import androidx.compose.runtime.SideEffect
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -84,7 +93,6 @@ import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -176,23 +184,6 @@ fun MiooDaoNavGraph(
     val context = LocalContext.current
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
 
-    val parallaxEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
-    val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        if (reducedMotion) EnterTransition.None else slideInHorizontally(tween(300, easing = parallaxEasing)) { it }
-    }
-    val pageHoldExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        if (reducedMotion) ExitTransition.None else
-            slideOutHorizontally(tween(300, easing = parallaxEasing)) { -(it * 0.28f).toInt() } +
-                fadeOut(tween(300, easing = parallaxEasing), targetAlpha = 0.85f)
-    }
-    val pageRevealEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        if (reducedMotion) EnterTransition.None else
-            slideInHorizontally(tween(300, easing = parallaxEasing)) { -(it * 0.28f).toInt() } +
-                fadeIn(tween(300, easing = parallaxEasing), initialAlpha = 0.85f)
-    }
-    val pagePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        if (reducedMotion) ExitTransition.None else slideOutHorizontally(tween(300, easing = parallaxEasing)) { it }
-    }
     val density = LocalDensity.current
     var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var historyOpenGeneration by remember { mutableIntStateOf(0) }
@@ -336,22 +327,9 @@ fun MiooDaoNavGraph(
             }
         }
     ) {
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Home.route,
-            modifier = Modifier.fillMaxSize(),
-            // Intentionally no paddingValues: content scrolls behind the floating nav bar.
-            enterTransition = pageEnter,
-            exitTransition = pageHoldExit,
-            popEnterTransition = pageRevealEnter,
-            popExitTransition = pagePopExit
-        ) {
-            // Home tab transitions are independent of the NavHost.
-            composable(
-                route = Screen.Home.route,
-                enterTransition = { EnterTransition.None },
-                popEnterTransition = pageRevealEnter
-            ) { _ ->
+        ParallaxPageHost(navController, reducedMotion) { entry ->
+            when (entry.destination.route) {
+            Screen.Home.route -> {
                 BackHandler(enabled = currentRoute == Screen.Home.route && currentTabIndex != 0 &&
                     boardDrawerState.currentValue == DrawerValue.Closed && !isImageViewerOpen && !isComposerOpen) {
                     currentTabIndex = 0
@@ -439,7 +417,7 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.Search.route) { _ ->
+            Screen.Search.route -> {
                 PageBackdrop {
                     val viewModel: SearchViewModel = hiltViewModel()
                     SearchScreen(
@@ -450,7 +428,7 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.SettingsDetail.route) { _ ->
+            Screen.SettingsDetail.route -> {
                 PageBackdrop {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     SettingsScreen(
@@ -462,7 +440,7 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(route = Screen.DraftBox.route) { _ ->
+            Screen.DraftBox.route -> {
                 PageBackdrop {
                     val viewModel: com.mioo.dao.ui.screens.drafts.DraftViewModel = hiltViewModel()
                     com.mioo.dao.ui.screens.drafts.DraftBoxScreen(
@@ -480,12 +458,7 @@ fun MiooDaoNavGraph(
                 }
             }
 
-            composable(
-                route = Screen.Thread.route,
-                arguments = listOf(
-                    navArgument("threadId") { type = NavType.StringType }
-                ),
-            ) { entry ->
+            Screen.Thread.route -> {
                 PageBackdrop {
                     val viewModel: ThreadViewModel = hiltViewModel(entry)
                     ThreadScreen(
@@ -493,6 +466,142 @@ fun MiooDaoNavGraph(
                         onBackClick = { navController.popBackStack() },
                         onNavigateToThread = navigateToThread
                     )
+                }
+            }
+            }
+        }
+    }
+}
+
+private class PageBackPreview(
+    val front: NavBackStackEntry,
+    val behind: NavBackStackEntry
+) {
+    val progress = Animatable(0f)
+    var committing = false
+}
+
+@Composable
+private fun ParallaxPageHost(
+    controller: NavHostController,
+    reducedMotion: Boolean,
+    content: @Composable (NavBackStackEntry) -> Unit
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val storeOwner = checkNotNull(LocalViewModelStoreOwner.current)
+    val graph = remember(controller) {
+        controller.createGraph(startDestination = Screen.Home.route) {
+            composable(Screen.Home.route) {}
+            composable(Screen.Search.route) {}
+            composable(Screen.SettingsDetail.route) {}
+            composable(Screen.DraftBox.route) {}
+            composable(Screen.Thread.route, arguments = listOf(navArgument("threadId") {
+                type = NavType.StringType
+            })) {}
+        }
+    }
+    controller.setViewModelStore(storeOwner.viewModelStore)
+    controller.graph = graph
+    val navigator = remember(controller) { controller.navigatorProvider.getNavigator(ComposeNavigator::class.java) }
+    DisposableEffect(controller, lifecycleOwner) {
+        controller.setLifecycleOwner(lifecycleOwner)
+        onDispose {
+            controller.visibleEntries.value.forEach { navigator.onTransitionComplete(it) }
+        }
+    }
+
+    val entries by navigator.backStack.collectAsState()
+    val current = entries.lastOrNull() ?: return
+    val latestEntries = rememberUpdatedState(entries)
+    val stateHolder = rememberSaveableStateHolder()
+    var settled by remember { mutableStateOf(current) }
+    var preview by remember { mutableStateOf<PageBackPreview?>(null) }
+    val scope = rememberCoroutineScope()
+    val backOwner = LocalOnBackPressedDispatcherOwner.current
+    val latestReducedMotion = rememberUpdatedState(reducedMotion)
+    val callback = remember(controller, scope) {
+        object : OnBackPressedCallback(false) {
+            override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                val stack = latestEntries.value
+                val front = stack.lastOrNull() ?: return
+                val behind = stack.getOrNull(stack.lastIndex - 1) ?: return
+                if (front == settled && preview?.committing != true && !latestReducedMotion.value) {
+                    preview = PageBackPreview(front, behind)
+                }
+            }
+
+            override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                val gesture = preview ?: return
+                if (!gesture.committing) scope.launch {
+                    gesture.progress.snapTo(backEvent.progress.coerceIn(0f, 1f))
+                }
+            }
+
+            override fun handleOnBackCancelled() {
+                val gesture = preview ?: return
+                if (!gesture.committing) scope.launch {
+                    gesture.progress.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                    if (preview === gesture) preview = null
+                }
+            }
+
+            override fun handleOnBackPressed() {
+                val gesture = preview
+                if (gesture == null || latestEntries.value.lastOrNull() != gesture.front) {
+                    controller.popBackStack()
+                    return
+                }
+                if (gesture.committing) return
+                gesture.committing = true
+                scope.launch {
+                    gesture.progress.animateTo(1f, tween(180, easing = FastOutLinearInEasing))
+                    if (latestEntries.value.lastOrNull() != gesture.front || !controller.popBackStack()) {
+                        if (preview === gesture) preview = null
+                    }
+                }
+            }
+        }
+    }
+    DisposableEffect(backOwner, lifecycleOwner, callback) {
+        backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
+        onDispose { callback.remove() }
+    }
+    SideEffect { callback.isEnabled = entries.size > 1 }
+
+    val inGesture = preview?.takeIf { it.front == current }
+    val fromGesture = preview?.takeIf { it.committing && it.behind == current }
+    val pageProgress = remember(settled, current) { Animatable(0f) }
+    val easing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
+    LaunchedEffect(current, reducedMotion) {
+        if (preview?.front != current) preview = null
+        if (settled != current && fromGesture == null && !reducedMotion) {
+            pageProgress.animateTo(1f, tween(300, easing = easing))
+        }
+        settled = current
+        controller.visibleEntries.value.forEach { navigator.onTransitionComplete(it) }
+    }
+
+    val isPop = settled !in entries
+    val isTransitioning = settled != current && fromGesture == null && !reducedMotion
+    val behind = inGesture?.behind ?: if (isTransitioning) {
+        if (isPop) current else settled
+    } else null
+    val front = if (isTransitioning && isPop) settled else current
+    Box(Modifier.fillMaxSize().clip(androidx.compose.ui.graphics.RectangleShape).background(readingBackground())) {
+        for (entry in listOfNotNull(behind, front)) {
+            key(entry.id) {
+                val isBehind = entry == behind
+                Box(Modifier.fillMaxSize().zIndex(if (isBehind) 0f else 1f).graphicsLayer {
+                    if (behind != null) {
+                        val progress = inGesture?.progress?.value ?: pageProgress.value
+                        val reveal = if (inGesture != null || isPop) progress else 1f - progress
+                        val fraction = reveal.coerceIn(0f, 1f)
+                        translationX = if (isBehind) -0.28f * size.width * (1f - fraction) else fraction * size.width
+                        alpha = if (isBehind) 0.85f + 0.15f * fraction else 1f
+                        if (!isBehind && inGesture != null) shadowElevation = 16.dp.toPx()
+                    }
+                }) {
+                    entry.LocalOwnersProvider(stateHolder) { content(entry) }
                 }
             }
         }
