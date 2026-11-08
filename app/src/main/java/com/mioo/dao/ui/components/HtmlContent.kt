@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Casino
@@ -62,11 +63,11 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.mioo.dao.utils.DiceBadgeSpec
 import com.mioo.dao.utils.DiceLevel
@@ -549,22 +550,44 @@ fun HtmlContent(
         if (style.color == Color.Unspecified) style.copy(color = surfaceColor) else style
     }
 
-    // 宽度按完整文案的字符数留余量，规则和深浅色都进 key，切换后立刻重画
-    val inlineContent = remember(html, dicePreset, darkTheme, parsed.diceBadges) {
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val diceTextStyle = LocalTextStyle.current.merge(
+        TextStyle(
+            fontSize = 12.5.sp,
+            fontFeatureSettings = "tnum",
+            platformStyle = PlatformTextStyle(includeFontPadding = false),
+            fontWeight = FontWeight.Medium,
+            fontStyle = mergedStyle.fontStyle,
+            fontFamily = mergedStyle.fontFamily
+        )
+    )
+    val inlineContent = remember(parsed.diceBadges, textMeasurer, density, diceTextStyle) {
         if (parsed.diceBadges.isEmpty()) {
             emptyMap()
         } else {
             parsed.diceBadges.associate { spec ->
                 val displayText = spec.badgeText
-                val dynamicWidthEm = (2.6f + displayText.length * 0.68f).em
+                val textWidth = textMeasurer.measure(
+                    text = AnnotatedString(displayText),
+                    style = diceTextStyle,
+                    maxLines = 1,
+                    softWrap = false
+                ).size.width
+                val placeholderWidth = with(density) {
+                    (textWidth + (13.dp + 4.dp + 12.dp + 4.dp).toPx()).toSp()
+                }
+                val placeholderHeight = with(density) { 20.dp.toSp() }
                 spec.id to InlineTextContent(
                     placeholder = Placeholder(
-                        width = dynamicWidthEm,
-                        height = 1.5.em,
+                        width = placeholderWidth,
+                        height = placeholderHeight,
                         placeholderVerticalAlign = PlaceholderVerticalAlign.Center
                     )
                 ) {
-                    DiceBadge(spec)
+                    Box(Modifier.fillMaxSize().padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
+                        DiceBadge(spec, diceTextStyle)
+                    }
                 }
             }
         }
@@ -721,13 +744,14 @@ fun HtmlContent(
 
 /** 骰点胶囊：13dp 矢量骰子 + 完整 `出目 [起,止]`。整枚可点，打开本串规则菜单。 */
 @Composable
-private fun DiceBadge(spec: DiceBadgeSpec) {
+private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val normalBg = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
     val normalFg = MaterialTheme.colorScheme.onSecondaryContainer
     val colors = diceBadgeColors(spec.level, darkTheme, normalBg, normalFg)
     Row(
         modifier = Modifier
+            .wrapContentWidth(unbounded = true)
             .fillMaxHeight()
             .clip(RoundedCornerShape(6.dp))
             .background(colors.background)
@@ -753,13 +777,7 @@ private fun DiceBadge(spec: DiceBadgeSpec) {
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Visible,
-            style = TextStyle(
-                fontSize = 12.5.sp,
-                fontFeatureSettings = "tnum",
-                platformStyle = PlatformTextStyle(includeFontPadding = false),
-                fontWeight = colors.weight,
-                color = colors.foreground
-            )
+            style = textStyle.copy(color = colors.foreground)
         )
     }
 }
@@ -767,8 +785,7 @@ private fun DiceBadge(spec: DiceBadgeSpec) {
 private data class DiceBadgeColors(
     val background: Color,
     val foreground: Color,
-    val border: Color?,
-    val weight: FontWeight
+    val border: Color?
 )
 
 /** 普通档沿用现有 secondaryContainer；金/红只在用户选了安科或 CoC 且出目到极值时出现。 */
@@ -782,18 +799,17 @@ private fun diceBadgeColors(
         DiceLevel.NORMAL -> DiceBadgeColors(
             background = normalBg,
             foreground = normalFg,
-            border = null,
-            weight = FontWeight.Normal
+            border = null
         )
         DiceLevel.CRITICAL_GOOD -> if (darkTheme) {
-            DiceBadgeColors(Color(0xFF423000), Color(0xFFFFD54F), Color(0xFFFFC107), FontWeight.ExtraBold)
+            DiceBadgeColors(Color(0xFF423000), Color(0xFFFFD54F), Color(0xFFFFC107))
         } else {
-            DiceBadgeColors(Color(0xFFFFF0C2), Color(0xFFB26A00), Color(0xFFFFC107), FontWeight.ExtraBold)
+            DiceBadgeColors(Color(0xFFFFF0C2), Color(0xFFB26A00), Color(0xFFFFC107))
         }
         DiceLevel.CRITICAL_BAD -> if (darkTheme) {
-            DiceBadgeColors(Color(0xFF4A1218), Color(0xFFFF8A80), Color(0xFFFF5252), FontWeight.ExtraBold)
+            DiceBadgeColors(Color(0xFF4A1218), Color(0xFFFF8A80), Color(0xFFFF5252))
         } else {
-            DiceBadgeColors(Color(0xFFFFDAD6), Color(0xFFB3261E), Color(0xFFFF5252), FontWeight.ExtraBold)
+            DiceBadgeColors(Color(0xFFFFDAD6), Color(0xFFB3261E), Color(0xFFFF5252))
         }
     }
 }
