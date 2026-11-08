@@ -58,7 +58,7 @@ data class DiceBadgeSpec(
 object DiceRoll {
 
     /** 出目前缀区间：`2[0,9]`、`98[1,100]`，允许数字与括号间的空白。 */
-    private val DICE_PATTERN = Regex("(\\d+)\\s*\\[\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\]")
+    private val DICE_PATTERN = Regex("(?<![\\d+\\-])([+\\-]?\\d+)\\s*\\[\\s*([+\\-]?\\d+)\\s*,\\s*([+\\-]?\\d+)\\s*\\]")
 
     /** PO 红字骰点格式：`1d100=57`（允许全角等号/冒号）。 */
     private val XDY_PATTERN = Regex("(\\d{1,2})d(\\d{1,4})\\s*[=＝:]\\s*(\\d{1,4})", RegexOption.IGNORE_CASE)
