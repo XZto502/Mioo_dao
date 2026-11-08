@@ -7,7 +7,11 @@ import android.net.Uri
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.View
-import androidx.activity.compose.BackHandler
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -381,6 +385,8 @@ fun ImageViewer(
     val hasAnyTransform = transform.isTransformed || zoomed
 
     val openProgress = remember { Animatable(0f) }
+    val dismissProgress = remember { Animatable(0f) }
+    var swipeDirection by remember { mutableIntStateOf(1) }
     var isClosing by remember { mutableStateOf(false) }
     val dismissCallback by rememberUpdatedState(onDismiss)
     LaunchedEffect(Unit) {
@@ -396,7 +402,27 @@ fun ImageViewer(
         }
     }
 
-    BackHandler(enabled = true) { triggerSmoothClose() }
+    val backOwner = LocalOnBackPressedDispatcherOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val closeViewer = rememberUpdatedState { triggerSmoothClose() }
+    DisposableEffect(backOwner, lifecycleOwner) {
+        val callback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                swipeDirection = if (backEvent.swipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
+            }
+            override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                scope.launch { dismissProgress.snapTo(backEvent.progress.coerceIn(0f, 1f)) }
+            }
+            override fun handleOnBackCancelled() {
+                scope.launch { dismissProgress.animateTo(0f, spring()) }
+            }
+            override fun handleOnBackPressed() {
+                closeViewer.value()
+            }
+        }
+        backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
+        onDispose { callback.remove() }
+    }
     ViewerBarsEffect(lightCanvas = lightCanvas)
     Box(
         modifier = modifier
@@ -415,11 +441,17 @@ fun ImageViewer(
             ViewerCanvas(
                 color = palette.canvas,
                 alpha = backgroundAlpha,
-                openProgress = openProgress.asState()
+                openProgress = openProgress.asState(),
+                dismissProgress = dismissProgress.value
             )
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    val scale = 1f - dismissProgress.value * 0.16f
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = swipeDirection * dismissProgress.value * 36.dp.toPx()
+                },
                 // Keep the pager alive throughout a gesture. Image pan/pinch/dismiss handlers
                 // consume only the motion they own; toggling scrollEnabled mid-touch
                 // cancels the pager detector and can strand the next swipe.
@@ -658,9 +690,10 @@ fun ImageViewer(
 private fun ViewerCanvas(
     color: Color,
     alpha: MutableFloatState,
-    openProgress: State<Float>
+    openProgress: State<Float>,
+    dismissProgress: Float
 ) {
-    val fade = (openProgress.value * alpha.floatValue).coerceIn(0f, 1f)
+    val fade = (openProgress.value * alpha.floatValue * (1f - dismissProgress * 0.65f)).coerceIn(0f, 1f)
     Box(
         modifier = Modifier
             .fillMaxSize()

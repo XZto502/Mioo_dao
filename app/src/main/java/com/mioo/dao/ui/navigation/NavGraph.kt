@@ -9,6 +9,18 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.activity.compose.BackHandler
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 import androidx.navigation.NavBackStackEntry
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -164,19 +176,22 @@ fun MiooDaoNavGraph(
     val context = LocalContext.current
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
 
-    // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
-    // The four home tabs use a separate, short transition.
+    val parallaxEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
     val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        MiooMotion.pageEnter(reducedMotion)
+        if (reducedMotion) EnterTransition.None else slideInHorizontally(tween(300, easing = parallaxEasing)) { it }
     }
     val pageHoldExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        MiooMotion.pageHoldExit(reducedMotion)
+        if (reducedMotion) ExitTransition.None else
+            slideOutHorizontally(tween(300, easing = parallaxEasing)) { -(it * 0.28f).toInt() } +
+                fadeOut(tween(300, easing = parallaxEasing), targetAlpha = 0.85f)
     }
     val pageRevealEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        MiooMotion.pageRevealEnter(reducedMotion)
+        if (reducedMotion) EnterTransition.None else
+            slideInHorizontally(tween(300, easing = parallaxEasing)) { -(it * 0.28f).toInt() } +
+                fadeIn(tween(300, easing = parallaxEasing), initialAlpha = 0.85f)
     }
     val pagePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        MiooMotion.pagePopExit(reducedMotion)
+        if (reducedMotion) ExitTransition.None else slideOutHorizontally(tween(300, easing = parallaxEasing)) { it }
     }
     val density = LocalDensity.current
     var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -202,6 +217,8 @@ fun MiooDaoNavGraph(
     // 板块抽屉包在底栏外层：底栏留在抽屉 content 里，由 scrim 压暗，不再滑出隐藏
     val boardDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val boardDrawerSlot = remember { BoardDrawerSlot() }
+    val drawerBackProgress = remember { Animatable(0f) }
+    val drawerScope = rememberCoroutineScope()
     LaunchedEffect(currentRoute) {
         if (currentRoute != Screen.Home.route && boardDrawerState.currentValue != DrawerValue.Closed) {
             boardDrawerState.close()
@@ -287,8 +304,37 @@ fun MiooDaoNavGraph(
             currentTabIndex == 0 &&
             !isImageViewerOpen &&
             !isComposerOpen,
-        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
-        drawerContent = { boardDrawerSlot.content() }
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f * (1f - drawerBackProgress.value)),
+        drawerContent = {
+            Box(Modifier.graphicsLayer { translationX = -drawerBackProgress.value * size.width }) {
+                boardDrawerSlot.content()
+            }
+            val backOwner = LocalOnBackPressedDispatcherOwner.current
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(backOwner, lifecycleOwner, boardDrawerState.currentValue) {
+                val callback = object : OnBackPressedCallback(boardDrawerState.currentValue == DrawerValue.Open) {
+                    override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                        drawerScope.launch { drawerBackProgress.snapTo(backEvent.progress.coerceIn(0f, 1f)) }
+                    }
+                    override fun handleOnBackCancelled() {
+                        drawerScope.launch { drawerBackProgress.animateTo(0f, spring()) }
+                    }
+                    override fun handleOnBackPressed() {
+                        drawerScope.launch {
+                            if (drawerBackProgress.value > 0f) {
+                                drawerBackProgress.animateTo(1f, tween(if (reducedMotion) 0 else 180))
+                                boardDrawerState.snapTo(DrawerValue.Closed)
+                                drawerBackProgress.snapTo(0f)
+                            } else {
+                                boardDrawerState.close()
+                            }
+                        }
+                    }
+                }
+                backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
+                onDispose { callback.remove() }
+            }
+        }
     ) {
         NavHost(
             navController = navController,
@@ -304,8 +350,12 @@ fun MiooDaoNavGraph(
             composable(
                 route = Screen.Home.route,
                 enterTransition = { EnterTransition.None },
-                popEnterTransition = { EnterTransition.None }
+                popEnterTransition = pageRevealEnter
             ) { _ ->
+                BackHandler(enabled = currentRoute == Screen.Home.route && currentTabIndex != 0 &&
+                    boardDrawerState.currentValue == DrawerValue.Closed && !isImageViewerOpen && !isComposerOpen) {
+                    currentTabIndex = 0
+                }
                 Box(Modifier.fillMaxSize().nestedScroll(bottomBarScroll)) {
                     MainTabs(
                         currentTabIndex = currentTabIndex,
