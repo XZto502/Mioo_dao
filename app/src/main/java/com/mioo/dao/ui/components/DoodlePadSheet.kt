@@ -18,6 +18,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -215,8 +217,10 @@ internal fun DoodlePadSheet(
         context.getSharedPreferences("doodle_tools", Context.MODE_PRIVATE)
     }
     var recentColors by remember(toolPreferences) {
-        mutableStateOf(toolPreferences.getString("recent_colors", "").orEmpty()
-            .split(',').mapNotNull { it.toIntOrNull() }.take(8))
+        val ordered = toolPreferences.getString("recent_colors_ordered", null)
+        val saved = ordered ?: toolPreferences.getString("recent_colors", "").orEmpty()
+        val colors = saved.split(',').mapNotNull { it.toIntOrNull() }.take(8)
+        mutableStateOf(if (ordered == null) colors.reversed() else colors)
     }
     var pickingColor by remember { mutableStateOf(false) }
     var brushWidth by remember(toolPreferences) {
@@ -230,8 +234,10 @@ internal fun DoodlePadSheet(
         color = selected
         eraser = false
         val argb = selected.toArgb()
-        recentColors = (listOf(argb) + recentColors.filterNot { it == argb }).take(8)
-        toolPreferences.edit().putString("recent_colors", recentColors.joinToString(",")).apply()
+        if (argb !in recentColors) {
+            recentColors = (recentColors + argb).takeLast(8)
+            toolPreferences.edit().putString("recent_colors_ordered", recentColors.joinToString(",")).apply()
+        }
     }
     val toolWidth = if (eraser) eraserWidth else brushWidth
     var active by remember { mutableStateOf<DoodlePath?>(null) }
@@ -570,7 +576,10 @@ private fun DoodleColorDialog(
                     Spacer(Modifier.height(12.dp))
                     if (recentColors.isNotEmpty()) {
                         Text("最近使用", style = MaterialTheme.typography.labelMedium)
-                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             recentColors.forEachIndexed { index, argb ->
                                 Box(Modifier.size(26.dp).clip(CircleShape).background(Color(argb))
                                     .border(0.5.dp, MaterialTheme.colorScheme.outline, CircleShape)

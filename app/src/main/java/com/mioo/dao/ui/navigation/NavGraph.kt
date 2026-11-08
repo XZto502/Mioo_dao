@@ -20,6 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
@@ -29,6 +30,7 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.animation.core.Spring
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.core.Animatable
@@ -393,13 +395,12 @@ fun MiooDaoNavGraph(
                         // Outer box draws into the gesture nav area so the 小白条 is immersive;
                         // capsule itself stays above the system inset.
                         // offset (not graphicsLayer) moves the touch target with the slide.
-                        val slideFraction = bottomBarSlide.value
                         val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
                         val pageBgColor = readingBackground()
                         Box(
                             modifier = Modifier
                                 .onSizeChanged { bottomBarHeightPx = it.height }
-                                .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
+                                .offset { IntOffset(0, (slidePx * bottomBarSlide.value).toInt()) }
                                 .fillMaxWidth()
                                 .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
                                 .navigationBarsPadding()
@@ -511,6 +512,7 @@ fun MiooDaoNavGraph(
 
 private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
     val transition = Animatable(if (initiallyOpen) 1f else 0f)
+    val firstLayout = CompletableDeferred<Unit>()
     var animation: kotlinx.coroutines.Job? = null
 }
 
@@ -575,7 +577,10 @@ private fun ParallaxPageHost(
                 layers.add(layer)
                 if (index > 0 && !reducedMotion) {
                     layer.animation = scope.launch {
-                        layer.transition.animateTo(1f, tween(300, easing = enterEasing))
+                        layer.transition.snapTo(0f)
+                        layer.firstLayout.await()
+                        withFrameNanos { }
+                        layer.transition.animateTo(1f, tween(250, easing = FastOutSlowInEasing))
                         finishTransitions()
                     }
                 }
@@ -670,7 +675,9 @@ private fun ParallaxPageHost(
         layers.forEachIndexed { index, layer ->
             key(layer.entry.id) {
                 val next = layers.getOrNull(index + 1)
-                Box(Modifier.fillMaxSize().zIndex(index.toFloat()).pointerInput(Unit) {
+                Box(Modifier.fillMaxSize().zIndex(index.toFloat()).onSizeChanged {
+                    if (it.width > 0 && it.height > 0) layer.firstLayout.complete(Unit)
+                }.pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) awaitPointerEvent()
                     }
