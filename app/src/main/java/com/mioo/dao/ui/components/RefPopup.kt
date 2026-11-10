@@ -87,7 +87,7 @@ fun RefPopup(
         BackHandler {
             if (canGoBack) onBack() else onDismiss()
         }
-        BoxWithConstraints(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { onDismiss() }, contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().clickable(indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { onDismiss() }, contentAlignment = Alignment.Center) {
         val maxCardHeight = minOf(LocalConfiguration.current.screenHeightDp.dp * 0.65f, 460.dp)
         AnimatedVisibility(
             visibleState = visibleState,

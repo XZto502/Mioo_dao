@@ -161,7 +161,7 @@ fun ThreadCard(
                         modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
                             indication = null) { onImageClick(imageUrl) })
                 } else {
-                    Spacer(Modifier.size(120.dp))
+                    Spacer(Modifier.height(116.dp))
                 }
             }
 

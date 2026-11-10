@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,6 +38,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -84,12 +89,24 @@ private val draftTimeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault(
 fun DraftBoxScreen(
     viewModel: DraftViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
-    onNavigateToThread: (String) -> Unit,
+    onUseReplyDraft: (DraftEntity) -> Unit,
     /** Called after a POST draft was handed to the bus; host pops home and switches to 板块 tab. */
     onUsePostDraft: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val drafts by viewModel.drafts.collectAsState()
+    var replyToDelete by remember { mutableStateOf<DraftEntity?>(null) }
+    replyToDelete?.let { draft ->
+        AlertDialog(
+            onDismissRequest = { replyToDelete = null },
+            title = { Text("删除回复草稿？") },
+            text = { Text("这份未发送的回复将从草稿箱移除。") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.delete(draft.id); replyToDelete = null }) { Text("删除") }
+            },
+            dismissButton = { TextButton(onClick = { replyToDelete = null }) { Text("取消") } }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -139,14 +156,16 @@ fun DraftBoxScreen(
                     DraftRow(
                         draft = draft,
                         onClick = {
-                            if (draft.type == DraftEntity.TYPE_REPLY) {
-                                onNavigateToThread(draft.targetId)
+                            if (draft.isReply) {
+                                onUseReplyDraft(draft)
                             } else {
                                 viewModel.usePostDraft(draft)
                                 onUsePostDraft()
                             }
                         },
-                        onDelete = { viewModel.delete(draft.id) }
+                        onDelete = {
+                            if (draft.isReply) replyToDelete = draft else viewModel.delete(draft.id)
+                        }
                     )
                 }
             }
@@ -160,7 +179,7 @@ private fun DraftRow(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val isReply = draft.type == DraftEntity.TYPE_REPLY
+    val isReply = draft.isReply
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -179,7 +198,8 @@ private fun DraftRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = if (isReply) {
-                    "回复 · " + (draft.targetName.ifBlank { "No." + draft.targetId })
+                    val label = if (draft.type == DraftEntity.TYPE_ARCHIVED_REPLY) "旧回复" else "回复"
+                    "$label · ${draft.targetName.ifBlank { "No." + draft.targetId }}"
                 } else {
                     "发串 · " + draft.targetName.ifBlank { "草稿" }
                 },

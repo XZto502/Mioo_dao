@@ -27,8 +27,11 @@ data class DraftEntity(
     val content: String,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
+    val isReply: Boolean get() = type == TYPE_REPLY || type == TYPE_ARCHIVED_REPLY
+
     companion object {
         const val TYPE_REPLY = "REPLY"
+        const val TYPE_ARCHIVED_REPLY = "ARCHIVED_REPLY"
         const val TYPE_POST = "POST"
     }
 }

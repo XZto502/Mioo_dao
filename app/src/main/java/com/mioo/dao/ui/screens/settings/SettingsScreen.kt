@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.settings
 
+import androidx.compose.foundation.layout.heightIn
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -127,6 +129,40 @@ fun SettingsScreen(
     var newFolderUuid by remember { mutableStateOf("") }
 
     val context = LocalContext.current
+    val kaomojiStore = remember(context) { com.mioo.dao.data.local.SettingsDataStore(context.applicationContext) }
+    val customKaomoji by kaomojiStore.customKaomojiFlow.collectAsState(initial = emptyList())
+    val kaomojiScope = rememberCoroutineScope()
+    var showKaomojiManager by remember { mutableStateOf(false) }
+    var confirmResetQuickInputs by remember { mutableStateOf(false) }
+    var editingKaomoji by remember { mutableStateOf<com.mioo.dao.data.local.CustomKaomoji?>(null) }
+
+    if (confirmResetQuickInputs) {
+        AlertDialog(onDismissRequest = { confirmResetQuickInputs = false },
+            title = { Text("恢复默认快捷输入") },
+            text = { Text("恢复后，自定义的快捷输入项将被移除。") },
+            dismissButton = { TextButton(onClick = { confirmResetQuickInputs = false }) { Text("取消") } },
+            confirmButton = { TextButton(onClick = {
+                kaomojiScope.launch { kaomojiStore.resetQuickInputs() }
+                confirmResetQuickInputs = false
+            }) { Text("恢复默认") } })
+    }
+    if (showKaomojiManager) {
+        AlertDialog(onDismissRequest = { showKaomojiManager = false }, title = { Text("自定义颜文字") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                    item { TextButton(onClick = { editingKaomoji = com.mioo.dao.data.local.CustomKaomoji(java.util.UUID.randomUUID().toString(), "") }) { Text("添加") } }
+                    items(customKaomoji.size) { index ->
+                        val item = customKaomoji[index]
+                        TextButton(onClick = { editingKaomoji = item }) { Text(item.alias.trim().ifEmpty { item.text }, maxLines = 1) }
+                    }
+                }
+            }, confirmButton = { TextButton(onClick = { showKaomojiManager = false }) { Text("完成") } })
+    }
+    editingKaomoji?.let { item ->
+        com.mioo.dao.ui.components.CustomKaomojiDialog(item, onDismiss = { editingKaomoji = null },
+            onSave = { saved -> kaomojiScope.launch { kaomojiStore.updateCustomKaomoji(saved) }; editingKaomoji = null },
+            onDelete = { deleted -> kaomojiScope.launch { kaomojiStore.updateCustomKaomoji(deleted, delete = true) }; editingKaomoji = null })
+    }
 
     val scanLauncher = rememberLauncherForActivityResult(
         contract = ScanContract()
@@ -411,6 +447,13 @@ fun SettingsScreen(
         }
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
+        TextButton(onClick = { showKaomojiManager = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("自定义颜文字（${customKaomoji.size}）")
+        }
+        TextButton(onClick = { confirmResetQuickInputs = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("恢复默认快捷输入")
+        }
+        SettingsGroupDivider()
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text("板块列表预览行数", style = settingsItemStyle())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

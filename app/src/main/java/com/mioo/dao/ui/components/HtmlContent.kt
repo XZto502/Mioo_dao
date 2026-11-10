@@ -16,9 +16,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -555,6 +556,7 @@ fun HtmlContent(
     val diceTextStyle = LocalTextStyle.current.merge(
         TextStyle(
             fontSize = 12.5.sp,
+            lineHeight = 12.5.sp,
             fontFeatureSettings = "tnum",
             platformStyle = PlatformTextStyle(includeFontPadding = false),
             fontWeight = FontWeight.Medium,
@@ -575,17 +577,17 @@ fun HtmlContent(
                     softWrap = false
                 ).size.width
                 val placeholderWidth = with(density) {
-                    (textWidth + (13.dp + 4.dp + 12.dp + 4.dp).toPx()).toSp()
+                    (textWidth + (13.dp + 4.dp + 6.dp * 2 + 3.dp * 2 + 2.dp).toPx()).toSp()
                 }
-                val placeholderHeight = with(density) { 20.dp.toSp() }
+                val placeholderHeight = with(density) { 22.dp.toSp() }
                 spec.id to InlineTextContent(
                     placeholder = Placeholder(
                         width = placeholderWidth,
                         height = placeholderHeight,
-                        placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
                     )
                 ) {
-                    Box(Modifier.fillMaxSize().padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         DiceBadge(spec, diceTextStyle)
                     }
                 }
@@ -752,7 +754,7 @@ private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle) {
     Row(
         modifier = Modifier
             .wrapContentWidth(unbounded = true)
-            .fillMaxHeight()
+            .height(20.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(colors.background)
             .then(
@@ -762,13 +764,13 @@ private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle) {
                     Modifier
                 }
             )
-            .padding(horizontal = 6.dp, vertical = 1.dp),
+            .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = Icons.Default.Casino,
             contentDescription = null,
-            modifier = Modifier.size(13.dp),
+            modifier = Modifier.requiredSize(13.dp),
             tint = colors.foreground
         )
         Spacer(modifier = Modifier.width(4.dp))

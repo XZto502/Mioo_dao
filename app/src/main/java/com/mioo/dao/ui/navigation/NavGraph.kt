@@ -42,8 +42,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import com.mioo.dao.ui.theme.readingBackground
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -73,6 +75,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -89,6 +92,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import com.mioo.dao.ui.theme.DaoTheme
@@ -120,8 +124,9 @@ sealed class Screen(val route: String) {
     object SettingsDetail : Screen("settings_detail")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
-    object Thread : Screen("thread/{threadId}") {
-        fun createRoute(threadId: String) = "thread/$threadId"
+    object Thread : Screen("thread/{threadId}?replyDraftId={replyDraftId}") {
+        fun createRoute(threadId: String, replyDraftId: Long? = null) =
+            if (replyDraftId == null) "thread/$threadId" else "thread/$threadId?replyDraftId=$replyDraftId"
     }
 }
 
@@ -148,7 +153,9 @@ fun MiooDaoNavGraph(
     // one — the screen then never leaves the old thread (threadId is read once
     // in ThreadViewModel). alreadyOpen + the 400ms window cover the dedupe.
     val lastThreadTapAt = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val navigateToThread: (String) -> Unit = remember(navController) {
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val navigateToThread: (String) -> Unit = remember(navController, keyboardController, focusManager) {
         { id: String ->
             if (id.isNotBlank()) {
                 val now = android.os.SystemClock.uptimeMillis()
@@ -158,6 +165,8 @@ fun MiooDaoNavGraph(
                 val repeatWhileCovered = !topIsThread && now - lastThreadTapAt.longValue < 400L
                 val alreadyOpen = topIsThread && topId == id
                 if (!repeatWhileCovered && !alreadyOpen) {
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
                     lastThreadTapAt.longValue = now
                     navController.navigate(Screen.Thread.createRoute(id))
                 }
@@ -476,7 +485,11 @@ fun MiooDaoNavGraph(
                         onBackClick = {
                             requestPageBack?.invoke()
                         },
-                        onNavigateToThread = navigateToThread,
+                        onUseReplyDraft = { draft ->
+                            if (navController.currentBackStackEntry?.destination?.route == Screen.DraftBox.route) {
+                                navController.navigate(Screen.Thread.createRoute(draft.targetId, draft.id))
+                            }
+                        },
                         onUsePostDraft = {
                             // 回到主界面并切到板块 tab，ForumScreen 会从总线取草稿打开发串框
                             requestPageBack?.invoke()
@@ -511,15 +524,27 @@ fun MiooDaoNavGraph(
 }
 
 private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
-    val transition = Animatable(if (initiallyOpen) 1f else 0f)
+    var progress by mutableFloatStateOf(if (initiallyOpen) 1f else 0f)
     val firstLayout = CompletableDeferred<Unit>()
     var animation: kotlinx.coroutines.Job? = null
+
+    suspend fun animateTo(
+        target: Float,
+        spec: androidx.compose.animation.core.AnimationSpec<Float>,
+        initialVelocity: Float = 0f
+    ) {
+        animate(progress, target, initialVelocity, spec) { value, _ -> progress = value }
+        progress = target
+    }
 }
 
-private class PageBackGesture(val layer: PageLayer, val startValue: Float) {
+private class PageBackGesture(val layer: PageLayer, val predictive: Boolean) {
     var finishing = false
-}
 
+    fun update(progress: Float) {
+        layer.progress = (1f - 0.9f * progress.coerceIn(0f, 1f)).coerceIn(0f, 1f)
+    }
+}
 @Composable
 private fun ParallaxPageHost(
     controller: NavHostController,
@@ -537,9 +562,13 @@ private fun ParallaxPageHost(
             composable(Screen.Search.route) {}
             composable(Screen.SettingsDetail.route) {}
             composable(Screen.DraftBox.route) {}
-            composable(Screen.Thread.route, arguments = listOf(navArgument("threadId") {
-                type = NavType.StringType
-            })) {}
+            composable(
+                Screen.Thread.route,
+                arguments = listOf(
+                    navArgument("threadId") { type = NavType.StringType },
+                    navArgument("replyDraftId") { type = NavType.LongType; defaultValue = 0L }
+                )
+            ) {}
         }
     }
     controller.setViewModelStore(storeOwner.viewModelStore)
@@ -560,8 +589,7 @@ private fun ParallaxPageHost(
     val latestReducedMotion = rememberUpdatedState(reducedMotion)
     val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
     val latestCommitBack = rememberUpdatedState(onCommitBack)
-    val enterEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
-    val exitEasing = remember { CubicBezierEasing(0.2f, 0f, 0.25f, 1f) }
+
     var gesture by remember { mutableStateOf<PageBackGesture?>(null) }
     val backOwner = LocalOnBackPressedDispatcherOwner.current
 
@@ -577,10 +605,9 @@ private fun ParallaxPageHost(
                 layers.add(layer)
                 if (index > 0 && !reducedMotion) {
                     layer.animation = scope.launch {
-                        layer.transition.snapTo(0f)
                         layer.firstLayout.await()
                         withFrameNanos { }
-                        layer.transition.animateTo(1f, tween(250, easing = FastOutSlowInEasing))
+                        layer.animateTo(1f, tween(380, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
                         finishTransitions()
                     }
                 }
@@ -591,60 +618,67 @@ private fun ParallaxPageHost(
             layer.animation?.cancel()
             layers.remove(layer)
         }
+        gesture?.takeIf { it.layer in removed }?.let {
+            gesture = null
+        }
         if (layers.none { it.animation?.isActive == true }) finishTransitions()
     }
 
-    fun beginBack(): PageBackGesture? {
+    fun beginBack(predictive: Boolean): PageBackGesture? {
         val stack = latestEntries.value
         if (stack.size < 2 || gesture?.finishing == true) return null
         val layer = layers.lastOrNull { it.entry.id == stack.last().id } ?: return null
         layer.animation?.cancel()
-        return PageBackGesture(layer, layer.transition.value.coerceIn(0f, 1f)).also { gesture = it }
+        return PageBackGesture(layer, predictive && !latestReducedMotion.value).also { gesture = it }
     }
 
-    fun finishBack(active: PageBackGesture, predictive: Boolean) {
+    fun finishBack(active: PageBackGesture) {
         if (active.finishing) return
         active.finishing = true
         scope.launch {
-            val remaining = active.layer.transition.value.coerceIn(0f, 1f)
-            val duration = if (latestReducedMotion.value) 0 else if (predictive) {
-                (240 * remaining).toInt().coerceIn(110, 240)
-            } else 280
-            active.layer.transition.animateTo(0f, tween(duration, easing = if (predictive) exitEasing else enterEasing))
-            if (latestEntries.value.lastOrNull()?.id == active.layer.entry.id) {
-                if (!latestCommitBack.value(active.layer.entry)) {
-                    active.layer.transition.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
-                    finishTransitions()
+            if (active.predictive) {
+                val duration = (300 * active.layer.progress.coerceIn(0f, 1f)).toInt().coerceIn(150, 300)
+                active.layer.animateTo(
+                    0f,
+                    tween(duration, easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f))
+                )
+            } else {
+                active.layer.animateTo(0f, tween(if (latestReducedMotion.value) 0 else 340, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
+            }
+            if (controller.currentBackStackEntry?.id == active.layer.entry.id) {
+                if (latestCommitBack.value(active.layer.entry)) {
+                    // Pop and retire the hit-test layer in the same frame. The back stack
+                    // collector still reconciles entries and completes their lifecycles.
+                    layers.remove(active.layer)
+                    if (gesture === active) gesture = null
+                    return@launch
                 }
+                active.layer.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
+                finishTransitions()
             }
             if (gesture === active) gesture = null
         }
     }
 
-    val latestBeginBack = rememberUpdatedState<() -> PageBackGesture?> { beginBack() }
-    val latestFinishBack = rememberUpdatedState<(PageBackGesture, Boolean) -> Unit> { active, predictive ->
-        finishBack(active, predictive)
-    }
+    val latestBeginBack = rememberUpdatedState<(Boolean) -> PageBackGesture?> { beginBack(it) }
+    val latestFinishBack = rememberUpdatedState<(PageBackGesture) -> Unit> { finishBack(it) }
     val callback = remember(controller, scope) {
         object : OnBackPressedCallback(false) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
-                if (latestPredictiveBack.value) latestBeginBack.value()
+                if (latestPredictiveBack.value) latestBeginBack.value(true)?.update(backEvent.progress)
             }
 
             override fun handleOnBackProgressed(backEvent: BackEventCompat) {
                 val active = gesture ?: return
-                if (!active.finishing) scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-                    active.layer.transition.snapTo(
-                        (active.startValue * (1f - backEvent.progress.coerceIn(0f, 1f) * 0.92f)).coerceIn(0f, 1f)
-                    )
-                }
+                if (active.predictive && !active.finishing) active.update(backEvent.progress)
             }
 
             override fun handleOnBackCancelled() {
                 val active = gesture ?: return
-                if (!active.finishing) scope.launch {
-                    active.layer.transition.animateTo(
-                        1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+                if (active.finishing) return
+                active.layer.animation = scope.launch {
+                    active.layer.animateTo(
+                        1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 800f)
                     )
                     finishTransitions()
                     if (gesture === active) gesture = null
@@ -652,9 +686,8 @@ private fun ParallaxPageHost(
             }
 
             override fun handleOnBackPressed() {
-                val activeGesture = gesture
-                val active = activeGesture ?: latestBeginBack.value() ?: return
-                latestFinishBack.value(active, activeGesture != null)
+                val active = gesture ?: latestBeginBack.value(false) ?: return
+                latestFinishBack.value(active)
             }
         }
     }
@@ -664,29 +697,39 @@ private fun ParallaxPageHost(
     }
     SideEffect { callback.isEnabled = entries.size > 1 }
     val requestBack = remember {
-        { latestBeginBack.value()?.let { latestFinishBack.value(it, false) }; Unit }
+        { latestBeginBack.value(false)?.let { latestFinishBack.value(it) }; Unit }
     }
     DisposableEffect(registerBackRequest, requestBack) {
         registerBackRequest(requestBack)
         onDispose { registerBackRequest(null) }
     }
 
-    Box(Modifier.fillMaxSize().clip(androidx.compose.ui.graphics.RectangleShape).background(readingBackground())) {
+    Box(
+        modifier = Modifier.fillMaxSize().clip(androidx.compose.ui.graphics.RectangleShape).background(readingBackground()),
+        contentAlignment = Alignment.TopStart
+    ) {
         layers.forEachIndexed { index, layer ->
             key(layer.entry.id) {
                 val next = layers.getOrNull(index + 1)
                 Box(Modifier.fillMaxSize().zIndex(index.toFloat()).onSizeChanged {
                     if (it.width > 0 && it.height > 0) layer.firstLayout.complete(Unit)
+                }.graphicsLayer {
+                    val currentProgress = layer.progress.coerceIn(0f, 1f)
+                    val coverProgress = next?.progress?.coerceIn(0f, 1f) ?: 0f
+                    translationY = 0f
+                    scaleX = 1f
+                    scaleY = 1f
+                    shape = androidx.compose.ui.graphics.RectangleShape
+                    clip = false
+                    translationX = kotlin.math.round(size.width * (1f - currentProgress - 0.25f * coverProgress))
+                    alpha = 1f
+                    shadowElevation = if (currentProgress > 0.001f && currentProgress < 0.999f) 12.dp.toPx() else 0f
                 }.pointerInput(Unit) {
+                    // This modifier must be inside the translated layer so its hit area
+                    // follows the page instead of covering the revealed destination.
                     awaitPointerEventScope {
                         while (true) awaitPointerEvent()
                     }
-                }.graphicsLayer {
-                    val currentProgress = layer.transition.value.coerceIn(0f, 1f)
-                    val coverProgress = next?.transition?.value?.coerceIn(0f, 1f) ?: 0f
-                    translationX = size.width * (1f - currentProgress - 0.28f * coverProgress)
-                    alpha = 1f - 0.15f * coverProgress
-                    shadowElevation = if (currentProgress > 0.001f && currentProgress < 0.999f) 16.dp.toPx() else 0f
                 }) {
                     layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
                 }
@@ -721,8 +764,8 @@ private fun MainTabs(
                 EnterTransition.None togetherWith ExitTransition.None
             } else {
                 val direction = if (targetState >= initialState) 1 else -1
-                (fadeIn(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) +
-                    slideInHorizontally(tween(160, delayMillis = 30, easing = FastOutSlowInEasing)) {
+                (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(tween(160, easing = FastOutSlowInEasing)) {
                         direction * slidePx
                     }) togetherWith fadeOut(tween(70, easing = LinearEasing))
             }

@@ -28,8 +28,8 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 26
-        versionName = "1.1.4"
+        versionCode = 27
+        versionName = "1.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "BETA", "false")

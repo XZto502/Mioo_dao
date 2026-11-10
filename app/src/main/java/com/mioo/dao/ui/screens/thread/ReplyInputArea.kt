@@ -6,28 +6,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.OpenInFull
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
-import com.mioo.dao.data.local.DraftEntity
-import com.mioo.dao.ui.screens.forum.PostDraftCard
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,13 +33,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
@@ -64,7 +53,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -74,20 +62,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
-import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.components.ComposerToolButtons
 import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.ConfirmSendCookieDialog
 import com.mioo.dao.ui.components.DiceDialog
-import com.mioo.dao.ui.components.KaomojiQuickPanel
-import com.mioo.dao.ui.components.rememberEffectiveImeBottomPx
 import com.mioo.dao.ui.components.compressImageUnder2MB
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -132,28 +116,25 @@ internal fun ReplyInputArea(
     title: String = "",
     name: String = "",
     onIdentityChange: (String, String) -> Unit = { _, _ -> },
-    drafts: List<DraftEntity> = emptyList(),
-    onSaveDraft: () -> Unit = {},
-    onSelectDraft: (DraftEntity) -> Unit = {}
+    loadingDraft: Boolean = false,
+    onBeginEditing: () -> Unit = {}
 ) {
     var cookieMenuExpanded by remember { mutableStateOf(false) }
     var showCookieConfirmation by remember { mutableStateOf(false) }
-    var kaomojiMenuExpanded by remember { mutableStateOf(false) }
+    val inputPanel = com.mioo.dao.ui.components.rememberComposerInputPanelState()
+    val kaomojiMenuExpanded = inputPanel.expanded
     var showDiceDialog by remember { mutableStateOf(false) }
     var attachedImageUri by editorState.attachment
-    var showDrafts by remember { mutableStateOf(false) }
     var showName by remember { mutableStateOf(false) }
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) attachedImageUri = uri
     }
-    var ignoreImeCloseUntilMs by remember { mutableStateOf(0L) }
     val context = LocalContext.current
     val view = LocalView.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val density = LocalDensity.current
     var wasReplying by remember { mutableStateOf(false) }
     var textFieldValue by editorState.text
     fun applyEdit(value: TextFieldValue) {
@@ -179,7 +160,7 @@ internal fun ReplyInputArea(
         val value = textFieldValue
         val start = value.selection.min
         val end = value.selection.max
-        val selected = value.text.substring(start, end)
+        val selected = if (close.isNotEmpty()) value.text.substring(start, end) else ""
         applyEdit(TextFieldValue(value.text.replaceRange(start, end, open + selected + close),
             TextRange(start + open.length + selected.length)))
     }
@@ -200,6 +181,7 @@ internal fun ReplyInputArea(
     }
 
     fun insertAtCursor(snippet: String) {
+        if (loadingDraft) return
         val text = textFieldValue.text
         val selection = textFieldValue.selection
         val start = selection.min.coerceIn(0, text.length)
@@ -212,7 +194,7 @@ internal fun ReplyInputArea(
     }
 
     fun closeToolPanels() {
-        if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
+        inputPanel.close()
     }
 
     fun openDoodlePad() {
@@ -233,33 +215,6 @@ internal fun ReplyInputArea(
         closeToolPanels()
     }
 
-    // 【共享底部高度槽位】底部总占位恒取 max(键盘, 面板)，绝不相加——
-    // 从颜文字/骰子面板切到系统键盘时，槽位只在两个值之间平滑取大变化，永不过冲。
-    val imeBottomPx = rememberEffectiveImeBottomPx()
-    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
-    var rememberedImeHeightPx by remember { mutableIntStateOf(0) }
-    val defaultPanelHeightPx = with(density) { 280.dp.roundToPx() }
-    // 面板高度跟随用户键盘实际高度（键盘升过一次后记录），否则兜底 280dp
-    val targetPanelHeightPx =
-        if (rememberedImeHeightPx > navBarBottomPx) rememberedImeHeightPx else defaultPanelHeightPx
-    val isKeyboardRising = imeBottomPx > navBarBottomPx + with(density) { 40.dp.roundToPx() }
-    LaunchedEffect(imeBottomPx, isKeyboardRising) {
-        if (imeBottomPx > rememberedImeHeightPx) {
-            rememberedImeHeightPx = imeBottomPx
-        }
-        // 键盘升起 → 同帧关面板（单一动画源）。这是键盘主动升起，不是用户点面板按钮。
-        // 仍尊重刚点开面板后的 450ms 窗口：从键盘态点开面板会先 hideSystemIme，
-        // 键盘下落动画期间 isKeyboardRising 同样为 true，无窗口会把刚打开的面板立刻关掉。
-        if (isKeyboardRising) {
-            if (android.os.SystemClock.uptimeMillis() < ignoreImeCloseUntilMs) return@LaunchedEffect
-            if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
-        }
-    }
-    // 【核心】底部总占位 = max(键盘, 面板)，绝不相加
-    val bottomSlotHeightPx =
-        if (toolPanelOpen) maxOf(imeBottomPx, targetPanelHeightPx) else maxOf(imeBottomPx, navBarBottomPx)
-    val bottomSlotHeightDp = with(density) { bottomSlotHeightPx.toDp() }
-
     LaunchedEffect(replyText) {
         if (textFieldValue.text != replyText) {
             textFieldValue = textFieldValue.copy(
@@ -275,7 +230,7 @@ internal fun ReplyInputArea(
             attachedImageUri = null
             // 发送成功后收起输入法与颜文字面板
             hideSystemIme()
-            if (kaomojiMenuExpanded) kaomojiMenuExpanded = false
+            inputPanel.close()
         }
         wasReplying = isReplying
     }
@@ -292,7 +247,7 @@ internal fun ReplyInputArea(
 
     val scope = rememberCoroutineScope()
     val preparingAttachment by editorState.preparingAttachment
-    val canSend = (replyText.isNotBlank() || attachedImageUri != null) && !isReplying && !preparingAttachment
+    val canSend = (replyText.isNotBlank() || attachedImageUri != null) && !isReplying && !loadingDraft && !preparingAttachment
     fun submit(cookie: String?, index: Int? = null) {
         if (preparingAttachment || isReplying) return
         val uri = attachedImageUri
@@ -357,18 +312,6 @@ internal fun ReplyInputArea(
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
-                    Box {
-                        IconButton(onClick = { hideSystemIme(); closeToolPanels(); showDrafts = true },
-                            enabled = !isReplying) {
-                            Icon(Icons.Outlined.Description, "选择草稿")
-                        }
-                        if (drafts.isNotEmpty()) Box(Modifier.align(Alignment.TopEnd).padding(9.dp)
-                            .size(6.dp).background(MaterialTheme.colorScheme.error, CircleShape))
-                    }
-                    IconButton(onClick = onSaveDraft, enabled = !isReplying &&
-                        (replyText.isNotBlank() || title.isNotBlank() || name.isNotBlank())) {
-                        Icon(Icons.Outlined.Save, "保存草稿")
-                    }
                     Button(onClick = { send() }, enabled = canSend, shape = CircleShape) {
                         Text("发送", maxLines = 1)
                         Spacer(Modifier.width(4.dp))
@@ -386,8 +329,8 @@ internal fun ReplyInputArea(
             Column(Modifier.fillMaxWidth().padding(horizontal = if (fullScreen) 0.dp else 12.dp, vertical = 8.dp)) {
                 if (fullScreen) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        BasicTextField(title, { onIdentityChange(it, name) }, Modifier.weight(1f),
-                            enabled = !isReplying, singleLine = true,
+                        BasicTextField(title, { onIdentityChange(it, name) }, Modifier.weight(1f).onFocusChanged { if (it.isFocused) inputPanel.onEditorFocused() },
+                            enabled = !isReplying && !loadingDraft, singleLine = true,
                             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             decorationBox = { field ->
@@ -405,8 +348,9 @@ internal fun ReplyInputArea(
                         }
                     }
                     AnimatedVisibility(showName) {
-                        BasicTextField(name, { onIdentityChange(title, it) }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                            enabled = !isReplying, singleLine = true,
+                        BasicTextField(name, { onIdentityChange(title, it) }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                                .onFocusChanged { if (it.isFocused) inputPanel.onEditorFocused() },
+                            enabled = !isReplying && !loadingDraft, singleLine = true,
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             decorationBox = { field ->
@@ -474,8 +418,8 @@ internal fun ReplyInputArea(
                 if (fullScreen) {
                     BasicTextField(textFieldValue, { applyEdit(it) },
                         Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp, vertical = 8.dp)
-                            .onFocusChanged { if (it.isFocused) closeToolPanels() },
-                        enabled = !isReplying,
+                            .onFocusChanged { if (it.isFocused) inputPanel.onEditorFocused() },
+                        enabled = !isReplying && !loadingDraft,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 25.sp,
                             color = MaterialTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -485,36 +429,17 @@ internal fun ReplyInputArea(
                                 field()
                             }
                         })
-                    LazyRow(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        item {
-                            IconButton({ restoreEdit(true) }, Modifier.size(40.dp), enabled = !isReplying && editorState.undo.isNotEmpty()) {
-                                Icon(Icons.Filled.Undo, "撤销", Modifier.size(18.dp))
-                            }
-                        }
-                        item {
-                            IconButton({ restoreEdit(false) }, Modifier.size(40.dp), enabled = !isReplying && editorState.redo.isNotEmpty()) {
-                                Icon(Icons.Filled.Redo, "重做", Modifier.size(18.dp))
-                            }
-                        }
-                        items(listOf(
-                            Triple("「」", "「", "」"), Triple("『』", "『", "』"), Triple("【】", "【", "】"),
-                            Triple("——", "——", ""), Triple("……", "……", ""), Triple("防剧透", "[h]", "[/h]")
-                        )) { (label, open, close) ->
-                            Surface(onClick = { insertPair(open, close) }, enabled = !isReplying,
-                                shape = CircleShape, color = if (dark) Color(0xFF22252D) else Color(0xFFF2F4F8),
-                                modifier = Modifier.height(30.dp)) {
-                                Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
-                                    Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    }
+                    com.mioo.dao.ui.components.QuickInputBar(
+                        onInsert = { item ->
+                            val offset = item.cursorOffsetFromEnd.coerceIn(0, item.content.length)
+                            insertPair(item.content.dropLast(offset), item.content.takeLast(offset))
+                        }, onUndo = { restoreEdit(true) }, onRedo = { restoreEdit(false) },
+                        canUndo = editorState.undo.isNotEmpty(), canRedo = editorState.redo.isNotEmpty(), enabled = !isReplying && !loadingDraft
+                    )
                 } else OutlinedTextField(
                     value = textFieldValue,
                     onValueChange = { applyEdit(it) },
-                    enabled = !isReplying,
+                    enabled = !isReplying && !loadingDraft,
                     trailingIcon = {
                         IconButton(onClick = { hideSystemIme(); closeToolPanels(); onOpen() }) {
                             Icon(Icons.Outlined.OpenInFull, "全屏创作", Modifier.size(18.dp))
@@ -525,7 +450,8 @@ internal fun ReplyInputArea(
                         .fillMaxWidth()
                         .onFocusChanged { focusState ->
                             if (focusState.isFocused) {
-                                closeToolPanels()
+                                onBeginEditing()
+                                inputPanel.onEditorFocused()
                             }
                         },
                     maxLines = 4,
@@ -560,19 +486,19 @@ internal fun ReplyInputArea(
                         diceSelected = false,
                         kaomojiSelected = kaomojiMenuExpanded,
                         hasImage = attachedImageUri != null,
-                        onDiceClick = { showDiceDialog = true },
-                        onDoodleClick = ::openDoodlePad,
+                        onDiceClick = { if (!loadingDraft) { onBeginEditing(); showDiceDialog = true } },
+                        onDoodleClick = { if (!loadingDraft) { onBeginEditing(); openDoodlePad() } },
                         onKaomojiClick = {
-                            val open = !kaomojiMenuExpanded
-                            kaomojiMenuExpanded = open
-                            if (open) {
-                                ignoreImeCloseUntilMs = android.os.SystemClock.uptimeMillis() + 450L
-                                hideSystemIme()
-                            }
+                            if (!loadingDraft) onBeginEditing()
+                            inputPanel.toggle()
+                            if (inputPanel.expanded) hideSystemIme()
                         },
                         onImageClick = {
-                            closeToolPanels()
-                            imagePickerLauncher.launch("image/*")
+                            if (!loadingDraft) {
+                                onBeginEditing()
+                                closeToolPanels()
+                                imagePickerLauncher.launch("image/*")
+                            }
                         }
                     )
 
@@ -604,47 +530,7 @@ internal fun ReplyInputArea(
                     }
                 }
 
-            // 【共享底部槽位】max(键盘, 面板)，绝不相加。面板开时直接填充槽位
-            // （无收起动画，高度变化完全由槽位驱动 = 单一动画源，杜绝 ime+面板叠加过冲）。
-            // 实心背景铺底直达屏幕底，面板内容 navigationBarsPadding 防撞小白条。
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(bottomSlotHeightDp)
-            ) {
-                if (toolPanelOpen) {
-                    KaomojiQuickPanel(
-                        onInsert = { insertAtCursor(it) },
-                        modifier = Modifier.navigationBarsPadding(),
-                        heightDp = with(density) {
-                            (bottomSlotHeightPx - navBarBottomPx).coerceAtLeast(0)
-                                .toDp().value.roundToInt()
-                        }
-                    )
-                }
-            }
-        }
-    }
-
-    if (showDrafts) {
-        ModalBottomSheet(onDismissRequest = { showDrafts = false }, containerColor = paper) {
-            Text("选择回复草稿", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleMedium)
-            if (drafts.isEmpty()) {
-                Text("当前串暂无回复草稿", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                LazyColumn(Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(drafts, key = { it.id }) { draft ->
-                        PostDraftCard(draft, "No.${draft.targetId}") {
-                            showDrafts = false
-                            editorState.clearHistory()
-                            textFieldValue = TextFieldValue(draft.content, TextRange(draft.content.length))
-                            onSelectDraft(draft)
-                        }
-                    }
-                }
-            }
+            com.mioo.dao.ui.components.ComposerInputPanelSlot(inputPanel, onInsert = ::insertAtCursor)
         }
     }
 

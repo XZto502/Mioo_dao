@@ -11,6 +11,7 @@ import android.graphics.RectF
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -18,6 +19,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -40,7 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -48,10 +53,14 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -489,6 +498,15 @@ private fun DoodleColorDialog(
     var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
     var value by remember { mutableFloatStateOf(initialHsv[2]) }
     val selectedColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value)))
+    var hexText by remember { mutableStateOf(String.format(java.util.Locale.ROOT, "%06X", initialColor.toArgb() and 0xFFFFFF)) }
+    var hexFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedColor, hexFocused) {
+        if (!hexFocused) hexText = String.format(java.util.Locale.ROOT, "%06X", selectedColor.toArgb() and 0xFFFFFF)
+    }
+    val hexBackground by animateColorAsState(
+        if (hexFocused) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        label = "hex background"
+    )
     val visibility = remember { Animatable(0f) }
     var closing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -514,10 +532,34 @@ private fun DoodleColorDialog(
             }) {
             Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
                 Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                    Text("调色板", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Spacer(Modifier.height(16.dp))
-                    Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
-                        .background(selectedColor).border(0.5.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("调色板", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Surface(shape = CircleShape, color = hexBackground) {
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(18.dp).background(selectedColor, CircleShape)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape))
+                                Spacer(Modifier.width(6.dp))
+                                Text("#", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                BasicTextField(
+                                    value = hexText,
+                                    onValueChange = { input ->
+                                        hexText = input.uppercase(java.util.Locale.ROOT).filter { it in '0'..'9' || it in 'A'..'F' }.take(6)
+                                        if (hexText.length == 6) {
+                                            val hsv = FloatArray(3)
+                                            android.graphics.Color.colorToHSV((0xFF000000L or hexText.toLong(16)).toInt(), hsv)
+                                            hue = hsv[0]; saturation = hsv[1]; value = hsv[2]
+                                        }
+                                    },
+                                    modifier = Modifier.width(52.dp).onFocusChanged { hexFocused = it.isFocused },
+                                    textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(16.dp))
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         BoxWithConstraints(Modifier.widthIn(max = 240.dp).fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
@@ -548,7 +590,7 @@ private fun DoodleColorDialog(
                                 drawCircle(Color.White, radius = 7.dp.toPx(), center = marker)
                                 drawCircle(Color.Black.copy(alpha = 0.45f), radius = 7.dp.toPx(), center = marker, style = Stroke(1.dp.toPx()))
                             }
-                            Canvas(Modifier.size(squareSize).clip(RoundedCornerShape(4.dp)).pointerInput(Unit) {
+                            Canvas(Modifier.size(squareSize).pointerInput(Unit) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown()
                                     fun update(position: Offset) {
@@ -565,8 +607,8 @@ private fun DoodleColorDialog(
                                     }
                                 }
                             }) {
-                                drawRect(Brush.horizontalGradient(listOf(Color.White, Color.hsv(hue, 1f, 1f))))
-                                drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
+                                drawRoundRect(brush = Brush.horizontalGradient(listOf(Color.White, Color.hsv(hue, 1f, 1f))), cornerRadius = CornerRadius(4.dp.toPx()))
+                                drawRoundRect(brush = Brush.verticalGradient(listOf(Color.Transparent, Color.Black)), cornerRadius = CornerRadius(4.dp.toPx()))
                                 val marker = Offset(saturation * size.width, (1f - value) * size.height)
                                 drawCircle(Color.White, radius = 6.dp.toPx(), center = marker, style = Stroke(2.dp.toPx()))
                                 drawCircle(Color.Black.copy(alpha = 0.6f), radius = 7.dp.toPx(), center = marker, style = Stroke(1.dp.toPx()))

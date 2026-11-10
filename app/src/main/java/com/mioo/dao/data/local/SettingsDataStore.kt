@@ -19,12 +19,51 @@ import java.io.IOException
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "mioo_settings")
 
+data class CustomKaomoji(val id: String, val text: String, val alias: String = "")
+
+data class QuickInputItem(val id: String, val label: String, val content: String, val cursorOffsetFromEnd: Int = 0)
+
+val defaultQuickInputs = listOf(
+    QuickInputItem("corner", "「 」", "「」", 1), QuickInputItem("double", "『 』", "『』", 1),
+    QuickInputItem("square", "【 】", "【】", 1), QuickInputItem("dash", "——", "——"),
+    QuickInputItem("ellipsis", "……", "……"), QuickInputItem("spoiler", "黑幕", "[h][/h]", 4)
+)
+
 data class ThirdPartyConsent(
     val hasShownComplianceDialog: Boolean = false,
     val allowThirdPartyServices: Boolean = false
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val quickInputKey = stringPreferencesKey("quick_input_items")
+    private fun parseQuickInputs(json: String?): List<QuickInputItem> {
+        if (json == null) return defaultQuickInputs
+        return runCatching {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val id = item.optString("id")
+                val content = item.optString("content")
+                if (id.isBlank() || content.isBlank()) null else QuickInputItem(id, item.optString("label"), content, item.optInt("offset").coerceIn(0, content.length))
+            }
+        }.getOrDefault(defaultQuickInputs)
+    }
+    val quickInputsFlow: Flow<List<QuickInputItem>> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { parseQuickInputs(it[quickInputKey]) }
+
+    suspend fun updateQuickInput(item: QuickInputItem, delete: Boolean = false) {
+        context.dataStore.edit { prefs ->
+            val items = parseQuickInputs(prefs[quickInputKey]).toMutableList()
+            val index = items.indexOfFirst { it.id == item.id }
+            if (delete) { if (index >= 0) items.removeAt(index) }
+            else if (index >= 0) items[index] = item else items.add(item)
+            val json = org.json.JSONArray()
+            items.forEach { json.put(org.json.JSONObject().put("id", it.id).put("label", it.label).put("content", it.content).put("offset", it.cursorOffsetFromEnd)) }
+            prefs[quickInputKey] = json.toString()
+        }
+    }
+    suspend fun resetQuickInputs() { context.dataStore.edit { it.remove(quickInputKey) } }
     private val predictiveBackKey = booleanPreferencesKey("predictive_back_enabled")
     val predictiveBackFlow: Flow<Boolean> = context.dataStore.data.map { it[predictiveBackKey] ?: false }
 
@@ -137,6 +176,34 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun saveKaomojiOrder(ids: List<String>) {
         context.dataStore.edit { it[KEY_KAOMOJI_ORDER] = org.json.JSONArray(ids).toString() }
+    }
+
+    private val customKaomojiKey = stringPreferencesKey("custom_kaomoji")
+    private fun parseCustomKaomoji(json: String): List<CustomKaomoji> = runCatching {
+        val array = org.json.JSONArray(json)
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.optString("id")
+            val text = item.optString("text")
+            if (id.isBlank() || text.isBlank()) null else CustomKaomoji(id, text, item.optString("alias"))
+        }
+    }.getOrDefault(emptyList())
+
+    val customKaomojiFlow: Flow<List<CustomKaomoji>> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { parseCustomKaomoji(it[customKaomojiKey] ?: "[]") }
+
+    suspend fun updateCustomKaomoji(item: CustomKaomoji, delete: Boolean = false) {
+        context.dataStore.edit { preferences ->
+            val items = parseCustomKaomoji(preferences[customKaomojiKey] ?: "[]").toMutableList()
+            val index = items.indexOfFirst { it.id == item.id }
+            if (delete) {
+                if (index >= 0) items.removeAt(index)
+            } else if (index >= 0) items[index] = item else items.add(item)
+            val array = org.json.JSONArray()
+            items.forEach { array.put(org.json.JSONObject().put("id", it.id).put("text", it.text).put("alias", it.alias)) }
+            preferences[customKaomojiKey] = array.toString()
+        }
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data

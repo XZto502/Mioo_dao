@@ -282,18 +282,13 @@ fun ThreadScreen(
     val scope = rememberCoroutineScope()
     val emptyLambda = remember { {} }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
-    // Keep the opening frame to chrome + spinner. The reply list is what stalls
-    // the first frames of the slide on a cold process.
+    // Keep the opening frame light while the detail page enters.
     val reducedMotion = isReducedMotionEnabled()
     var allowHeavyList by remember { mutableStateOf(reducedMotion) }
     LaunchedEffect(reducedMotion) {
-        if (!reducedMotion) {
-            // A frame past the slide, so list measure does not land on the last animation frame.
-            delay(MiooMotion.PageDurationMillis.toLong() + 32L)
-        }
+        if (!reducedMotion) delay(MiooMotion.PageDurationMillis.toLong() + 32L)
         allowHeavyList = true
     }
-
     var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
         mutableStateOf<Pair<Any, Int>?>(null)
     }
@@ -309,6 +304,7 @@ fun ThreadScreen(
     val saveProgressNow by rememberUpdatedState(newValue = { saveVisibleProgress() })
     val leaveThread = {
         if (!leavingThread) {
+            viewModel.flushReplyDraft()
             saveVisibleProgress()
             // Freeze the exit anchor: an ongoing fling can otherwise overwrite
             // it during the navigation transition after the user pressed Back.
@@ -377,7 +373,10 @@ fun ThreadScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(viewModel, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) saveProgressNow()
+            if (event == Lifecycle.Event.ON_STOP) {
+                viewModel.flushReplyDraft()
+                saveProgressNow()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -473,8 +472,17 @@ fun ThreadScreen(
         viewModel.updateSearchQuery(searchFieldText)
     }
 
-    var creatorOpen by remember(viewModel) { mutableStateOf(false) }
+    var creatorOpen by rememberSaveable(viewModel.threadId) {
+        mutableStateOf(viewModel.requestedReplyDraftId != null)
+    }
     val replyEditor = remember(viewModel) { ReplyEditorState() }
+    fun openReplyEditor() {
+        viewModel.beginReplyEditing()
+        creatorOpen = true
+    }
+    LaunchedEffect(viewModel, creatorOpen) {
+        if (creatorOpen) viewModel.beginReplyEditing()
+    }
     val selectedReplyCookie = viewModel.threadCookieIndex.collectAsState().value
         ?.takeIf { it in threadSettings.cookiesList.indices } ?: threadSettings.selectedCookieIndex
     var checkingTail by remember(viewModel) { mutableStateOf(false) }
@@ -653,7 +661,7 @@ fun ThreadScreen(
                     selectedCookieIndex = selectedReplyCookie,
                     onCookieSelect = viewModel::selectThreadCookie,
                     editor = replyEditor,
-                    onOpen = { creatorOpen = true }
+                    onOpen = { openReplyEditor() }
                 )
             }
             }
@@ -937,7 +945,7 @@ fun ThreadScreen(
                             translationY = 120.dp.toPx() * fraction
                         },
                     enabled = creatorButtonVisible,
-                    onOpen = { creatorOpen = true }
+                    onOpen = { openReplyEditor() }
                 )
             }
         }
@@ -957,7 +965,10 @@ fun ThreadScreen(
                 onCookieSelect = viewModel::selectThreadCookie,
                 editor = replyEditor,
                 fullScreen = true,
-                onClose = { creatorOpen = false }
+                onClose = {
+                    viewModel.flushReplyDraft()
+                    creatorOpen = false
+                }
             )
         }
         if (replyEditor.showDoodlePad.value) DoodlePadSheet(
@@ -1968,8 +1979,6 @@ private fun ReplyInputBar(
     onOpen: () -> Unit = {},
     onClose: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val drafts = if (fullScreen) viewModel.replyDrafts.collectAsState(emptyList()).value else emptyList()
     val composerState by viewModel.composerState.collectAsState()
     ReplyInputArea(
         replyText = composerState.replyText,
@@ -1991,11 +2000,8 @@ private fun ReplyInputBar(
         name = composerState.name,
         threadId = viewModel.threadId,
         onIdentityChange = viewModel::updateReplyIdentity,
-        drafts = drafts,
-        onSaveDraft = {
-            viewModel.saveReplyDraft { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
-        },
-        onSelectDraft = viewModel::restoreReplyDraft,
+        loadingDraft = composerState.loadingDraft,
+        onBeginEditing = viewModel::beginReplyEditing,
         onSend = { file, cookie ->
             viewModel.submitReply(imageFile = file, cookieOverride = cookie) {
                 editor.attachment.value = null

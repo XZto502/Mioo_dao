@@ -54,6 +54,9 @@ import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import coil.size.Precision
 import coil.size.Size
+import coil.imageLoader
+import coil.memory.MemoryCache
+import androidx.compose.ui.unit.IntSize
 
 /**
  * Shared list-thumbnail decode size (px). Keep prefetch + card requests aligned
@@ -69,7 +72,7 @@ object ListThumbImage {
     fun request(context: Context, imageUrl: String): ImageRequest {
         return ImageRequest.Builder(context)
             .data(imageUrl)
-            .size(Size(SIZE_PX, SIZE_PX))
+            .size(Size.ORIGINAL)
             .precision(Precision.INEXACT)
             .memoryCacheKey(imageUrl)
             .diskCacheKey(imageUrl)
@@ -83,6 +86,8 @@ object ListThumbImage {
  * Lightweight list thumbnail: [AsyncImage] + static placeholder while loading.
  * Avoids Subcompose overhead and infinite shimmer work for every visible cell.
  */
+private val thumbSizeCache = java.util.concurrent.ConcurrentHashMap<String, IntSize>()
+
 @Composable
 fun ListThumbAsyncImage(
     imageUrl: String,
@@ -92,16 +97,23 @@ fun ListThumbAsyncImage(
     preserveRatio: Boolean = false,
     previewMaxSize: androidx.compose.ui.unit.Dp = 120.dp
 ) {
-    var ratio by remember(imageUrl) { mutableStateOf(1.2f) }
-    val frame = if (preserveRatio) Modifier.previewFrame(ratio, previewMaxSize, previewMaxSize) else modifier
-    val reservedSpace = if (preserveRatio) modifier.size(previewMaxSize) else Modifier
+    val context = LocalContext.current
+    val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
+    var imgSize by remember(listUrl) {
+        val bitmap = context.imageLoader.memoryCache?.get(MemoryCache.Key(listUrl))?.bitmap
+        mutableStateOf(thumbSizeCache[listUrl] ?: bitmap?.let { IntSize(it.width, it.height) })
+    }
+    val ratio = imgSize?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) }
+    val frame = if (preserveRatio) {
+        modifier.size(116.dp * (ratio ?: 0.48f), 116.dp).clip(RoundedCornerShape(10.dp))
+    } else modifier
     val dataSaver = com.mioo.dao.ui.theme.LocalDataSaverEnabled.current
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
     if (dataSaver && !manualLoaded) {
         // 省流量模式：占位不加载，点击才拉这一张
-        Box(reservedSpace, contentAlignment = Alignment.CenterStart) {
+        Box(frame, contentAlignment = Alignment.CenterStart) {
         Box(
-            modifier = frame
+            modifier = Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                 .clickable { manualLoaded = true },
             contentAlignment = Alignment.Center
@@ -123,8 +135,6 @@ fun ListThumbAsyncImage(
         }
         return@ListThumbAsyncImage
     }
-    val context = LocalContext.current
-    val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
     val fullUrl = remember(imageUrl) { IslandImage.fullSize(imageUrl) }
     var useFull by remember(imageUrl) { mutableStateOf(listUrl == fullUrl) }
     val currentUrl = if (useFull) fullUrl else listUrl
@@ -132,21 +142,22 @@ fun ListThumbAsyncImage(
         ListThumbImage.request(context, currentUrl)
     }
 
-    Box(reservedSpace, contentAlignment = Alignment.CenterStart) {
-    Box(modifier = frame.background(MaterialTheme.colorScheme.surfaceVariant)) {
-        AsyncImage(
+    AsyncImage(
             model = request,
             contentDescription = contentDescription,
-            contentScale = if (preserveRatio && ratio >= 0.45f) ContentScale.Fit else contentScale,
-            alignment = if (preserveRatio && ratio < 0.45f) Alignment.TopCenter else Alignment.Center,
-            modifier = Modifier.matchParentSize(),
-            onSuccess = { if (preserveRatio) ratio = it.result.drawable.previewRatio() },
-            onError = {
-                if (!useFull) useFull = true
-            }
-        )
-    }
-    }
+            modifier = frame,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.Center,
+            onSuccess = { state ->
+                val drawable = state.result.drawable
+                if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                    val resolved = IntSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
+                    thumbSizeCache[listUrl] = resolved
+                    imgSize = resolved
+                }
+            },
+            onError = { if (!useFull) useFull = true }
+    )
 }
 
 private fun android.graphics.drawable.Drawable.previewRatio(): Float =
