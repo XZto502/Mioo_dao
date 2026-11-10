@@ -20,11 +20,22 @@ object UpdateDownloader {
     private var urlIndex: Int = 0
     private var releaseTag: String = ""
 
+    fun cancelActiveDownload(context: Context) {
+        if (downloadId < 0L) return
+        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val activeId = downloadId
+        downloadId = -1L
+        pendingUrls = emptyList()
+        clearReceiver(context)
+        manager.remove(activeId)
+    }
+
     fun downloadAndInstall(context: Context, release: GithubRelease) {
         val appContext = context.applicationContext
         val urls = candidateDownloadUrls(release)
         if (urls.isEmpty()) {
             openInBrowser(appContext, release.htmlUrl)
+            UpdatePromptController.finishDownload()
             return
         }
         pendingUrls = urls
@@ -142,6 +153,8 @@ object UpdateDownloader {
         } catch (_: Exception) {
         }
         receiver = null
+        downloadId = -1L
+        UpdatePromptController.finishDownload()
     }
 
     private fun openInBrowser(context: Context, url: String) {

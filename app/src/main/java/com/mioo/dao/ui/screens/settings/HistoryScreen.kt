@@ -270,7 +270,7 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",
-                    modifier = Modifier.size(120.dp).clip(RoundedCornerShape(10.dp)).clickable { onImageClick(image) })
+                    preserveRatio = true, modifier = Modifier.clickable { onImageClick(image) })
             }
             if (item.type == HistoryType.BROWSE && item.lastReadPage > 1) {
                 Spacer(Modifier.height(10.dp)); HistoryPill("读至第 ${item.lastReadPage} 页", maxWidth = 160)

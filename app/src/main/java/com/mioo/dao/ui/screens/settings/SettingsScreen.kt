@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.settings
 
+import androidx.compose.foundation.layout.heightIn
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -114,6 +116,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val predictiveBackEnabled by viewModel.predictiveBackEnabled.collectAsState()
+    val consent by viewModel.thirdPartyConsent.collectAsState()
+    val allowThirdParty = consent?.allowThirdPartyServices == true
     val forumPreviewLines by viewModel.forumPreviewLines.collectAsState()
     var authMenuExpanded by remember { mutableStateOf(false) }
 
@@ -124,6 +129,40 @@ fun SettingsScreen(
     var newFolderUuid by remember { mutableStateOf("") }
 
     val context = LocalContext.current
+    val kaomojiStore = remember(context) { com.mioo.dao.data.local.SettingsDataStore(context.applicationContext) }
+    val customKaomoji by kaomojiStore.customKaomojiFlow.collectAsState(initial = emptyList())
+    val kaomojiScope = rememberCoroutineScope()
+    var showKaomojiManager by remember { mutableStateOf(false) }
+    var confirmResetQuickInputs by remember { mutableStateOf(false) }
+    var editingKaomoji by remember { mutableStateOf<com.mioo.dao.data.local.CustomKaomoji?>(null) }
+
+    if (confirmResetQuickInputs) {
+        AlertDialog(onDismissRequest = { confirmResetQuickInputs = false },
+            title = { Text("恢复默认快捷输入") },
+            text = { Text("恢复后，自定义的快捷输入项将被移除。") },
+            dismissButton = { TextButton(onClick = { confirmResetQuickInputs = false }) { Text("取消") } },
+            confirmButton = { TextButton(onClick = {
+                kaomojiScope.launch { kaomojiStore.resetQuickInputs() }
+                confirmResetQuickInputs = false
+            }) { Text("恢复默认") } })
+    }
+    if (showKaomojiManager) {
+        AlertDialog(onDismissRequest = { showKaomojiManager = false }, title = { Text("自定义颜文字") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                    item { TextButton(onClick = { editingKaomoji = com.mioo.dao.data.local.CustomKaomoji(java.util.UUID.randomUUID().toString(), "") }) { Text("添加") } }
+                    items(customKaomoji.size) { index ->
+                        val item = customKaomoji[index]
+                        TextButton(onClick = { editingKaomoji = item }) { Text(item.alias.trim().ifEmpty { item.text }, maxLines = 1) }
+                    }
+                }
+            }, confirmButton = { TextButton(onClick = { showKaomojiManager = false }) { Text("完成") } })
+    }
+    editingKaomoji?.let { item ->
+        com.mioo.dao.ui.components.CustomKaomojiDialog(item, onDismiss = { editingKaomoji = null },
+            onSave = { saved -> kaomojiScope.launch { kaomojiStore.updateCustomKaomoji(saved) }; editingKaomoji = null },
+            onDelete = { deleted -> kaomojiScope.launch { kaomojiStore.updateCustomKaomoji(deleted, delete = true) }; editingKaomoji = null })
+    }
 
     val scanLauncher = rememberLauncherForActivityResult(
         contract = ScanContract()
@@ -228,6 +267,7 @@ fun SettingsScreen(
         },
         modifier = modifier.fillMaxSize(),
         containerColor = secondaryPageBackground(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Column(
@@ -407,6 +447,13 @@ fun SettingsScreen(
         }
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
+        TextButton(onClick = { showKaomojiManager = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("自定义颜文字（${customKaomoji.size}）")
+        }
+        TextButton(onClick = { confirmResetQuickInputs = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("恢复默认快捷输入")
+        }
+        SettingsGroupDivider()
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text("板块列表预览行数", style = settingsItemStyle())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -536,7 +583,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "导入手机存储中的 ttf/otf/ttc 字体文件，可分别为中文与英文指定：英文负责字母数字，中文负责汉字；未指定则用系统默认。英文字体请选纯拉丁字体——含汉字的字体（会标注）放英文槽时，汉字也会跟着变。",
+            text = "导入手机存储中的 ttf、otf 或 ttc 字体文件，选择后应用于全局文字。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -595,50 +642,23 @@ fun SettingsScreen(
                 HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Text(text = "中文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Text(text = "全局字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                 (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.updateChineseFont(value) }
+                            .clickable { viewModel.updateGlobalFont(value) }
                             .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = settings.chineseFont == value, onClick = null)
+                        RadioButton(selected = settings.chineseFont.ifBlank { settings.englishFont } == value, onClick = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(text = label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = "英文字体", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                (listOf("" to "默认（系统）") + fonts.map { it to it }).forEach { (value, label) ->
-                    // 含汉字字形的字体放英文槽会连中文一起接管（回退链按顺序命中），标注提醒
-                    val hanWarn = remember(value) {
-                        value.isNotEmpty() && com.mioo.dao.utils.FontStore.containsHan(
-                            java.io.File(com.mioo.dao.utils.FontStore.dir(context), value)
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.updateEnglishFont(value) }
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = settings.englishFont == value, onClick = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-                        if (hanWarn) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "含汉字·会连中文一起变",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
+
             }
         }
 
@@ -709,7 +729,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后串正文里的骰子出目（如 96[1,100]）渲染为彩色胶囊徽章；点击胶囊可为本串切换智能/安科/CoC/DND 高亮规则。",
+                    text = "开启后串正文里的骰子出目将显示为统一颜色的高亮胶囊。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1323,7 +1343,7 @@ fun SettingsScreen(
         SettingsGroupCard(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("分享卡片显示品牌水印", style = settingsItemStyle())
+                    Text("分享卡片显示喵岛水印", style = settingsItemStyle())
                     Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1332,7 +1352,61 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setShowShareCardBranding)
             }
         }
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("创作模式", style = settingsItemStyle())
+                    Text(
+                        "串详情页收起底部常驻回复栏，改为右下角悬浮按钮并使用全屏信纸写作台",
+                        style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = settings.enableCreatorMode,
+                    onCheckedChange = viewModel::updateCreatorMode
+                )
+            }
+        }
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("预测性返回", style = settingsItemStyle())
+                    Text("侧滑返回时跟随手势预览上一页面", style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(
+                    checked = predictiveBackEnabled,
+                    onCheckedChange = viewModel::setPredictiveBackEnabled
+                )
+            }
+        }
         Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("第三方服务", style = settingsItemStyle())
+                    Text(
+                        "允许检查和下载更新、外部搜索、以图搜源与网络兼容模式的第三方 DNS。",
+                        style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = allowThirdParty,
+                    enabled = consent?.hasShownComplianceDialog == true,
+                    onCheckedChange = viewModel::updateThirdPartyServices
+                )
+            }
+        }
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("网络兼容模式", style = settingsItemStyle())
@@ -1345,11 +1419,12 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (settings.networkCompatibilityEnabled) "已开启" else "已关闭",
+                        text = if (allowThirdParty && settings.networkCompatibilityEnabled) "已开启" else "已关闭",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     androidx.compose.material3.Switch(
-                        checked = settings.networkCompatibilityEnabled,
+                        checked = allowThirdParty && settings.networkCompatibilityEnabled,
+                        enabled = allowThirdParty,
                         onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
                     )
                 }
@@ -1936,7 +2011,7 @@ internal fun secondaryCardBackground(): Color {
 
 @Composable
 private fun SettingsGroupCard(modifier: Modifier = Modifier, elevation: androidx.compose.material3.CardElevation = CardDefaults.cardElevation(0.dp), content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground()), elevation = elevation, content = content)
+    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground(), contentColor = MaterialTheme.colorScheme.onSurface), elevation = elevation, content = content)
 }
 
 @Composable

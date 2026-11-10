@@ -35,7 +35,8 @@ data class ThreadScreenSettings(
     val confirmCookieBeforeSend: Boolean = false,
     val blockedThreads: List<String> = emptyList(),
     val quoteAutoDisplayEnabled: Boolean = true,
-    val diceBadgesEnabled: Boolean = true
+    val diceBadgesEnabled: Boolean = true,
+    val enableCreatorMode: Boolean = false
 )
 
 /** Minimal slice for ForumScreen — pins + compose cookies only. */
@@ -57,8 +58,24 @@ class SettingsViewModel @Inject constructor(
     private val backupRepository: BackupRepository
 ) : ViewModel() {
 
+    val thirdPartyConsent = settingsRepository.thirdPartyConsent
+    val predictiveBackEnabled = settingsRepository.predictiveBackEnabled
+
+    fun setPredictiveBackEnabled(enabled: Boolean) {
+        settingsRepository.setPredictiveBackEnabled(enabled)
+    }
+    val shareCardBrandingDefault = settingsRepository.shareCardBrandingDefault
+
+    fun updateThirdPartyServices(allowed: Boolean) {
+        viewModelScope.launch { settingsRepository.saveThirdPartyConsent(allowed) }
+    }
+
     val forumPreviewLines: StateFlow<Int> = settingsRepository.forumPreviewLines
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
+
+    fun updateCreatorMode(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.saveCreatorMode(enabled) }
+    }
 
     fun updateForumPreviewLines(lines: Int) = settingsRepository.updateForumPreviewLines(lines)
 
@@ -78,6 +95,7 @@ class SettingsViewModel @Inject constructor(
                 confirmCookieBeforeSend = it.confirmCookieBeforeSend,
                 blockedThreads = it.blockedThreads,
                 quoteAutoDisplayEnabled = it.quoteAutoDisplayEnabled,
+                enableCreatorMode = it.enableCreatorMode,
                 diceBadgesEnabled = it.diceBadgesEnabled
             )
         }
@@ -166,6 +184,10 @@ class SettingsViewModel @Inject constructor(
 
     fun updateChineseFont(name: String) {
         settingsRepository.updateChineseFont(name)
+    }
+
+    fun updateGlobalFont(name: String) {
+        settingsRepository.updateGlobalFont(name)
     }
 
     fun updateEnglishFont(name: String) {

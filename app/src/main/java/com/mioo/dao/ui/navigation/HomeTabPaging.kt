@@ -1,11 +1,15 @@
 package com.mioo.dao.ui.navigation
 
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.pager.PagerState
+import kotlin.math.roundToInt
+
+// Build momentum earlier, then settle continuously without overshooting the page.
+private val HomeTabEasing = CubicBezierEasing(0.28f, 0f, 0.28f, 1f)
 
 /** Four home tabs are close enough to animate the whole distance without a pre-jump. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -25,10 +29,13 @@ internal suspend fun PagerState.animateHomeTabTo(page: Int) {
 }
 
 internal suspend fun ScrollScope.animateHomeTabDistance(displacement: Float) {
-    var consumedDistance = 0f
-    // A bounded, monotonic curve avoids the spring's tiny overshoot and long tail,
-    // especially visible as an apparent pause at the first/last page boundary.
-    animate(0f, displacement, animationSpec = tween(360, easing = FastOutSlowInEasing)) { position, _ ->
-        consumedDistance += scrollBy(position - consumedDistance)
+    var previousPixel = 0
+    // Pager places pages at integer pixels. Send each pixel once instead of
+    // feeding fractional consumption back into the final animation frames.
+    animate(0f, displacement, animationSpec = tween(320, easing = HomeTabEasing)) { position, _ ->
+        val pixel = position.roundToInt()
+        val delta = pixel - previousPixel
+        if (delta != 0) scrollBy(delta.toFloat())
+        previousPixel = pixel
     }
 }

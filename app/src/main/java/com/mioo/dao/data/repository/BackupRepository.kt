@@ -162,6 +162,7 @@ class BackupRepository @Inject constructor(
             o.put("quoteAutoDisplayEnabled", settingsDataStore.quoteAutoDisplayFlow.first())
             o.put("showShareCardBranding", settingsDataStore.showShareCardBrandingFlow.first())
             o.put("draftBoxEnabled", settingsDataStore.draftBoxEnabledFlow.first())
+            o.put("enableCreatorMode", settingsDataStore.creatorModeFlow.first())
             o.put("confirmCookieBeforeSend", settingsDataStore.confirmCookieBeforeSendFlow.first())
             o.put("smartPreloadMode", settingsDataStore.smartPreloadModeFlow.first())
             o.put("preloadCount", settingsDataStore.preloadCountFlow.first())
@@ -320,10 +321,12 @@ class BackupRepository @Inject constructor(
                     content = o.optString("content"),
                     updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
                 )
-                // 回复草稿按串合并；发串草稿仅在内容和时间完全相同时去重。
-                val existing = if (parsed.type == DraftEntity.TYPE_REPLY) draftDao.find(parsed.type, parsed.targetId)
-                    else draftDao.findIdentical(parsed.type, parsed.targetId, parsed.title, parsed.name, parsed.content, parsed.updatedAt)
-                draftDao.upsert(if (existing != null) parsed.copy(id = existing.id) else parsed)
+                if (parsed.isReply) {
+                    draftDao.importReply(parsed)
+                } else {
+                    val existing = draftDao.findIdentical(parsed.type, parsed.targetId, parsed.title, parsed.name, parsed.content, parsed.updatedAt)
+                    draftDao.upsert(if (existing != null) parsed.copy(id = existing.id) else parsed)
+                }
                 count++
             }
             draftsCount = count
@@ -342,6 +345,7 @@ class BackupRepository @Inject constructor(
             if (o.has("glassEffectEnabled")) settingsDataStore.saveGlassEffectEnabled(o.optBoolean("glassEffectEnabled"))
             if (o.has("quoteAutoDisplayEnabled")) settingsDataStore.saveQuoteAutoDisplay(o.optBoolean("quoteAutoDisplayEnabled"))
             if (o.has("showShareCardBranding")) settingsDataStore.setShowShareCardBranding(o.optBoolean("showShareCardBranding", true))
+            if (o.has("enableCreatorMode")) settingsDataStore.saveCreatorMode(o.optBoolean("enableCreatorMode"))
             if (o.has("draftBoxEnabled")) settingsDataStore.saveDraftBoxEnabled(o.optBoolean("draftBoxEnabled"))
             if (o.has("confirmCookieBeforeSend")) settingsDataStore.saveConfirmCookieBeforeSend(o.optBoolean("confirmCookieBeforeSend"))
             if (o.has("smartPreloadMode")) settingsDataStore.saveSmartPreloadMode(o.optString("smartPreloadMode"))

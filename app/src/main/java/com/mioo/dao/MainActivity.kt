@@ -11,13 +11,19 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import android.os.Build
@@ -57,6 +64,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+
+val LocalThirdPartyServicesAllowed = staticCompositionLocalOf { false }
+val LocalPredictiveBackEnabled = staticCompositionLocalOf { false }
 
 /** Lazy resolve of ThreadRepository so MainActivity cold create does not require it. */
 @EntryPoint
@@ -164,8 +174,16 @@ class MainActivity : ComponentActivity() {
             val pendingThreadId by pendingThreadIdState
             val clipboardThreadId by clipboardThreadCandidate
 
-            // Update check well after cold start settles (lazy EntryPoint — no Activity field inject)
-            LaunchedEffect(Unit) {
+            val consent by settingsRepository.thirdPartyConsent.collectAsState()
+            val predictiveBackEnabled by settingsRepository.predictiveBackEnabled.collectAsState()
+            val allowThirdParty = consent?.allowThirdPartyServices == true
+            // Restarting the effect cancels the startup check if consent is withdrawn.
+            LaunchedEffect(allowThirdParty) {
+                if (!allowThirdParty) {
+                    if (UpdatePromptController.release != null) UpdatePromptController.dismiss()
+                    if (consent != null) com.mioo.dao.utils.UpdateDownloader.cancelActiveDownload(applicationContext)
+                    return@LaunchedEffect
+                }
                 // 测试版不检查更新：下载到的正式包包名/签名不同，无法覆盖安装
                 if (com.mioo.dao.BuildConfig.BETA) return@LaunchedEffect
                 delay(10000)
@@ -200,15 +218,51 @@ class MainActivity : ComponentActivity() {
                 dataSaverEnabled = dataSaverEnabled,
                 glassEffectEnabled = glassEffectEnabled
             ) {
-                MiooDaoNavGraph(
-                    pendingThreadId = pendingThreadId,
-                    onPendingThreadConsumed = { pendingThreadIdState.value = null },
-                    onColdStartContentReady = {
-                        keepSplashOnScreen.set(false)
-                    }
-                )
+                CompositionLocalProvider(
+                    LocalThirdPartyServicesAllowed provides allowThirdParty,
+                    LocalPredictiveBackEnabled provides predictiveBackEnabled
+                ) {
+                    MiooDaoNavGraph(
+                        pendingThreadId = pendingThreadId,
+                        onPendingThreadConsumed = { pendingThreadIdState.value = null },
+                        onColdStartContentReady = {
+                            keepSplashOnScreen.set(false)
+                        }
+                    )
+                }
 
-                clipboardThreadId?.let { threadId ->
+                if (consent?.hasShownComplianceDialog == false) {
+                    AlertDialog(
+                        onDismissRequest = {},
+                        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+                        title = { Text("使用须知与第三方服务说明") },
+                        text = {
+                            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("本软件（喵岛）是由 Sanae-Koishi 开发的第三方客户端，不受 X 岛官方支持。使用时您的数据安全与数据泄露风险无法由 X 岛本身保证。",
+                                    fontWeight = FontWeight.Bold)
+                                Text("论坛内容来自 X 岛（www.nmbxd.com）。饼干、浏览历史、本地收藏和草稿保存在手机上。发帖时，饼干和发帖内容会发送给 X 岛。云端收藏通过 X 岛服务同步。")
+                                Text("可选的第三方服务", fontWeight = FontWeight.Bold)
+                                Text("更新检查和下载连接 GitHub、jsDelivr、ghproxy.net 或 ghfast.top 获取版本信息和安装包，不发送饼干、帖子内容或本地记录。")
+                                Text("主动使用外部搜索时会将关键词交给所选搜索引擎。主动使用以图搜源时会将公开图片链接交给 SauceNAO、Ascii2d 或 Yandex。")
+                                Text("网络兼容模式可能通过阿里 DNS 或腾讯 DNS 解析 X 岛 API 域名。解析服务只收到域名查询。")
+                                Text("主动打开帖子或关于页面中的链接时，浏览器会访问对应网站。")
+                                Text("拒绝后仍可浏览 X 岛、发帖、回帖和使用收藏与饼干功能。你可以在设置中更改选择。")
+                            }
+                        },
+                        confirmButton = {
+                            Button(onClick = { lifecycleScope.launch { settingsRepository.saveThirdPartyConsent(true) } }) {
+                                Text("同意并继续")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { lifecycleScope.launch { settingsRepository.saveThirdPartyConsent(false) } }) {
+                                Text("拒绝第三方服务")
+                            }
+                        }
+                    )
+                }
+
+                clipboardThreadId?.takeIf { consent?.hasShownComplianceDialog == true }?.let { threadId ->
                     AlertDialog(
                         onDismissRequest = {
                             markClipboardPromptHandled()
@@ -239,7 +293,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                UpdatePromptController.release?.let { release ->
+                UpdatePromptController.release?.takeIf { allowThirdParty }?.let { release ->
                     AlertDialog(
                         onDismissRequest = { UpdatePromptController.dismiss() },
                         properties = immersiveDialogProperties(),
@@ -270,8 +324,9 @@ class MainActivity : ComponentActivity() {
                         confirmButton = {
                             TextButton(
                                 onClick = {
-                                    com.mioo.dao.utils.UpdateDownloader.downloadAndInstall(this@MainActivity, release)
+                                    if (settingsRepository.thirdPartyConsent.value?.allowThirdPartyServices != true) return@TextButton
                                     UpdatePromptController.startDownload()
+                                    com.mioo.dao.utils.UpdateDownloader.downloadAndInstall(this@MainActivity, release)
                                 }
                             ) {
                                 Text("立即更新")

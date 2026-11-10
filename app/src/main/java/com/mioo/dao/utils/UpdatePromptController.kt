@@ -42,4 +42,8 @@ object UpdatePromptController {
         autoConsumed = true
         release = null
     }
+
+    fun finishDownload() {
+        downloadStarted = false
+    }
 }

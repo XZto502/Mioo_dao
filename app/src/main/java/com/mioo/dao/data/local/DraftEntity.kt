@@ -20,15 +20,18 @@ data class DraftEntity(
     val targetId: String,
     /** Thread title / board name for display. */
     val targetName: String = "",
-    /** POST only: thread title field. */
+    /** Optional title entered in the editor. */
     val title: String? = null,
-    /** POST only: name field (饼干名/昵称). */
+    /** Optional name entered in the editor. */
     val name: String? = null,
     val content: String,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
+    val isReply: Boolean get() = type == TYPE_REPLY || type == TYPE_ARCHIVED_REPLY
+
     companion object {
         const val TYPE_REPLY = "REPLY"
+        const val TYPE_ARCHIVED_REPLY = "ARCHIVED_REPLY"
         const val TYPE_POST = "POST"
     }
 }

@@ -8,6 +8,31 @@ import org.junit.Test
 import kotlin.math.abs
 
 class HomeTabPagingTest {
+    @Test fun roundedPixelMotionNeverReversesOrCorrectsAfterAColdFrame() = runBlocking(
+        object : MonotonicFrameClock {
+            var time = 0L
+            var frame = 0
+            override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R {
+                time += if (++frame == 15) 50_000_000L else 16_666_667L
+                return onFrame(time)
+            }
+        }
+    ) {
+        for (distance in listOf(1080f, -1080f, 611.7f, -611.7f)) {
+            val deltas = mutableListOf<Float>()
+            val scope = object : ScrollScope {
+                override fun scrollBy(pixels: Float): Float {
+                    deltas += pixels
+                    return pixels
+                }
+            }
+            scope.animateHomeTabDistance(distance)
+            assertTrue(deltas.all { it * distance > 0f })
+            assertTrue(deltas.all { it == it.toInt().toFloat() })
+            assertEquals(distance, deltas.sum(), 0.5f)
+        }
+    }
+
     private class Frames : MonotonicFrameClock {
         private var time = 0L
         override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R {

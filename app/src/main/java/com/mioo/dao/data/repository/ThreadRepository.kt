@@ -155,7 +155,8 @@ interface ThreadRepository {
     // 发言草稿箱 (draft box): reply drafts keyed by thread, post drafts keyed by board.
     fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>>
     suspend fun getReplyDraftContent(threadId: String): String
-    suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String)
+    suspend fun getReplyDraft(threadId: String, draftId: Long?): com.mioo.dao.data.local.DraftEntity?
+    suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String, title: String? = null, name: String? = null, draftId: Long? = null): Long?
     suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String, draftId: Long = 0): Long
     suspend fun deleteDraft(id: Long)
     /** 删除某板块的全部发串草稿（发送成功后清理，防止草稿箱残留已发内容）。 */
@@ -1029,21 +1030,26 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun saveReplyDraft(threadId: String, threadTitle: String?, content: String) {
+    override suspend fun getReplyDraft(threadId: String, draftId: Long?): com.mioo.dao.data.local.DraftEntity? {
         ensureDraftsMigrated()
-        if (content.isBlank()) {
-            draftDao.deleteFor(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)
-        } else {
-            draftDao.upsert(
-                com.mioo.dao.data.local.DraftEntity(
-                    id = draftDao.find(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)?.id ?: 0,
-                    type = com.mioo.dao.data.local.DraftEntity.TYPE_REPLY,
-                    targetId = threadId,
-                    targetName = threadTitle ?: "",
-                    content = content
-                )
-            )
-        }
+        return if (draftId == null) draftDao.find(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)
+        else draftDao.findById(draftId)?.takeIf { it.isReply && it.targetId == threadId }
+    }
+
+    override suspend fun saveReplyDraft(
+        threadId: String, threadTitle: String?, content: String, title: String?, name: String?, draftId: Long?
+    ): Long? {
+        ensureDraftsMigrated()
+        return draftDao.writeReply(
+            com.mioo.dao.data.local.DraftEntity(
+                type = com.mioo.dao.data.local.DraftEntity.TYPE_REPLY,
+                targetId = threadId,
+                targetName = threadTitle.orEmpty(),
+                title = title,
+                name = name,
+                content = content
+            ), draftId
+        )
     }
 
     override suspend fun savePostDraft(boardId: String, boardName: String, name: String?, title: String?, content: String, draftId: Long): Long {
@@ -1054,7 +1060,7 @@ class ThreadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteDraft(id: Long) {
-        draftDao.deleteById(id)
+        draftDao.removeDraft(id)
     }
 
     override suspend fun deletePostDrafts(boardId: String) {
@@ -1436,6 +1442,10 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun checkLatestRelease(): Flow<XdResponse<GithubRelease>> = flow {
         var lastError: Exception? = null
         for (url in RELEASE_MANIFEST_URLS) {
+            if (!settingsDataStore.thirdPartyConsent.first().allowThirdPartyServices) {
+                emit(XdResponse.Error(message = "第三方服务未启用"))
+                return@flow
+            }
             try {
                 val release = githubApiService.getLatestRelease(url)
                 if (release.tagName.isNotBlank()) {

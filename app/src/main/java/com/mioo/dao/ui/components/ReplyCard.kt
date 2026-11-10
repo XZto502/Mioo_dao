@@ -79,7 +79,8 @@ fun ReplyCard(
     currentThreadId: String? = null,
     /** Dense reply lists skip press-scale to cut animateFloatAsState work. */
     enablePressScale: Boolean = false,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    onNumberClick: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     // Do not call rememberPressScale when disabled — it still subscribes to press + animateFloat.
@@ -123,21 +124,9 @@ fun ReplyCard(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            ReadingPostHeader(postData)
+            ReadingPostHeader(postData, onNumberClick)
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Reply Subject (highly rare but possible in some formats)
-            if (!postData.title.isNullOrBlank()) {
-                Text(
-                    text = postData.title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-            }
+            ReadingPostSubject(postData)
 
             // Cached pure split — avoids re-running regex on every unrelated recompose
             val contentBlocks = remember(postData.content, quotedPosts) {
@@ -179,20 +168,9 @@ fun ReplyCard(
             // Attached Image Thumbnail
             postData.imageUrl?.let { imageUrl ->
                 Spacer(modifier = Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) }
-                ) {
-                    ListThumbAsyncImage(
-                        imageUrl = imageUrl,
-                        contentDescription = "Reply Image",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize()
-                    )
-                }
+                ListThumbAsyncImage(imageUrl, "回复附图", preserveRatio = true, previewMaxSize = 100.dp,
+                    modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
+                        indication = null) { onImageClick(imageUrl) })
             }
         }
     }

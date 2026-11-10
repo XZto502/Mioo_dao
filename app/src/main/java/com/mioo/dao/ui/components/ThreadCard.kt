@@ -87,7 +87,8 @@ fun ThreadCard(
     enablePressScale: Boolean = false,
     /** When false, skip thumbnail (cold-start: defer decode until list settles). */
     showImage: Boolean = true,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp)
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    onNumberClick: (() -> Unit)? = null
 ) {
     val border: androidx.compose.foundation.BorderStroke? = null
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
@@ -134,21 +135,9 @@ fun ThreadCard(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            ReadingPostHeader(postData)
+            ReadingPostHeader(postData, onNumberClick)
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Subject / Title (if present)
-            if (!postData.title.isNullOrBlank()) {
-                Text(
-                    text = postData.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-            }
+            ReadingPostSubject(postData)
 
             // HTML content — list mode skips gesture plumbing (card handles clicks)
             HtmlContent(
@@ -165,23 +154,14 @@ fun ThreadCard(
             )
 
             // Attached Image Thumbnail (optional — off during cold first frames)
-            if (showImage) {
-                postData.imageUrl?.let { imageUrl ->
+            postData.imageUrl?.let { imageUrl ->
                     Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onImageClick(imageUrl) }
-                    ) {
-                        ListThumbAsyncImage(
-                            imageUrl = imageUrl,
-                            contentDescription = "Thread Image",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.matchParentSize()
-                        )
-                    }
+                if (showImage) {
+                    ListThumbAsyncImage(imageUrl, "帖子附图", preserveRatio = true,
+                        modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
+                            indication = null) { onImageClick(imageUrl) })
+                } else {
+                    Spacer(Modifier.height(116.dp))
                 }
             }
 

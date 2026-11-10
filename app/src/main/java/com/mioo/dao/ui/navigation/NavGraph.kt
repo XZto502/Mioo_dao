@@ -1,7 +1,7 @@
 package com.mioo.dao.ui.navigation
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.animation.AnimatedContentTransitionScope
+import com.mioo.dao.LocalPredictiveBackEnabled
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -9,22 +9,50 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.activity.compose.BackHandler
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.ComposeNavigator
+import androidx.navigation.compose.LocalOwnersProvider
+import androidx.navigation.createGraph
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import com.mioo.dao.ui.theme.readingBackground
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -35,31 +63,36 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import com.mioo.dao.ui.theme.DaoTheme
@@ -67,14 +100,13 @@ import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import kotlinx.coroutines.launch
 import com.mioo.dao.ui.screens.feed.FeedScreen
 import com.mioo.dao.ui.screens.feed.FeedViewModel
+import com.mioo.dao.ui.screens.forum.BoardDrawerSlot
 import com.mioo.dao.ui.screens.forum.ForumScreen
 import com.mioo.dao.ui.screens.forum.ForumViewModel
 import com.mioo.dao.ui.screens.search.SearchScreen
@@ -92,8 +124,9 @@ sealed class Screen(val route: String) {
     object SettingsDetail : Screen("settings_detail")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
-    object Thread : Screen("thread/{threadId}") {
-        fun createRoute(threadId: String) = "thread/$threadId"
+    object Thread : Screen("thread/{threadId}?replyDraftId={replyDraftId}") {
+        fun createRoute(threadId: String, replyDraftId: Long? = null) =
+            if (replyDraftId == null) "thread/$threadId" else "thread/$threadId?replyDraftId=$replyDraftId"
     }
 }
 
@@ -107,6 +140,9 @@ fun MiooDaoNavGraph(
     onColdStartContentReady: () -> Unit = {}
 ) {
     val navController = rememberNavController()
+    val threadLeaveHandlers = remember { mutableMapOf<String, () -> Unit>() }
+    var requestPageBack by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var committingPageBack by remember { mutableStateOf(false) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -117,7 +153,9 @@ fun MiooDaoNavGraph(
     // one — the screen then never leaves the old thread (threadId is read once
     // in ThreadViewModel). alreadyOpen + the 400ms window cover the dedupe.
     val lastThreadTapAt = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val navigateToThread: (String) -> Unit = remember(navController) {
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val navigateToThread: (String) -> Unit = remember(navController, keyboardController, focusManager) {
         { id: String ->
             if (id.isNotBlank()) {
                 val now = android.os.SystemClock.uptimeMillis()
@@ -127,6 +165,8 @@ fun MiooDaoNavGraph(
                 val repeatWhileCovered = !topIsThread && now - lastThreadTapAt.longValue < 400L
                 val alreadyOpen = topIsThread && topId == id
                 if (!repeatWhileCovered && !alreadyOpen) {
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
                     lastThreadTapAt.longValue = now
                     navController.navigate(Screen.Thread.createRoute(id))
                 }
@@ -158,29 +198,16 @@ fun MiooDaoNavGraph(
     // Read once per activity. Querying animator scale on every navigation janks the first frame.
     val context = LocalContext.current
     val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
+    val predictiveBackEnabled = LocalPredictiveBackEnabled.current
+    val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
 
-    // Detail routes (串、搜索、设置详情) keep one activity slide. The covered page does not move.
-    // All four home tabs share one pager and slide continuously through intermediate pages.
-    val pageEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        MiooMotion.pageEnter(reducedMotion)
-    }
-    val pageHoldExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        MiooMotion.pageHoldExit(reducedMotion)
-    }
-    val pageRevealEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        MiooMotion.pageRevealEnter(reducedMotion)
-    }
-    val pagePopExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        MiooMotion.pagePopExit(reducedMotion)
-    }
     val density = LocalDensity.current
-    val tabScope = rememberCoroutineScope()
-    val tabPagerState = rememberPagerState(initialPage = 0) { 4 }
+    var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var historyOpenGeneration by remember { mutableIntStateOf(0) }
     var previousRoute by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentRoute) {
         if (currentRoute == Screen.Home.route && previousRoute == Screen.Thread.route &&
-            tabPagerState.currentPage == 2) {
+            currentTabIndex == 2) {
             historyOpenGeneration++
         }
         previousRoute = currentRoute
@@ -195,9 +222,16 @@ fun MiooDaoNavGraph(
         )
     }
 
-    val showBottomBar = currentRoute == Screen.Home.route
-    // 切换板块抽屉打开/正在打开时收起悬浮 dock：不遮抽屉、不拦点击
-    var forumDrawerOpen by remember { mutableStateOf(false) }
+    // 板块抽屉包在底栏外层：底栏留在抽屉 content 里，由 scrim 压暗，不再滑出隐藏
+    val boardDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val boardDrawerSlot = remember { BoardDrawerSlot() }
+    val drawerBackProgress = remember { Animatable(0f) }
+    val drawerScope = rememberCoroutineScope()
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != Screen.Home.route && boardDrawerState.currentValue != DrawerValue.Closed) {
+            boardDrawerState.close()
+        }
+    }
     // 大图查看器打开时收起悬浮 dock：不遮查看器底部药丸、不拦点击
     var isImageViewerOpen by remember { mutableStateOf(false) }
     var isComposerOpen by remember { mutableStateOf(false) }
@@ -253,7 +287,7 @@ fun MiooDaoNavGraph(
             }
         }
     }
-    LaunchedEffect(currentRoute, tabPagerState.targetPage) {
+    LaunchedEffect(currentTabIndex) {
         bottomBarVisible = true
     }
     // 260ms EaseOut dumped the travel into the first frames. 560ms felt slow.
@@ -270,186 +304,450 @@ fun MiooDaoNavGraph(
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            // 抽屉打开时滑出收起，关上再滑回来；slideOut 让点击目标随动画一起移走
-            AnimatedVisibility(
-                visible = showBottomBar && !forumDrawerOpen && !isImageViewerOpen && !isComposerOpen,
-                enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
-                exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
-            ) {
-                // Outer box draws into the gesture nav area so the 小白条 is immersive;
-                // capsule itself stays above the system inset.
-                // offset (not graphicsLayer) moves the touch target with the slide.
-                val slideFraction = bottomBarSlide.value
-                val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
-                val pageBgColor = readingBackground()
-                Box(
-                    modifier = Modifier
-                        .onSizeChanged { bottomBarHeightPx = it.height }
-                        .offset { IntOffset(0, (slidePx * slideFraction).toInt()) }
-                        .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    NavigationBar(
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                        containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
-                        tonalElevation = 0.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-                            .border(
-                                width = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-                            )
+    ModalNavigationDrawer(
+        modifier = modifier,
+        drawerState = boardDrawerState,
+        gesturesEnabled = boardDrawerSlot.gesturesEnabled &&
+            currentRoute == Screen.Home.route &&
+            currentTabIndex == 0 &&
+            !isImageViewerOpen &&
+            !isComposerOpen,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f * (1f - drawerBackProgress.value)),
+        drawerContent = {
+            Box(Modifier.graphicsLayer { translationX = -drawerBackProgress.value * size.width }) {
+                boardDrawerSlot.content()
+            }
+            val backOwner = LocalOnBackPressedDispatcherOwner.current
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(backOwner, lifecycleOwner, boardDrawerState.currentValue) {
+                val callback = object : OnBackPressedCallback(boardDrawerState.currentValue == DrawerValue.Open) {
+                    override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                        if (!latestPredictiveBack.value) return
+                        drawerScope.launch { drawerBackProgress.snapTo(backEvent.progress.coerceIn(0f, 1f)) }
+                    }
+                    override fun handleOnBackCancelled() {
+                        if (!latestPredictiveBack.value) return
+                        drawerScope.launch { drawerBackProgress.animateTo(0f, spring()) }
+                    }
+                    override fun handleOnBackPressed() {
+                        drawerScope.launch {
+                            if (drawerBackProgress.value > 0f) {
+                                drawerBackProgress.animateTo(1f, tween(if (reducedMotion) 0 else 180))
+                                boardDrawerState.snapTo(DrawerValue.Closed)
+                                drawerBackProgress.snapTo(0f)
+                            } else {
+                                boardDrawerState.close()
+                            }
+                        }
+                    }
+                }
+                backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
+                onDispose { callback.remove() }
+            }
+        }
+    ) {
+        ParallaxPageHost(
+            navController,
+            reducedMotion,
+            predictiveBackEnabled,
+            registerBackRequest = { requestPageBack = it },
+            onCommitBack = { entry ->
+                committingPageBack = true
+                try {
+                    val leave = threadLeaveHandlers[entry.id]
+                    if (leave != null) {
+                        leave()
+                        navController.currentBackStackEntry != entry
+                    } else {
+                        navController.popBackStack()
+                    }
+                } finally {
+                    committingPageBack = false
+                }
+            }
+        ) { entry ->
+            when (entry.destination.route) {
+            Screen.Home.route -> {
+                BackHandler(enabled = currentRoute == Screen.Home.route && currentTabIndex != 0 &&
+                    boardDrawerState.currentValue == DrawerValue.Closed && !isImageViewerOpen && !isComposerOpen) {
+                    currentTabIndex = 0
+                }
+                Box(Modifier.fillMaxSize().nestedScroll(bottomBarScroll)) {
+                    MainTabs(
+                        currentTabIndex = currentTabIndex,
+                        reducedMotion = reducedMotion,
+                        historyOpenGeneration = historyOpenGeneration,
+                        onNavigateToThread = navigateToThread,
+                        onColdStartContentReady = onColdStartContentReady,
+                        dockSinkFraction = { bottomBarSlide.value },
+                        drawerState = boardDrawerState,
+                        boardDrawerSlot = boardDrawerSlot,
+                        onImageViewerOpenChange = { isImageViewerOpen = it },
+                        onComposerOpenChange = { isComposerOpen = it },
+                        onNavigateToSettings = {
+                            navController.navigate(Screen.SettingsDetail.route)
+                        },
+                        onNavigateToDrafts = {
+                            navController.navigate(Screen.DraftBox.route)
+                        },
+                        onNavigateToSearch = {
+                            navController.navigate(Screen.Search.route)
+                        }
+                    )
+                    // Keep the dock on the home layer so incoming destinations cover it.
+                    AnimatedVisibility(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        visible = !isImageViewerOpen && !isComposerOpen,
+                        enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
+                        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
                     ) {
-                        bottomBarItems.forEach { (index, icon, label) ->
-                            NavigationBarItem(
-                                icon = {
-                                    val displayIcon = if (tabPagerState.targetPage == index) icon else when (index) {
-                                        0 -> Icons.Outlined.Home
-                                        1 -> Icons.Outlined.BookmarkBorder
-                                        3 -> Icons.Outlined.Settings
-                                        else -> icon
-                                    }
-                                    Icon(displayIcon, contentDescription = label)
-                                },
-                                label = { Text(label) },
-                                selected = tabPagerState.targetPage == index,
-                                onClick = {
-                                    if (index == 2) historyOpenGeneration++
-                                    if (tabPagerState.targetPage == index) return@NavigationBarItem
-                                    tabScope.launch {
-                                        if (reducedMotion) {
-                                            tabPagerState.scrollToPage(index)
-                                        } else {
-                                            tabPagerState.animateHomeTabTo(index)
+                        // Outer box draws into the gesture nav area so the 小白条 is immersive;
+                        // capsule itself stays above the system inset.
+                        // offset (not graphicsLayer) moves the touch target with the slide.
+                        val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
+                        val pageBgColor = readingBackground()
+                        Box(
+                            modifier = Modifier
+                                .onSizeChanged { bottomBarHeightPx = it.height }
+                                .offset { IntOffset(0, (slidePx * bottomBarSlide.value).toInt()) }
+                                .fillMaxWidth()
+                                .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
+                                .navigationBarsPadding()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            NavigationBar(
+                                windowInsets = WindowInsets(0, 0, 0, 0),
+                                containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
+                                tonalElevation = 0.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                                    .border(
+                                        width = 0.5.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                                    )
+                            ) {
+                                bottomBarItems.forEach { (index, icon, label) ->
+                                    NavigationBarItem(
+                                        icon = {
+                                            val displayIcon = if (currentTabIndex == index) icon else when (index) {
+                                                0 -> Icons.Outlined.Home
+                                                1 -> Icons.Outlined.BookmarkBorder
+                                                3 -> Icons.Outlined.Settings
+                                                else -> icon
+                                            }
+                                            Icon(displayIcon, contentDescription = label)
+                                        },
+                                        label = { Text(label) },
+                                        selected = currentTabIndex == index,
+                                        onClick = {
+                                            if (index == 2) historyOpenGeneration++
+                                            if (currentTabIndex == index) return@NavigationBarItem
+                                            currentTabIndex = index
                                         }
-                                    }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 }
             }
-        },
-        modifier = modifier,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = Color.Transparent
-    ) { _ ->
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Home.route,
-            modifier = Modifier.nestedScroll(bottomBarScroll),
-            // Intentionally no paddingValues: content scrolls behind the floating nav bar.
-            enterTransition = pageEnter,
-            exitTransition = pageHoldExit,
-            popEnterTransition = pageRevealEnter,
-            popExitTransition = pagePopExit
-        ) {
-            // Cold start stays put. Tab changes are the pager, not a NavHost transition.
-            composable(
-                route = Screen.Home.route,
-                enterTransition = { EnterTransition.None },
-                popEnterTransition = { EnterTransition.None }
-            ) { _ ->
-                MainTabs(
-                    pagerState = tabPagerState,
-                    historyOpenGeneration = historyOpenGeneration,
-                    onNavigateToThread = navigateToThread,
-                    onColdStartContentReady = onColdStartContentReady,
-                    dockSinkFraction = { bottomBarSlide.value },
-                    onForumDrawerOpenChange = { forumDrawerOpen = it },
-                    onImageViewerOpenChange = { isImageViewerOpen = it },
-                    onComposerOpenChange = { isComposerOpen = it },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.SettingsDetail.route)
-                    },
-                    onNavigateToDrafts = {
-                        navController.navigate(Screen.DraftBox.route)
-                    },
-                    onNavigateToSearch = {
-                        navController.navigate(Screen.Search.route)
-                    }
-                )
-            }
 
-            composable(route = Screen.Search.route) { _ ->
+            Screen.Search.route -> {
                 PageBackdrop {
                     val viewModel: SearchViewModel = hiltViewModel()
                     SearchScreen(
                         viewModel = viewModel,
-                        onBackClick = { navController.popBackStack() },
+                        onBackClick = { requestPageBack?.invoke() },
                         onNavigateToThread = navigateToThread
                     )
                 }
             }
 
-            composable(route = Screen.SettingsDetail.route) { _ ->
+            Screen.SettingsDetail.route -> {
                 PageBackdrop {
                     val viewModel: SettingsViewModel = hiltViewModel()
                     SettingsScreen(
                         viewModel = viewModel,
                         onBackClick = {
-                            navController.popBackStack()
+                            requestPageBack?.invoke()
                         }
                     )
                 }
             }
 
-            composable(route = Screen.DraftBox.route) { _ ->
+            Screen.DraftBox.route -> {
                 PageBackdrop {
                     val viewModel: com.mioo.dao.ui.screens.drafts.DraftViewModel = hiltViewModel()
                     com.mioo.dao.ui.screens.drafts.DraftBoxScreen(
                         viewModel = viewModel,
                         onBackClick = {
-                            navController.popBackStack()
+                            requestPageBack?.invoke()
                         },
-                        onNavigateToThread = navigateToThread,
+                        onUseReplyDraft = { draft ->
+                            if (navController.currentBackStackEntry?.destination?.route == Screen.DraftBox.route) {
+                                navController.navigate(Screen.Thread.createRoute(draft.targetId, draft.id))
+                            }
+                        },
                         onUsePostDraft = {
                             // 回到主界面并切到板块 tab，ForumScreen 会从总线取草稿打开发串框
-                            navController.popBackStack()
-                            tabScope.launch {
-                                if (tabPagerState.currentPage != 0) {
-                                    tabPagerState.scrollToPage(0)
-                                }
-                            }
+                            requestPageBack?.invoke()
+                            currentTabIndex = 0
                         }
                     )
                 }
             }
 
-            composable(
-                route = Screen.Thread.route,
-                arguments = listOf(
-                    navArgument("threadId") { type = NavType.StringType }
-                ),
-            ) { entry ->
+            Screen.Thread.route -> {
                 PageBackdrop {
                     val viewModel: ThreadViewModel = hiltViewModel(entry)
                     ThreadScreen(
                         viewModel = viewModel,
-                        onBackClick = { navController.popBackStack() },
-                        onNavigateToThread = navigateToThread
+                        onBackClick = {
+                            if (committingPageBack) navController.popBackStack() else requestPageBack?.invoke()
+                        },
+                        onNavigateToThread = navigateToThread,
+                        registerSystemBack = remember(entry.id) {
+                            { handler ->
+                                if (handler == null) threadLeaveHandlers.remove(entry.id)
+                                else threadLeaveHandlers[entry.id] = handler
+                                Unit
+                            }
+                        }
                     )
                 }
+            }
             }
         }
     }
 }
 
+private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
+    var progress by mutableFloatStateOf(if (initiallyOpen) 1f else 0f)
+    val firstLayout = CompletableDeferred<Unit>()
+    var animation: kotlinx.coroutines.Job? = null
+
+    suspend fun animateTo(
+        target: Float,
+        spec: androidx.compose.animation.core.AnimationSpec<Float>,
+        initialVelocity: Float = 0f
+    ) {
+        animate(progress, target, initialVelocity, spec) { value, _ -> progress = value }
+        progress = target
+    }
+}
+
+private class PageBackGesture(val layer: PageLayer, val predictive: Boolean) {
+    var finishing = false
+
+    fun update(progress: Float) {
+        layer.progress = (1f - 0.9f * progress.coerceIn(0f, 1f)).coerceIn(0f, 1f)
+    }
+}
+@Composable
+private fun ParallaxPageHost(
+    controller: NavHostController,
+    reducedMotion: Boolean,
+    predictiveBackEnabled: Boolean,
+    registerBackRequest: ((() -> Unit)?) -> Unit,
+    onCommitBack: (NavBackStackEntry) -> Boolean,
+    content: @Composable (NavBackStackEntry) -> Unit
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val storeOwner = checkNotNull(LocalViewModelStoreOwner.current)
+    val graph = remember(controller) {
+        controller.createGraph(startDestination = Screen.Home.route) {
+            composable(Screen.Home.route) {}
+            composable(Screen.Search.route) {}
+            composable(Screen.SettingsDetail.route) {}
+            composable(Screen.DraftBox.route) {}
+            composable(
+                Screen.Thread.route,
+                arguments = listOf(
+                    navArgument("threadId") { type = NavType.StringType },
+                    navArgument("replyDraftId") { type = NavType.LongType; defaultValue = 0L }
+                )
+            ) {}
+        }
+    }
+    controller.setViewModelStore(storeOwner.viewModelStore)
+    controller.graph = graph
+    val navigator = remember(controller) { controller.navigatorProvider.getNavigator(ComposeNavigator::class.java) }
+    DisposableEffect(controller, lifecycleOwner) {
+        controller.setLifecycleOwner(lifecycleOwner)
+        onDispose {
+            controller.visibleEntries.value.forEach { navigator.onTransitionComplete(it) }
+        }
+    }
+
+    val entries by navigator.backStack.collectAsState()
+    val latestEntries = rememberUpdatedState(entries)
+    val stateHolder = rememberSaveableStateHolder()
+    val layers = remember { androidx.compose.runtime.mutableStateListOf<PageLayer>() }
+    val scope = rememberCoroutineScope()
+    val latestReducedMotion = rememberUpdatedState(reducedMotion)
+    val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
+    val latestCommitBack = rememberUpdatedState(onCommitBack)
+
+    var gesture by remember { mutableStateOf<PageBackGesture?>(null) }
+    val backOwner = LocalOnBackPressedDispatcherOwner.current
+
+    fun finishTransitions() {
+        controller.visibleEntries.value.forEach { navigator.onTransitionComplete(it) }
+    }
+
+    LaunchedEffect(entries) {
+        val activeIds = entries.map { it.id }.toSet()
+        entries.forEachIndexed { index, entry ->
+            if (layers.none { it.entry.id == entry.id }) {
+                val layer = PageLayer(entry, initiallyOpen = index == 0 || reducedMotion)
+                layers.add(layer)
+                if (index > 0 && !reducedMotion) {
+                    layer.animation = scope.launch {
+                        layer.firstLayout.await()
+                        withFrameNanos { }
+                        layer.animateTo(1f, tween(380, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
+                        finishTransitions()
+                    }
+                }
+            }
+        }
+        val removed = layers.filter { it.entry.id !in activeIds }
+        for (layer in removed) {
+            layer.animation?.cancel()
+            layers.remove(layer)
+        }
+        gesture?.takeIf { it.layer in removed }?.let {
+            gesture = null
+        }
+        if (layers.none { it.animation?.isActive == true }) finishTransitions()
+    }
+
+    fun beginBack(predictive: Boolean): PageBackGesture? {
+        val stack = latestEntries.value
+        if (stack.size < 2 || gesture?.finishing == true) return null
+        val layer = layers.lastOrNull { it.entry.id == stack.last().id } ?: return null
+        layer.animation?.cancel()
+        return PageBackGesture(layer, predictive && !latestReducedMotion.value).also { gesture = it }
+    }
+
+    fun finishBack(active: PageBackGesture) {
+        if (active.finishing) return
+        active.finishing = true
+        scope.launch {
+            if (active.predictive) {
+                val duration = (300 * active.layer.progress.coerceIn(0f, 1f)).toInt().coerceIn(150, 300)
+                active.layer.animateTo(
+                    0f,
+                    tween(duration, easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f))
+                )
+            } else {
+                active.layer.animateTo(0f, tween(if (latestReducedMotion.value) 0 else 340, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
+            }
+            if (controller.currentBackStackEntry?.id == active.layer.entry.id) {
+                if (latestCommitBack.value(active.layer.entry)) {
+                    // Pop and retire the hit-test layer in the same frame. The back stack
+                    // collector still reconciles entries and completes their lifecycles.
+                    layers.remove(active.layer)
+                    if (gesture === active) gesture = null
+                    return@launch
+                }
+                active.layer.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
+                finishTransitions()
+            }
+            if (gesture === active) gesture = null
+        }
+    }
+
+    val latestBeginBack = rememberUpdatedState<(Boolean) -> PageBackGesture?> { beginBack(it) }
+    val latestFinishBack = rememberUpdatedState<(PageBackGesture) -> Unit> { finishBack(it) }
+    val callback = remember(controller, scope) {
+        object : OnBackPressedCallback(false) {
+            override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                if (latestPredictiveBack.value) latestBeginBack.value(true)?.update(backEvent.progress)
+            }
+
+            override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                val active = gesture ?: return
+                if (active.predictive && !active.finishing) active.update(backEvent.progress)
+            }
+
+            override fun handleOnBackCancelled() {
+                val active = gesture ?: return
+                if (active.finishing) return
+                active.layer.animation = scope.launch {
+                    active.layer.animateTo(
+                        1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 800f)
+                    )
+                    finishTransitions()
+                    if (gesture === active) gesture = null
+                }
+            }
+
+            override fun handleOnBackPressed() {
+                val active = gesture ?: latestBeginBack.value(false) ?: return
+                latestFinishBack.value(active)
+            }
+        }
+    }
+    DisposableEffect(backOwner, lifecycleOwner, callback) {
+        backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
+        onDispose { callback.remove() }
+    }
+    SideEffect { callback.isEnabled = entries.size > 1 }
+    val requestBack = remember {
+        { latestBeginBack.value(false)?.let { latestFinishBack.value(it) }; Unit }
+    }
+    DisposableEffect(registerBackRequest, requestBack) {
+        registerBackRequest(requestBack)
+        onDispose { registerBackRequest(null) }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize().clip(androidx.compose.ui.graphics.RectangleShape).background(readingBackground()),
+        contentAlignment = Alignment.TopStart
+    ) {
+        layers.forEachIndexed { index, layer ->
+            key(layer.entry.id) {
+                val next = layers.getOrNull(index + 1)
+                Box(Modifier.fillMaxSize().zIndex(index.toFloat()).onSizeChanged {
+                    if (it.width > 0 && it.height > 0) layer.firstLayout.complete(Unit)
+                }.graphicsLayer {
+                    val currentProgress = layer.progress.coerceIn(0f, 1f)
+                    val coverProgress = next?.progress?.coerceIn(0f, 1f) ?: 0f
+                    translationY = 0f
+                    scaleX = 1f
+                    scaleY = 1f
+                    shape = androidx.compose.ui.graphics.RectangleShape
+                    clip = false
+                    translationX = kotlin.math.round(size.width * (1f - currentProgress - 0.25f * coverProgress))
+                    alpha = 1f
+                    shadowElevation = if (currentProgress > 0.001f && currentProgress < 0.999f) 12.dp.toPx() else 0f
+                }.pointerInput(Unit) {
+                    // This modifier must be inside the translated layer so its hit area
+                    // follows the page instead of covering the revealed destination.
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent()
+                    }
+                }) {
+                    layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
+                }
+            }
+        }
+    }
+}
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainTabs(
-    pagerState: PagerState,
+    currentTabIndex: Int,
+    reducedMotion: Boolean,
     historyOpenGeneration: Int,
     onNavigateToThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float = { 0f },
-    onForumDrawerOpenChange: (Boolean) -> Unit = {},
+    drawerState: androidx.compose.material3.DrawerState,
+    boardDrawerSlot: BoardDrawerSlot,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
     onComposerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
@@ -457,17 +755,22 @@ private fun MainTabs(
     onNavigateToSearch: () -> Unit
 ) {
     val tabState = rememberSaveableStateHolder()
-    HorizontalPager(
-        state = pagerState,
+    val slidePx = with(LocalDensity.current) { 20.dp.roundToPx() }
+    AnimatedContent(
+        targetState = currentTabIndex,
         modifier = Modifier.fillMaxSize(),
-        // Keep all four tabs composed: on a More → Forum transition, composing
-        // the forum as it enters the viewport can interrupt the animation tail.
-        beyondBoundsPageCount = 3,
-        userScrollEnabled = false,
-        // This pager is controlled only by the dock. The default nested-scroll
-        // connection still moves a partially animated pager when a child is dragged.
-        pageNestedScrollConnection = remember { object : NestedScrollConnection {} },
-        key = { it }
+        transitionSpec = {
+            if (reducedMotion) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                val direction = if (targetState >= initialState) 1 else -1
+                (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(tween(160, easing = FastOutSlowInEasing)) {
+                        direction * slidePx
+                    }) togetherWith fadeOut(tween(70, easing = LinearEasing))
+            }
+        },
+        label = "home tab"
     ) { page ->
         tabState.SaveableStateProvider(page) {
         PageBackdrop {
@@ -479,7 +782,8 @@ private fun MainTabs(
                         onNavigateToThread = onNavigateToThread,
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = dockSinkFraction,
-                        onDrawerOpenChange = onForumDrawerOpenChange,
+                        drawerState = drawerState,
+                        boardDrawerSlot = boardDrawerSlot,
                         onImageViewerOpenChange = onImageViewerOpenChange,
                         onComposerOpenChange = onComposerOpenChange
                     )

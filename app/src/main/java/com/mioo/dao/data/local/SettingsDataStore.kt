@@ -19,7 +19,75 @@ import java.io.IOException
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "mioo_settings")
 
+data class CustomKaomoji(val id: String, val text: String, val alias: String = "")
+
+data class QuickInputItem(val id: String, val label: String, val content: String, val cursorOffsetFromEnd: Int = 0)
+
+val defaultQuickInputs = listOf(
+    QuickInputItem("corner", "「 」", "「」", 1), QuickInputItem("double", "『 』", "『』", 1),
+    QuickInputItem("square", "【 】", "【】", 1), QuickInputItem("dash", "——", "——"),
+    QuickInputItem("ellipsis", "……", "……"), QuickInputItem("spoiler", "黑幕", "[h][/h]", 4)
+)
+
+data class ThirdPartyConsent(
+    val hasShownComplianceDialog: Boolean = false,
+    val allowThirdPartyServices: Boolean = false
+)
+
 class SettingsDataStore(private val context: Context) {
+    private val quickInputKey = stringPreferencesKey("quick_input_items")
+    private fun parseQuickInputs(json: String?): List<QuickInputItem> {
+        if (json == null) return defaultQuickInputs
+        return runCatching {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val id = item.optString("id")
+                val content = item.optString("content")
+                if (id.isBlank() || content.isBlank()) null else QuickInputItem(id, item.optString("label"), content, item.optInt("offset").coerceIn(0, content.length))
+            }
+        }.getOrDefault(defaultQuickInputs)
+    }
+    val quickInputsFlow: Flow<List<QuickInputItem>> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { parseQuickInputs(it[quickInputKey]) }
+
+    suspend fun updateQuickInput(item: QuickInputItem, delete: Boolean = false) {
+        context.dataStore.edit { prefs ->
+            val items = parseQuickInputs(prefs[quickInputKey]).toMutableList()
+            val index = items.indexOfFirst { it.id == item.id }
+            if (delete) { if (index >= 0) items.removeAt(index) }
+            else if (index >= 0) items[index] = item else items.add(item)
+            val json = org.json.JSONArray()
+            items.forEach { json.put(org.json.JSONObject().put("id", it.id).put("label", it.label).put("content", it.content).put("offset", it.cursorOffsetFromEnd)) }
+            prefs[quickInputKey] = json.toString()
+        }
+    }
+    suspend fun resetQuickInputs() { context.dataStore.edit { it.remove(quickInputKey) } }
+    private val predictiveBackKey = booleanPreferencesKey("predictive_back_enabled")
+    val predictiveBackFlow: Flow<Boolean> = context.dataStore.data.map { it[predictiveBackKey] ?: false }
+
+    suspend fun savePredictiveBack(enabled: Boolean) {
+        context.dataStore.edit { it[predictiveBackKey] = enabled }
+    }
+
+    private val hasShownComplianceDialogKey = booleanPreferencesKey("has_shown_compliance_dialog")
+    private val allowThirdPartyServicesKey = booleanPreferencesKey("allow_third_party_services")
+
+    val thirdPartyConsent: Flow<ThirdPartyConsent> = context.dataStore.data.map { preferences ->
+        ThirdPartyConsent(
+            hasShownComplianceDialog = preferences[hasShownComplianceDialogKey] ?: false,
+            allowThirdPartyServices = preferences[hasShownComplianceDialogKey] == true &&
+                preferences[allowThirdPartyServicesKey] == true
+        )
+    }
+
+    suspend fun saveThirdPartyConsent(allowed: Boolean) {
+        context.dataStore.edit {
+            it[hasShownComplianceDialogKey] = true
+            it[allowThirdPartyServicesKey] = allowed
+        }
+    }
 
     companion object {
         val KEY_USER_HASH = stringPreferencesKey("user_hash")
@@ -61,6 +129,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NOTIFIED_REPLY_SNAPSHOT = stringPreferencesKey("notified_reply_snapshot")
         val KEY_SHARE_CARD_BRANDING = booleanPreferencesKey("show_share_card_branding")
         val KEY_CONFIRM_COOKIE_BEFORE_SEND = booleanPreferencesKey("confirm_cookie_before_send")
+        val KEY_CREATOR_MODE = booleanPreferencesKey("enable_creator_mode")
         val KEY_DRAFT_BOX_ENABLED = booleanPreferencesKey("draft_box_enabled")
         val KEY_QUOTE_AUTO_DISPLAY = booleanPreferencesKey("quote_auto_display")
         val KEY_NETWORK_COMPATIBILITY = booleanPreferencesKey("network_compatibility")
@@ -107,6 +176,34 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun saveKaomojiOrder(ids: List<String>) {
         context.dataStore.edit { it[KEY_KAOMOJI_ORDER] = org.json.JSONArray(ids).toString() }
+    }
+
+    private val customKaomojiKey = stringPreferencesKey("custom_kaomoji")
+    private fun parseCustomKaomoji(json: String): List<CustomKaomoji> = runCatching {
+        val array = org.json.JSONArray(json)
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.optString("id")
+            val text = item.optString("text")
+            if (id.isBlank() || text.isBlank()) null else CustomKaomoji(id, text, item.optString("alias"))
+        }
+    }.getOrDefault(emptyList())
+
+    val customKaomojiFlow: Flow<List<CustomKaomoji>> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { parseCustomKaomoji(it[customKaomojiKey] ?: "[]") }
+
+    suspend fun updateCustomKaomoji(item: CustomKaomoji, delete: Boolean = false) {
+        context.dataStore.edit { preferences ->
+            val items = parseCustomKaomoji(preferences[customKaomojiKey] ?: "[]").toMutableList()
+            val index = items.indexOfFirst { it.id == item.id }
+            if (delete) {
+                if (index >= 0) items.removeAt(index)
+            } else if (index >= 0) items[index] = item else items.add(item)
+            val array = org.json.JSONArray()
+            items.forEach { array.put(org.json.JSONObject().put("id", it.id).put("text", it.text).put("alias", it.alias)) }
+            preferences[customKaomojiKey] = array.toString()
+        }
     }
 
     val userHashFlow: Flow<String?> = context.dataStore.data
@@ -639,6 +736,12 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
+    val creatorModeFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_CREATOR_MODE] ?: false }
+
+    suspend fun saveCreatorMode(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_CREATOR_MODE] = enabled }
+    }
+
     suspend fun saveDraftBoxEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_DRAFT_BOX_ENABLED] = enabled
@@ -710,6 +813,13 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveChineseFont(name: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_CHINESE_FONT] = name
+        }
+    }
+
+    suspend fun saveGlobalFont(name: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_CHINESE_FONT] = name
+            preferences[KEY_ENGLISH_FONT] = ""
         }
     }
 

@@ -24,6 +24,23 @@ class SettingsRepository @Inject constructor(
     // SupervisorJob: without it one failed write (e.g. DataStore IOException)
     // cancels the scope root and every later settings write becomes a silent no-op.
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val predictiveBackEnabled = settingsDataStore.predictiveBackFlow.stateIn(
+        repositoryScope, SharingStarted.Eagerly, false
+    )
+
+    fun setPredictiveBackEnabled(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.savePredictiveBack(enabled) }
+    }
+
+    val thirdPartyConsent = settingsDataStore.thirdPartyConsent.stateIn(
+        repositoryScope, SharingStarted.Eagerly, null
+    )
+
+    suspend fun saveThirdPartyConsent(allowed: Boolean) = settingsDataStore.saveThirdPartyConsent(allowed)
+
+    val shareCardBrandingDefault = settingsDataStore.showShareCardBrandingFlow.stateIn(
+        repositoryScope, SharingStarted.Eagerly, null
+    )
 
     val forumPreviewLines = settingsDataStore.forumPreviewLinesFlow
 
@@ -138,6 +155,9 @@ class SettingsRepository @Inject constructor(
         .combine(settingsDataStore.diceBadgesEnabledFlow) { settings, diceBadgesEnabled ->
             settings.copy(diceBadgesEnabled = diceBadgesEnabled)
         }
+        .combine(settingsDataStore.creatorModeFlow) { settings, enabled ->
+            settings.copy(enableCreatorMode = enabled)
+        }
         .combine(settingsDataStore.networkCompatibilityFlow) { settings, enabled ->
             settings.copy(networkCompatibilityEnabled = enabled)
         }
@@ -184,6 +204,8 @@ class SettingsRepository @Inject constructor(
     fun updateConfirmCookieBeforeSend(enabled: Boolean) {
         repositoryScope.launch { settingsDataStore.saveConfirmCookieBeforeSend(enabled) }
     }
+
+    suspend fun saveCreatorMode(enabled: Boolean) = settingsDataStore.saveCreatorMode(enabled)
 
     fun updateDraftBoxEnabled(enabled: Boolean) {
         repositoryScope.launch {
@@ -248,6 +270,10 @@ class SettingsRepository @Inject constructor(
         repositoryScope.launch {
             settingsDataStore.saveChineseFont(name)
         }
+    }
+
+    fun updateGlobalFont(name: String) {
+        repositoryScope.launch { settingsDataStore.saveGlobalFont(name) }
     }
 
     fun updateEnglishFont(name: String) {

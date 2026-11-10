@@ -10,10 +10,22 @@ import androidx.compose.animation.core.tween
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
@@ -31,6 +43,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,6 +54,9 @@ import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import coil.size.Precision
 import coil.size.Size
+import coil.imageLoader
+import coil.memory.MemoryCache
+import androidx.compose.ui.unit.IntSize
 
 /**
  * Shared list-thumbnail decode size (px). Keep prefetch + card requests aligned
@@ -56,7 +72,7 @@ object ListThumbImage {
     fun request(context: Context, imageUrl: String): ImageRequest {
         return ImageRequest.Builder(context)
             .data(imageUrl)
-            .size(Size(SIZE_PX, SIZE_PX))
+            .size(Size.ORIGINAL)
             .precision(Precision.INEXACT)
             .memoryCacheKey(imageUrl)
             .diskCacheKey(imageUrl)
@@ -70,19 +86,34 @@ object ListThumbImage {
  * Lightweight list thumbnail: [AsyncImage] + static placeholder while loading.
  * Avoids Subcompose overhead and infinite shimmer work for every visible cell.
  */
+private val thumbSizeCache = java.util.concurrent.ConcurrentHashMap<String, IntSize>()
+
 @Composable
 fun ListThumbAsyncImage(
     imageUrl: String,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Crop
+    contentScale: ContentScale = ContentScale.Crop,
+    preserveRatio: Boolean = false,
+    previewMaxSize: androidx.compose.ui.unit.Dp = 120.dp
 ) {
+    val context = LocalContext.current
+    val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
+    var imgSize by remember(listUrl) {
+        val bitmap = context.imageLoader.memoryCache?.get(MemoryCache.Key(listUrl))?.bitmap
+        mutableStateOf(thumbSizeCache[listUrl] ?: bitmap?.let { IntSize(it.width, it.height) })
+    }
+    val ratio = imgSize?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) }
+    val frame = if (preserveRatio) {
+        modifier.size(116.dp * (ratio ?: 0.48f), 116.dp).clip(RoundedCornerShape(10.dp))
+    } else modifier
     val dataSaver = com.mioo.dao.ui.theme.LocalDataSaverEnabled.current
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
     if (dataSaver && !manualLoaded) {
         // 省流量模式：占位不加载，点击才拉这一张
+        Box(frame, contentAlignment = Alignment.CenterStart) {
         Box(
-            modifier = modifier
+            modifier = Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                 .clickable { manualLoaded = true },
             contentAlignment = Alignment.Center
@@ -101,10 +132,9 @@ fun ListThumbAsyncImage(
                 )
             }
         }
+        }
         return@ListThumbAsyncImage
     }
-    val context = LocalContext.current
-    val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
     val fullUrl = remember(imageUrl) { IslandImage.fullSize(imageUrl) }
     var useFull by remember(imageUrl) { mutableStateOf(listUrl == fullUrl) }
     val currentUrl = if (useFull) fullUrl else listUrl
@@ -112,16 +142,97 @@ fun ListThumbAsyncImage(
         ListThumbImage.request(context, currentUrl)
     }
 
-    Box(modifier = modifier.background(Color(0xFFE8E8ED))) {
-        AsyncImage(
+    AsyncImage(
             model = request,
             contentDescription = contentDescription,
-            contentScale = contentScale,
-            modifier = Modifier.matchParentSize(),
-            onError = {
-                if (!useFull) useFull = true
+            modifier = frame,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.Center,
+            onSuccess = { state ->
+                val drawable = state.result.drawable
+                if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                    val resolved = IntSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
+                    thumbSizeCache[listUrl] = resolved
+                    imgSize = resolved
+                }
+            },
+            onError = { if (!useFull) useFull = true }
+    )
+}
+
+private fun android.graphics.drawable.Drawable.previewRatio(): Float =
+    if (intrinsicWidth > 0 && intrinsicHeight > 0) intrinsicWidth.toFloat() / intrinsicHeight else 1.2f
+
+@Composable
+private fun Modifier.previewFrame(ratio: Float, maxWidth: androidx.compose.ui.unit.Dp,
+    maxHeight: androidx.compose.ui.unit.Dp): Modifier {
+    val boundedRatio = ratio.coerceIn(0.45f, 2.4f)
+    val shape = RoundedCornerShape(10.dp)
+    return widthIn(max = minOf(maxWidth, maxHeight * boundedRatio))
+        .aspectRatio(boundedRatio)
+        .clip(shape)
+        .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), shape)
+}
+
+@Composable
+fun LocalImagePreview(
+    model: Any,
+    modifier: Modifier = Modifier,
+    attachment: Boolean = false,
+    attachmentBackground: Color = Color.Unspecified,
+    onClick: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null
+) {
+    if (attachment) {
+        val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val cardBg = if (attachmentBackground != Color.Unspecified) attachmentBackground
+            else if (dark) Color(0xFF16181E) else Color.White
+        val badgeBg = if (dark) Color(0xFF2C303A) else Color(0xFF3A3F4B)
+        val shape = RoundedCornerShape(12.dp)
+        Box(modifier.wrapContentSize()) {
+            AsyncImage(
+                model = model,
+                contentDescription = "已选图片",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.padding(top = 7.dp, end = 7.dp).size(80.dp)
+                    .clip(shape)
+                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), shape)
+                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            )
+            if (onRemove != null) {
+                Box(
+                    modifier = Modifier.align(Alignment.TopEnd).size(22.dp).clip(CircleShape)
+                        .background(badgeBg).border(2.dp, cardBg, CircleShape)
+                        .clickable(onClick = onRemove),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Close, "移除图片", Modifier.size(12.dp), tint = Color.White)
+                }
             }
-        )
+        }
+        return
+    }
+    var ratio by remember(model) { mutableStateOf(1.2f) }
+    Box(modifier.size(120.dp), contentAlignment = Alignment.CenterStart) {
+    Box(Modifier.previewFrame(ratio, 120.dp, 120.dp)) {
+        AsyncImage(model, "附图预览",
+            modifier = Modifier.matchParentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            contentScale = if (ratio < 0.45f) ContentScale.Crop else ContentScale.Fit,
+            alignment = if (ratio < 0.45f) Alignment.TopCenter else Alignment.Center,
+            onSuccess = { ratio = it.result.drawable.previewRatio() })
+        if (onRemove != null) {
+            Box(
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)
+                    .size(18.dp).clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                    .clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Close, "移除图片", Modifier.size(11.dp), tint = Color.White)
+            }
+        }
+    }
     }
 }
 

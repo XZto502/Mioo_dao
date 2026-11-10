@@ -298,7 +298,7 @@ fun MiooDaoTheme(
 
     val appContext = LocalContext.current
     val customTypeface = remember(chineseFont, englishFont) {
-        com.mioo.dao.utils.FontStore.buildTypeface(appContext, chineseFont, englishFont)
+        com.mioo.dao.utils.FontStore.buildTypeface(appContext, chineseFont.ifBlank { englishFont }, "")
     }
     val customFontFamily = customTypeface?.let { FontFamily(typeface = it) }
     val scaledTypography = Typography.scale(fontSizeScale)

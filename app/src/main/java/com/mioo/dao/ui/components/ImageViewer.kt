@@ -1,11 +1,18 @@
 package com.mioo.dao.ui.components
 
+import com.mioo.dao.LocalThirdPartyServicesAllowed
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import android.view.View
-import androidx.activity.compose.BackHandler
+import androidx.activity.OnBackPressedCallback
+import com.mioo.dao.LocalPredictiveBackEnabled
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -371,10 +378,16 @@ fun ImageViewer(
         qrTexts[currentUrl] = text
     }
 
-    val panelOpen = showTransformPanel || showSauceMenu
+    val allowThirdParty = LocalThirdPartyServicesAllowed.current
+    LaunchedEffect(allowThirdParty) {
+        if (!allowThirdParty) showSauceMenu = false
+    }
+    val panelOpen = showTransformPanel || (allowThirdParty && showSauceMenu)
     val hasAnyTransform = transform.isTransformed || zoomed
 
     val openProgress = remember { Animatable(0f) }
+    val dismissProgress = remember { Animatable(0f) }
+    var swipeDirection by remember { mutableIntStateOf(1) }
     var isClosing by remember { mutableStateOf(false) }
     val dismissCallback by rememberUpdatedState(onDismiss)
     LaunchedEffect(Unit) {
@@ -390,7 +403,36 @@ fun ImageViewer(
         }
     }
 
-    BackHandler(enabled = true) { triggerSmoothClose() }
+    val backOwner = LocalOnBackPressedDispatcherOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val closeViewer = rememberUpdatedState { triggerSmoothClose() }
+    val predictiveBackEnabled = rememberUpdatedState(LocalPredictiveBackEnabled.current)
+    DisposableEffect(backOwner, lifecycleOwner) {
+        val callback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackStarted(backEvent: BackEventCompat) {
+                if (!predictiveBackEnabled.value) return
+                swipeDirection = if (backEvent.swipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
+            }
+            override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+                if (!predictiveBackEnabled.value) return
+                scope.launch { dismissProgress.snapTo(backEvent.progress.coerceIn(0f, 1f)) }
+            }
+            override fun handleOnBackCancelled() {
+                if (!predictiveBackEnabled.value) return
+                scope.launch { dismissProgress.animateTo(0f, spring()) }
+            }
+            override fun handleOnBackPressed() {
+                if (dismissProgress.value > 0f) {
+                    scope.launch {
+                        dismissProgress.animateTo(1f, if (reducedMotion) snap() else tween(180, easing = FastOutLinearInEasing))
+                    }
+                }
+                closeViewer.value()
+            }
+        }
+        backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
+        onDispose { callback.remove() }
+    }
     ViewerBarsEffect(lightCanvas = lightCanvas)
     Box(
         modifier = modifier
@@ -409,11 +451,17 @@ fun ImageViewer(
             ViewerCanvas(
                 color = palette.canvas,
                 alpha = backgroundAlpha,
-                openProgress = openProgress.asState()
+                openProgress = openProgress.asState(),
+                dismissProgress = dismissProgress.asState()
             )
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    val scale = 1f - dismissProgress.value * 0.16f
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = swipeDirection * dismissProgress.value * 36.dp.toPx()
+                },
                 // Keep the pager alive throughout a gesture. Image pan/pinch/dismiss handlers
                 // consume only the motion they own; toggling scrollEnabled mid-touch
                 // cancels the pager detector and can strand the next swipe.
@@ -652,9 +700,10 @@ fun ImageViewer(
 private fun ViewerCanvas(
     color: Color,
     alpha: MutableFloatState,
-    openProgress: State<Float>
+    openProgress: State<Float>,
+    dismissProgress: State<Float>
 ) {
-    val fade = (openProgress.value * alpha.floatValue).coerceIn(0f, 1f)
+    val fade = (openProgress.value * alpha.floatValue * (1f - dismissProgress.value * 0.65f)).coerceIn(0f, 1f)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1313,7 +1362,7 @@ private fun ViewerDock(
                 active = lightCanvas,
                 onClick = onCanvas
             )
-            Box {
+            if (LocalThirdPartyServicesAllowed.current) Box {
                 ViewerIconButton(
                     icon = Icons.Outlined.ImageSearch,
                     description = "以图搜源",

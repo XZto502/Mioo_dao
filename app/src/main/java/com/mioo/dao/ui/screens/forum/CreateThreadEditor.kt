@@ -1,7 +1,6 @@
 package com.mioo.dao.ui.screens.forum
 
 import android.net.Uri
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,15 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.view.WindowInsetsControllerCompat
-import coil.compose.AsyncImage
 import com.mioo.dao.data.local.DraftEntity
 import com.mioo.dao.data.local.PostDraftContent
 import com.mioo.dao.ui.components.ComposerToolButtons
+import com.mioo.dao.ui.components.DoodlePadSheet
 import com.mioo.dao.ui.components.CookieSelector
 import com.mioo.dao.ui.components.ConfirmSendCookieDialog
 import com.mioo.dao.ui.components.DiceDialog
-import com.mioo.dao.ui.components.ImageViewer
-import com.mioo.dao.ui.components.KaomojiQuickPanel
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.findActivity
 import com.mioo.dao.ui.theme.immersiveDialogProperties
@@ -102,27 +99,40 @@ fun CreateThreadEditor(
         val controller = window?.let { WindowInsetsControllerCompat(it, view) }
         val oldStatus = controller?.isAppearanceLightStatusBars
         val oldNavigation = controller?.isAppearanceLightNavigationBars
-        val oldSoftInput = window?.attributes?.softInputMode
         controller?.isAppearanceLightStatusBars = !isDark
         controller?.isAppearanceLightNavigationBars = !isDark
-        window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         onDispose {
             if (oldStatus != null) controller?.isAppearanceLightStatusBars = oldStatus
             if (oldNavigation != null) controller?.isAppearanceLightNavigationBars = oldNavigation
-            if (oldSoftInput != null) window?.setSoftInputMode(oldSoftInput)
         }
     }
 
     var title by remember { mutableStateOf(initialTitle) }
     var name by remember { mutableStateOf(initialName) }
     var body by remember { mutableStateOf(TextFieldValue(initialContent, TextRange(initialContent.length))) }
+    val quickUndo = remember { mutableStateListOf<TextFieldValue>() }
+    val quickRedo = remember { mutableStateListOf<TextFieldValue>() }
+    fun updateBody(value: TextFieldValue) {
+        if (value.text != body.text) {
+            quickUndo.add(body.copy(composition = null))
+            if (quickUndo.size > 100) quickUndo.removeAt(0)
+            quickRedo.clear()
+        }
+        body = value
+    }
     var savedFields by remember { mutableStateOf(PostDraftContent(initialTitle, initialName, initialContent)) }
     var image by remember { mutableStateOf<Uri?>(null) }
-    var previewImage by remember { mutableStateOf<Uri?>(null) }
+    var showDoodlePad by remember { mutableStateOf(false) }
+    fun openDoodlePad() {
+        keyboard?.hide()
+        focus.clearFocus(force = true)
+        showDoodlePad = true
+    }
     var nameExpanded by remember { mutableStateOf(false) }
     var cookiesExpanded by remember { mutableStateOf(false) }
     var showCookieConfirmation by remember { mutableStateOf(false) }
-    var kaomojiExpanded by remember { mutableStateOf(false) }
+    val inputPanel = com.mioo.dao.ui.components.rememberComposerInputPanelState()
+    val kaomojiExpanded = inputPanel.expanded
     var diceOpen by remember { mutableStateOf(false) }
     var draftsOpen by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
@@ -169,7 +179,7 @@ fun CreateThreadEditor(
         if (busy) return
         when {
             draftsOpen -> draftsOpen = false
-            kaomojiExpanded -> kaomojiExpanded = false
+            kaomojiExpanded -> inputPanel.close()
             dirty -> confirmLeave = true
             else -> onDismiss()
         }
@@ -179,14 +189,15 @@ fun CreateThreadEditor(
         val end = body.selection.max.coerceIn(start, body.text.length)
         val prefix = if (start > 0 && !body.text[start - 1].isWhitespace()) " " else ""
         val inserted = prefix + text
-        body = TextFieldValue(body.text.replaceRange(start, end, inserted), TextRange(start + inserted.length))
+        updateBody(TextFieldValue(body.text.replaceRange(start, end, inserted), TextRange(start + inserted.length)))
     }
-    BackHandler(enabled = !confirmLeave && !diceOpen && previewImage == null) { requestClose() }
+    BackHandler(enabled = !confirmLeave && !diceOpen && !showDoodlePad) { requestClose() }
 
     // Background precedes all insets: both system-bar regions stay completely opaque.
     CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
+    Box(Modifier.fillMaxSize().zIndex(100f)) {
     Box(
-        Modifier.fillMaxSize().zIndex(100f).background(pageBg).imePadding()
+        Modifier.fillMaxSize().background(pageBg)
             .pointerInput(Unit) { detectTapGestures { focus.clearFocus() } }
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -207,7 +218,7 @@ fun CreateThreadEditor(
                 IconButton(onClick = {
                     keyboard?.hide()
                     focus.clearFocus(force = true)
-                    kaomojiExpanded = false
+                    inputPanel.close()
                     draftsOpen = true
                 }, enabled = !busy, modifier = Modifier.size(40.dp)) {
                     Box {
@@ -244,7 +255,7 @@ fun CreateThreadEditor(
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         BasicTextField(
                             value = title, onValueChange = { title = it }, singleLine = true,
-                            modifier = Modifier.weight(1f).onFocusChanged { if (it.isFocused) kaomojiExpanded = false },
+                            modifier = Modifier.weight(1f).onFocusChanged { if (it.isFocused) inputPanel.onEditorFocused() },
                             textStyle = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = scheme.onSurface),
                             cursorBrush = SolidColor(scheme.primary),
                             decorationBox = { input -> Box {
@@ -257,17 +268,17 @@ fun CreateThreadEditor(
                                 if (nameExpanded) { focus.clearFocus(); keyboard?.hide() }
                                 nameExpanded = !nameExpanded
                             }, shape = CircleShape,
-                            color = scheme.onSurface.copy(alpha = 0.05f), modifier = Modifier.widthIn(max = 140.dp)
+                            color = if (isDark) Color(0xFF22252D) else Color(0xFFF2F4F8), modifier = Modifier.widthIn(max = 140.dp)
                         ) {
-                            Text("署名: ${name.ifBlank { "无名氏" }}", Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                fontSize = 11.5.sp, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(name.ifBlank { "无名氏" }, Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     AnimatedVisibility(nameExpanded) {
                         BasicTextField(
                             value = name, onValueChange = { name = it }, singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
-                                .focusRequester(nameFocus).onFocusChanged { if (it.isFocused) kaomojiExpanded = false },
+                                .focusRequester(nameFocus).onFocusChanged { if (it.isFocused) inputPanel.onEditorFocused() },
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = scheme.onSurface), cursorBrush = SolidColor(scheme.primary),
                             decorationBox = { input -> Box {
                                 if (name.isEmpty()) Text("名称（选填，默认无名氏）", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant.copy(alpha = 0.45f))
@@ -277,8 +288,8 @@ fun CreateThreadEditor(
                     }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = scheme.outlineVariant.copy(alpha = 0.3f))
                     BasicTextField(
-                        value = body, onValueChange = { body = it },
-                        modifier = Modifier.fillMaxWidth().weight(1f).padding(16.dp).onFocusChanged { if (it.isFocused) kaomojiExpanded = false },
+                        value = body, onValueChange = { updateBody(it) },
+                        modifier = Modifier.fillMaxWidth().weight(1f).padding(16.dp).onFocusChanged { if (it.isFocused) inputPanel.onEditorFocused() },
                         textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 24.sp, color = scheme.onSurface),
                         cursorBrush = SolidColor(scheme.primary),
                         decorationBox = { input -> Box(Modifier.fillMaxSize()) {
@@ -287,21 +298,29 @@ fun CreateThreadEditor(
                         } }
                     )
                     image?.let { uri ->
-                        Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp).size(80.dp).clip(RoundedCornerShape(12.dp))) {
-                            AsyncImage(uri, contentDescription = "附图预览", contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().clickable { previewImage = uri })
-                            IconButton(onClick = { image = null }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).background(Color.Black.copy(alpha = 0.45f), CircleShape)) {
-                                Icon(Icons.Default.Close, contentDescription = "移除图片", tint = Color.White, modifier = Modifier.size(16.dp))
-                            }
-                        }
+                        com.mioo.dao.ui.components.LocalImagePreview(uri,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                            attachment = true, onClick = ::openDoodlePad, onRemove = { image = null })
                     }
+                    com.mioo.dao.ui.components.QuickInputBar(
+                        onInsert = { item ->
+                            val start = body.selection.min
+                            val end = body.selection.max
+                            val offset = item.cursorOffsetFromEnd.coerceIn(0, item.content.length)
+                            val prefix = item.content.dropLast(offset)
+                            val suffix = item.content.takeLast(offset)
+                            val selected = if (offset > 0) body.text.substring(start, end) else ""
+                            updateBody(TextFieldValue(body.text.replaceRange(start, end, prefix + selected + suffix),
+                                TextRange(start + prefix.length + selected.length)))
+                        },
+                        onUndo = { if (quickUndo.isNotEmpty()) { quickRedo.add(body); body = quickUndo.removeAt(quickUndo.lastIndex) } },
+                        onRedo = { if (quickRedo.isNotEmpty()) { quickUndo.add(body); body = quickRedo.removeAt(quickRedo.lastIndex) } },
+                        canUndo = quickUndo.isNotEmpty(), canRedo = quickRedo.isNotEmpty()
+                    )
                 }
             }
-            AnimatedVisibility(kaomojiExpanded) {
-                KaomojiQuickPanel(onInsert = { insert(it) }, heightDp = 220, modifier = Modifier.fillMaxWidth())
-            }
             Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (cookies.isNotEmpty()) CookieSelector(cookies, selectedCookieIndex, cookiesExpanded,
@@ -311,14 +330,21 @@ fun CreateThreadEditor(
                     diceSelected = diceOpen, kaomojiSelected = kaomojiExpanded, hasImage = image != null,
                     onDiceClick = { diceOpen = true },
                     onKaomojiClick = {
-                        keyboard?.hide()
-                        focus.clearFocus(force = true)
-                        kaomojiExpanded = !kaomojiExpanded
+                        inputPanel.toggle()
+                        if (inputPanel.expanded) {
+                            keyboard?.hide()
+                            focus.clearFocus(force = true)
+                        }
                     },
-                    onImageClick = { kaomojiExpanded = false; imagePicker.launch("image/*") },
+                    onImageClick = { inputPanel.close(); imagePicker.launch("image/*") },
+                    onDoodleClick = {
+                        inputPanel.close()
+                        openDoodlePad()
+                    },
                     containerColor = capsuleColor
                 )
             }
+            com.mioo.dao.ui.components.ComposerInputPanelSlot(inputPanel, onInsert = ::insert)
         }
         AnimatedVisibility(visible = draftsOpen,
             enter = fadeIn(tween(if (reducedMotion) 0 else 200)),
@@ -332,6 +358,12 @@ fun CreateThreadEditor(
             })
         }
     }
+        if (showDoodlePad) DoodlePadSheet(
+            baseImageUri = image,
+            onDismiss = { showDoodlePad = false },
+            onExport = { image = it }
+        )
+    }
     }
     if (showCookieConfirmation) {
         ConfirmSendCookieDialog(cookies = cookies, notes = cookieNotes, selectedIndex = selectedCookieIndex,
@@ -342,7 +374,6 @@ fun CreateThreadEditor(
             })
     }
     if (diceOpen) DiceDialog(onDismiss = { diceOpen = false }, onInsert = { insert(it); diceOpen = false })
-    previewImage?.let { uri -> ImageViewer(imageUrl = uri.toString(), onDismiss = { previewImage = null }) }
     if (confirmLeave) AlertDialog(
         onDismissRequest = { if (!saving) { confirmLeave = false; draftToOpen = null } },
         properties = immersiveDialogProperties(),

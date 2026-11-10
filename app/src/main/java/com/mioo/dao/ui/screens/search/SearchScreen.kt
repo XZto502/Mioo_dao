@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.search
 
+import com.mioo.dao.LocalThirdPartyServicesAllowed
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
@@ -70,10 +72,11 @@ fun SearchScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val allowThirdParty = LocalThirdPartyServicesAllowed.current
 
-    LaunchedEffect(uiState.webSearchUrl) {
+    LaunchedEffect(uiState.webSearchUrl, allowThirdParty) {
         val url = uiState.webSearchUrl ?: return@LaunchedEffect
-        runCatching {
+        if (allowThirdParty) runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }
         viewModel.consumeWebSearchUrl()
@@ -95,6 +98,7 @@ fun SearchScreen(
         },
         modifier = modifier,
         containerColor = secondaryPageBackground(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
         Column(
@@ -123,27 +127,29 @@ fun SearchScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "全站搜索用搜索引擎 site: 限定 X 岛域名（无公开 Search API）。下方同时显示本地历史/收藏/缓存结果。",
+                text = if (allowThirdParty) "全站搜索通过外部搜索引擎检索 X 岛。下方同时显示本地结果。"
+                    else "在本地历史、收藏和缓存中搜索，也可直接输入串号。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "搜索引擎 site:",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(XdWebSearch.Engine.entries.toList()) { engine ->
-                    FilterChip(
-                        selected = uiState.preferredEngine == engine,
-                        onClick = { viewModel.selectEngine(engine) },
-                        label = { Text(engine.label) }
-                    )
+            if (allowThirdParty) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "外部搜索引擎",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(XdWebSearch.Engine.entries.toList()) { engine ->
+                        FilterChip(
+                            selected = uiState.preferredEngine == engine,
+                            onClick = { viewModel.selectEngine(engine) },
+                            label = { Text(engine.label) }
+                        )
+                    }
                 }
             }
 
@@ -211,7 +217,7 @@ fun SearchScreen(
                     }
                 }
 
-                if (uiState.query.isNotBlank()) {
+                if (allowThirdParty && uiState.query.isNotBlank()) {
                     item(key = "site_hint") {
                         Card(
                             modifier = Modifier
@@ -274,12 +280,14 @@ fun SearchScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "点上方「全站搜索」用搜索引擎 site: 检索岛上内容",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                if (allowThirdParty) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "点上方「全站搜索」检索岛上内容",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

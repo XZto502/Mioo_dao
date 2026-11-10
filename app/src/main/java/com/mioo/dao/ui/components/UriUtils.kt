@@ -1,8 +1,89 @@
 package com.mioo.dao.ui.components
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+suspend fun compressImageUnder2MB(context: Context, sourceUri: Uri): File = withContext(Dispatchers.IO) {
+    val maxBytes = 2 * 1024 * 1024L
+    val targetBytes = 1950 * 1024L
+    val source = File.createTempFile("temp_upload_", ".${sourceUri.imageExtension(context)}", context.cacheDir)
+    var keepSource = false
+    try {
+        val input = context.contentResolver.openInputStream(sourceUri) ?: throw IOException("无法打开图片")
+        input.use { stream -> source.outputStream().use { stream.copyTo(it) } }
+        if (source.length() == 0L) throw IOException("图片文件为空")
+        if (source.length() <= maxBytes) {
+            keepSource = true
+            return@withContext source
+        }
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(source.path, bounds)
+        val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        if (longEdge <= 0) throw IOException("无法读取图片尺寸")
+        var sample = 1
+        while (longEdge / sample >= 5120) sample *= 2
+        var bitmap = BitmapFactory.decodeFile(source.path, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: throw IOException("无法解码图片")
+        try {
+            val rotation = runCatching {
+                when (ExifInterface(source.path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                    ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                    ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                    else -> 0f
+                }
+            }.getOrDefault(0f)
+            if (rotation != 0f) {
+                val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height,
+                    Matrix().apply { postRotate(rotation) }, true)
+                if (rotated !== bitmap) bitmap.recycle()
+                bitmap = rotated
+            }
+            fun scale(factor: Float) {
+                val scaled = Bitmap.createScaledBitmap(bitmap, (bitmap.width * factor).toInt().coerceAtLeast(1),
+                    (bitmap.height * factor).toInt().coerceAtLeast(1), true)
+                if (scaled !== bitmap) bitmap.recycle()
+                bitmap = scaled
+            }
+            val sampledEdge = maxOf(bitmap.width, bitmap.height)
+            if (sampledEdge > 2560) scale(2560f / sampledEdge)
+
+            val bytes = ByteArrayOutputStream()
+            fun encode(quality: Int): Boolean {
+                bytes.reset()
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, quality, bytes)) throw IOException("图片编码失败")
+                return bytes.size() <= targetBytes
+            }
+            if (!listOf(92, 85, 78, 70, 62).any(::encode)) {
+                do {
+                    scale(0.82f)
+                } while (!encode(76))
+            }
+            val output = File.createTempFile("temp_upload_", ".jpg", context.cacheDir)
+            try {
+                output.outputStream().use { bytes.writeTo(it) }
+                output
+            } catch (e: IOException) {
+                output.delete()
+                throw e
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    } finally {
+        if (!keepSource) source.delete()
+    }
+}
 
 fun Uri.toFile(context: Context): File? {
     return try {

@@ -1,6 +1,24 @@
 package com.mioo.dao.ui.screens.thread
 
+import com.mioo.dao.ui.components.DoodlePadSheet
+
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -189,13 +207,13 @@ import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.components.LocalDicePreset
-import com.mioo.dao.ui.components.LocalDiceRuleMenu
 import com.mioo.dao.utils.DiceRulePreset
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -208,7 +226,8 @@ fun ThreadScreen(
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
     onNavigateToThread: (String) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    registerSystemBack: (((() -> Unit)?) -> Unit)? = null
 ) {
     // List-only slice — bookmark / download / ref-popup use separate collectors below
     val listUi by viewModel.listUiState.collectAsState()
@@ -257,25 +276,19 @@ fun ThreadScreen(
     // Local text field value — do not write listUi on every keystroke
     var searchFieldText by remember { mutableStateOf("") }
     var showOverflowMenu by remember { mutableStateOf(false) }
-    // 骰点高亮规则：按串记忆；点任意骰子胶囊弹出切换微菜单
-    val dicePreset by viewModel.dicePreset.collectAsState()
-    var showDiceRuleMenu by remember { mutableStateOf(false) }
+    val dicePreset = DiceRulePreset.NEUTRAL_DEFAULT
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val emptyLambda = remember { {} }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
-    // Keep the opening frame to chrome + spinner. The reply list is what stalls
-    // the first frames of the slide on a cold process.
+    // Keep the opening frame light while the detail page enters.
     val reducedMotion = isReducedMotionEnabled()
     var allowHeavyList by remember { mutableStateOf(reducedMotion) }
     LaunchedEffect(reducedMotion) {
-        if (!reducedMotion) {
-            // A frame past the slide, so list measure does not land on the last animation frame.
-            delay(MiooMotion.PageDurationMillis.toLong() + 32L)
-        }
+        if (!reducedMotion) delay(MiooMotion.PageDurationMillis.toLong() + 32L)
         allowHeavyList = true
     }
-
     var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
         mutableStateOf<Pair<Any, Int>?>(null)
     }
@@ -291,6 +304,7 @@ fun ThreadScreen(
     val saveProgressNow by rememberUpdatedState(newValue = { saveVisibleProgress() })
     val leaveThread = {
         if (!leavingThread) {
+            viewModel.flushReplyDraft()
             saveVisibleProgress()
             // Freeze the exit anchor: an ongoing fling can otherwise overwrite
             // it during the navigation transition after the user pressed Back.
@@ -298,12 +312,36 @@ fun ThreadScreen(
             onBackClick()
         }
     }
-    BackHandler { leaveThread() }
+    val currentLeaveThread by rememberUpdatedState(leaveThread)
+    DisposableEffect(registerSystemBack) {
+        registerSystemBack?.invoke { currentLeaveThread() }
+        onDispose { registerSystemBack?.invoke(null) }
+    }
+    BackHandler(enabled = registerSystemBack == null) { leaveThread() }
     // A short last page (or an empty page) cannot move at all. Observe the user's
     // drag before consumption, rather than requiring a changed list position.
+    var creatorButtonVisible by remember(viewModel) { mutableStateOf(true) }
+    val creatorSink by animateFloatAsState(
+        targetValue = if (creatorButtonVisible) 0f else 1f,
+        animationSpec = tween(if (reducedMotion) 0 else 340),
+        label = "写作按钮"
+    )
+    LaunchedEffect(listState, creatorButtonVisible) {
+        if (!creatorButtonVisible) {
+            snapshotFlow { listState.isScrollInProgress }.collectLatest { scrolling ->
+                if (!scrolling) {
+                    delay(2500)
+                    creatorButtonVisible = true
+                }
+            }
+        }
+    }
     val edgePaging = remember(listState, viewModel) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.Drag && available.y != 0f) {
+                    creatorButtonVisible = false
+                }
                 val state = viewModel.listUiState.value
                 if (shouldLoadPreviousAtEdge(
                         available.y, source == NestedScrollSource.Drag,
@@ -335,7 +373,10 @@ fun ThreadScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(viewModel, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) saveProgressNow()
+            if (event == Lifecycle.Event.ON_STOP) {
+                viewModel.flushReplyDraft()
+                saveProgressNow()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -429,6 +470,28 @@ fun ThreadScreen(
         if (!isSearchMode) return@LaunchedEffect
         delay(220)
         viewModel.updateSearchQuery(searchFieldText)
+    }
+
+    var creatorOpen by rememberSaveable(viewModel.threadId) {
+        mutableStateOf(viewModel.requestedReplyDraftId != null)
+    }
+    val replyEditor = remember(viewModel) { ReplyEditorState() }
+    fun openReplyEditor() {
+        viewModel.beginReplyEditing()
+        creatorOpen = true
+    }
+    LaunchedEffect(viewModel, creatorOpen) {
+        if (creatorOpen) viewModel.beginReplyEditing()
+    }
+    val selectedReplyCookie = viewModel.threadCookieIndex.collectAsState().value
+        ?.takeIf { it in threadSettings.cookiesList.indices } ?: threadSettings.selectedCookieIndex
+    var checkingTail by remember(viewModel) { mutableStateOf(false) }
+    var tailMessage by remember(viewModel) { mutableStateOf<String?>(null) }
+    LaunchedEffect(tailMessage) {
+        if (tailMessage != null) {
+            delay(1200)
+            tailMessage = null
+        }
     }
 
     Box(Modifier.fillMaxSize().graphicsLayer { clip = true }.background(readingBackground())) {
@@ -568,9 +631,7 @@ fun ThreadScreen(
                             showBookmarkMenu = showBookmarkMenu,
                             onShowBookmarkMenuChange = { showBookmarkMenu = it },
                             showOverflowMenu = showOverflowMenu,
-                            onShowOverflowMenuChange = { showOverflowMenu = it },
-                            diceRuleLabel = "骰子规则: ${dicePreset.shortLabel}",
-                            onOpenDiceRule = { showDiceRuleMenu = true }
+                            onShowOverflowMenuChange = { showOverflowMenu = it }
                         )
                     }
                 },
@@ -585,6 +646,7 @@ fun ThreadScreen(
             )
         },
         bottomBar = {
+            if (!threadSettings.enableCreatorMode) {
             val composerColor = readingComposerColor()
             Column {
                 // Feather only the seam above the solid composer, never the input/tools.
@@ -596,11 +658,12 @@ fun ThreadScreen(
                     cookies = threadSettings.cookiesList,
                     confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
                     cookieNotes = threadSettings.cookieNotes,
-                    selectedCookieIndex = viewModel.threadCookieIndex.collectAsState().value
-                        ?.takeIf { it < threadSettings.cookiesList.size }
-                        ?: threadSettings.selectedCookieIndex,
-                    onCookieSelect = { viewModel.selectThreadCookie(it) }
+                    selectedCookieIndex = selectedReplyCookie,
+                    onCookieSelect = viewModel::selectThreadCookie,
+                    editor = replyEditor,
+                    onOpen = { openReplyEditor() }
                 )
+            }
             }
         },
         modifier = modifier,
@@ -609,8 +672,7 @@ fun ThreadScreen(
     ) { paddingValues ->
         CompositionLocalProvider(
             // 设置里的骰点高亮开关：关闭时不向渲染层下发规则（正文恢复纯文本）
-            LocalDicePreset provides if (threadSettings.diceBadgesEnabled) dicePreset else null,
-            LocalDiceRuleMenu provides { showDiceRuleMenu = true }
+            LocalDicePreset provides if (threadSettings.diceBadgesEnabled) dicePreset else null
         ) {
         Box(
             modifier = Modifier
@@ -690,8 +752,8 @@ fun ThreadScreen(
                     { tid: String -> onNavigateToThread(tid) }
                 }
 
-                // The bottom padding includes both the solid composer and its 10dp
-                // feather so the last floor can scroll fully into the readable region.
+                // The list draws behind the Scaffold bars. The bottom padding must
+                // therefore include the measured bottom bar height exactly once.
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().nestedScroll(edgePaging),
@@ -700,7 +762,11 @@ fun ThreadScreen(
                         start = 12.dp,
                         end = 12.dp,
                         top = paddingValues.calculateTopPadding() + 12.dp,
-                        bottom = paddingValues.calculateBottomPadding() + 16.dp
+                        // Match the normal mode's 8 dp list inset plus the 10 dp
+                        // feather and 8 dp inset above its reply field.
+                        bottom = if (threadSettings.enableCreatorMode)
+                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 26.dp
+                        else paddingValues.calculateBottomPadding() + 8.dp
                     )
                 ) {
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
@@ -715,6 +781,7 @@ fun ThreadScreen(
                                     onDismiss = { showBlockDialog = false },
                                     onQuote = {
                                         viewModel.setQuotedPost(mainThread.idStr)
+                                        if (threadSettings.enableCreatorMode) creatorOpen = true
                                         Toast.makeText(context, "已引用 No.${mainThread.idStr}", Toast.LENGTH_SHORT).show()
                                     },
                                     onBlockThread = {
@@ -732,22 +799,24 @@ fun ThreadScreen(
                                     onReport = { reportTargetNo = mainThread.idStr },
                                     onShareCard = {
                                         sharePostId = mainPostData.id
-                                    },
-                                    onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(mainThread.content)) {
-                                        { showDiceRuleMenu = true }
-                                    } else {
-                                        null
                                     }
                                 )
                             }
 
                             ThreadCard(
-                                postData = mainPostData,
+                                postData = mainPostData.copy(isPo = true),
+                                onNumberClick = {
+                                    viewModel.setQuotedPost(mainThread.idStr)
+                                    if (threadSettings.enableCreatorMode) creatorOpen = true
+                                },
                                 replyCount = mainThread.replyCount ?: 0,
                                 onThreadClick = emptyLambda,
                                 onQuoteClick = onQuoteClick,
                                 onImageClick = onImageClick,
-                                onLongClick = { showBlockDialog = true },
+                                onLongClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showBlockDialog = true
+                                },
                                 // 详情页主楼：完整正文 + 引用链接可点（列表预览才截断/关手势）
                                 contentMaxLines = Int.MAX_VALUE,
                                 enableHtmlGestures = true
@@ -777,6 +846,7 @@ fun ThreadScreen(
                             onCardClick = emptyLambda,
                             onRequestQuote = {
                                 viewModel.setQuotedPost(item.idStr)
+                                if (threadSettings.enableCreatorMode) creatorOpen = true
                                 Toast.makeText(context, "已引用 No.${item.idStr}", Toast.LENGTH_SHORT).show()
                             },
                             onBlockThread = {
@@ -787,9 +857,30 @@ fun ThreadScreen(
                             },
                             onFreeCopy = { freeCopyId = item.idStr; freeCopyText = item.rawContent },
                             onReport = { reportTargetNo = item.idStr },
-                            onShareCard = { sharePostId = item.idStr },
-                            onOpenDiceRule = { showDiceRuleMenu = true }
+                            onShareCard = { sharePostId = item.idStr }
                         )
+                    }
+
+                    if (mainThread != null && listUi.isLastPage && !listUi.isReplacing &&
+                        (listUi.currentPage >= totalPages || listUi.showPoOnly)) {
+                        item(key = "thread_tail", contentType = "thread_tail") {
+                            ThreadTail(
+                                checking = checkingTail,
+                                message = tailMessage,
+                                enabled = !listUi.isLoading && !checkingTail,
+                                reducedMotion = reducedMotion,
+                                onRefresh = {
+                                    checkingTail = true
+                                    tailMessage = null
+                                    viewModel.refreshThread(tailOnly = true) { result ->
+                                        checkingTail = false
+                                        if (result.isNotBlank() && result != "已刷新，阅读位置已保留") {
+                                            tailMessage = result
+                                        }
+                                    }
+                                }
+                            )
+                        }
                     }
 
                     val filterHint = listUi.filterHint
@@ -845,8 +936,46 @@ fun ThreadScreen(
                 },
                 onNavigateToThread = onNavigateToThread
             )
+            if (threadSettings.enableCreatorMode && !creatorOpen) {
+                ReplyCreatorButton(
+                    Modifier.align(Alignment.BottomEnd).zIndex(1f).navigationBarsPadding()
+                        .padding(end = 18.dp, bottom = 22.dp)
+                        .graphicsLayer {
+                            val fraction = creatorSink.coerceIn(0f, 1f)
+                            translationY = 120.dp.toPx() * fraction
+                        },
+                    enabled = creatorButtonVisible,
+                    onOpen = { openReplyEditor() }
+                )
+            }
         }
         }
+        AnimatedVisibility(
+            visible = creatorOpen,
+            modifier = Modifier.fillMaxSize().zIndex(1f),
+            enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(240)) { it / 12 },
+            exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 12 }
+        ) {
+            ReplyInputBar(
+                viewModel = viewModel,
+                cookies = threadSettings.cookiesList,
+                selectedCookieIndex = selectedReplyCookie,
+                confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
+                cookieNotes = threadSettings.cookieNotes,
+                onCookieSelect = viewModel::selectThreadCookie,
+                editor = replyEditor,
+                fullScreen = true,
+                onClose = {
+                    viewModel.flushReplyDraft()
+                    creatorOpen = false
+                }
+            )
+        }
+        if (replyEditor.showDoodlePad.value) DoodlePadSheet(
+            baseImageUri = replyEditor.attachment.value,
+            onDismiss = { replyEditor.showDoodlePad.value = false },
+            onExport = { replyEditor.attachment.value = it }
+        )
         freeCopyText?.let { text ->
             FreeCopyDialog(
                 text = text,
@@ -916,19 +1045,18 @@ fun ThreadScreen(
         )
     }
     sharePostId?.let { initialId ->
-        val settings by settingsViewModel.settingsState.collectAsState()
+        val brandingDefault by settingsViewModel.shareCardBrandingDefault.collectAsState()
         val posts = remember(listUi.thread, listUi.displayItems) { viewModel.sharePosts() }
         var board by remember { mutableStateOf("板块") }
         LaunchedEffect(listUi.thread?.fidStr) { board = viewModel.shareForumName() }
-        com.mioo.dao.ui.components.PostShareCardDialog(
+        brandingDefault?.let { defaultBranding -> com.mioo.dao.ui.components.PostShareCardDialog(
             initialPostId = initialId, posts = posts, threadId = viewModel.threadId,
             title = listUi.thread?.title.effectiveTitle() ?: "No.${viewModel.threadId}",
             boardName = board, mainPost = posts.firstOrNull { it.id == viewModel.threadId },
             resolveContexts = viewModel::loadShareContexts,
-            showBranding = settings.showShareCardBranding,
-            onBrandingChange = settingsViewModel::setShowShareCardBranding,
-            dicePreset = dicePreset, onDismiss = { sharePostId = null }
-        )
+            showBranding = defaultBranding,
+            dicePreset = if (threadSettings.diceBadgesEnabled) dicePreset else null, onDismiss = { sharePostId = null }
+        ) }
     }
 
     }
@@ -942,38 +1070,6 @@ fun ThreadScreen(
             onJump = { page ->
                 viewModel.jumpToPage(page)
                 showPageJumpDialog = false
-            }
-        )
-    }
-
-    // 与回复栏骰娘同一套 AlertDialog：系统 dim 盖住整屏（含顶栏和底栏），不要自绘半屏遮罩。
-    if (showDiceRuleMenu) {
-        AlertDialog(
-            onDismissRequest = { showDiceRuleMenu = false },
-            properties = immersiveDialogProperties(),
-            title = {
-                ImmersiveDialogEffect()
-                Text("本串骰子规则")
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DiceRulePreset.entries.forEach { preset ->
-                        Md3MenuPillItem(
-                            label = preset.menuLabel,
-                            leadingIcon = Icons.Default.Casino,
-                            selected = preset == dicePreset,
-                            onClick = {
-                                viewModel.setDicePreset(preset)
-                                showDiceRuleMenu = false
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDiceRuleMenu = false }) {
-                    Text("取消")
-                }
             }
         )
     }
@@ -1183,9 +1279,7 @@ private fun ThreadChromeActions(
     showBookmarkMenu: Boolean,
     onShowBookmarkMenuChange: (Boolean) -> Unit,
     showOverflowMenu: Boolean,
-    onShowOverflowMenuChange: (Boolean) -> Unit,
-    diceRuleLabel: String,
-    onOpenDiceRule: () -> Unit
+    onShowOverflowMenuChange: (Boolean) -> Unit
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
     val context = LocalContext.current
@@ -1333,14 +1427,6 @@ private fun ThreadChromeActions(
                 onClick = {
                     onShowOverflowMenuChange(false)
                     onShare()
-                }
-            )
-            Md3MenuPillItem(
-                label = diceRuleLabel,
-                leadingIcon = Icons.Default.Casino,
-                onClick = {
-                    onShowOverflowMenuChange(false)
-                    onOpenDiceRule()
                 }
             )
             Md3MenuPillItem(
@@ -1688,8 +1774,7 @@ private fun ThreadReplyRow(
     onBlockUser: () -> Unit,
     onFreeCopy: () -> Unit,
     onReport: () -> Unit,
-    onShareCard: () -> Unit,
-    onOpenDiceRule: () -> Unit
+    onShareCard: () -> Unit
 ) {
     // 每个引用从首帧就拥有同样的预览槽位；缓存命中只替换槽位内容。
     val quotedPostsData = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1711,6 +1796,7 @@ private fun ThreadReplyRow(
         })
     }
 
+    val haptics = LocalHapticFeedback.current
     var showReplyBlockDialog by remember { mutableStateOf(false) }
     if (showReplyBlockDialog) {
         PostActionDialog(
@@ -1723,12 +1809,7 @@ private fun ThreadReplyRow(
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
             blockUserLabel = "屏蔽该饼干 (ID: ${item.userHash})",
             onReport = onReport,
-            onShareCard = onShareCard,
-            onSwitchDiceRule = if (com.mioo.dao.utils.DiceRoll.containsDice(item.rawContent)) {
-                onOpenDiceRule
-            } else {
-                null
-            }
+            onShareCard = onShareCard
         )
     }
 
@@ -1737,7 +1818,11 @@ private fun ThreadReplyRow(
         onQuoteClick = onQuoteClick,
         onImageClick = onImageClick,
         onCardClick = onCardClick,
-        onCardLongClick = { showReplyBlockDialog = true },
+        onCardLongClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            showReplyBlockDialog = true
+        },
+        onNumberClick = onRequestQuote,
         quotedPosts = quotedPostsData,
         onViewThreadClick = onViewThreadClick,
         currentThreadId = currentThreadId
@@ -1755,8 +1840,7 @@ private fun PostActionDialog(
     onReport: () -> Unit,
     blockThreadLabel: String,
     blockUserLabel: String,
-    onShareCard: (() -> Unit)? = null,
-    onSwitchDiceRule: (() -> Unit)? = null
+    onShareCard: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1770,12 +1854,6 @@ private fun PostActionDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (onSwitchDiceRule != null) {
-                    TextButton(
-                        onClick = { onSwitchDiceRule(); onDismiss() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("切换本串骰子规则") }
-                }
                 TextButton(
                     onClick = { onQuote(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
@@ -1895,7 +1973,11 @@ private fun ReplyInputBar(
     selectedCookieIndex: Int,
     confirmCookieBeforeSend: Boolean,
     cookieNotes: Map<String, String>,
-    onCookieSelect: (Int) -> Unit
+    onCookieSelect: (Int) -> Unit,
+    editor: ReplyEditorState,
+    fullScreen: Boolean = false,
+    onOpen: () -> Unit = {},
+    onClose: () -> Unit = {}
 ) {
     val composerState by viewModel.composerState.collectAsState()
     ReplyInputArea(
@@ -1910,10 +1992,87 @@ private fun ReplyInputBar(
         onCookieSelect = onCookieSelect,
         onReplyTextChange = remember(viewModel) { { text: String -> viewModel.updateReplyText(text) } },
         onCancelQuote = remember(viewModel) { { viewModel.setQuotedPost(null) } },
-        onSend = remember(viewModel) {
-            { file: java.io.File?, cookie: String? ->
-                viewModel.submitReply(imageFile = file, cookieOverride = cookie)
+        editorState = editor,
+        fullScreen = fullScreen,
+        onOpen = onOpen,
+        onClose = onClose,
+        title = composerState.title,
+        name = composerState.name,
+        threadId = viewModel.threadId,
+        onIdentityChange = viewModel::updateReplyIdentity,
+        loadingDraft = composerState.loadingDraft,
+        onBeginEditing = viewModel::beginReplyEditing,
+        onSend = { file, cookie ->
+            viewModel.submitReply(imageFile = file, cookieOverride = cookie) {
+                editor.attachment.value = null
+                editor.text.value = TextFieldValue()
+                editor.clearHistory()
+                if (fullScreen) onClose()
             }
         }
     )
+}
+
+@Composable
+private fun ReplyCreatorButton(
+    modifier: Modifier,
+    enabled: Boolean,
+    onOpen: () -> Unit
+) {
+    Surface(
+        onClick = onOpen,
+        enabled = enabled,
+        modifier = modifier.size(56.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shadowElevation = 0.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.Edit, contentDescription = "写回复", modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ThreadTail(
+    checking: Boolean,
+    message: String?,
+    enabled: Boolean,
+    reducedMotion: Boolean,
+    onRefresh: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val rotation = if (checking && !reducedMotion) {
+        val angle by rememberInfiniteTransition(label = "追更")
+            .animateFloat(0f, 360f, infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart),
+                label = "刷新图标")
+        angle
+    } else 0f
+    Row(
+        Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        HorizontalDivider(Modifier.weight(1f), thickness = 0.5.dp, color = lineColor)
+        Surface(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onRefresh()
+            },
+            enabled = enabled,
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Refresh, null, Modifier.size(14.dp).rotate(rotation))
+                Text(if (checking) "正在检查新回复" else message ?: "没有更多了 · 点击刷新",
+                    style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            }
+        }
+        HorizontalDivider(Modifier.weight(1f), thickness = 0.5.dp, color = lineColor)
+    }
 }
