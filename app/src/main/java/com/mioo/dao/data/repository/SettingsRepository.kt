@@ -21,6 +21,9 @@ import javax.inject.Singleton
 class SettingsRepository @Inject constructor(
     private val settingsDataStore: SettingsDataStore
 ) {
+    val offlineUpdatePolicy = settingsDataStore.offlineUpdatePolicy
+    suspend fun saveOfflineUpdateEnabled(enabled: Boolean) = settingsDataStore.saveOfflineUpdateEnabled(enabled)
+    suspend fun saveOfflineUpdateWifiOnly(wifiOnly: Boolean) = settingsDataStore.saveOfflineUpdateWifiOnly(wifiOnly)
     // SupervisorJob: without it one failed write (e.g. DataStore IOException)
     // cancels the scope root and every later settings write becomes a silent no-op.
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

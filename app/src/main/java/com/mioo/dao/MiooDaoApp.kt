@@ -109,6 +109,14 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
     }
 
     private fun deferNonCriticalWarm() {
+        appScope.launch(Dispatchers.IO) {
+            var initialPolicy = true
+            SettingsDataStore(this@MiooDaoApp).offlineUpdatePolicy
+                .distinctUntilChanged().collect { (enabled, wifiOnly) ->
+                    com.mioo.dao.notification.OfflineUpdateScheduler.apply(this@MiooDaoApp, enabled, wifiOnly, !initialPolicy)
+                    initialPolicy = false
+                }
+        }
         appScope.launch {
             // After cold list + splash typically done
             kotlinx.coroutines.delay(1800)

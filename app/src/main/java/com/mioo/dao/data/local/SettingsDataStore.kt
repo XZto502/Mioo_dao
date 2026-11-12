@@ -35,6 +35,17 @@ data class ThirdPartyConsent(
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val offlineAutoUpdateKey = booleanPreferencesKey("offline_auto_update")
+    private val offlineWifiOnlyKey = booleanPreferencesKey("offline_update_wifi_only")
+    val offlineUpdatePolicy = context.dataStore.data.map {
+        (it[offlineAutoUpdateKey] ?: false) to (it[offlineWifiOnlyKey] ?: true)
+    }
+    suspend fun saveOfflineUpdateEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[offlineAutoUpdateKey] = enabled }
+    }
+    suspend fun saveOfflineUpdateWifiOnly(wifiOnly: Boolean) {
+        context.dataStore.edit { it[offlineWifiOnlyKey] = wifiOnly }
+    }
     private val quickInputKey = stringPreferencesKey("quick_input_items")
     private fun parseQuickInputs(json: String?): List<QuickInputItem> {
         if (json == null) return defaultQuickInputs

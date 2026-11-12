@@ -167,7 +167,7 @@ interface ThreadRepository {
     fun getCacheSize(): Flow<String>
     fun preloadBookmarks(onProgress: (Int, Int) -> Unit): Flow<XdResponse<Unit>>
     fun smartPreloadThreads(threads: List<Thread>)
-    fun downloadFullThread(tid: String): Flow<XdResponse<Unit>>
+    fun downloadFullThread(tid: String, conservative: Boolean = false): Flow<XdResponse<Unit>>
     fun checkLatestRelease(): Flow<XdResponse<GithubRelease>>
 
     // 已离线串 (offline threads)
@@ -1237,11 +1237,14 @@ class ThreadRepositoryImpl @Inject constructor(
      * 最后写 offline_threads 标记。重复调用即「更新离线」——
      * 已有页/图按 key 覆盖或跳过，只补新增。
      */
-    override fun downloadFullThread(tid: String): Flow<XdResponse<Unit>> = flow {
+    override fun downloadFullThread(tid: String, conservative: Boolean): Flow<XdResponse<Unit>> = flow {
         try {
+            val previousOffline = if (conservative) offlineThreadDao.get(tid) else null
             val page1 = fetchThread(tid, 1)
-            saveToHistory(page1)
-            addBookmark(page1)
+            if (!conservative) {
+                saveToHistory(page1)
+                addBookmark(page1)
+            }
 
             val json1 = threadAdapter.toJson(page1)
             cacheDao.insertCache(CacheEntity("thread_$tid", 1, json1))
@@ -1257,12 +1260,23 @@ class ThreadRepositoryImpl @Inject constructor(
 
                 for (page in 2..totalPages) {
                     try {
+                        val previousLastPage = ((previousOffline?.replyCount ?: 0) + pageSize - 1) / pageSize
+                        val cached = if (conservative && page < previousLastPage)
+                            cacheDao.getCache("thread_$tid", page)?.jsonResponse?.let {
+                                runCatching { parseThreadBody(it) }.getOrNull()
+                            } else null
+                        if (cached != null) {
+                            allPosts.addAll(cached.replies.orEmpty())
+                            continue
+                        }
+                        if (conservative) delay(2000)
                         val threadPage = fetchThread(tid, page)
                         val jsonPage = threadAdapter.toJson(threadPage)
                         cacheDao.insertCache(CacheEntity("thread_$tid", page, jsonPage))
                         allPosts.addAll(threadPage.replies.orEmpty())
-                        delay(300)
-                    } catch (_: Exception) {
+                        if (!conservative) delay(300)
+                    } catch (e: Exception) {
+                        if (e is CancellationException || conservative) throw e
                     }
                 }
             }
@@ -1280,7 +1294,9 @@ class ThreadRepositoryImpl @Inject constructor(
                 currentCoroutineContext().ensureActive()
                 if (processed >= com.mioo.dao.utils.OfflineImageStore.MAX_IMAGES_PER_THREAD) break
                 processed++
-                val saved = com.mioo.dao.utils.OfflineImageStore.ensureDownloaded(offlineRoot, url)
+                val alreadyDownloaded = com.mioo.dao.utils.OfflineImageStore.resolveLocalFile(offlineRoot, url) != null
+                if (conservative && !alreadyDownloaded) delay(1000)
+                val saved = com.mioo.dao.utils.OfflineImageStore.ensureDownloaded(offlineRoot, url, if (conservative) 128 * 1024 else 0)
                 if (saved != null) {
                     imageFiles.add(
                         com.mioo.dao.utils.OfflineImageStore.sanitizeFilename(
@@ -1289,9 +1305,13 @@ class ThreadRepositoryImpl @Inject constructor(
                     )
                     imageBytes += saved.second
                 }
-                delay(60)
+                if (!conservative) delay(60)
             }
 
+            if (conservative && offlineThreadDao.get(tid) == null) {
+                emit(XdResponse.Success(Unit))
+                return@flow
+            }
             offlineThreadDao.upsert(
                 com.mioo.dao.data.local.OfflineThreadEntity(
                     threadId = tid,

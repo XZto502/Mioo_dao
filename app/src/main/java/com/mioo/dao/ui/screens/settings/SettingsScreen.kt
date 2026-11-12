@@ -1505,6 +1505,30 @@ fun SettingsScreen(
                 }
             }
         }
+        val offlinePolicy by viewModel.offlineUpdatePolicy.collectAsState()
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Column(Modifier.padding(16.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("离线串自动更新", style = settingsItemStyle())
+                        Text("后台定期更新已保存的串和图片，默认关闭。系统通常每小时检查一次，可能延后执行。",
+                            style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.Switch(checked = offlinePolicy.first, onCheckedChange = viewModel::updateOfflineAutoUpdate)
+                }
+                if (offlinePolicy.first) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("更新网络条件", style = settingsDescriptionStyle())
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = offlinePolicy.second, onClick = { viewModel.updateOfflineWifiOnly(true) }, label = { Text("仅 Wi-Fi") })
+                        FilterChip(selected = !offlinePolicy.second, onClick = { viewModel.updateOfflineWifiOnly(false) }, label = { Text("所有网络") })
+                    }
+                    Text(if (offlinePolicy.second) "仅使用非计费 Wi-Fi 更新" else "允许使用移动数据下载串内图片，可能消耗较多流量",
+                        style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+
         // 6. Offline and Caching Settings (离线与缓存设置)
         val cacheSize by viewModel.cacheSizeState.collectAsState()
         val isPreloading by viewModel.isPreloadingState.collectAsState()

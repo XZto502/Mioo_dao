@@ -3,6 +3,7 @@ package com.mioo.dao.utils
 import android.content.Context
 import coil.map.Mapper
 import coil.request.Options
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -69,7 +70,7 @@ object OfflineImageStore {
      * @param imageUrl 展示用 URL（HOST/image/<name> 形态）
      * @return 文件 to 字节数
      */
-    suspend fun ensureDownloaded(root: File, imageUrl: String): Pair<File, Long>? =
+    suspend fun ensureDownloaded(root: File, imageUrl: String, bytesPerSecond: Int = 0): Pair<File, Long>? =
         withContext(Dispatchers.IO) {
             val name = islandImageName(imageUrl) ?: return@withContext null
             val file = File(root, sanitizeFilename(name))
@@ -80,15 +81,32 @@ object OfflineImageStore {
                     ?: return@withContext null
                 val tmp = File(root, "${file.name}.part")
                 body.byteStream().use { input ->
-                    tmp.outputStream().use { output -> input.copyTo(output) }
+                    tmp.outputStream().use { output ->
+                        if (bytesPerSecond <= 0) input.copyTo(output) else {
+                            val buffer = ByteArray(8192)
+                            val started = android.os.SystemClock.elapsedRealtime()
+                            var total = 0L
+                            while (true) {
+                                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                                total += count
+                                val wait = total * 1000L / bytesPerSecond -
+                                    (android.os.SystemClock.elapsedRealtime() - started)
+                                if (wait > 0) kotlinx.coroutines.delay(wait)
+                            }
+                        }
+                    }
                 }
                 if (tmp.length() <= 0L || !tmp.renameTo(file)) {
                     tmp.delete()
                     return@withContext null
                 }
                 file to file.length()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 File(root, "${file.name}.part").delete()
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 null
             }
         }
@@ -101,8 +119,9 @@ object OfflineImageStore {
                 .url(url)
                 .header("User-Agent", "Mioo_dao offline")
                 .build()
-        ).execute().use { response ->
-            if (response.isSuccessful) response.body else null
+        ).execute().let { response ->
+            if (response.isSuccessful && response.body != null) response.body
+            else { response.close(); null }
         }
     } catch (_: Exception) {
         null
