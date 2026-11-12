@@ -1,13 +1,13 @@
 {
-  "tag_name": "v1.1.5",
-  "name": "v1.1.5",
-  "body": "喵岛 v1.1.5 更新啦！\n\n这次主要改进了发串、回复和看串体验：\n\n- 新增创作模式：回复时可以打开全屏写作台，先收起来翻看串，回来接着写。\n- 新增涂鸦板：可以自己画图，也可以在选好的图片上画圈、标注或遮挡信息；支持调色、吸管、撤销和橡皮擦。\n- 颜文字面板支持添加自己的颜文字和别名，也可以拖动调整位置。全屏写作时还可以自定义快捷输入内容。\n- 回复草稿的保存和恢复更顺手，写到一半离开也更方便接着编辑。\n- 帖子图片按原比例预览，大图片发送时会自动压缩；查看图片和引用内容的体验也做了调整。\n- 详情页的串号支持点击引用、长按复制；骰子结果高亮、跳页、刷新及阅读位置恢复也做了改进。\n- 新增可选的系统预测性返回，优化页面切换、底部导航以及键盘和颜文字面板的衔接。\n- 改进深色主题、分享卡片水印设置和全局字体选择，并修复一些闪退、布局与显示问题。\n- 增加第三方服务说明和开关，可以自行选择是否使用更新检查、外部搜索和以图搜源等功能。\n\n完整更新记录：https://github.com/XZto502/Mioo_dao/compare/v1.1.4...v1.1.5",
-  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.5",
+  "tag_name": "v1.1.6",
   "assets": [
     {
+      "size": 5391077,
       "name": "app-release.apk",
-      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.5/app-release.apk",
-      "size": 5392277
+      "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.6/app-release.apk"
     }
-  ]
+  ],
+  "body": "喵岛 v1.1.6 修复了浏览串时按住屏幕滑动并误触返回按钮，可能导致无法退出详情页的问题。\n\n问题原因：返回动画结束后再次调用离开处理，而页面已经标记为正在退出，导致导航没有完成。现在会在退出动画结束后正确完成返回。",
+  "name": "v1.1.6",
+  "html_url": "https://github.com/XZto502/Mioo_dao/releases/tag/v1.1.6"
 }
