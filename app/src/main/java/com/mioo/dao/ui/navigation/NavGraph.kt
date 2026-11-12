@@ -357,7 +357,10 @@ fun MiooDaoNavGraph(
                     val leave = threadLeaveHandlers[entry.id]
                     if (leave != null) {
                         leave()
-                        navController.currentBackStackEntry != entry
+                        // A toolbar back request may already have saved the thread and
+                        // marked it as leaving before the exit animation started.
+                        // In that case the handler is deliberately a no-op here.
+                        navController.currentBackStackEntry != entry || navController.popBackStack()
                     } else {
                         navController.popBackStack()
                     }
