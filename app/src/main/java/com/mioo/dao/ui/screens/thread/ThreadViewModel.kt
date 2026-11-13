@@ -580,9 +580,9 @@ class ThreadViewModel @Inject constructor(
                                     .filter { it in 1..totalPagesVal }
                                     .map { neighbor -> async {
                                         val result = if (_listState.value.showPoOnly) {
-                                            threadRepository.getPoDetail(threadId, neighbor).last()
+                                            jumpPageContext(threadRepository.getPoDetail(threadId, neighbor))
                                         } else {
-                                            threadRepository.getThreadDetail(threadId, neighbor).last()
+                                            jumpPageContext(threadRepository.getThreadDetail(threadId, neighbor))
                                         }
                                         neighbor to (result as? XdResponse.Success)?.data
                                     } }.awaitAll().forEach { (neighbor, data) ->
@@ -638,9 +638,10 @@ class ThreadViewModel @Inject constructor(
                             !resumeScrollSeeded
                         ) {
                             resumeScrollSeeded = true
+                            val visibleIds = displayItems.mapTo(HashSet(displayItems.size)) { it.idStr }
                             resolveWindowReadingIndex(resumePostId, threadId,
                                 threadData.replies.orEmpty().map { it.idStr }
-                                    .filter { id -> displayItems.any { it.idStr == id } },
+                                    .filter { id -> id in visibleIds },
                                 displayItems.map { it.idStr }, stickyResumeIndex ?: 0, page)
                         } else {
                             null
