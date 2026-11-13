@@ -343,6 +343,21 @@ internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedSt
     }
 }
 
+internal fun AnnotatedString.withBareThreadLinks(linkColor: Color): AnnotatedString {
+    var builder: AnnotatedString.Builder? = null
+    for (match in BARE_THREAD_ID.findAll(text)) {
+        val start = match.range.first
+        val end = match.range.last + 1
+        if (hasStringAnnotations("QUOTE_CLICK", start, end) ||
+            hasStringAnnotations("LINK_CLICK", start, end) ||
+            hasStringAnnotations("DICE_CLICK", start, end)) continue
+        val target = builder ?: AnnotatedString.Builder(this).also { builder = it }
+        target.addStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline), start, end)
+        target.addStringAnnotation("BARE_THREAD", match.value, start, end)
+    }
+    return builder?.toAnnotatedString() ?: this
+}
+
 private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx: DiceParseCtx? = null) {
     val plain = protectReadingKaomoji(raw.stripRemainingHtmlTags())
     if (plain.isEmpty()) return
@@ -530,20 +545,7 @@ fun HtmlContent(
         } else source.withReadingParagraphGaps(paragraphScale)
     }
     val linkedText = remember(annotatedString, quoteLinkColor) {
-        buildAnnotatedString {
-            append(annotatedString)
-            BARE_THREAD_ID.findAll(annotatedString.text).forEach { match ->
-                val start = match.range.first
-                val end = match.range.last + 1
-                val covered = listOf("QUOTE_CLICK", "LINK_CLICK", "DICE_CLICK").any {
-                    annotatedString.getStringAnnotations(it, start, end).isNotEmpty()
-                }
-                if (!covered) {
-                    addStyle(SpanStyle(color = quoteLinkColor, textDecoration = TextDecoration.Underline), start, end)
-                    addStringAnnotation("BARE_THREAD", match.value, start, end)
-                }
-            }
-        }
+        annotatedString.withBareThreadLinks(quoteLinkColor)
     }
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
@@ -615,7 +617,7 @@ fun HtmlContent(
     }
     val spoilerAlphas = spoilerProgress.map { it.value }
     val displayText = remember(linkedText, spoilerAlphas, mergedStyle.color) {
-        buildAnnotatedString {
+        if (spoilerRanges.isEmpty()) linkedText else buildAnnotatedString {
             append(linkedText)
             spoilerRanges.forEachIndexed { index, range ->
                 val alpha = spoilerAlphas[index]

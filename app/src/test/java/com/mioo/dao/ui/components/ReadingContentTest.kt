@@ -10,6 +10,34 @@ class ReadingContentTest {
     private fun post(id: String) = PostData(id = id, userId = "cookie", createdAt = "", content = "quote $id")
     private fun parse(html: String) = parseHtmlToAnnotatedString(html, Color.Blue).annotated
 
+    @Test fun bareThreadLinksPreserveTextAndExistingAnnotations() {
+        val original = parse("12345678\n<a href=\"https://example.com/87654321\">87654321</a> >>No.23456789")
+        val result = original.withBareThreadLinks(Color.Red)
+        assertEquals(original.text, result.text)
+        val bare = result.getStringAnnotations("BARE_THREAD", 0, result.length).single()
+        assertEquals("12345678", bare.item)
+        assertEquals("12345678", result.text.substring(bare.start, bare.end))
+        assertEquals(original.getStringAnnotations(0, original.length),
+            result.getStringAnnotations(0, result.length).filter { it.tag != "BARE_THREAD" })
+    }
+
+    @Test fun ordinaryTextAndAlreadyLinkedNumbersReuseOriginalRichText() {
+        listOf("普通正文\n下一行", ">>No.12345678", "<a href=\"https://example.com\">12345678</a>",
+            "A12345678 123456789").forEach { html ->
+            val original = parse(html)
+            assertSame(original, original.withBareThreadLinks(Color.Red))
+        }
+    }
+
+    @Test fun bareNumbersInsideDiceDoNotBecomeThreadLinks() {
+        val original = androidx.compose.ui.text.buildAnnotatedString {
+            pushStringAnnotation("DICE_CLICK", "dice")
+            append("12345678")
+            pop()
+        }
+        assertSame(original, original.withBareThreadLinks(Color.Red))
+    }
+
     @Test fun resolvedReferencesFollowSourceOrderWithoutDuplicateLabels() {
         val blocks = ContentBlockSplitter.split(
             "<font color=\"blue\">&gt;&gt;No.22</font><br><br>正文<br>>>No.11",
