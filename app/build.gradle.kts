@@ -28,7 +28,7 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 30
+        versionCode = 31
         versionName = "1.1.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -111,7 +111,7 @@ android {
         // 测试版：包名加 .beta 后缀可与正式版共存，签名独立，应用名区分
         create("beta") {
             applicationIdSuffix = ".beta"
-            versionNameSuffix = "-beta"
+            versionNameSuffix = "-beta.1"
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
