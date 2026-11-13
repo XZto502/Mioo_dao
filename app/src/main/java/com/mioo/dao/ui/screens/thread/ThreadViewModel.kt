@@ -415,15 +415,15 @@ class ThreadViewModel @Inject constructor(
         val total = totalPages
         if (page < 1 || page > total) return
         val state = _listState.value
-        if (!state.isLoading) {
-            val index = state.displayItems.indexOfFirst { replyPages[it.idStr] == page }
-            if (page == 1 && state.startPage == 1 || index >= 0) {
-                resumePostId = null
-                resumeOffset = 0
-                stickyResumeIndex = null
-                _listState.update { it.copy(pendingScrollIndex = if (page == 1 && state.startPage == 1) 0 else index + 1, pendingScrollOffset = 0) }
-                return
-            }
+        val loadedIndex = loadedPageJumpIndex(page, state.startPage, state.isReplacing) {
+            state.displayItems.indexOfFirst { replyPages[it.idStr] == page }
+        }
+        if (loadedIndex != null) {
+            resumePostId = null
+            resumeOffset = 0
+            stickyResumeIndex = null
+            _listState.update { it.copy(pendingScrollIndex = loadedIndex, pendingScrollOffset = 0) }
+            return
         }
         // Do not bail on isLoading — resume must cancel in-flight page-1 SWR via loadGeneration
 

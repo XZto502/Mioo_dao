@@ -1,5 +1,15 @@
 package com.mioo.dao.ui.screens.thread
 
+/** Existing rows can be targeted during append/refresh, but not during replacement. */
+internal inline fun loadedPageJumpIndex(
+    page: Int, startPage: Int, isReplacing: Boolean, findFirstReplyIndex: () -> Int
+): Int? {
+    if (isReplacing) return null
+    if (page == 1 && startPage == 1) return 0
+    val index = findFirstReplyIndex()
+    return if (index >= 0) index + 1 else null
+}
+
 /** 存储索引保留 0=主楼，后续页的 LazyColumn 则不含主楼。 */
 internal fun readingLazyIndex(savedIndex: Int, hasMainPost: Boolean): Int =
     (savedIndex - if (hasMainPost) 0 else 1).coerceAtLeast(0)

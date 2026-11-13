@@ -386,10 +386,10 @@ fun ThreadScreen(
     }
 
     // 等实际布局就绪再恢复，不能在入场动画仍隐藏列表时把目标钳制成第 0 项。
-    LaunchedEffect(listUi.pendingScrollIndex, listUi.displayItems.size, listUi.isLoading,
+    LaunchedEffect(listUi.pendingScrollIndex, listUi.displayItems.size, listUi.isLoading, listUi.isReplacing,
         listState, allowHeavyList) {
         val index = listUi.pendingScrollIndex ?: return@LaunchedEffect
-        if (listUi.isLoading || listUi.thread == null || !allowHeavyList) return@LaunchedEffect
+        if (listUi.isReplacing || listUi.thread == null || !allowHeavyList) return@LaunchedEffect
         val hasMain = listUi.startPage <= 1
         val count = listUi.displayItems.size + if (hasMain) 1 else 0
         if (count > 0) {

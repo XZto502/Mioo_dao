@@ -4,12 +4,24 @@ import com.mioo.dao.ui.screens.thread.readingLazyIndex
 import com.mioo.dao.ui.screens.thread.resolveReadingIndex
 import com.mioo.dao.ui.screens.thread.shouldLoadPreviousAtEdge
 import com.mioo.dao.ui.screens.thread.resolveWindowReadingIndex
+import com.mioo.dao.ui.screens.thread.loadedPageJumpIndex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReadingPositionTest {
+    @Test fun loadedPageCanBeTargetedWithoutWaitingForAppendOrRefresh() {
+        assertEquals(24, loadedPageJumpIndex(3, 2, false) { 23 })
+        assertEquals(0, readingLazyIndex(loadedPageJumpIndex(2, 2, false) { 0 }!!, false))
+    }
+
+    @Test fun replacingPageNeverUsesStaleRowsAndFirstPageSkipsReplyScan() {
+        assertEquals(null, loadedPageJumpIndex(3, 1, true) { error("Must not scan stale rows") })
+        assertEquals(0, loadedPageJumpIndex(1, 1, false) { error("OP needs no scan") })
+        assertEquals(null, loadedPageJumpIndex(1, 2, false) { -1 })
+        assertEquals(null, loadedPageJumpIndex(4, 1, false) { -1 })
+    }
     @Test fun jumpToShortLastPageStartsAtItsReplyWithinThePreparedWindow() {
         assertEquals(4, resolveWindowReadingIndex(null, "op",
             listOf("9999999", "last"), listOf("9999999", "a", "b", "last"), 0, 3))
