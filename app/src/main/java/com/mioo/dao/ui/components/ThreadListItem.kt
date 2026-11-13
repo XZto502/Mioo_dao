@@ -20,6 +20,19 @@ data class ThreadListItem(
     val hasImage: Boolean
 )
 
+/** Keep unchanged rows and their rich content stable during reply-count enrichment. */
+internal fun List<ThreadListItem>.withReplyCounts(counts: Map<String, Int>): List<ThreadListItem> {
+    if (counts.isEmpty()) return this
+    var updated: MutableList<ThreadListItem>? = null
+    forEachIndexed { index, item ->
+        val count = counts[item.idStr] ?: return@forEachIndexed
+        if (count < 0 || count == item.replyCount) return@forEachIndexed
+        val target = updated ?: toMutableList().also { updated = it }
+        target[index] = item.copy(replyCount = count)
+    }
+    return updated ?: this
+}
+
 /**
  * Pre-built local bookmark row.
  */

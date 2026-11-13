@@ -14,6 +14,7 @@ import com.mioo.dao.ui.components.BookmarkListItem
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.toBookmarkListItems
 import com.mioo.dao.ui.components.toFilteredThreadListItems
+import com.mioo.dao.ui.components.withReplyCounts
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -164,11 +165,13 @@ class FeedViewModel @Inject constructor(
                 if (response is XdResponse.Success) {
                     val threads = response.data
                     val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
+                    val items = buildRemoteItems(threads, knownCounts)
+                    if (_uiState.value.selectedFolderId != uuid) return@collect
                     _uiState.update {
                         it.copy(
                             remoteThreads = threads,
                             remoteReplyCounts = knownCounts,
-                            remoteDisplayItems = buildRemoteItems(threads, knownCounts),
+                            remoteDisplayItems = items,
                             isLoading = false
                         )
                     }
@@ -199,10 +202,12 @@ class FeedViewModel @Inject constructor(
                 if (count != null) {
                     consecutiveFailures = 0
                     _uiState.update { state ->
+                        if (state.selectedFolderId != uuid) return@update state
+                        if (state.remoteReplyCounts[thread.idStr] == count) return@update state
                         val merged = state.remoteReplyCounts + (thread.idStr to count)
                         state.copy(
                             remoteReplyCounts = merged,
-                            remoteDisplayItems = buildRemoteItems(state.remoteThreads, merged)
+                            remoteDisplayItems = state.remoteDisplayItems.withReplyCounts(mapOf(thread.idStr to count))
                         )
                     }
                 } else {
@@ -214,17 +219,17 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    private fun buildRemoteItems(
+    private suspend fun buildRemoteItems(
         threads: List<Thread>,
         counts: Map<String, Int>
-    ): List<ThreadListItem> {
+    ): List<ThreadListItem> = withContext(Dispatchers.Default) {
         val withCounts = threads.map { thread ->
             counts[thread.idStr]
                 ?.takeIf { it >= 0 }
                 ?.let { thread.copy(replyCount = it) }
                 ?: thread
         }
-        return withCounts.toFilteredThreadListItems(
+        withCounts.toFilteredThreadListItems(
             blockedThreads = emptySet(),
             blockedUsers = emptySet(),
             blockedKeywords = emptyList()
@@ -259,11 +264,13 @@ class FeedViewModel @Inject constructor(
                             return@collect
                         }
                         val merged = (_uiState.value.remoteThreads + fresh).distinctBy { it.idStr }
+                        val items = buildRemoteItems(merged, _uiState.value.remoteReplyCounts)
+                        if (_uiState.value.selectedFolderId != uuid) return@collect
                         if (merged.size == _uiState.value.remoteThreads.size) remoteEndReached = true
                         _uiState.update {
                             it.copy(
                                 remoteThreads = merged,
-                                remoteDisplayItems = buildRemoteItems(merged, it.remoteReplyCounts)
+                                remoteDisplayItems = items.withReplyCounts(it.remoteReplyCounts)
                             )
                         }
                         enrichRemoteReplyCounts(uuid, merged)
