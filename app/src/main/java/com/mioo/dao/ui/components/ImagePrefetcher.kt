@@ -10,7 +10,6 @@ import coil.memory.MemoryCache
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 
 /**
  * Prefetch thumbnail bitmaps just ahead of the visible window.
@@ -42,26 +41,17 @@ fun PrefetchListImages(
         val memoryCache = imageLoader.memoryCache
 
         snapshotFlow {
-            if (!enabled) return@snapshotFlow null
+            // Avoid observing layoutInfo during a fling: only the scroll state
+            // needs to wake this flow until the list settles again.
+            if (listState.isScrollInProgress) return@snapshotFlow null
             val info = listState.layoutInfo
-            val scrolling = listState.isScrollInProgress
             val first = info.visibleItemsInfo.firstOrNull()?.index ?: listState.firstVisibleItemIndex
             val last = info.visibleItemsInfo.lastOrNull()?.index
                 ?: (first + info.visibleItemsInfo.size.coerceAtLeast(1))
-            Triple(scrolling, first, last)
+            val start = first.coerceAtLeast(0)
+            val end = (last + ahead + 1).coerceAtMost(imageUrls.size)
+            start until end
         }
-            .distinctUntilChanged()
-            .map { triple ->
-                if (triple == null) return@map null
-                val (scrolling, first, last) = triple
-                // Only warm when finger is up — avoids decode spikes mid-fling
-                if (scrolling) null
-                else {
-                    val start = first.coerceAtLeast(0)
-                    val end = (last + ahead + 1).coerceAtMost(imageUrls.size)
-                    start until end
-                }
-            }
             .distinctUntilChanged()
             .collectLatest { range ->
                 if (range == null || !enabled) return@collectLatest

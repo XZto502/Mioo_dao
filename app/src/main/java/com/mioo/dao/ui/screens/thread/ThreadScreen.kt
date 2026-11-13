@@ -427,7 +427,7 @@ fun ThreadScreen(
     val prewarmDicePreset = if (threadSettings.diceBadgesEnabled) dicePreset else null
     LaunchedEffect(threadPrewarmSig, quoteLinkColor, prewarmDicePreset) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
-        val bodies = listUi.displayItems.map { it.postData.content }
+        val bodies = listUi.displayItems.take(20).map { it.postData.content }
         // Head only on open — bulk of the page is warmed by settle-scroll effect below
         val head = listOfNotNull(listUi.mainPostData?.content) + bodies.take(10)
         withContext(Dispatchers.Default) {
@@ -449,8 +449,9 @@ fun ThreadScreen(
             .distinctUntilChanged()
             .collect { (scrolling, focus) ->
                 if (scrolling) return@collect
-                val bodies = listUi.displayItems.map { it.postData.content }
-                val near = bodies.drop((focus - 1).coerceAtLeast(0)).take(10)
+                val start = (focus - 1).coerceIn(0, listUi.displayItems.size)
+                val end = (start + 10).coerceAtMost(listUi.displayItems.size)
+                val near = listUi.displayItems.subList(start, end).map { it.postData.content }
                 if (near.isEmpty()) return@collect
                 withContext(Dispatchers.Default) {
                     HtmlParseCache.prewarm(near, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset)
