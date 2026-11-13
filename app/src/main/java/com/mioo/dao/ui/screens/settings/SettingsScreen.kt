@@ -210,8 +210,10 @@ fun SettingsScreen(
         scope.launch {
             runCatching {
                 val json = viewModel.buildBackup(sections)
-                context.contentResolver.openOutputStream(uri)?.use { os ->
-                    os.write(json.toByteArray(Charsets.UTF_8))
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        os.write(json.toByteArray(Charsets.UTF_8))
+                    }
                 }
             }.onSuccess {
                 Toast.makeText(context, "备份已导出（${sections.size} 部分）", Toast.LENGTH_SHORT).show()
@@ -228,8 +230,11 @@ fun SettingsScreen(
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()
-                    ?.use { it.readText() }.orEmpty()
+                val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader().use { it.readText() }
+                    }.orEmpty()
+                }
                 viewModel.restoreBackup(text)
             }.onSuccess { importResult = it }
                 .onFailure { Toast.makeText(context, "恢复失败: ${it.message}", Toast.LENGTH_LONG).show() }

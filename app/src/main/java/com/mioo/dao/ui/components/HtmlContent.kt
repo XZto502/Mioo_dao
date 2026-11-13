@@ -77,6 +77,8 @@ import com.mioo.dao.utils.DiceRoll
 import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
+private val READING_PARAGRAPH_GAP_REGEX = Regex("\n\n")
+private val COMPACT_PREVIEW_BREAKS_REGEX = Regex("(\\r?\\n\\s*){2,}")
 private val BARE_THREAD_ID = Regex("(?<![A-Za-z0-9])\\d{8}(?![A-Za-z0-9])")
 private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>[ \\t]*(?:\\r\\n|\\r|\\n)?")
 private val PARAGRAPH_BREAKS = Regex("\\n[ \\t]*(?:\\n[ \\t]*)+")
@@ -331,7 +333,7 @@ internal fun protectReadingKaomoji(text: String): String {
 internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString =
     buildAnnotatedString {
         append(this@withReadingParagraphGaps)
-        Regex("\n\n").findAll(this@withReadingParagraphGaps.text).forEach { gap ->
+        READING_PARAGRAPH_GAP_REGEX.findAll(this@withReadingParagraphGaps.text).forEach { gap ->
             val start = gap.range.first + 1
             addStyle(ParagraphStyle(lineHeight = (12f * scale).sp), start, start + 1)
             addStyle(SpanStyle(fontSize = (6f * scale).sp), start, start + 1)
@@ -512,7 +514,7 @@ fun HtmlContent(
             if (start < 0) AnnotatedString("") else parsed.annotated.subSequence(start, value.indexOfLast { !it.isQuoteEdgeWhitespace() } + 1)
         } else parsed.annotated
         if (compactBlankLines) {
-            val breaks = Regex("(\\r?\\n\\s*){2,}")
+            val breaks = COMPACT_PREVIEW_BREAKS_REGEX
             buildAnnotatedString {
                 var start = 0
                 breaks.findAll(source.text).forEach { match ->
