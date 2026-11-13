@@ -97,30 +97,8 @@ fun MoreScreen(
                                             val release = response.data
                                             val currentVersion = com.mioo.dao.BuildConfig.VERSION_NAME
                                             
-                                            val cleanCurrent = currentVersion.trim().lowercase().removePrefix("v")
-                                            val cleanLatest = release.tagName.trim().lowercase().removePrefix("v")
-                                            
-                                            val isNewer = if (cleanCurrent == cleanLatest) false else {
-                                                val currentParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
-                                                val latestParts = cleanLatest.split(".").mapNotNull { it.toIntOrNull() }
-                                                val minLength = minOf(currentParts.size, latestParts.size)
-                                                var newer = false
-                                                var decided = false
-                                                for (i in 0 until minLength) {
-                                                    if (latestParts[i] > currentParts[i]) {
-                                                        newer = true
-                                                        decided = true
-                                                        break
-                                                    }
-                                                    if (latestParts[i] < currentParts[i]) {
-                                                        newer = false
-                                                        decided = true
-                                                        break
-                                                    }
-                                                }
-                                                if (!decided) latestParts.size > currentParts.size else newer
-                                            }
-                                            
+                                            val isNewer = com.mioo.dao.utils.isNewerVersion(currentVersion, release.tagName)
+
                                             if (isNewer) {
                                                 val shown = UpdatePromptController.offerManual(release)
                                                 if (!shown) {

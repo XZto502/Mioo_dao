@@ -1,5 +1,7 @@
 package com.mioo.dao
 
+import com.mioo.dao.utils.isNewerVersion
+
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -463,21 +465,4 @@ private fun ComponentActivity.applyImmersiveSystemBars(darkTheme: Boolean) {
 
 private fun getAppVersionName(): String {
     return com.mioo.dao.BuildConfig.VERSION_NAME
-}
-
-private fun isNewerVersion(currentVersion: String, latestVersion: String): Boolean {
-    val cleanCurrent = currentVersion.trim().lowercase().removePrefix("v")
-    val cleanLatest = latestVersion.trim().lowercase().removePrefix("v")
-    if (cleanCurrent == cleanLatest) return false
-
-    // 剥掉每段的 -beta / +build 等后缀再转数字，避免 "10-beta" 整段被丢弃导致误判
-    val currentParts = cleanCurrent.split(".").mapNotNull { it.substringBefore('-').substringBefore('+').toIntOrNull() }
-    val latestParts = cleanLatest.split(".").mapNotNull { it.substringBefore('-').substringBefore('+').toIntOrNull() }
-
-    val minLength = minOf(currentParts.size, latestParts.size)
-    for (i in 0 until minLength) {
-        if (latestParts[i] > currentParts[i]) return true
-        if (latestParts[i] < currentParts[i]) return false
-    }
-    return latestParts.size > currentParts.size
 }
