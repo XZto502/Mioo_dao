@@ -25,11 +25,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -86,12 +88,12 @@ class FeedViewModel @Inject constructor(
         // 「已离线」标签：离线串列表 + 尚未离线的存量收藏（后台巡检会逐串补齐）
         viewModelScope.launch {
             combine(
-                threadRepository.getOfflineThreadSummaries(),
-                threadRepository.getBookmarks()
+                threadRepository.getOfflineThreadSummaries().distinctUntilChanged(),
+                threadRepository.getBookmarks().distinctUntilChanged()
             ) { summaries, bookmarks ->
                 val offlineIds = summaries.mapTo(HashSet()) { it.threadId }
                 summaries to bookmarks.filter { it.id !in offlineIds }
-            }.collect { (summaries, pending) ->
+            }.flowOn(Dispatchers.Default).collectLatest { (summaries, pending) ->
                 val items = withContext(Dispatchers.Default) {
                     pending.toBookmarkListItems()
                 }
@@ -133,11 +135,16 @@ class FeedViewModel @Inject constructor(
 
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
     private var replyCountJob: kotlinx.coroutines.Job? = null
+    private var remoteLoadMoreJob: kotlinx.coroutines.Job? = null
+    private var remoteGeneration = 0L
 
     fun selectFolder(uuid: String?) {
         viewModelScope.launch { settingsDataStore.saveLastFeedFolder(uuid) }
         remoteFeedJob?.cancel()
         replyCountJob?.cancel()
+        remoteLoadMoreJob?.cancel()
+        remoteGeneration++
+        remoteLoadingMore = false
         _uiState.update {
             it.copy(
                 selectedFolderId = uuid,
@@ -154,6 +161,10 @@ class FeedViewModel @Inject constructor(
     }
 
     private fun loadRemoteFeed(uuid: String) {
+        val generation = ++remoteGeneration
+        remoteLoadMoreJob?.cancel()
+        remoteLoadingMore = false
+        replyCountJob?.cancel()
         remotePage = 1
         remoteEndReached = false
         remoteFeedJob?.cancel()
@@ -161,12 +172,12 @@ class FeedViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true) }
             threadRepository.getFeed(uuid, 1).collect { response ->
                 // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
-                if (_uiState.value.selectedFolderId != uuid) return@collect
+                if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                 if (response is XdResponse.Success) {
                     val threads = response.data
                     val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
                     val items = buildRemoteItems(threads, knownCounts)
-                    if (_uiState.value.selectedFolderId != uuid) return@collect
+                    if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                     _uiState.update {
                         it.copy(
                             remoteThreads = threads,
@@ -252,36 +263,40 @@ class FeedViewModel @Inject constructor(
         // 独立标志：加载更多不动 isLoading（那是首页全屏 spinner 的开关，动了会闪屏）
         if (remoteLoadingMore || remoteEndReached || _uiState.value.isLoading) return
         remoteLoadingMore = true
-        remotePage += 1
-        viewModelScope.launch {
+        val page = remotePage + 1
+        val generation = remoteGeneration
+        remoteLoadMoreJob = viewModelScope.launch {
             try {
-                threadRepository.getFeed(uuid, remotePage).collect { response ->
-                    if (_uiState.value.selectedFolderId != uuid) return@collect
+                threadRepository.getFeed(uuid, page).collect { response ->
+                    if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                     if (response is XdResponse.Success) {
                         val fresh = response.data
                         if (fresh.isEmpty()) {
                             remoteEndReached = true
                             return@collect
                         }
-                        val merged = (_uiState.value.remoteThreads + fresh).distinctBy { it.idStr }
-                        val items = buildRemoteItems(merged, _uiState.value.remoteReplyCounts)
-                        if (_uiState.value.selectedFolderId != uuid) return@collect
-                        if (merged.size == _uiState.value.remoteThreads.size) remoteEndReached = true
+                        val state = _uiState.value
+                        val added = withContext(Dispatchers.Default) {
+                            newFeedPageItems(state.remoteThreads, fresh) { it.idStr }
+                        }
+                        val items = buildRemoteItems(added, state.remoteReplyCounts)
+                        if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
+                        if (added.isEmpty()) remoteEndReached = true
+                        remotePage = page
                         _uiState.update {
                             it.copy(
-                                remoteThreads = merged,
-                                remoteDisplayItems = items.withReplyCounts(it.remoteReplyCounts)
+                                remoteThreads = it.remoteThreads + added,
+                                remoteDisplayItems = it.remoteDisplayItems + items.withReplyCounts(it.remoteReplyCounts)
                             )
                         }
-                        enrichRemoteReplyCounts(uuid, merged)
+                        if (added.isNotEmpty()) enrichRemoteReplyCounts(uuid, added)
                     } else {
                         // 失败回退页码，让用户下拉重试
-                        remotePage -= 1
                         _errorEvents.tryEmit("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")
                     }
                 }
             } finally {
-                remoteLoadingMore = false
+                if (remoteGeneration == generation) remoteLoadingMore = false
             }
         }
     }
