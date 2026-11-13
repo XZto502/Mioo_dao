@@ -250,6 +250,11 @@ class ThreadViewModel @Inject constructor(
     private var resumeScrollSeeded: Boolean = false
     /** After prepending, wait until user leaves the top edge before auto-loading earlier pages again. */
     private var suppressPreviousLoad: Boolean = false
+    private var prependAnchorProvider: ((List<String>, Boolean) -> Pair<Int, Int>?)? = null
+
+    fun registerPrependAnchorProvider(provider: ((List<String>, Boolean) -> Pair<Int, Int>?)?) {
+        prependAnchorProvider = provider
+    }
 
     /** Unfiltered replies as returned by the API (after page merge). */
     private var rawPosts: List<Reply> = emptyList()
@@ -678,6 +683,12 @@ class ThreadViewModel @Inject constructor(
                             null
                         }
 
+                        // Capture the live viewport at publication, not when the request started.
+                        // Explicit restoration also cancels accumulated edge fling displacement.
+                        val prependAnchor = if (mode == LoadMode.PREPEND &&
+                            _listState.value.pendingScrollIndex == null) {
+                            prependAnchorProvider?.invoke(displayItems.map { it.idStr }, page <= 1)
+                        } else null
                         seedLocalQuotes(newPosts, threadData)
                         _listState.update { state ->
                             state.copy(
@@ -705,8 +716,8 @@ class ThreadViewModel @Inject constructor(
                                     LoadMode.REPLACE -> windowStart
                                     LoadMode.APPEND -> state.startPage
                                 },
-                                pendingScrollIndex = seedPending ?: state.pendingScrollIndex,
-                                pendingScrollOffset = if (seedPending != null) resumeOffset else state.pendingScrollOffset
+                                pendingScrollIndex = prependAnchor?.first ?: seedPending ?: state.pendingScrollIndex,
+                                pendingScrollOffset = prependAnchor?.second ?: if (seedPending != null) resumeOffset else state.pendingScrollOffset
                             )
                         }
 
@@ -785,6 +796,12 @@ class ThreadViewModel @Inject constructor(
             // Release pagination only after every cache/network result has been applied.
             _listState.update { it.copy(isLoading = false, isReplacing = false) }
             if (_listState.value.previousPageError == null) preparePreviousPage()
+            if (mode == LoadMode.REPLACE && sawSuccess && lastAddedVisible > 0 &&
+                _listState.value.pendingScrollIndex == null &&
+                _listState.value.startPage > 1) {
+                loadPreviousPage()
+                return@launch
+            }
             if (mode == LoadMode.PREPEND) return@launch
             val blockedPage = sawSuccess && lastRawCount > 0 && lastAddedVisible <= 0
             val canChain = blockedPage && !lastIsLast && filteredSkips < MAX_FILTERED_SKIPS
@@ -1484,7 +1501,9 @@ class ThreadViewModel @Inject constructor(
             _listState.update { it.copy(pendingScrollIndex = null) }
         }
         // Drop sticky after first successful seed; item keys preserve scroll across SWR
+        val wasInitialRestore = stickyResumeIndex != null
         stickyResumeIndex = null
+        if (wasInitialRestore && !_listState.value.isLoading) loadPreviousPage()
     }
 
     fun clearReadingProgress() {

@@ -1,5 +1,18 @@
 package com.mioo.dao.ui.screens.thread
 
+/** Preserve a visible real floor, not the promotional floor repeated on every API page. */
+internal fun resolvePrependReadingAnchor(
+    visible: List<Pair<String, Int>>, newIds: List<String>, threadId: String, hasMain: Boolean
+): Pair<Int, Int>? {
+    for ((key, offset) in visible) {
+        if (key == "9999999") continue
+        if (hasMain && key == "main_$threadId") return 0 to -offset
+        val index = newIds.indexOf(key)
+        if (index >= 0) return (index + 1) to -offset
+    }
+    return null
+}
+
 /** Existing rows can be targeted during append/refresh, but not during replacement. */
 internal inline fun loadedPageJumpIndex(
     page: Int, startPage: Int, isReplacing: Boolean, findFirstReplyIndex: () -> Int

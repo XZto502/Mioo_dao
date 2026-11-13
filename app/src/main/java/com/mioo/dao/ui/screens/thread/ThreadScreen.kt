@@ -109,6 +109,8 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import android.content.Intent
@@ -246,6 +248,15 @@ fun ThreadScreen(
                 firstVisibleItemScrollOffset = listUi.pendingScrollOffset
             )
         }
+    }
+    DisposableEffect(viewModel, listState) {
+        viewModel.registerPrependAnchorProvider { ids, hasMain ->
+            resolvePrependReadingAnchor(
+                listState.layoutInfo.visibleItemsInfo.map { it.key.toString() to it.offset },
+                ids, viewModel.threadId, hasMain
+            )
+        }
+        onDispose { viewModel.registerPrependAnchorProvider(null) }
     }
     val quoteCache = viewModel.quoteCache
     // Must re-read startPage when it changes (e.g. prepend earlier pages after resume).
@@ -395,6 +406,9 @@ fun ThreadScreen(
         if (count > 0) {
             val target = readingLazyIndex(index, hasMain).coerceIn(0, count - 1)
             snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > target }
+            // An ongoing edge drag/fling must not reject the anchor restoration or
+            // carry its accumulated motion into the freshly prepended page.
+            listState.stopScroll(MutatePriority.PreventUserInput)
             listState.scrollToItem(target, listUi.pendingScrollOffset)
             // A saved floor near the end of this API page may need the following
             // page to fill the viewport. Do not save the bottom-clamped position
@@ -733,7 +747,7 @@ fun ThreadScreen(
                             (position.first == previousPosition.first && position.second < previousPosition.second)
                         previousPosition = position
                         if (position.first > 3) viewModel.allowPreviousLoad()
-                        if (scrolling && movingUp && position.first <= 12 && listUi.startPage > 1 && listUi.previousPageError == null) {
+                        if (scrolling && movingUp && position.first <= 20 && listUi.startPage > 1 && listUi.previousPageError == null) {
                             saveProgressNow()
                             viewModel.loadPreviousPage()
                         } else if (last >= 0 && last >= listState.layoutInfo.totalItemsCount - 6 && !listUi.isLastPage && listUi.nextPageError == null) {
