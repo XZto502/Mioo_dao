@@ -733,7 +733,7 @@ fun ThreadScreen(
                             (position.first == previousPosition.first && position.second < previousPosition.second)
                         previousPosition = position
                         if (position.first > 3) viewModel.allowPreviousLoad()
-                        if (scrolling && movingUp && position.first <= 6 && listUi.startPage > 1 && listUi.previousPageError == null) {
+                        if (scrolling && movingUp && position.first <= 12 && listUi.startPage > 1 && listUi.previousPageError == null) {
                             saveProgressNow()
                             viewModel.loadPreviousPage()
                         } else if (last >= 0 && last >= listState.layoutInfo.totalItemsCount - 6 && !listUi.isLastPage && listUi.nextPageError == null) {

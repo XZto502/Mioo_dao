@@ -218,6 +218,21 @@ class ThreadViewModel @Inject constructor(
     /** Bumps on every new load so stale SWR/network emissions cannot overwrite a newer page. */
     private var loadGeneration: Int = 0
     private var pageLoadJob: Job? = null
+    private val previousPrefetch = PreviousPagePrefetch<Pair<Int, Boolean>, XdResponse<Thread>>(viewModelScope)
+
+    private fun preparePreviousPage() {
+        val state = _listState.value
+        if (state.startPage <= 1) {
+            previousPrefetch.clear()
+            return
+        }
+        val page = state.startPage - 1
+        val poOnly = state.showPoOnly
+        previousPrefetch.prepare(page to poOnly) {
+            (if (poOnly) threadRepository.getPoDetail(threadId, page)
+             else threadRepository.getThreadDetail(threadId, page)).last()
+        }
+    }
     private var quoteFetchJob: Job? = null
     private val progressWriteMutex = Mutex()
     private var progressWriteVersion = 0L
@@ -531,6 +546,10 @@ class ThreadViewModel @Inject constructor(
      *             PREPEND: load earlier page when user scrolls up after a mid-thread jump.
      */
     private fun loadPage(page: Int, mode: LoadMode, fromFilterSkip: Boolean = false) {
+        if (mode == LoadMode.REPLACE) previousPrefetch.clear()
+        val preparedPrevious = if (mode == LoadMode.PREPEND) {
+            previousPrefetch.take(page to _listState.value.showPoOnly)
+        } else null
         if (!fromFilterSkip) {
             filteredSkips = 0
             _listState.update { it.copy(filterHint = null) }
@@ -555,7 +574,15 @@ class ThreadViewModel @Inject constructor(
             var lastAddedVisible = 0
             var lastIsLast = true
 
-            kotlinx.coroutines.flow.flow { emit(flow.last()) }.collect { response ->
+            kotlinx.coroutines.flow.flow {
+                val prepared = try {
+                    preparedPrevious?.await()
+                } finally {
+                    // Once handed to foreground paging, its cancellation owns this request too.
+                    if (preparedPrevious?.isCompleted == false) preparedPrevious.cancel()
+                }
+                emit(if (prepared is XdResponse.Success && prepared.data.idStr == threadId) prepared else flow.last())
+            }.collect { response ->
                 // A newer loadPage/jumpToPage has started — drop this emission
                 if (gen != loadGeneration) return@collect
 
@@ -757,6 +784,7 @@ class ThreadViewModel @Inject constructor(
             if (gen != loadGeneration) return@launch
             // Release pagination only after every cache/network result has been applied.
             _listState.update { it.copy(isLoading = false, isReplacing = false) }
+            if (_listState.value.previousPageError == null) preparePreviousPage()
             if (mode == LoadMode.PREPEND) return@launch
             val blockedPage = sawSuccess && lastRawCount > 0 && lastAddedVisible <= 0
             val canChain = blockedPage && !lastIsLast && filteredSkips < MAX_FILTERED_SKIPS
