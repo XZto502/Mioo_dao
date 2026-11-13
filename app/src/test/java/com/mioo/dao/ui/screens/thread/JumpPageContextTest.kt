@@ -17,16 +17,28 @@ class JumpPageContextTest {
         assertTrue(context.isUsefulJumpContext("123"))
         assertFalse(context.isUsefulJumpContext("999"))
     }
-    @Test fun cachedNeighbourReturnsWithoutWaitingForItsNetworkRefresh() = runBlocking {
+    @Test fun cachedNeighbourIsReplacedByFreshNetworkReplies() = runBlocking {
         var networkStarted = false
         val result = jumpPageContext(flow {
             emit("cache")
             networkStarted = true
-            CompletableDeferred<Unit>().await()
             emit("network")
         })
-        assertEquals("cache", result)
-        assertFalse(networkStarted)
+        assertEquals("network", result)
+        assertTrue(networkStarted)
+    }
+
+    @Test fun cachedOldTailIsNotPublishedWhenNetworkCheckTimesOut() = runBlocking {
+        val result = jumpPageContext(flow {
+            emit("old tail")
+            CompletableDeferred<Unit>().await()
+            emit("new replies")
+        }, timeoutMillis = 20)
+        assertNull(result)
+    }
+
+    @Test fun offlineCacheStillWorksWhenSourceCompletesWithoutNetworkData() = runBlocking {
+        assertEquals("offline cache", jumpPageContext(flow { emit("offline cache") }))
     }
 
     @Test fun uncachedNeighbourCanReturnNetworkData() = runBlocking {
