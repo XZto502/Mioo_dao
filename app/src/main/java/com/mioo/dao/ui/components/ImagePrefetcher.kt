@@ -32,8 +32,8 @@ fun PrefetchListImages(
     val context = LocalContext.current
     val imageLoader = context.imageLoader
 
-    // Always decode at ListThumbImage.SIZE_PX so prefetch hits the same Coil memory keys as cards.
-    LaunchedEffect(imageUrls, listState, ahead, enabled) {
+    // Match the thumbnail request's original-size decode and cache keys.
+    LaunchedEffect(imageUrls, listState, ahead, enabled, initialDelayMs, imageLoader) {
         if (!enabled || imageUrls.isEmpty()) return@LaunchedEffect
         delay(initialDelayMs)
         if (!enabled) return@LaunchedEffect
@@ -55,19 +55,17 @@ fun PrefetchListImages(
             .distinctUntilChanged()
             .collectLatest { range ->
                 if (range == null || !enabled) return@collectLatest
-                // Small yield between enqueues so UI frames can run
-                var n = 0
-                for (index in range) {
-                    if (!enabled) return@collectLatest
-                    val raw = imageUrls.getOrNull(index) ?: continue
-                    if (raw.isBlank()) continue
-                    val url = IslandImage.listUrl(raw)
-                    // Skip already-resident thumbs (same key as ListThumbImage.request)
-                    if (memoryCache?.get(MemoryCache.Key(url)) != null) continue
-                    imageLoader.enqueue(ListThumbImage.request(context, url))
-                    n++
-                    if (n % 3 == 0) delay(1)
-                }
+                val urls = range.asSequence().mapNotNull { imageUrls.getOrNull(it) }
+                    .filter { it.isNotBlank() }.map(IslandImage::listUrl)
+                holdPrefetchBatch(
+                    urls,
+                    isCached = { memoryCache?.get(MemoryCache.Key(it)) != null },
+                    enqueue = { url ->
+                        val request = imageLoader.enqueue(ListThumbImage.request(context, url))
+                        val release: () -> Unit = { request.dispose() }
+                        release
+                    }
+                )
             }
     }
 }
