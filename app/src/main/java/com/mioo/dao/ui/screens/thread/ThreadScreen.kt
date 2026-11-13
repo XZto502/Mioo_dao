@@ -211,6 +211,9 @@ import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.components.LocalDicePreset
 import com.mioo.dao.utils.DiceRulePreset
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.platform.LocalViewConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListFling
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -404,7 +407,8 @@ fun ThreadScreen(
         val hasMain = listUi.startPage <= 1
         val count = listUi.displayItems.size + if (hasMain) 1 else 0
         if (count > 0) {
-            val target = readingLazyIndex(index, hasMain).coerceIn(0, count - 1)
+            val target = readingLazyIndex(index, hasMain).coerceIn(0, count - 1) +
+                if (listUi.isLoading && listUi.pagingDirection < 0) 1 else 0
             snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > target }
             // An ongoing edge drag/fling must not reject the anchor restoration or
             // carry its accumulated motion into the freshly prepended page.
@@ -439,7 +443,7 @@ fun ThreadScreen(
             "${listUi.displayItems.lastOrNull()?.id}:${listUi.mainPostData?.content?.length ?: 0}"
     }
     val prewarmDicePreset = if (threadSettings.diceBadgesEnabled) dicePreset else null
-    LaunchedEffect(threadPrewarmSig, quoteLinkColor, prewarmDicePreset) {
+    LaunchedEffect(threadPrewarmSig, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         val bodies = listUi.displayItems.take(20).map { it.postData.content }
         // Head only on open — bulk of the page is warmed by settle-scroll effect below
@@ -455,7 +459,7 @@ fun ThreadScreen(
     }
 
     // Settled-scroll near-viewport warm only (no mid-fling restart)
-    LaunchedEffect(listState, listUi.displayItems, quoteLinkColor, prewarmDicePreset) {
+    LaunchedEffect(listState, listUi.displayItems, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         snapshotFlow {
             listState.isScrollInProgress to listState.firstVisibleItemIndex
@@ -769,8 +773,12 @@ fun ThreadScreen(
 
                 // The list draws behind the Scaffold bars. The bottom padding must
                 // therefore include the measured bottom bar height exactly once.
+                val responsiveConfiguration = rememberResponsiveListConfiguration()
+                val responsiveFling = rememberResponsiveListFling()
+                CompositionLocalProvider(LocalViewConfiguration provides responsiveConfiguration) {
                 LazyColumn(
                     state = listState,
+                    flingBehavior = responsiveFling,
                     modifier = Modifier.fillMaxSize().nestedScroll(edgePaging),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(
@@ -784,6 +792,13 @@ fun ThreadScreen(
                         else paddingValues.calculateBottomPadding() + 8.dp
                     )
                 ) {
+                    if (listUi.isLoading && listUi.pagingDirection < 0) {
+                        item(key = "previous_page_loading", contentType = "loading") {
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
                     // 向上翻回第 1 页时串首卡片随 startPage==1 重新出现
                     if (mainThread != null && mainPostData != null && listUi.startPage <= 1) {
@@ -876,6 +891,13 @@ fun ThreadScreen(
                         )
                     }
 
+                    if (listUi.isLoading && listUi.pagingDirection > 0) {
+                        item(key = "next_page_loading", contentType = "loading") {
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
                     if (mainThread != null && listUi.isLastPage && !listUi.isReplacing &&
                         (listUi.currentPage >= totalPages || listUi.showPoOnly)) {
                         item(key = "thread_tail", contentType = "thread_tail") {
@@ -921,6 +943,7 @@ fun ThreadScreen(
                         }
                     }
 
+                }
                 }
             }
 

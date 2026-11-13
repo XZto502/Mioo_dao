@@ -62,6 +62,7 @@ data class ThreadListUiState(
     val showPoOnly: Boolean = false,
     val isLoading: Boolean = false,
     val isReplacing: Boolean = false,
+    val pagingDirection: Int = 0,
     val contentRevision: Int = 0,
     val errorMessage: String? = null,
     val nextPageError: String? = null,
@@ -563,6 +564,7 @@ class ThreadViewModel @Inject constructor(
         pageLoadJob?.cancel()
         quoteFetchJob?.cancel()
         _listState.update { it.copy(isLoading = true, isReplacing = mode == LoadMode.REPLACE,
+            pagingDirection = when (mode) { LoadMode.PREPEND -> -1; LoadMode.APPEND -> 1; else -> 0 },
             nextPageError = null, previousPageError = null) }
 
         pageLoadJob = viewModelScope.launch {
@@ -794,7 +796,7 @@ class ThreadViewModel @Inject constructor(
             }
             if (gen != loadGeneration) return@launch
             // Release pagination only after every cache/network result has been applied.
-            _listState.update { it.copy(isLoading = false, isReplacing = false) }
+            _listState.update { it.copy(isLoading = false, isReplacing = false, pagingDirection = 0) }
             if (_listState.value.previousPageError == null) preparePreviousPage()
             if (mode == LoadMode.REPLACE && sawSuccess && lastAddedVisible > 0 &&
                 _listState.value.pendingScrollIndex == null &&

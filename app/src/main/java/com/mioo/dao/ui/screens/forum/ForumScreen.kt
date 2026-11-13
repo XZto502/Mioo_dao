@@ -16,6 +16,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.ui.platform.LocalViewConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListFling
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -50,6 +53,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -862,6 +866,7 @@ private fun ForumThreadListPane(
     onFirstScreenReady: () -> Unit = {}
 ) {
     val quoteLinkColor = MaterialTheme.colorScheme.primary
+    val prewarmDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val isEmptyLoading = displayItems.isEmpty() && (isLoading || isRefreshing)
     val isEmptyIdle = displayItems.isEmpty() && !isLoading && !isRefreshing
 
@@ -888,22 +893,22 @@ private fun ForumThreadListPane(
     }
 
     // Cold head prewarm: only first viewport (4) so first paint wins CPU over Default parse.
-    LaunchedEffect(forumKey, listReady, quoteLinkColor) {
+    LaunchedEffect(forumKey, listReady, quoteLinkColor, prewarmDarkTheme) {
         if (!listReady || displayItems.isEmpty()) return@LaunchedEffect
         val head = displayItems.take(4).map { it.postData.content }
         withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.HtmlParseCache.prewarm(head, quoteLinkColor)
+            com.mioo.dao.ui.components.HtmlParseCache.prewarm(head, quoteLinkColor, prewarmDarkTheme)
         }
         // Remainder of first page after first composition window
         delay(120)
         if (displayItems.size > 4) {
             val rest = displayItems.drop(4).take(8).map { it.postData.content }
             withContext(Dispatchers.Default) {
-                com.mioo.dao.ui.components.HtmlParseCache.prewarm(rest, quoteLinkColor)
+                com.mioo.dao.ui.components.HtmlParseCache.prewarm(rest, quoteLinkColor, prewarmDarkTheme)
             }
         }
     }
-    LaunchedEffect(forumKey, listState, quoteLinkColor, warmEnabled) {
+    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, warmEnabled) {
         if (!warmEnabled) return@LaunchedEffect
         snapshotFlow {
             if (listState.isScrollInProgress) return@snapshotFlow null
@@ -921,7 +926,7 @@ private fun ForumThreadListPane(
                 if (start >= end) return@collect
                 val slice = displayItems.subList(start, end).map { it.postData.content }
                 withContext(Dispatchers.Default) {
-                    com.mioo.dao.ui.components.HtmlParseCache.prewarm(slice, quoteLinkColor)
+                    com.mioo.dao.ui.components.HtmlParseCache.prewarm(slice, quoteLinkColor, prewarmDarkTheme)
                 }
             }
     }
@@ -1005,10 +1010,13 @@ private fun ForumThreadListPane(
 
     // The platform edge stretch can consume the first pull while unwinding a
     // fling at the top. The refresh indicator owns this edge interaction instead.
-    CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+    val responsiveConfiguration = rememberResponsiveListConfiguration()
+    val responsiveFling = rememberResponsiveListFling()
+    CompositionLocalProvider(LocalOverscrollConfiguration provides null, LocalViewConfiguration provides responsiveConfiguration) {
     // Always keep a LazyColumn so pull-to-refresh has a scrollable child.
     LazyColumn(
         state = listState,
+        flingBehavior = responsiveFling,
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize(),

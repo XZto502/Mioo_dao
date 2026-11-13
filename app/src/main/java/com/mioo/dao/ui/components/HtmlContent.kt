@@ -80,7 +80,7 @@ private val HTML_TAG_REGEX = Regex("<[^>]+>")
 private val READING_PARAGRAPH_GAP_REGEX = Regex("\n\n")
 private val COMPACT_PREVIEW_BREAKS_REGEX = Regex("(\\r?\\n\\s*){2,}")
 private val BARE_THREAD_ID = Regex("(?<![A-Za-z0-9])\\d{8}(?![A-Za-z0-9])")
-private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>[ \\t]*(?:\\r\\n|\\r|\\n)?")
+private val BR_TAG_REGEX = Regex("(?i)[ \\t]*<br\\s*/?>[ \\t]*")
 private val PARAGRAPH_BREAKS = Regex("\\n[ \\t]*(?:\\n[ \\t]*)+")
 private val KAOMOJI_PATTERN = Regex("""\([^()\n]{1,32}\)|\|[^|\n]{1,16}\)""")
 private val KAOMOJI_FACE_MARKS = Regex("[ﾟ∀。´ヮゝωДдಠ益ಥ╥≧≦]")
@@ -174,6 +174,9 @@ fun String.stripRemainingHtmlTags(): String {
  * Parsed X-Island HTML comments into a styled Compose AnnotatedString.
  * [dicePreset] 非空时扫描正文骰点并生成内联胶囊。默认纯色；安科/CoC 才上金/红。
  */
+internal fun normalizePostHtmlSource(html: String): String =
+    if (HTML_TAG_REGEX.containsMatchIn(html)) html.replace("\r\n", " ").replace('\r', ' ').replace('\n', ' ')
+    else html.replace("\r\n", "\n").replace('\r', '\n')
 fun parseHtmlToAnnotatedString(
     html: String,
     quoteLinkColor: Color,
@@ -181,8 +184,8 @@ fun parseHtmlToAnnotatedString(
     darkTheme: Boolean = false,
     dicePreset: DiceRulePreset? = null
 ): ParsedContent {
-    val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
-        .replace("\r\n", "\n").replace(PARAGRAPH_BREAKS, "\n\n")
+    val source = normalizePostHtmlSource(html)
+    val cleaned = source.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
     val ctx = dicePreset?.let { DiceParseCtx(preset = it) }
     val annotated = buildAnnotatedString {
         var cursor = 0
@@ -196,7 +199,11 @@ fun parseHtmlToAnnotatedString(
         }
         appendHtmlFragment(cleaned.substring(cursor), quoteLinkColor, defaultGreenColor, darkTheme, ctx)
     }
-    return ParsedContent(annotated = annotated, diceBadges = ctx?.badges ?: emptyList())
+    val text = annotated.text
+    val first = text.indexOfFirst { it !in "\n\r \t" }
+    val trimmed = if (first < 0) AnnotatedString("") else
+        annotated.subSequence(first, text.indexOfLast { it !in "\n\r \t" } + 1)
+    return ParsedContent(annotated = trimmed, diceBadges = ctx?.badges ?: emptyList())
 }
 
 private val SPOILER_PATTERN = Regex(
@@ -330,18 +337,7 @@ internal fun protectReadingKaomoji(text: String): String {
     }
 }
 
-internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString {
-    // Most replies have no paragraph gap; retain their existing text and annotations.
-    if (!text.contains("\n\n")) return this
-    return buildAnnotatedString {
-        append(this@withReadingParagraphGaps)
-        READING_PARAGRAPH_GAP_REGEX.findAll(this@withReadingParagraphGaps.text).forEach { gap ->
-            val start = gap.range.first + 1
-            addStyle(ParagraphStyle(lineHeight = (12f * scale).sp), start, start + 1)
-            addStyle(SpanStyle(fontSize = (6f * scale).sp), start, start + 1)
-        }
-    }
-}
+internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString = this
 
 internal fun AnnotatedString.withBareThreadLinks(linkColor: Color): AnnotatedString {
     var builder: AnnotatedString.Builder? = null
@@ -558,7 +554,7 @@ fun HtmlContent(
         if (style.color == Color.Unspecified) style.copy(color = surfaceColor) else style
     }
 
-    val textMeasurer = rememberTextMeasurer()
+    val textMeasurer = if (parsed.diceBadges.isNotEmpty()) rememberTextMeasurer() else null
     val density = LocalDensity.current
     val diceTextStyle = LocalTextStyle.current.merge(
         TextStyle(
@@ -577,7 +573,7 @@ fun HtmlContent(
         } else {
             parsed.diceBadges.associate { spec ->
                 val displayText = spec.badgeText
-                val textWidth = textMeasurer.measure(
+                val textWidth = requireNotNull(textMeasurer).measure(
                     text = AnnotatedString(displayText),
                     style = diceTextStyle,
                     maxLines = 1,

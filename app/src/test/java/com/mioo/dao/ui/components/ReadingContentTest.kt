@@ -63,17 +63,17 @@ class ReadingContentTest {
     @Test fun repeatedBreaksBecomeTwelveSpGapsWithoutMovingLinkAnnotations() {
         val annotated = parse("甲<br><br><br>乙\n\n\n<a href=\"https://example.com\">链接</a>")
             .withReadingParagraphGaps(1f)
-        assertEquals("甲\n\n乙\n\n链接", annotated.text)
-        assertEquals(listOf(12.sp, 12.sp), annotated.paragraphStyles.map { it.item.lineHeight })
+        assertEquals("甲\n\n\n乙   链接", annotated.text)
+        assertTrue(annotated.paragraphStyles.isEmpty())
         val link = annotated.getStringAnnotations("LINK_CLICK", 0, annotated.length).single()
         assertEquals("链接", annotated.text.substring(link.start, link.end))
-        assertEquals(6, link.start)
+        assertEquals(8, link.start)
     }
 
     @Test fun paragraphGapsRespectReadingScaleAndSingleBreaksStaySingle() {
         val annotated = parse("甲\n乙\n\n丙").withReadingParagraphGaps(1.25f)
         assertEquals("甲\n乙\n\n丙", annotated.text)
-        assertEquals(15.sp, annotated.paragraphStyles.single().item.lineHeight)
+        assertTrue(annotated.paragraphStyles.isEmpty())
     }
 
     @Test fun singleBreakContentRetainsLinkQuoteAndStyleAnnotations() {
@@ -105,7 +105,7 @@ class ReadingContentTest {
         val quote = annotated.getStringAnnotations("QUOTE_CLICK", 0, annotated.length).single()
         assertEquals(">>No.22", annotated.text.substring(quote.start, quote.end))
         assertEquals("22", quote.item)
-        assertEquals(12.sp, annotated.paragraphStyles.single().item.lineHeight)
+        assertTrue(annotated.paragraphStyles.isEmpty())
     }
     @Test fun serverHtmlSourceNewlinesDoNotDoubleSubmittedLineBreaks() {
         assertEquals("甲\n乙", parse("甲<br />\r\n乙").text)

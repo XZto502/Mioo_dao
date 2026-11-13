@@ -42,7 +42,8 @@ object ContentBlockSplitter {
 
     fun quoteIds(html: String): List<String> = references(html).map { it.second }.toList()
 
-    fun split(html: String, quotes: List<PostData>): List<PostContentBlock> {
+    fun split(rawHtml: String, quotes: List<PostData>): List<PostContentBlock> {
+        val html = normalizePostHtmlSource(rawHtml)
         if (quotes.isEmpty()) return listOf(PostContentBlock.Text(html))
         val resolved = quotes.associateBy { it.id }
         val blocks = mutableListOf<PostContentBlock>()
