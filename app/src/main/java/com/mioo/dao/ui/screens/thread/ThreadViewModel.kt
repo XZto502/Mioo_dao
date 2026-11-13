@@ -586,7 +586,11 @@ class ThreadViewModel @Inject constructor(
                                         }
                                         neighbor to (result as? XdResponse.Success)?.data
                                     } }.awaitAll().forEach { (neighbor, data) ->
-                                        if (data?.idStr == threadId) window[neighbor] = data
+                                        // Empty cached neighbours provide no scroll context and
+                                        // must not make a fresh target look like the last page.
+                                        if (data?.isUsefulJumpContext(threadId) == true) {
+                                            window[neighbor] = data
+                                        }
                                     }
                             }
                         }
@@ -740,7 +744,11 @@ class ThreadViewModel @Inject constructor(
                                 errorMessage = if (rawPosts.isEmpty()) response.message else null,
                                 nextPageError = if (mode == LoadMode.APPEND) response.message else null,
                                 previousPageError = if (mode == LoadMode.PREPEND) response.message else null,
-                                currentPage = if (mode == LoadMode.PREPEND) it.currentPage else page
+                                currentPage = if (mode == LoadMode.PREPEND) {
+                                    it.currentPage
+                                } else {
+                                    page
+                                }
                             )
                         }
                     }

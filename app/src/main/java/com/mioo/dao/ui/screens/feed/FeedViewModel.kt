@@ -174,7 +174,9 @@ class FeedViewModel @Inject constructor(
                 // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
                 if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                 if (response is XdResponse.Success) {
-                    val threads = response.data
+                    val threads = withContext(Dispatchers.Default) {
+                        newFeedPageItems(emptyList(), response.data) { it.idStr }
+                    }
                     val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
                     val items = buildRemoteItems(threads, knownCounts)
                     if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect

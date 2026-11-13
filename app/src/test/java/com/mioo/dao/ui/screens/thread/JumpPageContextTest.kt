@@ -9,6 +9,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class JumpPageContextTest {
+    @Test fun emptyOrWrongThreadNeighboursCannotAffectTheFreshTargetWindow() {
+        val empty = com.mioo.dao.data.model.Thread(id = 123, replies = emptyList())
+        assertFalse(empty.isUsefulJumpContext("123"))
+        assertFalse(empty.copy(replies = null).isUsefulJumpContext("123"))
+        val context = empty.copy(replies = listOf(com.mioo.dao.data.model.Reply(id = 456)))
+        assertTrue(context.isUsefulJumpContext("123"))
+        assertFalse(context.isUsefulJumpContext("999"))
+    }
     @Test fun cachedNeighbourReturnsWithoutWaitingForItsNetworkRefresh() = runBlocking {
         var networkStarted = false
         val result = jumpPageContext(flow {

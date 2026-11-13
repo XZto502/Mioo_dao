@@ -87,6 +87,10 @@ interface HistoryDao {
     @Query("SELECT * FROM bookmarks ORDER BY timestamp DESC")
     fun getAllBookmarks(): Flow<List<BookmarkEntity>>
 
+    /** Bounded snapshot for background badge/notification checks. */
+    @Query("SELECT * FROM bookmarks ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentBookmarks(limit: Int): List<BookmarkEntity>
+
     @Query(
         """
         SELECT * FROM bookmarks

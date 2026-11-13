@@ -726,7 +726,8 @@ class ThreadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun refreshBookmarkReplyCounts(limit: Int) {
-        val bookmarks = historyDao.getAllBookmarks().first().take(limit)
+        require(limit >= 0)
+        val bookmarks = historyDao.getRecentBookmarks(limit)
         for (bookmark in bookmarks) {
             try {
                 val thread = fetchThread(bookmark.id, 1)
@@ -753,7 +754,8 @@ class ThreadRepositoryImpl @Inject constructor(
         val snapshot = settingsDataStore.getNotifiedReplySnapshot().toMutableMap()
 
         // 1) Local bookmarks (app-side favorites)
-        val bookmarks = historyDao.getAllBookmarks().first().take(limit)
+        require(limit >= 0)
+        val bookmarks = historyDao.getRecentBookmarks(limit)
         for (bookmark in bookmarks) {
             try {
                 val thread = fetchThread(bookmark.id, 1)

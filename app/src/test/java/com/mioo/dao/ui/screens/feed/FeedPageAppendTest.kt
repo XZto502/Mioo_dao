@@ -6,6 +6,12 @@ import org.junit.Test
 class FeedPageAppendTest {
     private data class Item(val id: Int, val content: String)
 
+    @Test fun firstPageCannotSeedDuplicateKeysIntoLaterPages() {
+        val first = newFeedPageItems(emptyList(), listOf(Item(1, "first"), Item(1, "duplicate"))) { it.id }
+        val next = newFeedPageItems(first, listOf(Item(1, "again"), Item(2, "second"))) { it.id }
+        assertEquals(listOf(Item(1, "first"), Item(2, "second")), first + next)
+    }
+
     @Test fun largeFolderOnlyConvertsNewPageItemsAndKeepsExistingOrder() {
         val original = (1..10000).map { Item(it, "old $it") }
         val page = (9990..10020).map { Item(it, "new $it") }
