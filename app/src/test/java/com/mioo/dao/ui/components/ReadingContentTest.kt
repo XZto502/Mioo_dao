@@ -48,6 +48,16 @@ class ReadingContentTest {
         assertEquals(15.sp, annotated.paragraphStyles.single().item.lineHeight)
     }
 
+    @Test fun singleBreakContentRetainsLinkQuoteAndStyleAnnotations() {
+        val original = parse("甲\n<a href=\"https://example.com\">链接</a> >>No.22")
+        val result = original.withReadingParagraphGaps(1.25f)
+        assertSame(original, result)
+        assertEquals("22", result.getStringAnnotations("QUOTE_CLICK", 0, result.length).single().item)
+        assertEquals("https://example.com", result.getStringAnnotations("LINK_CLICK", 0, result.length).single().item)
+        assertEquals(original.spanStyles, result.spanStyles)
+        assertTrue(result.paragraphStyles.isEmpty())
+    }
+
     @Test fun facesProtectSpacesAndPunctuationButOrdinaryParenthesesStayUnchanged() {
         listOf("( ﾟ∀。)", "(;´ヮ`)", "|∀ﾟ)", "( ´_ゝ`)").forEach { face ->
             val protected = protectReadingKaomoji(face)

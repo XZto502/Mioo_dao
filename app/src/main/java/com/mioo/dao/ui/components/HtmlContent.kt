@@ -330,8 +330,10 @@ internal fun protectReadingKaomoji(text: String): String {
     }
 }
 
-internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString =
-    buildAnnotatedString {
+internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString {
+    // Most replies have no paragraph gap; retain their existing text and annotations.
+    if (!text.contains("\n\n")) return this
+    return buildAnnotatedString {
         append(this@withReadingParagraphGaps)
         READING_PARAGRAPH_GAP_REGEX.findAll(this@withReadingParagraphGaps.text).forEach { gap ->
             val start = gap.range.first + 1
@@ -339,6 +341,7 @@ internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedSt
             addStyle(SpanStyle(fontSize = (6f * scale).sp), start, start + 1)
         }
     }
+}
 
 private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx: DiceParseCtx? = null) {
     val plain = protectReadingKaomoji(raw.stripRemainingHtmlTags())
