@@ -15,18 +15,32 @@ object ContentBlockSplitter {
         RegexOption.IGNORE_CASE
     )
 
-    private fun references(html: String): List<Pair<IntRange, String>> {
-        val ignored = excluded.findAll(html).map { it.range }.toList()
-        val hidden = spoilers.findAll(html).map { it.range }.toList()
-        return reference.findAll(html).mapNotNull { match ->
-            val bare = match.groups["bare"]
-            if (hidden.any { match.range.first in it }) null
-            else if (bare != null && ignored.any { bare.range.first in it }) null
-            else match.range to (bare?.value ?: match.groupValues[1])
-        }.toList()
+    /** Regex matches and queried offsets both arrive in source order. */
+    private class RangeCursor(ranges: Sequence<IntRange>) {
+        private val iterator = ranges.iterator()
+        private var current: IntRange? = null
+
+        fun contains(offset: Int): Boolean {
+            while (current == null || current!!.last < offset) {
+                if (!iterator.hasNext()) return false
+                current = iterator.next()
+            }
+            return offset in current!!
+        }
     }
 
-    fun quoteIds(html: String): List<String> = references(html).map { it.second }
+    private fun references(html: String): Sequence<Pair<IntRange, String>> = sequence {
+        val ignored = RangeCursor(excluded.findAll(html).map { it.range })
+        val hidden = RangeCursor(spoilers.findAll(html).map { it.range })
+        for (match in reference.findAll(html)) {
+            val bare = match.groups["bare"]
+            if (hidden.contains(match.range.first)) continue
+            if (bare != null && ignored.contains(bare.range.first)) continue
+            yield(match.range to (bare?.value ?: match.groupValues[1]))
+        }
+    }
+
+    fun quoteIds(html: String): List<String> = references(html).map { it.second }.toList()
 
     fun split(html: String, quotes: List<PostData>): List<PostContentBlock> {
         if (quotes.isEmpty()) return listOf(PostContentBlock.Text(html))
