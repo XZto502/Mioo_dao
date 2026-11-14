@@ -1815,23 +1815,27 @@ private fun ThreadReplyRow(
     onShareCard: () -> Unit
 ) {
     // 每个引用从首帧就拥有同样的预览槽位；缓存命中只替换槽位内容。
-    val quotedPostsData = if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
-        StablePostList(emptyList())
-    } else {
-        StablePostList(item.quoteIds.map { id ->
-            val quote = quoteCache[id]
-            if (quote == null) {
-                com.mioo.dao.ui.components.pendingInlineQuote(id)
+    val quotedPostsData by remember(item.quoteIds, inlineQuotesEnabled, quoteCache, poUserHash, currentThreadId) {
+        derivedStateOf {
+            if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
+                StablePostList(emptyList())
             } else {
-                val base = quote.toPostData(isPo = quote.userHash == poUserHash)
-                val targetResto = when {
-                    quote.resto != null && quote.resto > 0L -> quote.resto.toString()
-                    quote.idStr == currentThreadId -> currentThreadId
-                    else -> quote.idStr
-                }
-                base.copy(resto = targetResto)
+                StablePostList(item.quoteIds.map { id ->
+                    val quote = quoteCache[id]
+                    if (quote == null) {
+                        com.mioo.dao.ui.components.pendingInlineQuote(id)
+                    } else {
+                        val base = quote.toPostData(isPo = quote.userHash == poUserHash)
+                        val targetResto = when {
+                            quote.resto != null && quote.resto > 0L -> quote.resto.toString()
+                            quote.idStr == currentThreadId -> currentThreadId
+                            else -> quote.idStr
+                        }
+                        base.copy(resto = targetResto)
+                    }
+                })
             }
-        })
+        }
     }
 
     val haptics = LocalHapticFeedback.current

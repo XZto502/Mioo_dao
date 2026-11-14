@@ -346,7 +346,8 @@ internal fun AnnotatedString.withBareThreadLinks(linkColor: Color): AnnotatedStr
         val end = match.range.last + 1
         if (hasStringAnnotations("QUOTE_CLICK", start, end) ||
             hasStringAnnotations("LINK_CLICK", start, end) ||
-            hasStringAnnotations("DICE_CLICK", start, end)) continue
+            hasStringAnnotations("DICE_CLICK", start, end) ||
+            hasStringAnnotations("BARE_THREAD", start, end)) continue
         val target = builder ?: AnnotatedString.Builder(this).also { builder = it }
         target.addStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline), start, end)
         target.addStringAnnotation("BARE_THREAD", match.value, start, end)
@@ -448,7 +449,8 @@ object HtmlParseCache {
         synchronized(lock) {
             cache.get(key)?.let { return it }
         }
-        val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+        val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+        val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
         synchronized(lock) {
             cache.put(key, parsed)
         }
@@ -473,7 +475,8 @@ object HtmlParseCache {
             val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
             val hit = synchronized(lock) { cache.get(key) != null }
             if (hit) continue
-            val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+            val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+            val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
             synchronized(lock) {
                 cache.put(key, parsed)
             }
@@ -540,9 +543,7 @@ fun HtmlContent(
             }
         } else source.withReadingParagraphGaps(paragraphScale)
     }
-    val linkedText = remember(annotatedString, quoteLinkColor) {
-        annotatedString.withBareThreadLinks(quoteLinkColor)
-    }
+    val linkedText = annotatedString
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
     var layoutResult by remember(html, enableGestures) {
