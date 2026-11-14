@@ -462,11 +462,11 @@ fun ThreadScreen(
     LaunchedEffect(listState, listUi.displayItems, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         snapshotFlow {
-            listState.isScrollInProgress to listState.firstVisibleItemIndex
+            if (listState.isScrollInProgress) null else listState.firstVisibleItemIndex
         }
             .distinctUntilChanged()
-            .collect { (scrolling, focus) ->
-                if (scrolling) return@collect
+            .collect { focus ->
+                if (focus == null) return@collect
                 val start = (focus - 1).coerceIn(0, listUi.displayItems.size)
                 val end = (start + 10).coerceAtMost(listUi.displayItems.size)
                 val near = listUi.displayItems.subList(start, end).map { it.postData.content }

@@ -435,7 +435,10 @@ private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val d
  * Synchronized put/get — prewarm runs on Default while composition reads on main.
  */
 object HtmlParseCache {
-    private val cache = android.util.LruCache<HtmlCacheKey, ParsedContent>(600)
+    private class Entry(val parsed: ParsedContent) {
+        val variants = arrayOfNulls<AnnotatedString>(4)
+    }
+    private val cache = android.util.LruCache<HtmlCacheKey, Entry>(600)
     private val lock = Any()
 
     fun getOrParse(
@@ -447,14 +450,29 @@ object HtmlParseCache {
         val colorArgb = quoteLinkColor.toArgb()
         val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
         synchronized(lock) {
-            cache.get(key)?.let { return it }
+            cache.get(key)?.let { return it.parsed }
         }
         val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
         val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
         synchronized(lock) {
-            cache.put(key, parsed)
+            cache.put(key, Entry(parsed))
         }
         return parsed
+    }
+
+    fun displayText(
+        html: String, color: Color, darkTheme: Boolean, dicePreset: DiceRulePreset?,
+        compact: Boolean, trim: Boolean
+    ): AnnotatedString {
+        val parsed = getOrParse(html, color, darkTheme, dicePreset)
+        if (!compact && !trim) return parsed.annotated
+        val key = HtmlCacheKey(html, color.toArgb(), darkTheme, dicePreset?.name ?: "")
+        val entry = synchronized(lock) { cache.get(key) }
+        val index = (if (compact) 1 else 0) + (if (trim) 2 else 0)
+        if (entry != null) synchronized(entry) { entry.variants[index]?.let { return it } }
+        val result = prepareHtmlPreview(parsed.annotated, compact, trim)
+        if (entry != null) synchronized(entry) { entry.variants[index] = result }
+        return result
     }
 
     /**
@@ -478,9 +496,31 @@ object HtmlParseCache {
             val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
             val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
             synchronized(lock) {
-                cache.put(key, parsed)
+                cache.put(key, Entry(parsed))
             }
         }
+    }
+}
+
+/** Pure formatting shared by cached list and quote previews; annotations retain their offsets. */
+internal fun prepareHtmlPreview(text: AnnotatedString, compact: Boolean, trim: Boolean): AnnotatedString {
+    val source = if (trim) {
+        val start = text.text.indexOfFirst { !it.isQuoteEdgeWhitespace() }
+        if (start < 0) AnnotatedString("") else
+            text.subSequence(start, text.text.indexOfLast { !it.isQuoteEdgeWhitespace() } + 1)
+    } else text
+    if (!compact) return source
+    val matches = COMPACT_PREVIEW_BREAKS_REGEX.findAll(source.text).iterator()
+    if (!matches.hasNext()) return source
+    return buildAnnotatedString {
+        var start = 0
+        while (matches.hasNext()) {
+            val match = matches.next()
+            append(source.subSequence(start, match.range.first))
+            append("\n")
+            start = match.range.last + 1
+        }
+        append(source.subSequence(start, source.length))
     }
 }
 
@@ -523,25 +563,9 @@ fun HtmlContent(
     val parsed = remember(html, quoteColorArgb, darkTheme, dicePreset) {
         HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme, dicePreset)
     }
-    val paragraphScale = MaterialTheme.typography.bodyMedium.lineHeight.value / 20f
-    val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines, trimOuterWhitespace) {
-        val source = if (trimOuterWhitespace) {
-            val value = parsed.annotated.text
-            val start = value.indexOfFirst { !it.isQuoteEdgeWhitespace() }
-            if (start < 0) AnnotatedString("") else parsed.annotated.subSequence(start, value.indexOfLast { !it.isQuoteEdgeWhitespace() } + 1)
-        } else parsed.annotated
-        if (compactBlankLines) {
-            val breaks = COMPACT_PREVIEW_BREAKS_REGEX
-            buildAnnotatedString {
-                var start = 0
-                breaks.findAll(source.text).forEach { match ->
-                    append(source.subSequence(start, match.range.first))
-                    append("\n")
-                    start = match.range.last + 1
-                }
-                append(source.subSequence(start, source.length))
-            }
-        } else source.withReadingParagraphGaps(paragraphScale)
+    val annotatedString = remember(parsed, compactBlankLines, trimOuterWhitespace) {
+        if (!compactBlankLines && !trimOuterWhitespace) parsed.annotated else
+            HtmlParseCache.displayText(html, quoteLinkColor, darkTheme, dicePreset, compactBlankLines, trimOuterWhitespace)
     }
     val linkedText = annotatedString
     val context = LocalContext.current
