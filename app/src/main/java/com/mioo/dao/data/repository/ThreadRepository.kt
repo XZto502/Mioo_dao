@@ -1378,7 +1378,35 @@ class ThreadRepositoryImpl @Inject constructor(
     }
 
     override fun checkLatestRelease(): Flow<XdResponse<GithubRelease>> = flow {
+        val channel = settingsDataStore.updateChannelFlow.first()
+        val parallelBeta = com.mioo.dao.BuildConfig.BETA
         var lastError: Exception? = null
+        if (!settingsDataStore.thirdPartyConsent.first().allowThirdPartyServices) {
+            emit(XdResponse.Error(message = "第三方服务未启用"))
+            return@flow
+        }
+        if (channel == com.mioo.dao.utils.UpdateChannel.BETA || parallelBeta) {
+            try {
+                val releases = githubApiService.getReleases(
+                    "https://api.github.com/repos/XZto502/Mioo_dao/releases?per_page=100")
+                val release = com.mioo.dao.utils.selectUpdateRelease(releases, channel, parallelBeta)
+                if (release != null) {
+                    emit(XdResponse.Success(release))
+                    return@flow
+                }
+                if (parallelBeta) {
+                    emit(XdResponse.Error(message = "此独立测试包暂无对应通道的更新，正式包不能覆盖此包"))
+                    return@flow
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                lastError = e
+                if (parallelBeta) {
+                    emit(XdResponse.Error(message = "检查测试版更新失败", throwable = e))
+                    return@flow
+                }
+            }
+        }
         for (url in RELEASE_MANIFEST_URLS) {
             if (!settingsDataStore.thirdPartyConsent.first().allowThirdPartyServices) {
                 emit(XdResponse.Error(message = "第三方服务未启用"))
@@ -1386,8 +1414,10 @@ class ThreadRepositoryImpl @Inject constructor(
             }
             try {
                 val release = githubApiService.getLatestRelease(url)
-                if (release.tagName.isNotBlank()) {
-                    emit(XdResponse.Success(release))
+                val compatible = com.mioo.dao.utils.selectUpdateRelease(
+                    listOf(release), com.mioo.dao.utils.UpdateChannel.STABLE, false)
+                if (compatible != null) {
+                    emit(XdResponse.Success(compatible))
                     return@flow
                 }
             } catch (e: Exception) {

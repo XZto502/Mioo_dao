@@ -116,6 +116,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val updateChannel by viewModel.updateChannel.collectAsState()
     val predictiveBackEnabled by viewModel.predictiveBackEnabled.collectAsState()
     val consent by viewModel.thirdPartyConsent.collectAsState()
     val allowThirdParty = consent?.allowThirdPartyServices == true
@@ -1225,6 +1226,22 @@ fun SettingsScreen(
                     checked = predictiveBackEnabled,
                     onCheckedChange = viewModel::setPredictiveBackEnabled
                 )
+            }
+        }
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Column(Modifier.padding(16.dp)) {
+                Text("更新通道", style = settingsItemStyle())
+                Spacer(Modifier.height(8.dp))
+                Text("正式版更稳定；测试版可提前体验新功能。可随时切换，切回正式版后等待更新版本发布。",
+                    style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.mioo.dao.utils.UpdateChannel.values().forEach { channel ->
+                        FilterChip(selected = updateChannel == channel,
+                            onClick = { viewModel.setUpdateChannel(channel) },
+                            label = { Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "正式版" else "测试版") })
+                    }
+                }
             }
         }
         Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)

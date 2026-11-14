@@ -18,6 +18,16 @@ object UpdatePromptController {
     private var autoConsumed = false
     private var downloadStarted = false
 
+    private var channel: UpdateChannel? = null
+    fun onChannelChanged(value: UpdateChannel) {
+        if (channel == value) return
+        channel = value
+        if (!downloadStarted) {
+            release = null
+            autoConsumed = false
+        }
+    }
+
     fun offerAutomatic(release: GithubRelease) {
         if (autoConsumed || downloadStarted || this.release != null) return
         autoConsumed = true

@@ -16,5 +16,7 @@ data class GithubRelease(
     @Json(name = "name") val name: String?,
     @Json(name = "body") val body: String?,
     @Json(name = "html_url") val htmlUrl: String,
-    @Json(name = "assets") val assets: List<GithubAsset>?
+    @Json(name = "assets") val assets: List<GithubAsset>?,
+    @Json(name = "prerelease") val prerelease: Boolean = false,
+    @Json(name = "draft") val draft: Boolean = false
 )

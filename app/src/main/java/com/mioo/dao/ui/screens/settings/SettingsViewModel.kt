@@ -67,6 +67,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     val thirdPartyConsent = settingsRepository.thirdPartyConsent
+    val updateChannel = settingsRepository.updateChannel
+    fun setUpdateChannel(channel: com.mioo.dao.utils.UpdateChannel) = settingsRepository.setUpdateChannel(channel)
     val predictiveBackEnabled = settingsRepository.predictiveBackEnabled
 
     fun setPredictiveBackEnabled(enabled: Boolean) {

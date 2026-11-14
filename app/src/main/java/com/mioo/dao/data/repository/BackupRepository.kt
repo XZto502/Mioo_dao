@@ -163,6 +163,7 @@ class BackupRepository @Inject constructor(
             o.put("showShareCardBranding", settingsDataStore.showShareCardBrandingFlow.first())
             o.put("draftBoxEnabled", settingsDataStore.draftBoxEnabledFlow.first())
             val offlinePolicy = settingsDataStore.offlineUpdatePolicy.first()
+            o.put("updateChannel", settingsDataStore.updateChannelFlow.first().name)
             o.put("offlineAutoUpdate", offlinePolicy.first)
             o.put("offlineWifiOnly", offlinePolicy.second)
             o.put("enableCreatorMode", settingsDataStore.creatorModeFlow.first())
@@ -348,6 +349,11 @@ class BackupRepository @Inject constructor(
             if (o.has("glassEffectEnabled")) settingsDataStore.saveGlassEffectEnabled(o.optBoolean("glassEffectEnabled"))
             if (o.has("quoteAutoDisplayEnabled")) settingsDataStore.saveQuoteAutoDisplay(o.optBoolean("quoteAutoDisplayEnabled"))
             if (o.has("showShareCardBranding")) settingsDataStore.setShowShareCardBranding(o.optBoolean("showShareCardBranding", true))
+            if (o.has("updateChannel")) {
+                val channel = runCatching { com.mioo.dao.utils.UpdateChannel.valueOf(o.optString("updateChannel")) }
+                    .getOrDefault(com.mioo.dao.utils.UpdateChannel.STABLE)
+                settingsDataStore.saveUpdateChannel(channel)
+            }
             if (o.has("offlineAutoUpdate")) settingsDataStore.saveOfflineUpdateEnabled(o.optBoolean("offlineAutoUpdate", false))
             if (o.has("offlineWifiOnly")) settingsDataStore.saveOfflineUpdateWifiOnly(o.optBoolean("offlineWifiOnly", true))
             if (o.has("enableCreatorMode")) settingsDataStore.saveCreatorMode(o.optBoolean("enableCreatorMode"))

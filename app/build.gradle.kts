@@ -108,6 +108,20 @@ android {
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        val verifyPreviewSigning = tasks.register("verifyPreviewSigning") {
+            doLast {
+                check(hasReleaseKeystore) { "Public preview APKs require the official RELEASE_* signing configuration." }
+            }
+        }
+        tasks.matching { it.name == "packagePreview" || it.name == "signPreviewBundle" }.configureEach {
+            dependsOn(verifyPreviewSigning)
+        }
+        // Public testing channel: same package and release signing identity as stable.
+        create("preview") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = "-beta.6"
+        }
         // 测试版：包名加 .beta 后缀可与正式版共存，签名独立，应用名区分
         create("beta") {
             applicationIdSuffix = ".beta"

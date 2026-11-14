@@ -35,6 +35,14 @@ data class ThirdPartyConsent(
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val updateChannelKey = stringPreferencesKey("update_channel")
+    val updateChannelFlow = context.dataStore.data.map {
+        runCatching { com.mioo.dao.utils.UpdateChannel.valueOf(it[updateChannelKey] ?: "STABLE") }
+            .getOrDefault(com.mioo.dao.utils.UpdateChannel.STABLE)
+    }
+    suspend fun saveUpdateChannel(channel: com.mioo.dao.utils.UpdateChannel) {
+        context.dataStore.edit { it[updateChannelKey] = channel.name }
+    }
     private val offlineAutoUpdateKey = booleanPreferencesKey("offline_auto_update")
     private val offlineWifiOnlyKey = booleanPreferencesKey("offline_update_wifi_only")
     val offlineUpdatePolicy = context.dataStore.data.map {

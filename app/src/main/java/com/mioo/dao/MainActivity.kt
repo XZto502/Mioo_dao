@@ -176,18 +176,18 @@ class MainActivity : ComponentActivity() {
             val pendingThreadId by pendingThreadIdState
             val clipboardThreadId by clipboardThreadCandidate
 
+            val updateChannel by settingsRepository.updateChannel.collectAsState()
             val consent by settingsRepository.thirdPartyConsent.collectAsState()
             val predictiveBackEnabled by settingsRepository.predictiveBackEnabled.collectAsState()
             val allowThirdParty = consent?.allowThirdPartyServices == true
             // Restarting the effect cancels the startup check if consent is withdrawn.
-            LaunchedEffect(allowThirdParty) {
+            LaunchedEffect(allowThirdParty, updateChannel) {
                 if (!allowThirdParty) {
                     if (UpdatePromptController.release != null) UpdatePromptController.dismiss()
                     if (consent != null) com.mioo.dao.utils.UpdateDownloader.cancelActiveDownload(applicationContext)
                     return@LaunchedEffect
                 }
-                // 测试版不检查更新：下载到的正式包包名/签名不同，无法覆盖安装
-                if (com.mioo.dao.BuildConfig.BETA) return@LaunchedEffect
+                UpdatePromptController.onChannelChanged(updateChannel)
                 delay(10000)
                 val threadRepo = runCatching {
                     EntryPointAccessors.fromApplication(
