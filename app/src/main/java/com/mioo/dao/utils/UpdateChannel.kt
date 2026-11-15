@@ -4,22 +4,19 @@ import com.mioo.dao.data.model.GithubRelease
 
 enum class UpdateChannel { STABLE, BETA }
 
-/** Only offer an APK built for the running package; list order is not version order. */
+/** GitHub list order is authoritative; keep independent beta APKs isolated. */
 internal fun selectUpdateRelease(
     releases: List<GithubRelease>, channel: UpdateChannel, parallelBeta: Boolean
 ): GithubRelease? {
-    var best: GithubRelease? = null
-    for (release in releases) {
-        if (release.draft || (channel == UpdateChannel.STABLE && release.prerelease)) continue
-        if (!isNewerVersion("0.0.0", release.tagName)) continue
-        val asset = release.assets.orEmpty().firstOrNull {
-            if (parallelBeta) it.name == "app-beta.apk"
-            else if (release.prerelease) it.name == "app-preview.apk"
-            else it.name == "app-release.apk"
-        } ?: continue
-        if (best == null || isNewerVersion(best.tagName, release.tagName)) {
-            best = release.copy(assets = listOf(asset))
-        }
-    }
-    return best
+    val release = releases.firstOrNull {
+        !it.draft && (channel == UpdateChannel.BETA || !it.prerelease)
+    } ?: return null
+    if (channelVersionCode(release.tagName) == null) return null
+    val apks = release.assets.orEmpty().filter { it.name.endsWith(".apk", ignoreCase = true) }
+    val compatible = if (parallelBeta) apks.filter { it.name == "app-beta.apk" }
+        else apks.filter { it.name != "app-beta.apk" }
+    val preferredName = if (parallelBeta) "app-beta.apk" else if (release.prerelease) "app-preview.apk" else "app-release.apk"
+    val asset = compatible.firstOrNull { it.name == preferredName } ?: compatible.firstOrNull()
+    if (parallelBeta && asset == null) return null
+    return release.copy(assets = listOfNotNull(asset))
 }

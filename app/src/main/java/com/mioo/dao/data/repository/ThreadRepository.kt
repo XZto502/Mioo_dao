@@ -5,7 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.mioo.dao.data.api.XdApiService
 import com.mioo.dao.data.api.CookieInterceptor
-import com.mioo.dao.data.api.GithubApiService
+
 import com.mioo.dao.data.api.extractQuotedJsonString
 import com.mioo.dao.data.api.isXdBusinessPlainString
 import com.mioo.dao.data.model.GithubRelease
@@ -194,7 +194,7 @@ interface ThreadRepository {
 @Singleton
 class ThreadRepositoryImpl @Inject constructor(
     private val apiService: XdApiService,
-    private val githubApiService: GithubApiService,
+    private val updateRepository: UpdateRepository,
     private val historyDao: HistoryDao,
     private val postActionHistoryDao: PostActionHistoryDao,
     private val cacheDao: CacheDao,
@@ -210,13 +210,6 @@ class ThreadRepositoryImpl @Inject constructor(
 
     companion object {
         private val HTML_OR_NEWLINE = Regex("<.*?>|\\n")
-        private val RELEASE_MANIFEST_URLS = listOf(
-            "https://ghproxy.net/https://raw.githubusercontent.com/XZto502/Mioo_dao/main/version.json",
-            "https://ghfast.top/https://raw.githubusercontent.com/XZto502/Mioo_dao/main/version.json",
-            "https://cdn.jsdelivr.net/gh/XZto502/Mioo_dao@main/version.json",
-            "https://raw.githubusercontent.com/XZto502/Mioo_dao/main/version.json",
-            "https://api.github.com/repos/XZto502/Mioo_dao/releases/latest"
-        )
     }
 
     /** X-island business error (auth / deleted / rate limit) — not a transport failure. */
@@ -1298,59 +1291,5 @@ class ThreadRepositoryImpl @Inject constructor(
         return if (plain.length > maxLen) plain.take(maxLen) + "…" else plain
     }
 
-    override fun checkLatestRelease(): Flow<XdResponse<GithubRelease>> = flow {
-        val channel = settingsDataStore.updateChannelFlow.first()
-        val parallelBeta = com.mioo.dao.BuildConfig.BETA
-        var lastError: Exception? = null
-        if (!settingsDataStore.thirdPartyConsent.first().allowThirdPartyServices) {
-            emit(XdResponse.Error(message = "第三方服务未启用"))
-            return@flow
-        }
-        if (channel == com.mioo.dao.utils.UpdateChannel.BETA || parallelBeta) {
-            try {
-                val releases = githubApiService.getReleases(
-                    "https://api.github.com/repos/XZto502/Mioo_dao/releases?per_page=100")
-                val release = com.mioo.dao.utils.selectUpdateRelease(releases, channel, parallelBeta)
-                if (release != null) {
-                    emit(XdResponse.Success(release))
-                    return@flow
-                }
-                if (parallelBeta) {
-                    emit(XdResponse.Error(message = "此独立测试包暂无对应通道的更新，正式包不能覆盖此包"))
-                    return@flow
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                lastError = e
-                if (parallelBeta) {
-                    emit(XdResponse.Error(message = "检查测试版更新失败", throwable = e))
-                    return@flow
-                }
-            }
-        }
-        for (url in RELEASE_MANIFEST_URLS) {
-            if (!settingsDataStore.thirdPartyConsent.first().allowThirdPartyServices) {
-                emit(XdResponse.Error(message = "第三方服务未启用"))
-                return@flow
-            }
-            try {
-                val release = githubApiService.getLatestRelease(url)
-                val compatible = com.mioo.dao.utils.selectUpdateRelease(
-                    listOf(release), com.mioo.dao.utils.UpdateChannel.STABLE, false)
-                if (compatible != null) {
-                    emit(XdResponse.Success(compatible))
-                    return@flow
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                lastError = e
-            }
-        }
-        emit(
-            XdResponse.Error(
-                message = lastError?.localizedMessage ?: "检查更新失败",
-                throwable = lastError
-            )
-        )
-    }.flowOn(Dispatchers.IO)
+    override fun checkLatestRelease() = updateRepository.checkLatestRelease()
 }
