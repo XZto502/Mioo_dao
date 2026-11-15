@@ -11,6 +11,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import kotlin.math.abs
+import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.DecayAnimationSpec
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 
 val LocalScrollTouchGuardEnabled = staticCompositionLocalOf { false }
 
@@ -41,27 +48,66 @@ fun rememberResponsiveListConfiguration(): ViewConfiguration {
 }
 
 @Composable
-fun rememberResponsiveListFling(): FlingBehavior {
+fun rememberResponsiveListFling(): ResponsiveListFling {
     val decay = remember { exponentialDecay<Float>(frictionMultiplier = 0.52f) }
     return remember(decay) {
-        object : FlingBehavior {
-            override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
-                val velocity = if (abs(initialVelocity) > 1200f)
-                    (initialVelocity * 1.15f).coerceIn(-16000f, 16000f) else initialVelocity
-                var previous = 0f
-                var remainingVelocity = velocity
-                AnimationState(initialValue = 0f, initialVelocity = velocity).animateDecay(decay) {
-                    val delta = value - previous
-                    val consumed = scrollBy(delta)
-                    previous = value
-                    remainingVelocity = this.velocity
-                    if (abs(delta - consumed) > 0.5f) cancelAnimation()
-                }
-                return remainingVelocity
-            }
+        ResponsiveListFling(decay)
+    }
+}
+
+class ResponsiveListFling internal constructor(private val decay: DecayAnimationSpec<Float>) : FlingBehavior {
+    // Plain fields: updating velocity must not recompose list rows on each frame.
+    internal var currentVelocity = 0f
+    internal var running = false
+    override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
+        val velocity = if (abs(initialVelocity) > 1200f)
+            (initialVelocity * 1.15f).coerceIn(-16000f, 16000f) else initialVelocity
+        var previous = 0f
+        var remainingVelocity = velocity
+        running = true
+        currentVelocity = velocity
+        try {
+        AnimationState(initialValue = 0f, initialVelocity = velocity).animateDecay(decay) {
+            val delta = value - previous
+            val consumed = scrollBy(delta)
+            previous = value
+            remainingVelocity = this.velocity
+            currentVelocity = this.velocity
+            if (abs(delta - consumed) > 0.5f) cancelAnimation()
+        }
+        return if (abs(remainingVelocity) <= 0.1f) 0f else remainingVelocity
+        } finally {
+            running = false
+            currentVelocity = 0f
         }
     }
 }
+
+/** A settled-looking fling should not require a separate tap just to stop it. */
+fun Modifier.slowFlingClick(fling: ResponsiveListFling, onClick: () -> Unit): Modifier =
+    pointerInput(fling, onClick) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            // Keep fast-fling tap-to-stop and ordinary drag arbitration intact.
+            val allowClick = fling.running && abs(fling.currentVelocity) <= 80.dp.toPx()
+            if (!allowClick) return@awaitEachGesture
+            var moved = false
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Final)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop ||
+                    event.changes.size > 1) moved = true
+                if (!change.pressed) {
+                    if (!moved && !change.isConsumed &&
+                        change.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                        change.consume()
+                        onClick()
+                    }
+                    break
+                }
+            }
+        }
+    }
 
 @Composable
 fun ReadingTouchGuard(content: @Composable () -> Unit) {

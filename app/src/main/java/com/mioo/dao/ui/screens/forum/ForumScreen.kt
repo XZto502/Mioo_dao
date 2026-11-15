@@ -25,6 +25,8 @@ import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.ui.platform.LocalViewConfiguration
 import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
 import com.mioo.dao.ui.components.rememberResponsiveListFling
+import com.mioo.dao.ui.components.ResponsiveListFling
+import com.mioo.dao.ui.components.slowFlingClick
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -1115,6 +1117,7 @@ private fun ForumThreadListPane(
         ) { item ->
             ForumThreadRow(
                 item = item,
+                fling = responsiveFling,
                 previewMaxLines = previewMaxLines,
                 showImage = showImages,
                 emptyStringLambda = emptyStringLambda,
@@ -1189,6 +1192,7 @@ private fun ForumThreadListPane(
 @Composable
 private fun ForumThreadRow(
     item: ThreadListItem,
+    fling: ResponsiveListFling,
     previewMaxLines: Int,
     showImage: Boolean,
     emptyStringLambda: (String) -> Unit,
@@ -1203,6 +1207,7 @@ private fun ForumThreadRow(
         { url: String -> onImageClick(url) }
     }
     ThreadCard(
+        modifier = Modifier.slowFlingClick(fling, onThreadClick),
         postData = item.postData,
         replyCount = item.replyCount,
         onThreadClick = onThreadClick,
