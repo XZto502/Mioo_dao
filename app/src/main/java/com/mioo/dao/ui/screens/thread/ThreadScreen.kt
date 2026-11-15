@@ -34,6 +34,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.mioo.dao.ui.theme.MiooMotion
@@ -224,7 +226,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class, kotlinx.coroutines.FlowPreview::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, kotlinx.coroutines.FlowPreview::class)
 @Composable
 fun ThreadScreen(
     viewModel: ThreadViewModel,
@@ -775,7 +777,10 @@ fun ThreadScreen(
                 // therefore include the measured bottom bar height exactly once.
                 val responsiveConfiguration = rememberResponsiveListConfiguration()
                 val responsiveFling = rememberResponsiveListFling()
-                CompositionLocalProvider(LocalViewConfiguration provides responsiveConfiguration) {
+                CompositionLocalProvider(
+                    LocalOverscrollConfiguration provides null,
+                    LocalViewConfiguration provides responsiveConfiguration
+                ) {
                 LazyColumn(
                     state = listState,
                     flingBehavior = responsiveFling,

@@ -26,7 +26,7 @@ fun channelVersionCode(versionName: String): Int? {
 }
 
 val appVersionName = "1.1.7"
-val testingVersionSuffix = "-beta.11"
+val testingVersionSuffix = "-beta.12"
 
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
