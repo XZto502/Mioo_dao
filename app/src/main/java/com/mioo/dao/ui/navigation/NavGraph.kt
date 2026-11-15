@@ -307,10 +307,7 @@ fun MiooDaoNavGraph(
     ModalNavigationDrawer(
         modifier = modifier,
         drawerState = boardDrawerState,
-        // Closed-state opening is direction-arbitrated by the board list. Having
-        // both draggable handlers compete cancels opening while the list flings.
-        gesturesEnabled = boardDrawerState.currentValue == DrawerValue.Open &&
-            boardDrawerSlot.gesturesEnabled &&
+        gesturesEnabled = boardDrawerSlot.gesturesEnabled &&
             currentRoute == Screen.Home.route &&
             currentTabIndex == 0 &&
             !isImageViewerOpen &&

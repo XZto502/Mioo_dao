@@ -1,12 +1,6 @@
 package com.mioo.dao.ui.screens.forum
 
 import android.widget.Toast
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.stopScroll
-import androidx.compose.foundation.MutatePriority
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -444,47 +438,6 @@ fun ForumScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
-                    .pointerInput(drawerState, listState, switchingBoard) {
-                        // A flinging LazyColumn starts dragging immediately and may consume
-                        // the horizontal touch before the parent drawer sees its slop.
-                        // Observe Initial even when consumed, but claim only a clear right drag.
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                            if (switchingBoard || !drawerState.isClosed) {
-                                return@awaitEachGesture
-                            }
-                            val intent = BoardSwipeIntent(viewConfiguration.touchSlop)
-                            var claimed = false
-                            do {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                if (event.changes.size != 1) return@awaitEachGesture
-                                val change = event.changes.first()
-                                if (claimed) {
-                                    change.consume()
-                                } else if (change.pressed) {
-                                    when (intent.add(
-                                        change.position.x - change.previousPosition.x,
-                                        change.position.y - change.previousPosition.y
-                                    )) {
-                                        BoardSwipeIntent.Result.VERTICAL -> return@awaitEachGesture
-                                        BoardSwipeIntent.Result.OPEN -> {
-                                            claimed = true
-                                            change.consume()
-                                            scope.launch {
-                                                // An active drag owns UserInput priority; Default
-                                                // stopScroll can be cancelled before open() runs.
-                                                listState.stopScroll(MutatePriority.PreventUserInput)
-                                            }
-                                            scope.launch {
-                                                drawerState.open()
-                                            }
-                                        }
-                                        BoardSwipeIntent.Result.WAIT -> Unit
-                                    }
-                                }
-                            } while (event.changes.any { it.pressed })
-                        }
-                    }
                     .nestedScroll(pullToRefreshState.nestedScrollConnection)
             ) {
                 // Single list instance — pass only list fields so chrome/drawer flags
