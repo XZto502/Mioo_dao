@@ -16,49 +16,34 @@ class DraftStorage @Inject constructor(
     private val draftDao: DraftDao,
     private val settingsDataStore: SettingsDataStore
 ) {
-    /** In-process mirror of the DataStore one-time flag. */
-    private var draftsMigrated = false
-
-    /**
-     * One-time sweep of legacy DataStore drafts (per-thread reply map + global
-     * new-thread draft) into the Room draft box. Runs before any draft read/write.
-     */
-    private suspend fun ensureDraftsMigrated() {
-        if (draftsMigrated) return
-        if (settingsDataStore.isDraftsMigrated()) {
-            draftsMigrated = true
-            return
-        }
-        val now = System.currentTimeMillis()
-        settingsDataStore.getAllThreadDrafts().forEach { (tid, text) ->
-            draftDao.upsert(
+    private val migration = DraftMigrationCoordinator(
+        isComplete = { settingsDataStore.isDraftsMigrated() },
+        migrate = {
+            val now = System.currentTimeMillis()
+            val drafts = settingsDataStore.getAllThreadDrafts().map { (tid, text) ->
                 com.mioo.dao.data.local.DraftEntity(
                     type = com.mioo.dao.data.local.DraftEntity.TYPE_REPLY,
                     targetId = tid,
                     content = text,
                     updatedAt = now
                 )
-            )
-        }
-        val postDraft = try {
-            settingsDataStore.getNewThreadDraft()
-        } catch (_: Exception) {
-            ""
-        }
-        if (postDraft.isNotBlank()) {
-            draftDao.upsert(
-                com.mioo.dao.data.local.DraftEntity(
+            }.toMutableList()
+            val postDraft = settingsDataStore.getNewThreadDraft()
+            if (postDraft.isNotBlank()) {
+                drafts += com.mioo.dao.data.local.DraftEntity(
                     type = com.mioo.dao.data.local.DraftEntity.TYPE_POST,
                     targetId = "new_thread",
                     targetName = "草稿",
                     content = postDraft,
                     updatedAt = now
                 )
-            )
-        }
-        settingsDataStore.markDraftsMigrated()
-        draftsMigrated = true
-    }
+            }
+            draftDao.migrateLegacyDrafts(drafts)
+        },
+        markComplete = { settingsDataStore.markDraftsMigrated() }
+    )
+
+    private suspend fun ensureDraftsMigrated() = migration.ensureMigrated()
 
     fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>> = flow {
         ensureDraftsMigrated()
@@ -69,6 +54,8 @@ class DraftStorage @Inject constructor(
         ensureDraftsMigrated()
         return try {
             draftDao.find(com.mioo.dao.data.local.DraftEntity.TYPE_REPLY, threadId)?.content ?: ""
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
             ""
         }
@@ -104,6 +91,7 @@ class DraftStorage @Inject constructor(
     }
 
     suspend fun deleteDraft(id: Long) {
+        ensureDraftsMigrated()
         draftDao.removeDraft(id)
     }
 
