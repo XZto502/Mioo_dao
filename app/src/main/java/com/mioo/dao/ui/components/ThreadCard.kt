@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Comment
@@ -137,7 +136,7 @@ fun ThreadCard(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            ReadingPostHeader(postData, onNumberClick)
+            ReadingPostHeader(postData, onNumberClick, forumName)
 
             ReadingPostSubject(postData)
 
@@ -194,21 +193,6 @@ fun ThreadCard(
                         text = "$replyCount replies",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                if (!forumName.isNullOrBlank()) {
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        text = forumName,
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 8.dp)
-                            .widthIn(max = 160.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                RoundedCornerShape(12.dp))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
             }

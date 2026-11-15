@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -104,7 +105,7 @@ internal fun ReadingPostSubject(post: PostData) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = null) {
+internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = null, forumName: String? = null) {
     val colors = MaterialTheme.colorScheme
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -129,6 +130,20 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
         // Both identity and number are measured at natural width. Only the clock
         // region may shrink; a long date must never turn an Admin ID into "A…".
         ReadingIdentity(post)
+        if (!forumName.isNullOrBlank()) {
+            Spacer(Modifier.width(6.dp))
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = colors.primary.copy(alpha = 0.09f)
+            ) {
+                Text(
+                    forumName,
+                    Modifier.widthIn(max = 92.dp).padding(horizontal = 6.dp, vertical = 2.dp),
+                    style = readingMetaStyle(), color = colors.primary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
                 color = colors.onSurfaceVariant.copy(alpha = 0.52f),
