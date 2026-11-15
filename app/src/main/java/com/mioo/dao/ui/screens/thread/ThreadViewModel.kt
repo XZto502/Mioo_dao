@@ -217,8 +217,8 @@ class ThreadViewModel @Inject constructor(
     /** Last replyCount written via markBookmarkRead — skip SWR double Room updates. */
     private var lastMarkedReadCount: Int = -1
     /** Bumps on every new load so stale SWR/network emissions cannot overwrite a newer page. */
-    private var loadGeneration: Int = 0
-    private var pageLoadJob: Job? = null
+    private val pagingRequests = PagingRequestCoordinator()
+    private val loadGeneration get() = pagingRequests.generation
     private val previousPrefetch = PreviousPagePrefetch<Pair<Int, Boolean>, XdResponse<Thread>>(viewModelScope)
 
     private fun preparePreviousPage() {
@@ -354,8 +354,7 @@ class ThreadViewModel @Inject constructor(
     }
 
     private fun loadThreadDetails() {
-        val openingGeneration = ++loadGeneration
-        pageLoadJob?.cancel()
+        val openingGeneration = pagingRequests.begin()
         quoteFetchJob?.cancel()
         isLastPage = false
         rawPosts = emptyList()
@@ -476,13 +475,12 @@ class ThreadViewModel @Inject constructor(
     fun refreshThread(tailOnly: Boolean = false, onResult: (String) -> Unit) {
         val before = _listState.value
         if (before.isLoading || before.thread == null) return
-        val gen = ++loadGeneration
-        pageLoadJob?.cancel()
+        val gen = pagingRequests.begin()
         quoteFetchJob?.cancel()
         val start = before.startPage
         val end = before.currentPage.coerceAtLeast(start)
         _listState.update { it.copy(isLoading = true) }
-        pageLoadJob = viewModelScope.launch {
+        viewModelScope.launch {
             try {
                 val pages = mutableListOf<Thread>()
                 val refreshedPages = mutableMapOf<String, Int>()
@@ -544,7 +542,7 @@ class ThreadViewModel @Inject constructor(
             } finally {
                 if (gen == loadGeneration) _listState.update { it.copy(isLoading = false) }
             }
-        }
+        }.also { pagingRequests.attach(gen, it) }
     }
 
     /**
@@ -560,14 +558,13 @@ class ThreadViewModel @Inject constructor(
             filteredSkips = 0
             _listState.update { it.copy(filterHint = null) }
         }
-        val gen = ++loadGeneration
-        pageLoadJob?.cancel()
+        val gen = pagingRequests.begin()
         quoteFetchJob?.cancel()
         _listState.update { it.copy(isLoading = true, isReplacing = mode == LoadMode.REPLACE,
             pagingDirection = when (mode) { LoadMode.PREPEND -> -1; LoadMode.APPEND -> 1; else -> 0 },
             nextPageError = null, previousPageError = null) }
 
-        pageLoadJob = viewModelScope.launch {
+        viewModelScope.launch {
             val flow = if (_listState.value.showPoOnly) {
                 threadRepository.getPoDetail(threadId, page)
             } else {
@@ -821,7 +818,7 @@ class ThreadViewModel @Inject constructor(
                 filteredSkips = 0
                 _listState.update { it.copy(filterHint = null) }
             }
-        }
+        }.also { pagingRequests.attach(gen, it) }
     }
 
     private fun scheduleRebuildDisplayItems(debounceMs: Long = 0L) {
