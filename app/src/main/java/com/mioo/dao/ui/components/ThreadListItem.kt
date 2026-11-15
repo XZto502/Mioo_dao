@@ -17,7 +17,8 @@ data class ThreadListItem(
     val replyCount: Int,
     val postData: PostData,
     val rawContent: String,
-    val hasImage: Boolean
+    val hasImage: Boolean,
+    val forumId: String? = null
 )
 
 /** Keep unchanged rows and their rich content stable during reply-count enrichment. */
@@ -72,7 +73,8 @@ fun List<Thread>.toFilteredThreadListItems(
                 replyCount = thread.replyCount ?: 0,
                 postData = thread.toPostData(),
                 rawContent = thread.content,
-                hasImage = !thread.img.isNullOrBlank()
+                hasImage = !thread.img.isNullOrBlank(),
+                forumId = thread.fidStr
             )
         )
     }
@@ -108,7 +110,8 @@ fun List<Thread>.toFilteredThreadListItems(
                 replyCount = thread.replyCount ?: 0,
                 postData = thread.toPostData(),
                 rawContent = thread.content,
-                hasImage = !thread.img.isNullOrBlank()
+                hasImage = !thread.img.isNullOrBlank(),
+                forumId = thread.fidStr
             )
         )
     }

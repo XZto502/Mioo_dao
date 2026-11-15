@@ -494,6 +494,9 @@ fun ForumScreen(
                 key(currentForumId) {
                     ForumThreadListPane(
                         forumKey = currentForumId,
+                        forumNames = remember(uiState.forumGroups) {
+                            uiState.forumGroups.flatMap { it.forums }.associate { it.id to it.name }
+                        },
                         previewMaxLines = previewMaxLines,
                         displayItems = uiState.displayItems,
                         isLoading = uiState.isLoading,
@@ -897,6 +900,7 @@ private fun ForumDrawerItem(
 @Composable
 private fun ForumThreadListPane(
     forumKey: String,
+    forumNames: Map<String, String>,
     previewMaxLines: Int,
     displayItems: List<ThreadListItem>,
     isLoading: Boolean,
@@ -1117,6 +1121,9 @@ private fun ForumThreadListPane(
         ) { item ->
             ForumThreadRow(
                 item = item,
+                forumName = if (forumKey == "-1") item.forumId?.let {
+                    forumNames[it] ?: "板块 $it"
+                } else null,
                 fling = responsiveFling,
                 previewMaxLines = previewMaxLines,
                 showImage = showImages,
@@ -1192,6 +1199,7 @@ private fun ForumThreadListPane(
 @Composable
 private fun ForumThreadRow(
     item: ThreadListItem,
+    forumName: String?,
     fling: ResponsiveListFling,
     previewMaxLines: Int,
     showImage: Boolean,
@@ -1209,6 +1217,7 @@ private fun ForumThreadRow(
     ThreadCard(
         modifier = Modifier.slowFlingClick(fling, onThreadClick),
         postData = item.postData,
+        forumName = forumName,
         replyCount = item.replyCount,
         onThreadClick = onThreadClick,
         onQuoteClick = emptyStringLambda,
