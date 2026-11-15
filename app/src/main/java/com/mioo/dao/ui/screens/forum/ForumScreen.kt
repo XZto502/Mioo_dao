@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.stopScroll
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.AnimatedVisibility
@@ -449,7 +450,7 @@ fun ForumScreen(
                         // Observe Initial even when consumed, but claim only a clear right drag.
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                            if (switchingBoard || !drawerState.isClosed || !listState.isScrollInProgress) {
+                            if (switchingBoard || !drawerState.isClosed) {
                                 return@awaitEachGesture
                             }
                             val intent = BoardSwipeIntent(viewConfiguration.touchSlop)
@@ -470,7 +471,11 @@ fun ForumScreen(
                                             claimed = true
                                             change.consume()
                                             scope.launch {
-                                                listState.stopScroll()
+                                                // An active drag owns UserInput priority; Default
+                                                // stopScroll can be cancelled before open() runs.
+                                                listState.stopScroll(MutatePriority.PreventUserInput)
+                                            }
+                                            scope.launch {
                                                 drawerState.open()
                                             }
                                         }
