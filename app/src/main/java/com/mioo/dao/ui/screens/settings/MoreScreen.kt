@@ -105,7 +105,7 @@ fun MoreScreen(
                                                     android.widget.Toast.makeText(context, "更新已在下载", android.widget.Toast.LENGTH_SHORT).show()
                                                 }
                                             } else {
-                                                android.widget.Toast.makeText(context, "已经是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, "当前版本已是最新；若高于最新正式版，将在下个更高版本正式版发布时接收覆盖更新", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                         is XdResponse.Error -> {

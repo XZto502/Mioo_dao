@@ -117,7 +117,9 @@ fun SettingsScreen(
 ) {
     val settings by viewModel.settingsState.collectAsState()
     val updateChannel by viewModel.updateChannel.collectAsState()
+    var showUpdateChannelDialog by remember { mutableStateOf(false) }
     val predictiveBackEnabled by viewModel.predictiveBackEnabled.collectAsState()
+    val scrollTouchGuardEnabled by viewModel.scrollTouchGuardEnabled.collectAsState()
     val consent by viewModel.thirdPartyConsent.collectAsState()
     val allowThirdParty = consent?.allowThirdPartyServices == true
     val forumPreviewLines by viewModel.forumPreviewLines.collectAsState()
@@ -1186,7 +1188,7 @@ fun SettingsScreen(
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("分享卡片显示喵岛水印", style = settingsItemStyle())
-                    Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
+                    Text("在分享图底部附加喵岛标识与原串二维码",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -1203,7 +1205,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f)) {
                     Text("创作模式", style = settingsItemStyle())
                     Text(
-                        "串详情页收起底部常驻回复栏，改为右下角悬浮按钮并使用全屏信纸写作台",
+                        "收起底部常驻回复栏，改用悬浮按钮与全屏编辑卡片",
                         style = settingsDescriptionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1219,7 +1221,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("预测性返回", style = settingsItemStyle())
-                    Text("侧滑返回时跟随手势预览上一页面", style = settingsDescriptionStyle(),
+                    Text("侧滑返回时跟手预览上一级页面", style = settingsDescriptionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 androidx.compose.material3.Switch(
@@ -1228,21 +1230,58 @@ fun SettingsScreen(
                 )
             }
         }
-        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text("更新通道", style = settingsItemStyle())
-                Spacer(Modifier.height(8.dp))
-                Text("正式版更稳定；测试版可提前体验新功能。可随时切换，切回正式版后等待更新版本发布。",
-                    style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    com.mioo.dao.utils.UpdateChannel.values().forEach { channel ->
-                        FilterChip(selected = updateChannel == channel,
-                            onClick = { viewModel.setUpdateChannel(channel) },
-                            label = { Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "正式版" else "测试版") })
-                    }
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("滑动防误触", style = settingsItemStyle())
+                    Text("提高起滑判定阈值，减少点击或斜滑时的误滑动",
+                        style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                androidx.compose.material3.Switch(
+                    checked = scrollTouchGuardEnabled,
+                    onCheckedChange = viewModel::setScrollTouchGuardEnabled
+                )
             }
+        }
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Column(Modifier.fillMaxWidth().clickable { showUpdateChannelDialog = true }.padding(16.dp)) {
+                Text("更新通道", style = settingsItemStyle())
+                Spacer(Modifier.height(6.dp))
+                Text(if (updateChannel == com.mioo.dao.utils.UpdateChannel.STABLE) "正式版" else "测试版",
+                    style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (showUpdateChannelDialog) {
+            AlertDialog(
+                onDismissRequest = { showUpdateChannelDialog = false },
+                shape = RoundedCornerShape(22.dp), tonalElevation = 0.dp,
+                title = { Text("更新通道", fontSize = 17.5.sp, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    Column {
+                        com.mioo.dao.utils.UpdateChannel.values().forEach { channel ->
+                            Row(Modifier.fillMaxWidth().clickable {
+                                viewModel.setUpdateChannel(channel)
+                            }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = updateChannel == channel,
+                                    onClick = { viewModel.setUpdateChannel(channel) })
+                                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "正式版" else "测试版")
+                                    Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "稳定版本，适合日常使用"
+                                        else "抢先体验新功能，可能存在未知问题",
+                                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        if (updateChannel == com.mioo.dao.utils.UpdateChannel.BETA) {
+                            Text("切回正式版后，将在下个更高版本正式版发布时覆盖升级",
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp))
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showUpdateChannelDialog = false }) { Text("完成") } }
+            )
         }
         Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
@@ -1253,7 +1292,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
                     Text("第三方服务", style = settingsItemStyle())
                     Text(
-                        "允许检查和下载更新、外部搜索、以图搜源与网络兼容模式的第三方 DNS。",
+                        "允许检查更新、外部搜索、以图搜源及网络兼容的第三方 DNS",
                         style = settingsDescriptionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

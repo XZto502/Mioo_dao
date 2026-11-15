@@ -35,13 +35,19 @@ data class ThirdPartyConsent(
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val scrollTouchGuardKey = booleanPreferencesKey("scroll_touch_guard_enabled")
+    val scrollTouchGuardFlow: Flow<Boolean> = context.dataStore.data.map { it[scrollTouchGuardKey] ?: false }
+    suspend fun saveScrollTouchGuard(enabled: Boolean) {
+        context.dataStore.edit { it[scrollTouchGuardKey] = enabled }
+    }
+
     private val updateChannelKey = stringPreferencesKey("update_channel")
     val updateChannelFlow = context.dataStore.data.map {
-        runCatching { com.mioo.dao.utils.UpdateChannel.valueOf(it[updateChannelKey] ?: "STABLE") }
+        runCatching { com.mioo.dao.utils.UpdateChannel.valueOf((it[updateChannelKey] ?: "stable").uppercase(java.util.Locale.ROOT)) }
             .getOrDefault(com.mioo.dao.utils.UpdateChannel.STABLE)
     }
     suspend fun saveUpdateChannel(channel: com.mioo.dao.utils.UpdateChannel) {
-        context.dataStore.edit { it[updateChannelKey] = channel.name }
+        context.dataStore.edit { it[updateChannelKey] = channel.name.lowercase(java.util.Locale.ROOT) }
     }
     private val offlineAutoUpdateKey = booleanPreferencesKey("offline_auto_update")
     private val offlineWifiOnlyKey = booleanPreferencesKey("offline_update_wifi_only")

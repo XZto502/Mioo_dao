@@ -27,6 +27,13 @@ class SettingsRepository @Inject constructor(
     // SupervisorJob: without it one failed write (e.g. DataStore IOException)
     // cancels the scope root and every later settings write becomes a silent no-op.
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val scrollTouchGuardEnabled = settingsDataStore.scrollTouchGuardFlow.stateIn(
+        repositoryScope, SharingStarted.Eagerly, false
+    )
+    fun setScrollTouchGuardEnabled(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.saveScrollTouchGuard(enabled) }
+    }
+
     val updateChannel = settingsDataStore.updateChannelFlow.stateIn(
         repositoryScope, SharingStarted.Eagerly, com.mioo.dao.utils.UpdateChannel.STABLE
     )

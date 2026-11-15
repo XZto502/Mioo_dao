@@ -199,7 +199,8 @@ fun HistoryScreen(
                             Text(if (categoryQuery.isBlank()) "暂无${category.label}" else "没有匹配的记录",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    } else if (readyRecords.isNotEmpty()) LazyColumn(
+                    } else if (readyRecords.isNotEmpty()) com.mioo.dao.ui.components.ReadingTouchGuard {
+                    LazyColumn(
                         state = list, modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
                             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
@@ -209,6 +210,7 @@ fun HistoryScreen(
                             HistoryCard(entry, onClick = { viewModel.open(entry, onNavigateToThread) },
                                 onLongClick = { deleteItem = entry }, onImageClick = { image = it })
                         }
+                    }
                     }
                 }
             }

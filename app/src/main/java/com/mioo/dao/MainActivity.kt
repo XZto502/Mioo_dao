@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,6 +56,7 @@ import com.mioo.dao.ui.theme.isActivitySystemBarsOverridden
 import com.mioo.dao.ui.theme.removeImmersiveBarGuard
 import com.mioo.dao.utils.ThreadLinkParser
 import com.mioo.dao.utils.UpdatePromptController
+import com.mioo.dao.ui.components.LocalScrollTouchGuardEnabled
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
@@ -179,6 +181,7 @@ class MainActivity : ComponentActivity() {
             val updateChannel by settingsRepository.updateChannel.collectAsState()
             val consent by settingsRepository.thirdPartyConsent.collectAsState()
             val predictiveBackEnabled by settingsRepository.predictiveBackEnabled.collectAsState()
+            val scrollTouchGuardEnabled by settingsRepository.scrollTouchGuardEnabled.collectAsState()
             val allowThirdParty = consent?.allowThirdPartyServices == true
             // Restarting the effect cancels the startup check if consent is withdrawn.
             LaunchedEffect(allowThirdParty, updateChannel) {
@@ -222,7 +225,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 CompositionLocalProvider(
                     LocalThirdPartyServicesAllowed provides allowThirdParty,
-                    LocalPredictiveBackEnabled provides predictiveBackEnabled
+                    LocalPredictiveBackEnabled provides predictiveBackEnabled,
+                    LocalScrollTouchGuardEnabled provides scrollTouchGuardEnabled
                 ) {
                     MiooDaoNavGraph(
                         pendingThreadId = pendingThreadId,
@@ -304,7 +308,15 @@ class MainActivity : ComponentActivity() {
                             Text("发现新版本 (${release.tagName})")
                         },
                         text = {
-                            Column {
+                            Column(Modifier.verticalScroll(rememberScrollState())) {
+                                androidx.compose.material3.Surface(
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(if (release.prerelease) "测试版" else "正式版",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                                }
+                                Spacer(Modifier.height(8.dp))
                                 if (!release.name.isNullOrBlank()) {
                                     Text(
                                         text = release.name,

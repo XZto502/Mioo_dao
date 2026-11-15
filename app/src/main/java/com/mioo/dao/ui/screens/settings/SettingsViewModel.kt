@@ -70,6 +70,8 @@ class SettingsViewModel @Inject constructor(
     val updateChannel = settingsRepository.updateChannel
     fun setUpdateChannel(channel: com.mioo.dao.utils.UpdateChannel) = settingsRepository.setUpdateChannel(channel)
     val predictiveBackEnabled = settingsRepository.predictiveBackEnabled
+    val scrollTouchGuardEnabled = settingsRepository.scrollTouchGuardEnabled
+    fun setScrollTouchGuardEnabled(enabled: Boolean) = settingsRepository.setScrollTouchGuardEnabled(enabled)
 
     fun setPredictiveBackEnabled(enabled: Boolean) {
         settingsRepository.setPredictiveBackEnabled(enabled)

@@ -7,15 +7,34 @@ import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import kotlin.math.abs
 
+val LocalScrollTouchGuardEnabled = staticCompositionLocalOf { false }
+
+/** Use Compose's accumulated touch slop: jitter never starts a drag, while the
+ * threshold is subtracted from the first scroll delta so activation cannot jump.
+ * No timers, per-move allocations or filtering after a drag has been accepted.
+ */
+@Composable
+fun rememberTouchGuardConfiguration(enabled: Boolean): ViewConfiguration {
+    val original = LocalViewConfiguration.current
+    return remember(original, enabled) {
+        if (!enabled) original else object : ViewConfiguration by original {
+            override val touchSlop: Float get() = original.touchSlop * 1.15f
+        }
+    }
+}
+
 @Composable
 fun rememberResponsiveListConfiguration(): ViewConfiguration {
-    val original = LocalViewConfiguration.current
-    return remember(original) {
-        object : ViewConfiguration by original {
+    val guarded = LocalScrollTouchGuardEnabled.current
+    val original = rememberTouchGuardConfiguration(guarded)
+    return remember(original, guarded) {
+        // Keep the responsive default while guarding only reading lists.
+        if (guarded) original else object : ViewConfiguration by original {
             override val touchSlop: Float get() = original.touchSlop * 0.65f
         }
     }
@@ -42,4 +61,10 @@ fun rememberResponsiveListFling(): FlingBehavior {
             }
         }
     }
+}
+
+@Composable
+fun ReadingTouchGuard(content: @Composable () -> Unit) {
+    val configuration = rememberTouchGuardConfiguration(LocalScrollTouchGuardEnabled.current)
+    androidx.compose.runtime.CompositionLocalProvider(LocalViewConfiguration provides configuration, content = content)
 }

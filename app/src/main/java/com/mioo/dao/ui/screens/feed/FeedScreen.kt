@@ -310,6 +310,7 @@ fun FeedScreen(
                         if (current && shouldLoadMore.value) viewModel.loadMoreRemote()
                     }
 
+                    com.mioo.dao.ui.components.ReadingTouchGuard {
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
@@ -377,6 +378,7 @@ fun FeedScreen(
                                 )
                             }
                         }
+                    }
                     }
                 }
             }
