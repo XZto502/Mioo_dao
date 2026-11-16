@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -122,9 +123,13 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                     }
                 }, shape = CircleShape, color = buttonColor) {
                     AnimatedContent(copied, label = "copyAll") { done ->
-                        Text(if (done) "✓ 已复制" else "复制全文", Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                            color = if (done) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
-                            fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (done) Icon(Icons.Default.Check, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                            if (done) Spacer(Modifier.width(4.dp))
+                            Text(if (done) "已复制" else "复制全文",
+                                color = if (done) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
                     }
                 }
             }
@@ -165,8 +170,11 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                         wasCopied = true
                     }, modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale }, shape = CircleShape, color = color) {
                         AnimatedContent(wasCopied, label = "copyItem") { done ->
-                            Text(if (done) "✓ 已复制" else value, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (done) Icon(Icons.Default.Check, null, Modifier.size(14.dp))
+                                if (done) Spacer(Modifier.width(4.dp))
+                                Text(if (done) "已复制" else value, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                            }
                         }
                     }
                 }
