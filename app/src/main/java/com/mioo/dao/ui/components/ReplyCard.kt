@@ -143,7 +143,7 @@ fun ReplyCard(
                             HtmlContent(
                                 html = block.html,
                                 onQuoteClick = onQuoteClick,
-                                style = readingBodyStyle(),
+                                style = readingBodyStyle().copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium),
                                 modifier = Modifier.fillMaxWidth(),
                                 onTextClick = onCardClick,
                                 onLongClick = onCardLongClick

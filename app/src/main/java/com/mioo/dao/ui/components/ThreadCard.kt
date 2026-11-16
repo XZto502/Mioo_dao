@@ -77,7 +77,7 @@ fun ThreadCard(
     val cardColors = CardDefaults.cardColors(containerColor = readingCardColor())
     val cardElevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     val cardShape = shape
-    val bodyStyle = readingBodyStyle()
+    val bodyStyle = readingBodyStyle().copy(fontWeight = FontWeight.Medium)
     val interactionSource = remember { MutableInteractionSource() }
     // Dense list default: skip press animation subscriptions entirely (enablePressScale=false)
     val cardModifier = if (enablePressScale) {
