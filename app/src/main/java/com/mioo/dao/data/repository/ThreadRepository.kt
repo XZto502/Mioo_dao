@@ -47,6 +47,9 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1213,6 +1216,7 @@ class ThreadRepositoryImpl @Inject constructor(
         offlineThreadDao.observeDownloaded(threadId)
 
     override suspend fun deleteOfflineThread(threadId: String) = withContext(Dispatchers.IO) {
+        settingsDataStore.excludeAutomaticOffline(listOf(threadId))
         val entity = offlineThreadDao.get(threadId)
         offlineThreadDao.delete(threadId)
         cacheDao.deleteCacheByKey("thread_$threadId")
@@ -1234,6 +1238,7 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override suspend fun clearAllOfflineThreads() = withContext(Dispatchers.IO) {
         val offlineIds = offlineThreadDao.getAllOnce().map { it.threadId }
+        settingsDataStore.excludeAutomaticOffline(offlineIds + historyDao.getAllBookmarks().first().map { it.id })
         offlineThreadDao.clear()
         offlineIds.forEach { cacheDao.deleteCacheByKey("thread_$it") }
         com.mioo.dao.utils.OfflineImageStore.deleteAll(
@@ -1252,35 +1257,31 @@ class ThreadRepositoryImpl @Inject constructor(
         offlineSyncRunning = true
         preloadScope.launch {
             try {
-                while (true) {
-                    val bookmarks = historyDao.getAllBookmarks().first()
-                    val offlineIds = offlineThreadDao.getAllOnce()
-                        .mapTo(HashSet()) { it.threadId }
-                    val pending = bookmarks.filter { it.id !in offlineIds }
-                    if (pending.isEmpty()) {
-                        // 全部离线后低频巡检，兜住之后新星的收藏
-                        delay(15_000)
-                        continue
-                    }
-                    var attempts = 0
-                    for (bookmark in pending) {
-                        if ((offlineSyncFailures[bookmark.id] ?: 0) >= 2) continue
+                combine(
+                    historyDao.observeBookmarkIds().distinctUntilChanged(),
+                    settingsDataStore.dataSaverEnabledFlow.distinctUntilChanged(),
+                    offlineNetworkAllowed(context),
+                    settingsDataStore.offlineExcludedIds.distinctUntilChanged(),
+                    settingsDataStore.offlineUpdatePolicy.distinctUntilChanged()
+                ) { ids, dataSaver, unmetered, excluded, policy ->
+                    Triple(ids, excluded, policy.first && !dataSaver && unmetered)
+                }.distinctUntilChanged().collectLatest { (ids, excluded, allowed) ->
+                    if (!allowed) return@collectLatest
+                    val offlineIds = offlineThreadDao.getAllOnce().mapTo(HashSet()) { it.threadId }
+                    for (id in ids) {
+                        if (id in offlineIds || id in excluded || (offlineSyncFailures[id] ?: 0) >= 2) continue
                         val response = try {
-                            downloadFullThread(bookmark.id).first()
+                            downloadFullThread(id, conservative = true).first()
                         } catch (e: CancellationException) {
                             throw e
                         } catch (_: Exception) {
                             XdResponse.Error(message = "network")
                         }
                         if (response is XdResponse.Error) {
-                            offlineSyncFailures[bookmark.id] =
-                                (offlineSyncFailures[bookmark.id] ?: 0) + 1
+                            offlineSyncFailures[id] = (offlineSyncFailures[id] ?: 0) + 1
                         }
-                        delay(2_000)
-                        attempts++
+                        delay(10_000)
                     }
-                    // 本轮一个都没试（全部处于失败退避）→ 长睡，别空转扫库
-                    delay(if (attempts == 0) 60_000 else 3_000)
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e

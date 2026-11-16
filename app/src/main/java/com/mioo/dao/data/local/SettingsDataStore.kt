@@ -35,6 +35,12 @@ data class ThirdPartyConsent(
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val offlineExcludedKey = androidx.datastore.preferences.core.stringSetPreferencesKey("offline_auto_download_excluded")
+    val offlineExcludedIds = context.dataStore.data.map { it[offlineExcludedKey].orEmpty().toSet() }
+    suspend fun excludeAutomaticOffline(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        context.dataStore.edit { it[offlineExcludedKey] = it[offlineExcludedKey].orEmpty() + ids }
+    }
     private val scrollTouchGuardKey = booleanPreferencesKey("scroll_touch_guard_enabled")
     val scrollTouchGuardFlow: Flow<Boolean> = context.dataStore.data.map { it[scrollTouchGuardKey] ?: false }
     suspend fun saveScrollTouchGuard(enabled: Boolean) {
