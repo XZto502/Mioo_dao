@@ -52,7 +52,7 @@ fun MoreScreen(
     var isCheckingUpdate by remember { mutableStateOf(false) }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val cardColor = homeCardColor()
-    val cardBorder: BorderStroke? = null
+    val cardBorder = com.mioo.dao.ui.theme.readingCardBorder()
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = homePageColor(),

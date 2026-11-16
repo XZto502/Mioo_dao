@@ -243,7 +243,8 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = homeCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = com.mioo.dao.ui.theme.readingCardBorder()
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
