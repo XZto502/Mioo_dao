@@ -345,10 +345,8 @@ fun MiooDaoTheme(
         ) {
             val rootModifier = Modifier.fillMaxSize().background(colorScheme.background)
 
-            CompositionLocalProvider(LocalIndication provides rememberRipple(color = Color.Transparent), LocalRippleTheme provides NoRippleTheme) {
-                Box(modifier = rootModifier) {
-                    content()
-                }
+            Box(modifier = rootModifier) {
+                content()
             }
         }
     }
