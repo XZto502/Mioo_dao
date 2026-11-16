@@ -34,24 +34,25 @@ fun readingMetaStyle() = readingTextStyle(11.5f, 16f).copy(fontFeatureSettings =
 
 @Composable
 fun readingBackground(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
-    MaterialTheme.colorScheme.background else Color(0xFFF0F1F4)
+    MaterialTheme.colorScheme.background else Color(0xFFF5F6F8)
 
 /** Opaque backing for the entire reply composer, including the navigation/IME slot. */
 @Composable
-fun readingComposerColor(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
-    Color(0xFF0E1015) else Color(0xFFF0F1F4)
+fun readingComposerColor(): Color = readingBackground()
 
 @Composable
-fun readingCardColor(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
-    DaoTheme.colors.replyCardBg.copy(alpha = 1f) else Color(0xFFFAFAFC)
+fun readingCardColor(): Color = when {
+    MaterialTheme.colorScheme.background == Color.Black -> Color(0xFF0E0F12)
+    MaterialTheme.colorScheme.background.luminance() < 0.5f -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 1f)
+    else -> Color(0xFFFCFCFD)
+}
 
 @Composable
-fun readingCardBorder(): BorderStroke? = if (MaterialTheme.colorScheme.background == Color.Black)
-    BorderStroke(0.5.dp, Color.White.copy(alpha = 0.07f)) else null
+fun readingCardBorder(): BorderStroke? = if (MaterialTheme.colorScheme.background.luminance() >= 0.5f)
+    BorderStroke(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)) else null
 
 @Composable
-fun readingTopBarColor(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
-    DaoTheme.colors.glassTopBar else DaoTheme.colors.glassTopBar.copy(alpha = 0.96f)
+fun readingTopBarColor(): Color = readingBackground()
 
 /** Shared type scale for settings controls and cookie selection surfaces. */
 @Composable

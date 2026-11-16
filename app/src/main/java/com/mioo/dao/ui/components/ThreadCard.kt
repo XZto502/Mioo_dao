@@ -46,24 +46,10 @@ import com.mioo.dao.ui.theme.graphicsPressScale
 import com.mioo.dao.ui.theme.rememberPressScale
 
 @Composable
-fun homePageColor(): Color {
-    val background = MaterialTheme.colorScheme.background
-    return when {
-        background == Color.Black -> Color.Black
-        background.luminance() < 0.5f -> Color(0xFF0E1015)
-        else -> Color(0xFFF0F1F4)
-    }
-}
+fun homePageColor(): Color = com.mioo.dao.ui.theme.readingBackground()
 
 @Composable
-fun homeCardColor(): Color {
-    val background = MaterialTheme.colorScheme.background
-    return when {
-        background == Color.Black -> Color(0xFF121318)
-        background.luminance() < 0.5f -> Color(0xFF16181E)
-        else -> Color.White
-    }
-}
+fun homeCardColor(): Color = readingCardColor()
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -91,7 +77,7 @@ fun ThreadCard(
     onNumberClick: (() -> Unit)? = null,
     forumName: String? = null
 ) {
-    val border: androidx.compose.foundation.BorderStroke? = null
+    val border = readingCardBorder()
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
     val cardColors = CardDefaults.cardColors(containerColor = homeCardColor())
     val cardElevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
