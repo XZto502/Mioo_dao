@@ -70,7 +70,7 @@ internal fun FolderInputDialog(
             modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
             shape = MaterialTheme.shapes.large,
             tonalElevation = 0.dp,
-            containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF181A20) else Color.White,
+            containerColor = com.mioo.dao.ui.theme.readingCardColor(),
             onDismissRequest = { closeFolderDialog() },
             properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
             title = {
@@ -79,7 +79,7 @@ internal fun FolderInputDialog(
             },
             text = {
                 Column {
-                    val fieldColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF22252D) else Color(0xFFF2F4F8)
+                    val fieldColor = MaterialTheme.colorScheme.surfaceContainer
                     val fieldColors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = fieldColor, unfocusedContainerColor = fieldColor,
                         focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),

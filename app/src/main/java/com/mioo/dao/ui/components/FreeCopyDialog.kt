@@ -49,9 +49,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val pageColor = if (dark) {
-        if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else Color(0xFF0E1015)
-    } else Color(0xFFF0F1F4)
+    val pageColor = com.mioo.dao.ui.theme.readingBackground()
     val clipboard = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -137,7 +135,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                 Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 12.dp, vertical = 8.dp)
                     ,
                 shape = MaterialTheme.shapes.medium,
-                color = if (dark) Color(0xFF16181E) else Color.White
+                color = com.mioo.dao.ui.theme.readingCardColor()
             ) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(18.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
