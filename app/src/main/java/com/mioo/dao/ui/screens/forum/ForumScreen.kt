@@ -398,7 +398,7 @@ fun ForumScreen(
                             },
                             enabled = !uiState.isRefreshing
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

@@ -155,7 +155,7 @@ fun RefPopup(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Warning,
-                                contentDescription = "Error",
+                                contentDescription = "加载失败",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(24.dp)
                             )
