@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
@@ -585,7 +586,13 @@ class ThreadViewModel @Inject constructor(
                     // Once handed to foreground paging, its cancellation owns this request too.
                     if (preparedPrevious?.isCompleted == false) preparedPrevious.cancel()
                 }
-                emit(if (prepared is XdResponse.Success && prepared.data.idStr == threadId) prepared else flow.last())
+                if (prepared is XdResponse.Success && prepared.data.idStr == threadId) {
+                    emit(prepared)
+                } else if (mode == LoadMode.REPLACE) {
+                    emitAll(flow)
+                } else {
+                    emit(flow.last())
+                }
             }.collect { response ->
                 // A newer loadPage/jumpToPage has started — drop this emission
                 if (gen != loadGeneration) return@collect

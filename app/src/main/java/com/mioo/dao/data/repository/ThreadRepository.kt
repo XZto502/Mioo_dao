@@ -390,14 +390,22 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             }
             val response = fetchThread(tid, page)
-            // First page only; saveToHistory no-ops thrash when content/timestamp are fresh
-            if (page <= 1) {
-                saveToHistory(response)
-            }
             val networkJson = threadAdapter.toJson(response)
             if (!(emittedCache && cachedJson == networkJson)) {
                 cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
                 emit(XdResponse.Success(response))
+            }
+            // Content must reach the collector before history lookup or persistence.
+            if (page <= 1) {
+                preloadScope.launch {
+                    try {
+                        saveToHistory(response)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.w("ThreadRepository", "Failed to save browsing history", e)
+                    }
+                }
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -459,6 +467,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 emit(XdResponse.Error(message = errorMsg))
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             emit(XdResponse.Error(message = e.localizedMessage ?: "Network error", throwable = e))
         }
     }.flowOn(Dispatchers.IO)
