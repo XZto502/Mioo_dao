@@ -42,10 +42,18 @@ internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
                 else -> colors.onSurfaceVariant.copy(alpha = 0.82f)
             }, maxLines = 1, softWrap = false)
         if (post.isPo) {
-            ReadingRoleBadge(
-                "PO",
-                container = colors.secondaryContainer,
-                content = colors.onSecondaryContainer
+            Text(
+                text = "PO",
+                color = colors.onSecondaryContainer,
+                style = readingTextStyle(11f, 11f, FontWeight.Bold).copy(
+                    fontSize = 11.sp,
+                    lineHeight = 11.sp,
+                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
+                ),
+                maxLines = 1, softWrap = false,
+                modifier = Modifier.padding(start = 4.dp)
+                    .background(colors.secondaryContainer, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.5.dp, vertical = 1.dp)
             )
         }
         if (post.isAdmin) ReadingRoleBadge("ADMIN")
