@@ -112,7 +112,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { close() }) { Icon(Icons.Default.ArrowBack, "返回") }
-                Text("自由复制", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("自由复制", Modifier.weight(1f), fontSize = com.mioo.dao.ui.theme.readingTextStyle(18f, 20f).fontSize, fontWeight = FontWeight.Bold)
                 val buttonColor by animateColorAsState(if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer, label = "copyColor")
                 Surface(onClick = {
                     if (!copied && !closing && parsedText != null) {
@@ -128,7 +128,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                             if (done) Spacer(Modifier.width(4.dp))
                             Text(if (done) "已复制" else "复制全文",
                                 color = if (done) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
-                                fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                fontSize = com.mioo.dao.ui.theme.readingTextStyle(13f, 20f).fontSize, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -141,15 +141,15 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
             ) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(18.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("长按文字可自由拖动选区", Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
-                        if (postId.isNotBlank()) Text("No.$postId", fontSize = 12.sp, style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
+                        Text("长按文字可自由拖动选区", Modifier.weight(1f), fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
+                        if (postId.isNotBlank()) Text("No.$postId", fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize, style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"))
                     }
                     Spacer(Modifier.height(12.dp))
                     Divider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     Spacer(Modifier.height(12.dp))
                     if (parsedText != null) {
                         SelectionContainer {
-                            Text(cleanText, fontSize = 15.5.sp, lineHeight = 25.sp, letterSpacing = 0.25.sp,
+                            Text(cleanText, fontSize = com.mioo.dao.ui.theme.readingTextStyle(15.5f, 20f).fontSize, lineHeight = com.mioo.dao.ui.theme.readingTextStyle(14f, 25f).lineHeight, letterSpacing = 0.25.sp,
                                 fontWeight = FontWeight.Normal, color = if (dark) Color(0xFFE3E6EA) else Color(0xFF22262C))
                         }
                     }
@@ -173,7 +173,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
                             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (done) Icon(Icons.Default.Check, null, Modifier.size(14.dp))
                                 if (done) Spacer(Modifier.width(4.dp))
-                                Text(if (done) "已复制" else value, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                                Text(if (done) "已复制" else value, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize)
                             }
                         }
                     }

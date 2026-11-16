@@ -75,7 +75,7 @@ internal fun FolderInputDialog(
             properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
             title = {
                 com.mioo.dao.ui.theme.ImmersiveDialogEffect()
-                Text(if (editingFolderUuid == null) "添加云端收藏夹" else "编辑云端收藏夹", fontSize = 17.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                Text(if (editingFolderUuid == null) "添加云端收藏夹" else "编辑云端收藏夹", fontSize = com.mioo.dao.ui.theme.readingTextStyle(17.5f, 20f).fontSize, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
                 Column {
@@ -85,21 +85,21 @@ internal fun FolderInputDialog(
                         focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                         unfocusedBorderColor = Color.Transparent
                     )
-                    Text("收藏夹名称", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
+                    Text("收藏夹名称", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
                         value = newFolderName, onValueChange = { onNameChange(it) },
                         shape = RoundedCornerShape(12.dp), colors = fieldColors,
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = com.mioo.dao.ui.theme.readingTextStyle(14.5f, 20f).fontSize),
                         singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(14.dp))
-                    Text("订阅 UUID", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
+                    Text("订阅 UUID", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
                         value = newFolderUuid, onValueChange = { onUuidChange(it) },
                         shape = RoundedCornerShape(12.dp), colors = fieldColors,
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = com.mioo.dao.ui.theme.readingTextStyle(14.5f, 20f).fontSize),
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
                             Box(Modifier.size(48.dp).clickable(
@@ -113,10 +113,10 @@ internal fun FolderInputDialog(
                         }
                     )
                     Text("可填入已有订阅 ID 多端同步，或点右侧图标随机生成",
-                        Modifier.padding(start = 2.dp, top = 6.dp), fontSize = 11.sp,
+                        Modifier.padding(start = 2.dp, top = 6.dp), fontSize = com.mioo.dao.ui.theme.readingTextStyle(11f, 20f).fontSize,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     if (newFolderUuid.isNotBlank() && folders.any { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
-                        Text("该订阅 ID 已存在", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        Text("该订阅 ID 已存在", fontSize = com.mioo.dao.ui.theme.readingTextStyle(11f, 20f).fontSize, color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
