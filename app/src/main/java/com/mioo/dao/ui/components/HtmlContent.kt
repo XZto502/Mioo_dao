@@ -251,7 +251,7 @@ private fun AnnotatedString.Builder.appendHtmlFragment(
                 }.forNight(darkTheme)
                 appendRichText(spanText, color, quoteLinkColor, ctx)
             } else if (linkUrl != null && linkText != null) {
-                appendLink(linkText.stripRemainingHtmlTags(), linkUrl)
+                appendLink(linkText.stripRemainingHtmlTags(), linkUrl, quoteLinkColor)
             } else if (fullQuote != null && postId != null) {
                 appendQuote(fullQuote, postId, quoteLinkColor)
             }
@@ -318,7 +318,7 @@ private fun AnnotatedString.Builder.appendRichText(
         val fullQuote = matcher.group(3)
         val postId = matcher.group(4)
         if (linkUrl != null && linkText != null) {
-            appendLink(linkText.stripRemainingHtmlTags(), linkUrl)
+            appendLink(linkText.stripRemainingHtmlTags(), linkUrl, quoteLinkColor)
         } else if (fullQuote != null && postId != null) {
             appendQuote(fullQuote, postId, quoteLinkColor)
         }
@@ -388,14 +388,13 @@ private fun AnnotatedString.Builder.appendStyledPlain(plain: String, color: Colo
     if (color != null) addStyle(SpanStyle(color = color), start, length)
 }
 
-private fun AnnotatedString.Builder.appendLink(label: String, url: String) {
+private fun AnnotatedString.Builder.appendLink(label: String, url: String, linkColor: Color) {
     if (label.isEmpty()) return
     val start = length
     append(label)
     addStyle(
         SpanStyle(
-            color = Color(0xFF1E88E5),
-            fontWeight = FontWeight.Bold,
+            color = linkColor,
             textDecoration = TextDecoration.Underline
         ),
         start,
@@ -414,7 +413,6 @@ private fun AnnotatedString.Builder.appendQuote(
     addStyle(
         SpanStyle(
             color = quoteLinkColor,
-            fontWeight = FontWeight.Bold,
             textDecoration = TextDecoration.Underline
         ),
         start,
