@@ -271,6 +271,8 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             } catch (e: ApiBusinessException) {
                 throw e
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // fall through to Moshi
             }
@@ -746,6 +748,8 @@ class ThreadRepositoryImpl @Inject constructor(
                     )
                 }
                 delay(200)
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
             }
         }
@@ -786,6 +790,8 @@ class ThreadRepositoryImpl @Inject constructor(
                     snapshot[bookmark.id] = count
                 }
                 delay(150)
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
             }
         }
@@ -793,6 +799,8 @@ class ThreadRepositoryImpl @Inject constructor(
         // 2) Official X-island cloud subscriptions (feed?uuid=) — same source as 蓝岛订阅
         val folders = try {
             settingsDataStore.feedFoldersFlow.first()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             emptyList()
         }
@@ -822,6 +830,8 @@ class ThreadRepositoryImpl @Inject constructor(
                     }
                 }
                 delay(200)
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
             }
         }
@@ -936,6 +946,7 @@ class ThreadRepositoryImpl @Inject constructor(
             }
             emit(XdResponse.Success(response))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
         }
@@ -950,6 +961,7 @@ class ThreadRepositoryImpl @Inject constructor(
             }
             emit(interpreted)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
         }
@@ -964,6 +976,7 @@ class ThreadRepositoryImpl @Inject constructor(
             }
             emit(interpreted)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
         }
@@ -999,6 +1012,8 @@ class ThreadRepositoryImpl @Inject constructor(
             // 必须遍历全部已配置云端收藏夹 + 用户自己的订阅 uuid，否则会静默 no-op。
             val configured = try {
                 settingsDataStore.feedFoldersFlow.first().map { it.uuid }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 emptyList()
             }
@@ -1007,6 +1022,8 @@ class ThreadRepositoryImpl @Inject constructor(
                 com.mioo.dao.data.api.CookieInterceptor.extractHash(
                     settingsDataStore.userHashFlow.first()
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 null
             }
@@ -1021,11 +1038,14 @@ class ThreadRepositoryImpl @Inject constructor(
                         cloudFeedDao.removeFeedThread(uuid, tid)
                         removed++
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                 }
             }
             emit(XdResponse.Success(removed))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             val msg = e.localizedMessage ?: "Network error"
             emit(XdResponse.Error(message = msg, throwable = e))
         }
@@ -1039,6 +1059,8 @@ class ThreadRepositoryImpl @Inject constructor(
                         entity.replyCount.takeIf { it > 0 }?.let { entity.threadId to it }
                     }
                     .toMap()
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 emptyMap()
             }
@@ -1050,6 +1072,8 @@ class ThreadRepositoryImpl @Inject constructor(
                 val count = fetchThread(tid, 1).replyCount ?: return@withContext null
                 cloudFeedDao.updateReplyCount(tid, count)
                 count
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 null
             }
@@ -1060,6 +1084,7 @@ class ThreadRepositoryImpl @Inject constructor(
             cacheDao.clearAllCache()
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             emit(XdResponse.Error(message = e.localizedMessage ?: "Clear cache failed", throwable = e))
         }
     }.flowOn(Dispatchers.IO)
@@ -1089,6 +1114,8 @@ class ThreadRepositoryImpl @Inject constructor(
                     val response = fetchThread(tid, 1)
                     val json = threadAdapter.toJson(response)
                     cacheDao.insertCache(CacheEntity("thread_$tid", 1, json))
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                 }
                 current++
@@ -1096,6 +1123,7 @@ class ThreadRepositoryImpl @Inject constructor(
             }
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             emit(XdResponse.Error(message = e.localizedMessage ?: "Preloading failed", throwable = e))
         }
     }.flowOn(Dispatchers.IO)
