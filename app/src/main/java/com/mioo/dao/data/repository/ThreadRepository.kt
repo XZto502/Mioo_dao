@@ -1171,6 +1171,7 @@ class ThreadRepositoryImpl @Inject constructor(
                         // Longer gap so list fling / image decode keep the network slot
                         delay(750)
                     } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                         // Auth / deleted: stop the whole preload wave (no point hammering)
                         if (e is ApiBusinessException) return@launch
                     }
