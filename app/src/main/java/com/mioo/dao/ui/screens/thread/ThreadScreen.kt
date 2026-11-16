@@ -350,11 +350,16 @@ fun ThreadScreen(
             }
         }
     }
-    val edgePaging = remember(listState, viewModel) {
+    var userMovedDuringRestore by remember(viewModel, listUi.contentRevision) { mutableStateOf(false) }
+    val edgePaging = remember(listState, viewModel, listUi.contentRevision) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.Drag && available.y != 0f) {
                     creatorButtonVisible = false
+                    val state = viewModel.listUiState.value
+                    if (state.pendingScrollIndex != null && !state.isReplacing && state.thread != null) {
+                        userMovedDuringRestore = true
+                    }
                 }
                 val state = viewModel.listUiState.value
                 if (shouldLoadPreviousAtEdge(
@@ -401,9 +406,13 @@ fun ThreadScreen(
 
     // 等实际布局就绪再恢复，不能在入场动画仍隐藏列表时把目标钳制成第 0 项。
     LaunchedEffect(listUi.pendingScrollIndex, listUi.displayItems.size, listUi.isLoading, listUi.isReplacing,
-        listState, allowHeavyList) {
+        listState, allowHeavyList, userMovedDuringRestore) {
         val index = listUi.pendingScrollIndex ?: return@LaunchedEffect
         if (listUi.isReplacing || listUi.thread == null || !allowHeavyList) return@LaunchedEffect
+        if (userMovedDuringRestore) {
+            viewModel.consumePendingScrollIndex()
+            return@LaunchedEffect
+        }
         val hasMain = listUi.startPage <= 1
         val count = listUi.displayItems.size + if (hasMain) 1 else 0
         if (count > 0) {

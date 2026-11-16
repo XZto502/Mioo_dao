@@ -232,7 +232,7 @@ class ThreadViewModel @Inject constructor(
         val poOnly = state.showPoOnly
         previousPrefetch.prepare(page to poOnly) {
             (if (poOnly) threadRepository.getPoDetail(threadId, page)
-             else threadRepository.getThreadDetail(threadId, page)).last()
+             else threadRepository.getThreadDetail(threadId, page)).first()
         }
     }
     private var quoteFetchJob: Job? = null
@@ -693,10 +693,9 @@ class ThreadViewModel @Inject constructor(
 
                         // Capture the live viewport at publication, not when the request started.
                         // Explicit restoration also cancels accumulated edge fling displacement.
-                        val prependAnchor = if (mode == LoadMode.PREPEND &&
-                            _listState.value.pendingScrollIndex == null) {
-                            prependAnchorProvider?.invoke(displayItems.map { it.idStr }, page <= 1)
-                        } else null
+                        // Stable floor keys keep the live viewport during prepend.
+                        // Publishing a scroll request here cancels each new drag/fling.
+                        val prependAnchor: Pair<Int, Int>? = null
                         seedLocalQuotes(newPosts, threadData)
                         _listState.update { state ->
                             state.copy(
