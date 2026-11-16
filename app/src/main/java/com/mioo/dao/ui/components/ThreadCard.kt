@@ -45,12 +45,6 @@ import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.graphicsPressScale
 import com.mioo.dao.ui.theme.rememberPressScale
 
-@Composable
-fun homePageColor(): Color = com.mioo.dao.ui.theme.readingBackground()
-
-@Composable
-fun homeCardColor(): Color = readingCardColor()
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ThreadCard(
@@ -80,7 +74,7 @@ fun ThreadCard(
 ) {
     val border = readingCardBorder()
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
-    val cardColors = CardDefaults.cardColors(containerColor = homeCardColor())
+    val cardColors = CardDefaults.cardColors(containerColor = readingCardColor())
     val cardElevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     val cardShape = shape
     val bodyStyle = readingBodyStyle()

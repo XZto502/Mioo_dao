@@ -109,7 +109,7 @@ import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
-import com.mioo.dao.ui.components.homePageColor
+import com.mioo.dao.ui.theme.readingBackground
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.compressImageUnder2MB
@@ -440,7 +440,7 @@ fun ForumScreen(
             },
             modifier = modifier,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = homePageColor()
+            containerColor = readingBackground()
         ) { paddingValues ->
             Box(
                 modifier = Modifier

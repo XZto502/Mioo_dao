@@ -47,8 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.local.HistoryType
 import com.mioo.dao.data.model.effectiveTitle
-import com.mioo.dao.ui.components.homePageColor
-import com.mioo.dao.ui.components.homeCardColor
+import com.mioo.dao.ui.theme.readingBackground
+import com.mioo.dao.ui.theme.readingCardColor
 import com.mioo.dao.ui.components.HtmlContent
 import com.mioo.dao.ui.components.HtmlParseCache
 import com.mioo.dao.ui.components.LocalDicePreset
@@ -109,7 +109,7 @@ fun HistoryScreen(
 
     Box(modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = homePageColor(),
+            containerColor = readingBackground(),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopAppBar(
@@ -242,7 +242,7 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
     val date = formatReadingTimestamp(item.timestamp, includeSeconds = false)
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = homeCardColor()),
+        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = com.mioo.dao.ui.theme.readingCardBorder()
     ) {

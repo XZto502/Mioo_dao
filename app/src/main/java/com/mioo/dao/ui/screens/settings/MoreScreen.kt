@@ -32,8 +32,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mioo.dao.ui.theme.readingTextStyle
-import com.mioo.dao.ui.components.homePageColor
-import com.mioo.dao.ui.components.homeCardColor
+import com.mioo.dao.ui.theme.readingBackground
+import com.mioo.dao.ui.theme.readingCardColor
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.utils.UpdatePromptController
@@ -51,11 +51,11 @@ fun MoreScreen(
     val allowThirdParty = LocalThirdPartyServicesAllowed.current
     var isCheckingUpdate by remember { mutableStateOf(false) }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val cardColor = homeCardColor()
+    val cardColor = readingCardColor()
     val cardBorder = com.mioo.dao.ui.theme.readingCardBorder()
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = homePageColor(),
+        containerColor = readingBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(title = { Text("更多", style = MaterialTheme.typography.titleMedium.copy(fontSize = MaterialTheme.typography.titleMedium.fontSize * 1.125f), fontWeight = FontWeight.Bold, maxLines = 1) },

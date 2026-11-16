@@ -311,7 +311,7 @@ fun OfflineThreadCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.components.homeCardColor()),
+        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {

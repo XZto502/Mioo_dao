@@ -9,7 +9,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.ui.screens.forum.ForumViewModel
-import com.mioo.dao.ui.components.homePageColor
+import com.mioo.dao.ui.theme.readingBackground
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
@@ -195,7 +195,7 @@ fun FeedScreen(
             )
         },
         modifier = modifier,
-        containerColor = homePageColor(),
+        containerColor = readingBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Column(
