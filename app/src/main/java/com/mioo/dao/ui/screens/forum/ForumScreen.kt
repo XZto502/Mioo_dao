@@ -724,7 +724,8 @@ private fun ForumBoardDrawer(
                 item(key = "header_pinned", contentType = "drawer_header") {
                     Text(
                         text = "置顶版块",
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                     )
@@ -769,7 +770,8 @@ private fun ForumBoardDrawer(
                         ) {
                             Text(
                                 text = group.name,
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f)
                             )

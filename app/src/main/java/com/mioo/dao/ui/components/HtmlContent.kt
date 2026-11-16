@@ -395,6 +395,7 @@ private fun AnnotatedString.Builder.appendLink(label: String, url: String, linkC
     addStyle(
         SpanStyle(
             color = linkColor,
+            fontWeight = FontWeight.Bold,
             textDecoration = TextDecoration.Underline
         ),
         start,
@@ -413,6 +414,7 @@ private fun AnnotatedString.Builder.appendQuote(
     addStyle(
         SpanStyle(
             color = quoteLinkColor,
+            fontWeight = FontWeight.Bold,
             textDecoration = TextDecoration.Underline
         ),
         start,

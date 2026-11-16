@@ -173,7 +173,7 @@ fun RefPopup(
                         if (!postData.title.isNullOrBlank()) {
                             Text(
                                 text = postData.title,
-                                style = readingTitleStyle(),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 modifier = Modifier.padding(bottom = 6.dp)
                             )
                         }
