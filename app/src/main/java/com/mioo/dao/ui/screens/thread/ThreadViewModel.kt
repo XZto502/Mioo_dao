@@ -359,7 +359,7 @@ class ThreadViewModel @Inject constructor(
         quoteFetchJob?.cancel()
         isLastPage = false
         rawPosts = emptyList()
-        quoteCache.clear()
+        // This ViewModel is bound to one thread; keep resolved quotes across reloads.
         quoteIdExtractCache.evictAll()
         stickyResumeIndex = null
         resumePostId = null
