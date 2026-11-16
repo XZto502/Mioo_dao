@@ -49,7 +49,7 @@ internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
             )
         }
         if (post.isAdmin) ReadingRoleBadge("ADMIN", DaoTheme.colors.admin.copy(alpha = 0.12f), DaoTheme.colors.admin)
-        if (post.isSage) ReadingRoleBadge("SAGE", DaoTheme.colors.sageTag.copy(alpha = 0.12f), DaoTheme.colors.sageTag)
+        if (post.isSage) ReadingRoleBadge("SAGE")
     }
 }
 
@@ -86,7 +86,8 @@ internal fun ReadingPostSubject(post: PostData) {
     if (hasTitle) {
         Text(
             text = title,
-            style = readingTitleStyle(),
+            fontSize = 15.5.sp,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
     }
@@ -94,7 +95,9 @@ internal fun ReadingPostSubject(post: PostData) {
         if (hasTitle) Spacer(Modifier.height(2.dp))
         Text(
             text = name,
-            style = readingTextStyle(13f, 18f),
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            fontWeight = FontWeight.Normal,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
         )
     }
