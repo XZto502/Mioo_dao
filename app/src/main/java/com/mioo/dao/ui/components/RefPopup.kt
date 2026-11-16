@@ -113,6 +113,7 @@ fun RefPopup(
                 .heightIn(max = maxCardHeight),
             shape = MaterialTheme.shapes.large,
             colors = CardDefaults.cardColors(containerColor = readingCardColor()),
+            border = readingCardBorder(),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
