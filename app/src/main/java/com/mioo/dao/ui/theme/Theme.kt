@@ -343,61 +343,7 @@ fun MiooDaoTheme(
             typography = scaledTypography,
             shapes = Shapes
         ) {
-            // Defer ambient glow until after first list frames — solid bg only on cold start.
-            var showAmbientGlow by remember { mutableStateOf(false) }
-            LaunchedEffect(glassEffectEnabled) {
-                if (!glassEffectEnabled) {
-                    showAmbientGlow = false
-                    return@LaunchedEffect
-                }
-                // Wait until progressive list + images settle before extra GPU fill
-                delay(2800)
-                showAmbientGlow = true
-            }
-
-            // Cache glow colors; drawWithCache rebuilds brushes only when size/colors change
-            // (avoids radialGradient allocations during list scroll overdraw).
-            val primaryGlow = remember(colorScheme.primary) { colorScheme.primary.copy(alpha = 0.16f) }
-            val tertiaryGlow = remember(colorScheme.tertiary) { colorScheme.tertiary.copy(alpha = 0.12f) }
-            val secondaryGlow = remember(colorScheme.secondary) { colorScheme.secondary.copy(alpha = 0.08f) }
-
-            val rootModifier = if (glassEffectEnabled && showAmbientGlow) {
-                Modifier
-                    .fillMaxSize()
-                    .background(colorScheme.background)
-                    .drawWithCache {
-                        val r1 = 200.dp.toPx()
-                        val c1 = Offset(140.dp.toPx(), 170.dp.toPx())
-                        val brush1 = Brush.radialGradient(
-                            colors = listOf(primaryGlow, Color.Transparent),
-                            center = c1,
-                            radius = r1
-                        )
-                        val r2 = 225.dp.toPx()
-                        val c2 = Offset(size.width + 60.dp.toPx() - r2, size.height + 70.dp.toPx() - r2)
-                        val brush2 = Brush.radialGradient(
-                            colors = listOf(tertiaryGlow, Color.Transparent),
-                            center = c2,
-                            radius = r2
-                        )
-                        val r3 = 125.dp.toPx()
-                        val c3 = Offset(size.width + 30.dp.toPx() - r3, size.height / 2f + 10.dp.toPx())
-                        val brush3 = Brush.radialGradient(
-                            colors = listOf(secondaryGlow, Color.Transparent),
-                            center = c3,
-                            radius = r3
-                        )
-                        onDrawBehind {
-                            drawCircle(brush = brush1, radius = r1, center = c1)
-                            drawCircle(brush = brush2, radius = r2, center = c2)
-                            drawCircle(brush = brush3, radius = r3, center = c3)
-                        }
-                    }
-            } else {
-                Modifier
-                    .fillMaxSize()
-                    .background(colorScheme.background)
-            }
+            val rootModifier = Modifier.fillMaxSize().background(colorScheme.background)
 
             CompositionLocalProvider(LocalIndication provides rememberRipple(color = Color.Transparent), LocalRippleTheme provides NoRippleTheme) {
                 Box(modifier = rootModifier) {
