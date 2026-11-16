@@ -136,7 +136,7 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
             Surface(
                 Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 12.dp, vertical = 8.dp)
                     ,
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = if (dark) Color(0xFF16181E) else Color.White
             ) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(18.dp)) {

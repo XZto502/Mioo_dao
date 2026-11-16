@@ -1255,7 +1255,7 @@ fun SettingsScreen(
         if (showUpdateChannelDialog) {
             AlertDialog(
                 onDismissRequest = { showUpdateChannelDialog = false },
-                shape = RoundedCornerShape(22.dp), tonalElevation = 0.dp,
+                shape = MaterialTheme.shapes.large, tonalElevation = 0.dp,
                 title = { Text("更新通道", fontSize = 17.5.sp, fontWeight = FontWeight.SemiBold) },
                 text = {
                     Column {
@@ -1560,7 +1560,7 @@ internal fun secondaryCardBackground(): Color {
 
 @Composable
 internal fun SettingsGroupCard(modifier: Modifier = Modifier, elevation: androidx.compose.material3.CardElevation = CardDefaults.cardElevation(0.dp), content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground(), contentColor = MaterialTheme.colorScheme.onSurface), elevation = elevation, content = content)
+    Card(modifier = modifier, shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = secondaryCardBackground(), contentColor = MaterialTheme.colorScheme.onSurface), elevation = elevation, content = content)
 }
 
 @Composable
