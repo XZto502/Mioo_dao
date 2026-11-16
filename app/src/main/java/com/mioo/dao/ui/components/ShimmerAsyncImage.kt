@@ -104,8 +104,13 @@ fun ListThumbAsyncImage(
         mutableStateOf(thumbSizeCache[listUrl] ?: bitmap?.let { IntSize(it.width, it.height) })
     }
     val ratio = imgSize?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) }
+    val frameHeight = minOf(previewMaxSize, 116.dp)
+    val frameShape = RoundedCornerShape(10.dp)
     val frame = if (preserveRatio) {
-        modifier.size(116.dp * (ratio ?: 0.48f), 116.dp).clip(RoundedCornerShape(10.dp))
+        modifier.size(frameHeight * (ratio ?: 1f), frameHeight)
+            .clip(frameShape)
+            .then(if (imgSize == null) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) else Modifier)
+            .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), frameShape)
     } else modifier
     val dataSaver = com.mioo.dao.ui.theme.LocalDataSaverEnabled.current
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
