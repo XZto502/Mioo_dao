@@ -87,6 +87,7 @@ fun HistoryScreen(
     var deleteItem by remember { mutableStateOf<HistoryItem?>(null) }
     var image by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    var pageSwitchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val haptics = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
     val searchFocus = remember { FocusRequester() }
@@ -160,7 +161,10 @@ fun HistoryScreen(
                         Surface(onClick = {
                             if (!selected) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
+                                pageSwitchJob?.cancel()
+                                pageSwitchJob = scope.launch {
+                                    pager.animateScrollToPage(index, animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                                }
                             }
                         }, shape = CircleShape, color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent) {
                             Text(entry.label, Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -170,7 +174,7 @@ fun HistoryScreen(
                     }
                 }
 
-                HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
+                HorizontalPager(state = pager, beyondBoundsPageCount = 2, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
                     val records by viewModel.items(category).collectAsState()
                     val quoteColor = MaterialTheme.colorScheme.primary

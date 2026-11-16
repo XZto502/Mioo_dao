@@ -113,6 +113,7 @@ fun FeedScreen(
         }
     }
     val scope = rememberCoroutineScope()
+    var pageSwitchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val haptics = LocalHapticFeedback.current
     val emptyStringLambda = remember { { _: String -> } }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
@@ -209,7 +210,10 @@ fun FeedScreen(
                     Surface(onClick = {
                         if (!selected) {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
+                            pageSwitchJob?.cancel()
+                            pageSwitchJob = scope.launch {
+                                pager.animateScrollToPage(index, animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                            }
                         }
                     }, shape = CircleShape, color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent) {
                         Text(if (id == null) "已离线" else uiState.feedFolders.firstOrNull { it.uuid == id }?.name.orEmpty(),
@@ -220,7 +224,7 @@ fun FeedScreen(
                 }
             }
 
-            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
+            HorizontalPager(state = pager, beyondBoundsPageCount = 1, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
                 val folderId = folderIds[page]
                 val current = folderId == uiState.selectedFolderId
                 val pageState = if (current) uiState else pageSnapshots[pageKey(folderId)]
