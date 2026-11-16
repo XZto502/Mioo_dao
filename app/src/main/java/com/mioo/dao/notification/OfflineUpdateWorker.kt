@@ -46,7 +46,7 @@ class OfflineUpdateWorker @AssistedInject constructor(
 
     private suspend fun allowed(): Boolean {
         val (enabled, wifiOnly) = settings.offlineUpdatePolicy.first()
-        if (!enabled) return false
+        if (!enabled || settings.dataSaverEnabledFlow.first()) return false
         val manager = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
         return network.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
