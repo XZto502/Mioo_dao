@@ -1006,59 +1006,18 @@ private fun ForumThreadListPane(
         enabled = warmEnabled && showImages && listReady
     )
 
-    // Block dialog outside items — avoids per-row AlertDialog composition during scroll
+    // A single dialog is shared by all visible rows.
     blockTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { blockTarget = null },
-            properties = immersiveDialogProperties(),
-            title = {
-                ImmersiveDialogEffect()
-                Text("内容操作")
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextButton(
-                        onClick = {
-                            onBlockThread(target.idStr)
-                            blockTarget = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("屏蔽此串 (No.${target.idStr})")
-                    }
-                    TextButton(
-                        onClick = {
-                            onBlockUser(target.userHash)
-                            blockTarget = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("屏蔽发言饼干 (ID: ${target.userHash})")
-                    }
-                    TextButton(
-                        onClick = {
-                            onFreeCopy(target.rawContent)
-                            blockTarget = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("自由复制帖子内容")
-                    }
-                    TextButton(
-                        onClick = { blockTarget = null },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("取消")
-                    }
-                }
-            },
-            confirmButton = {}
+        com.mioo.dao.ui.components.PostActionSheet(
+            title = "内容操作 No.${target.idStr}",
+            onDismiss = { blockTarget = null },
+            actions = listOf(
+                com.mioo.dao.ui.components.PostAction("屏蔽此串 (No.${target.idStr})", com.mioo.dao.ui.components.PostActionIcons.block, true) { onBlockThread(target.idStr) },
+                com.mioo.dao.ui.components.PostAction("屏蔽该饼干 (ID: ${target.userHash})", com.mioo.dao.ui.components.PostActionIcons.blockUser, true) { onBlockUser(target.userHash) },
+                com.mioo.dao.ui.components.PostAction("复制文本", com.mioo.dao.ui.components.PostActionIcons.copy) { onFreeCopy(target.rawContent) }
+            )
         )
     }
-
     // The platform edge stretch can consume the first pull while unwinding a
     // fling at the top. The refresh indicator owns this edge interaction instead.
     val responsiveConfiguration = rememberResponsiveListConfiguration()

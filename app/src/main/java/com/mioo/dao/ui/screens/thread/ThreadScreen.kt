@@ -1877,55 +1877,17 @@ private fun PostActionDialog(
     blockUserLabel: String,
     onShareCard: (() -> Unit)? = null
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        properties = immersiveDialogProperties(),
-        title = {
-            ImmersiveDialogEffect()
-            Text(title)
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                TextButton(
-                    onClick = { onQuote(); onDismiss() },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("引用回复") }
-                if (onShareCard != null) {
-                    TextButton(
-                        onClick = { onShareCard(); onDismiss() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Outlined.Share, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("生成分享卡片")
-                    }
-                }
-                TextButton(
-                    onClick = { onBlockThread(); onDismiss() },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(blockThreadLabel) }
-                TextButton(
-                    onClick = { onBlockUser(); onDismiss() },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(blockUserLabel) }
-                TextButton(
-                    onClick = { onCopy(); onDismiss() },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("复制文本") }
-                TextButton(
-                    onClick = { onReport(); onDismiss() },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("举报") }
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("取消") }
-            }
-        },
-        confirmButton = {}
+    com.mioo.dao.ui.components.PostActionSheet(
+        title = title,
+        onDismiss = onDismiss,
+        actions = buildList {
+            add(com.mioo.dao.ui.components.PostAction("引用回复", com.mioo.dao.ui.components.PostActionIcons.quote, onClick = onQuote))
+            if (onShareCard != null) add(com.mioo.dao.ui.components.PostAction("生成分享卡片", com.mioo.dao.ui.components.PostActionIcons.share, onClick = onShareCard))
+            add(com.mioo.dao.ui.components.PostAction(blockThreadLabel, com.mioo.dao.ui.components.PostActionIcons.block, true, onBlockThread))
+            add(com.mioo.dao.ui.components.PostAction(blockUserLabel, com.mioo.dao.ui.components.PostActionIcons.blockUser, true, onBlockUser))
+            add(com.mioo.dao.ui.components.PostAction("复制文本", com.mioo.dao.ui.components.PostActionIcons.copy, onClick = onCopy))
+            add(com.mioo.dao.ui.components.PostAction("举报", com.mioo.dao.ui.components.PostActionIcons.report, true, onReport))
+        }
     )
 }
 
