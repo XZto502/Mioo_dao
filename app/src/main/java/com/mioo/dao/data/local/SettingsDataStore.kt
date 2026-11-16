@@ -860,6 +860,85 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
+    suspend fun updateStringList(key: androidx.datastore.preferences.core.Preferences.Key<String>, transform: (MutableList<String>) -> Unit) {
+        context.dataStore.edit { preferences ->
+            val list = parseStringList(preferences[key]).toMutableList()
+            transform(list)
+            preferences[key] = org.json.JSONArray(list).toString()
+        }
+    }
+
+    suspend fun updateCookieNote(cookie: String, note: String) {
+        context.dataStore.edit { preferences ->
+            val notes = try { org.json.JSONObject(preferences[KEY_COOKIE_NOTES] ?: "{}") }
+                catch (_: org.json.JSONException) { org.json.JSONObject() }
+            if (note.isBlank()) notes.remove(cookie) else notes.put(cookie, note.trim())
+            preferences[KEY_COOKIE_NOTES] = notes.toString()
+        }
+    }
+
+    suspend fun selectCookie(index: Int) {
+        context.dataStore.edit { preferences ->
+            val raw = preferences[KEY_COOKIES_LIST].orEmpty()
+            val cookies = if (raw.startsWith("[")) parseStringList(raw) else raw.split(",").filter { it.isNotBlank() }
+            if (index in cookies.indices) {
+                preferences[KEY_SELECTED_COOKIE_INDEX] = index
+                preferences[KEY_USER_HASH] = cookies[index]
+            }
+        }
+    }
+
+    suspend fun changeCookie(cookie: String, remove: Boolean) {
+        context.dataStore.edit { preferences ->
+            val raw = preferences[KEY_COOKIES_LIST].orEmpty()
+            val cookies = (if (raw.startsWith("[")) parseStringList(raw) else raw.split(",").filter { it.isNotBlank() }).toMutableList()
+            val oldIndex = cookies.indexOf(cookie)
+            if (remove && oldIndex >= 0) {
+                cookies.removeAt(oldIndex)
+                val notes = try { org.json.JSONObject(preferences[KEY_COOKIE_NOTES] ?: "{}") }
+                    catch (_: org.json.JSONException) { org.json.JSONObject() }
+                notes.remove(cookie)
+                preferences[KEY_COOKIE_NOTES] = notes.toString()
+                val selected = preferences[KEY_SELECTED_COOKIE_INDEX] ?: 0
+                val newIndex = if (cookies.isEmpty()) 0 else
+                    (if (oldIndex < selected) selected - 1 else selected).coerceIn(0, cookies.lastIndex)
+                preferences[KEY_SELECTED_COOKIE_INDEX] = newIndex
+                preferences[KEY_USER_HASH] = cookies.getOrNull(newIndex).orEmpty()
+                preferences[KEY_COOKIES_LIST] = org.json.JSONArray(cookies).toString()
+            } else if (!remove && cookie.isNotBlank() && oldIndex < 0) {
+                cookies.add(cookie)
+                preferences[KEY_COOKIES_LIST] = org.json.JSONArray(cookies).toString()
+                if (cookies.size == 1) {
+                    preferences[KEY_SELECTED_COOKIE_INDEX] = 0
+                    preferences[KEY_USER_HASH] = cookie
+                    if (preferences[KEY_AUTH_COOKIE].isNullOrBlank()) preferences[KEY_AUTH_COOKIE] = cookie
+                }
+            }
+        }
+    }
+
+    suspend fun changeFeedFolder(oldUuid: String?, folder: com.mioo.dao.data.model.FeedFolder?) {
+        context.dataStore.edit { preferences ->
+            val input = try { org.json.JSONArray(preferences[KEY_FEED_FOLDERS] ?: "[]") }
+                catch (_: org.json.JSONException) { org.json.JSONArray() }
+            val folders = mutableListOf<com.mioo.dao.data.model.FeedFolder>()
+            for (i in 0 until input.length()) {
+                val obj = input.optJSONObject(i) ?: continue
+                val uuid = obj.optString("uuid", "")
+                if (uuid.isNotEmpty()) folders.add(com.mioo.dao.data.model.FeedFolder(obj.optString("name", ""), uuid))
+            }
+            val index = folders.indexOfFirst { it.uuid == oldUuid }
+            when {
+                folder == null && index >= 0 -> folders.removeAt(index)
+                folder != null && oldUuid == null && folders.none { it.uuid == folder.uuid } -> folders.add(folder)
+                folder != null && index >= 0 && folders.none { it.uuid == folder.uuid && it.uuid != oldUuid } -> folders[index] = folder
+            }
+            val output = org.json.JSONArray()
+            folders.forEach { output.put(org.json.JSONObject().put("name", it.name).put("uuid", it.uuid)) }
+            preferences[KEY_FEED_FOLDERS] = output.toString()
+        }
+    }
+
     suspend fun saveCookiesList(list: List<String>) {
         context.dataStore.edit { preferences ->
             val jsonArray = org.json.JSONArray()
