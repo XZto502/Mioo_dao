@@ -254,7 +254,7 @@ fun ThreadScreen(
     }
     DisposableEffect(viewModel, listState) {
         viewModel.registerPrependAnchorProvider { ids, hasMain ->
-            resolvePrependReadingAnchor(
+            if (listState.canScrollBackward) null else resolvePrependReadingAnchor(
                 listState.layoutInfo.visibleItemsInfo.map { it.key.toString() to it.offset },
                 ids, viewModel.threadId, hasMain
             )
@@ -748,8 +748,8 @@ fun ThreadScreen(
                         val movingUp = position.first < previousPosition.first ||
                             (position.first == previousPosition.first && position.second < previousPosition.second)
                         previousPosition = position
-                        if (position.first > 3) viewModel.allowPreviousLoad()
-                        if (scrolling && movingUp && position.first <= 20 && listUi.startPage > 1 && listUi.previousPageError == null) {
+                        if (position.first > 3 || (scrolling && movingUp)) viewModel.allowPreviousLoad()
+                        if (scrolling && movingUp && position.first <= 30 && listUi.startPage > 1 && listUi.previousPageError == null) {
                             saveProgressNow()
                             viewModel.loadPreviousPage()
                         } else if (last >= 0 && last >= listState.layoutInfo.totalItemsCount - 6 && !listUi.isLastPage && listUi.nextPageError == null) {
