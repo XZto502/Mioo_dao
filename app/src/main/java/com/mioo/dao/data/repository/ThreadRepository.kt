@@ -177,10 +177,10 @@ interface ThreadRepository {
     /** 串详情页三点菜单的「已离线」状态。 */
     fun isThreadDownloaded(threadId: String): Flow<Boolean>
 
-    /** 删除单个离线串：标记行 + 离线 JSON + 仅属于该串的离线图片，并同步取消本地收藏。 */
+    /** 删除单个离线串及其缓存，保留本地收藏。 */
     suspend fun deleteOfflineThread(threadId: String)
 
-    /** 清空全部离线串并释放空间（含对应本地收藏；不动板块/时间线等常规 SWR 缓存）。 */
+    /** 清空全部离线串及其缓存，保留本地收藏和其他串的普通缓存。 */
     suspend fun clearAllOfflineThreads()
 
     /**
@@ -1216,7 +1216,6 @@ class ThreadRepositoryImpl @Inject constructor(
         val entity = offlineThreadDao.get(threadId)
         offlineThreadDao.delete(threadId)
         cacheDao.deleteCacheByKey("thread_$threadId")
-        historyDao.deleteBookmarkById(threadId)
         if (entity != null) {
             val own = runCatching { stringListAdapter.fromJson(entity.imageFilesJson) }
                 .getOrNull().orEmpty().toSet()
@@ -1234,9 +1233,9 @@ class ThreadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun clearAllOfflineThreads() = withContext(Dispatchers.IO) {
+        val offlineIds = offlineThreadDao.getAllOnce().map { it.threadId }
         offlineThreadDao.clear()
-        cacheDao.deleteAllThreadCache()
-        historyDao.clearAllBookmarks()
+        offlineIds.forEach { cacheDao.deleteCacheByKey("thread_$it") }
         com.mioo.dao.utils.OfflineImageStore.deleteAll(
             com.mioo.dao.utils.OfflineImageStore.dir(context)
         )
