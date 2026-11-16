@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.readingMetaStyle
 import com.mioo.dao.ui.theme.readingTextStyle
+import com.mioo.dao.ui.theme.readingTitleStyle
 
 @Composable
 internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
@@ -85,8 +86,7 @@ internal fun ReadingPostSubject(post: PostData) {
     if (hasTitle) {
         Text(
             text = title,
-            fontSize = 15.5.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = readingTitleStyle(),
             color = MaterialTheme.colorScheme.onSurface
         )
     }
@@ -94,9 +94,7 @@ internal fun ReadingPostSubject(post: PostData) {
         if (hasTitle) Spacer(Modifier.height(2.dp))
         Text(
             text = name,
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-            fontWeight = FontWeight.Normal,
+            style = readingTextStyle(13f, 18f),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
         )
     }
@@ -146,12 +144,12 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
         }
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
-                color = colors.onSurfaceVariant.copy(alpha = 0.52f),
+                color = colors.onSurfaceVariant.copy(alpha = 0.75f),
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
         }
         Text("No.${post.id}", modifier = numberModifier, style = readingMetaStyle(),
-            color = colors.onSurfaceVariant.copy(alpha = 0.42f),
+            color = colors.onSurfaceVariant.copy(alpha = 0.75f),
             maxLines = 1, softWrap = false)
     }
 }

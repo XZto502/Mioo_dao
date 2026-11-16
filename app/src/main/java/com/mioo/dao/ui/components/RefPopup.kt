@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.window.Dialog
 import com.mioo.dao.ui.theme.readingBodyStyle
 import com.mioo.dao.ui.theme.readingCardColor
+import com.mioo.dao.ui.theme.readingTitleStyle
 import com.mioo.dao.ui.theme.readingCardBorder
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooMotion
@@ -171,7 +172,7 @@ fun RefPopup(
                         if (!postData.title.isNullOrBlank()) {
                             Text(
                                 text = postData.title,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                style = readingTitleStyle(),
                                 modifier = Modifier.padding(bottom = 6.dp)
                             )
                         }

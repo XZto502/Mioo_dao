@@ -33,6 +33,9 @@ fun readingQuoteStyle() = readingTextStyle(13.5f, 19.5f).copy(
 fun readingMetaStyle() = readingTextStyle(11.5f, 16f).copy(fontFeatureSettings = "tnum")
 
 @Composable
+fun readingTitleStyle() = readingTextStyle(16.5f, 23f, FontWeight.SemiBold)
+
+@Composable
 fun readingBackground(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
     MaterialTheme.colorScheme.background else Color(0xFFF5F6F8)
 
