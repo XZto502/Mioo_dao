@@ -192,12 +192,9 @@ fun RefPopup(
                             Spacer(modifier = Modifier.height(12.dp))
                             ListThumbAsyncImage(
                                 imageUrl = imageUrl,
-                                contentDescription = "Attached Thumbnail",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(120.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { onImageClick(imageUrl) }
+                                contentDescription = "引用附图",
+                                preserveRatio = true,
+                                modifier = Modifier.clickable { onImageClick(imageUrl) }
                             )
                         }
                     }
