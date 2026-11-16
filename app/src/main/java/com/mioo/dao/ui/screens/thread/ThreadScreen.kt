@@ -1618,7 +1618,7 @@ private fun ThreadPageJumpButton(
             val density = LocalDensity.current
             val bounds = anchorBounds
             val marginPx = with(density) { 12.dp.roundToPx() }
-            val bubbleWidthPx = with(density) { 244.dp.roundToPx() }
+            val bubbleWidthPx = with(density) { 300.dp.roundToPx() }
             val gapPx = with(density) { 8.dp.roundToPx() }
             val windowWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
             val desiredLeft = windowWidthPx - marginPx - bubbleWidthPx
