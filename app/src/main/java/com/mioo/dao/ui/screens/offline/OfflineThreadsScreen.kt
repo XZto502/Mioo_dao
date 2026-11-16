@@ -321,14 +321,7 @@ fun OfflineThreadCard(
                     createdAt = "", content = "", isPo = false,
                     isAdmin = summary.poUserHash.equals("Admin", ignoreCase = true)))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = forumName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                com.mioo.dao.ui.components.ReadingPill(forumName)
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = "No.${summary.threadId}",

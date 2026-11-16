@@ -284,9 +284,5 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
 
 @Composable
 private fun HistoryPill(text: String, secondary: Boolean = false, maxWidth: Int = 92) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(shape = RoundedCornerShape(6.dp), color = if (secondary) scheme.secondaryContainer.copy(alpha = 0.65f) else scheme.primary.copy(alpha = 0.09f)) {
-        Text(text, Modifier.widthIn(max = maxWidth.dp).padding(horizontal = 6.dp, vertical = 2.dp), style = readingMetaStyle(),
-            color = if (secondary) scheme.onSecondaryContainer else scheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
+    com.mioo.dao.ui.components.ReadingPill(text, maxWidth = maxWidth)
 }

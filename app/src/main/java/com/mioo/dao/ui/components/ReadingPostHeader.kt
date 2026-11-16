@@ -59,11 +59,21 @@ private fun ReadingRoleBadge(
     container: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
     content: Color = MaterialTheme.colorScheme.primary
 ) {
-    Text(label, style = readingTextStyle(10f, 14f, FontWeight.Bold), color = content,
-        maxLines = 1, softWrap = false,
-        modifier = Modifier.padding(start = 4.dp)
-            .background(container, MaterialTheme.shapes.extraSmall)
-            .padding(horizontal = 5.dp, vertical = 1.dp))
+    ReadingPill(label, Modifier.padding(start = 4.dp), container, content)
+}
+
+@Composable
+fun ReadingPill(
+    text: String, modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+    content: Color = MaterialTheme.colorScheme.primary,
+    maxWidth: Int = 92
+) {
+    Surface(modifier = modifier, shape = MaterialTheme.shapes.extraSmall, color = container) {
+        Text(text, Modifier.widthIn(max = maxWidth.dp).padding(horizontal = 6.dp, vertical = 2.dp),
+            style = readingTextStyle(10.5f, 14f, FontWeight.Bold), color = content,
+            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /**
@@ -133,17 +143,7 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
         ReadingIdentity(post)
         if (!forumName.isNullOrBlank()) {
             Spacer(Modifier.width(6.dp))
-            Surface(
-                shape = MaterialTheme.shapes.extraSmall,
-                color = colors.primary.copy(alpha = 0.09f)
-            ) {
-                Text(
-                    forumName,
-                    Modifier.widthIn(max = 92.dp).padding(horizontal = 6.dp, vertical = 2.dp),
-                    style = readingMetaStyle(), color = colors.primary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-            }
+            ReadingPill(forumName)
         }
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
