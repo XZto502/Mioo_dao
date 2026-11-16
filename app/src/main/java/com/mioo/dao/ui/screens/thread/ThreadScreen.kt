@@ -570,9 +570,7 @@ fun ThreadScreen(
                             ) { (page, total) ->
                                 Text(
                                     text = "第 $page / $total 页",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 10.sp,
-                                        lineHeight = 11.sp,
+                                    style = readingTextStyle(10f, 11f).copy(
                                         fontFeatureSettings = "tnum",
                                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                                     ),
@@ -1271,10 +1269,7 @@ private fun Md3MenuPillItem(
             }
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontSize = 13.5.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                ),
+                style = readingTextStyle(13.5f, 19f, if (selected) FontWeight.Bold else FontWeight.Normal),
                 color = contentColor.copy(alpha = alpha)
             )
             if (selected) {
@@ -1357,10 +1352,7 @@ private fun ThreadChromeActions(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 textAlign = TextAlign.Center,
-                style = TextStyle(
-                    fontSize = 9.5.sp,
-                    lineHeight = 9.5.sp,
-                    fontWeight = FontWeight.Bold,
+                style = readingTextStyle(9.5f, 9.5f, FontWeight.Bold).copy(
                     platformStyle = PlatformTextStyle(includeFontPadding = false),
                     lineHeightStyle = LineHeightStyle(
                         alignment = LineHeightStyle.Alignment.Center,
