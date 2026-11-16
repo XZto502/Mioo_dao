@@ -588,9 +588,11 @@ class ThreadViewModel @Inject constructor(
                 }
                 if (prepared is XdResponse.Success && prepared.data.idStr == threadId) {
                     emit(prepared)
-                } else if (mode == LoadMode.REPLACE) {
+                } else if (mode == LoadMode.REPLACE && stickyResumeIndex == null) {
                     emitAll(flow)
                 } else {
+                    // Resume publishes its complete reading window once. A second
+                    // cache/network replacement can resize rows around the saved anchor.
                     emit(flow.last())
                 }
             }.collect { response ->
