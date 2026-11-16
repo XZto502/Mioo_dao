@@ -75,7 +75,8 @@ fun ThreadCard(
     showImage: Boolean = true,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
     onNumberClick: (() -> Unit)? = null,
-    forumName: String? = null
+    forumName: String? = null,
+    showReplyCount: Boolean = true
 ) {
     val border = readingCardBorder()
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
@@ -152,6 +153,7 @@ fun ThreadCard(
                 }
             }
 
+            if (showReplyCount) {
             Spacer(modifier = Modifier.height(12.dp))
 
             // Footer Row (Reply Count)
@@ -170,17 +172,18 @@ fun ThreadCard(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Comment,
-                        contentDescription = "Replies",
+                        contentDescription = "回复数",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "$replyCount replies",
+                        text = "$replyCount 回复",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+            }
             }
         }
     }

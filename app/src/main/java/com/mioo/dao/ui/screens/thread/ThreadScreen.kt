@@ -840,6 +840,7 @@ fun ThreadScreen(
                                     if (threadSettings.enableCreatorMode) creatorOpen = true
                                 },
                                 replyCount = mainThread.replyCount ?: 0,
+                                showReplyCount = false,
                                 onThreadClick = emptyLambda,
                                 onQuoteClick = onQuoteClick,
                                 onImageClick = onImageClick,
