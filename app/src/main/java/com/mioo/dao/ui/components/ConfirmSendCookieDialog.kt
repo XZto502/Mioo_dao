@@ -61,7 +61,7 @@ fun ConfirmSendCookieDialog(
         ImmersiveDialogEffect()
         AnimatedVisibility(visibleState = visible, enter = fadeIn(tween(if (reduced) 0 else 180)) + scaleIn(initialScale = 0.97f, animationSpec = tween(if (reduced) 0 else 220, easing = FastOutSlowInEasing)),
             exit = fadeOut(tween(if (reduced) 0 else 140)) + scaleOut(targetScale = 0.98f, animationSpec = tween(if (reduced) 0 else 160))) {
-            Surface(shape = RoundedCornerShape(20.dp), color = readingCardColor(), tonalElevation = 0.dp) {
+            Surface(shape = MaterialTheme.shapes.large, color = readingCardColor(), tonalElevation = 0.dp) {
                 Column(Modifier.fillMaxWidth().padding(20.dp)) {
                     Text("确认发言饼干", style = readingTextStyle(17f, 24f, FontWeight.SemiBold))
                     Spacer(Modifier.height(6.dp))

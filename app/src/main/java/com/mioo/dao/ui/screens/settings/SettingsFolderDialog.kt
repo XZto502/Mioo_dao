@@ -68,7 +68,7 @@ internal fun FolderInputDialog(
         }
         androidx.compose.material3.AlertDialog(
             modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
-            shape = RoundedCornerShape(22.dp),
+            shape = MaterialTheme.shapes.large,
             tonalElevation = 0.dp,
             containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF181A20) else Color.White,
             onDismissRequest = { closeFolderDialog() },
