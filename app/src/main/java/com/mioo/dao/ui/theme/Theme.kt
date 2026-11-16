@@ -108,7 +108,11 @@ private fun ColorScheme.withAccentContainers(dark: Boolean): ColorScheme {
         secondaryContainer = primary.copy(alpha = if (dark) 0.22f else 0.14f).compositeOver(base),
         onSecondaryContainer = primary,
         primaryContainer = primary.copy(alpha = if (dark) 0.28f else 0.18f).compositeOver(base),
-        onPrimaryContainer = primary
+        onPrimaryContainer = primary,
+        surfaceVariant = if (dark) Color(0xFF44474A) else Color(0xFFE1E3E5),
+        surfaceContainerLow = if (dark) Color(0xFF191C20) else Color(0xFFF5F6F8),
+        surfaceContainer = if (dark) Color(0xFF1D2024) else Color(0xFFEFF0F2),
+        surfaceContainerHigh = if (dark) Color(0xFF282B2F) else Color(0xFFE9EAEC)
     )
 }
 
@@ -253,7 +257,7 @@ fun MiooDaoTheme(
     }
 
     // Solid surface when glass is off so bars/cards fully cover the background.
-    val solidSurface = colorScheme.surface
+    val solidSurface = if (darkTheme) colorScheme.background else Color(0xFFF5F6F8)
     val solidCard = colorScheme.surfaceContainerHigh
     // Modifier.blur cannot frost the list behind a bar, and it does nothing below API 31.
     // On Android 8–11, keep glass fills at least 95% opaque so text stays readable.
@@ -277,8 +281,8 @@ fun MiooDaoTheme(
             fabBg = DarkFabColor,
             fabContent = DarkOnFabColor,
             sageTag = DarkSageTagColor,
-            glassTopBar = if (amoledDark) Color(0xE6000000) else glassFill(DarkGlassTopBar, solidSurface),
-            glassNavBar = if (amoledDark) Color(0xE6000000) else glassFill(DarkGlassNavBar, solidSurface)
+            glassTopBar = solidSurface,
+            glassNavBar = solidSurface
         )
     } else {
         DaoCustomColors(
@@ -291,8 +295,8 @@ fun MiooDaoTheme(
             fabBg = LightFabColor,
             fabContent = LightOnFabColor,
             sageTag = LightSageTagColor,
-            glassTopBar = glassFill(LightGlassTopBar, solidSurface),
-            glassNavBar = glassFill(LightGlassNavBar, solidSurface)
+            glassTopBar = solidSurface,
+            glassNavBar = solidSurface
         )
     }
 
