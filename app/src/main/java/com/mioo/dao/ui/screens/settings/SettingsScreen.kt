@@ -826,7 +826,7 @@ fun SettingsScreen(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("发送前确认饼干", style = settingsItemStyle())
-                    Text("发送回复或新串前选择饼干", fontSize = 12.sp,
+                    Text("发送回复或新串前选择饼干", fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 }
                 androidx.compose.material3.Switch(checked = settings.confirmCookieBeforeSend,
@@ -895,14 +895,14 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的串",
-                    fontSize = 13.sp,
+                    fontSize = com.mioo.dao.ui.theme.readingTextStyle(13f, 20f).fontSize,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedThreads.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的串",
-                        fontSize = 12.5.sp,
+                        fontSize = com.mioo.dao.ui.theme.readingTextStyle(12.5f, 20f).fontSize,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -936,14 +936,14 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的发言饼干 ID",
-                    fontSize = 13.sp,
+                    fontSize = com.mioo.dao.ui.theme.readingTextStyle(13f, 20f).fontSize,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedUsers.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的 ID",
-                        fontSize = 12.5.sp,
+                        fontSize = com.mioo.dao.ui.theme.readingTextStyle(12.5f, 20f).fontSize,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -977,7 +977,7 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的关键字",
-                    fontSize = 13.sp,
+                    fontSize = com.mioo.dao.ui.theme.readingTextStyle(13f, 20f).fontSize,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
@@ -1256,7 +1256,7 @@ fun SettingsScreen(
             AlertDialog(
                 onDismissRequest = { showUpdateChannelDialog = false },
                 shape = MaterialTheme.shapes.large, tonalElevation = 0.dp,
-                title = { Text("更新通道", fontSize = 17.5.sp, fontWeight = FontWeight.SemiBold) },
+                title = { Text("更新通道", fontSize = com.mioo.dao.ui.theme.readingTextStyle(17.5f, 20f).fontSize, fontWeight = FontWeight.SemiBold) },
                 text = {
                     Column {
                         com.mioo.dao.utils.UpdateChannel.values().forEach { channel ->
@@ -1269,13 +1269,13 @@ fun SettingsScreen(
                                     Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "正式版" else "测试版")
                                     Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "稳定版本，适合日常使用"
                                         else "抢先体验新功能，可能存在未知问题",
-                                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
                         if (updateChannel == com.mioo.dao.utils.UpdateChannel.BETA) {
                             Text("切回正式版后，将在下个更高版本正式版发布时覆盖升级",
-                                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp))
                         }
                     }
@@ -1578,7 +1578,7 @@ internal fun SettingsGroupDivider() {
 @Composable
 internal fun FolderActionButton(onClick: () -> Unit, tonal: Boolean = false, content: @Composable () -> Unit) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(20.dp))
+        modifier = Modifier.clip(MaterialTheme.shapes.medium)
             .background(if (tonal) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
             .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
