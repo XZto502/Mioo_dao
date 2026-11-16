@@ -2067,8 +2067,8 @@ private fun ReplyCreatorButton(
         enabled = enabled,
         modifier = modifier.size(56.dp),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shadowElevation = 0.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
