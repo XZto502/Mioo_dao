@@ -272,28 +272,16 @@ fun MiooDaoTheme(
     val customColors = if (darkTheme) {
         // AMOLED 深色下卡片/玻璃用近黑底
         DaoCustomColors(
-            po = DarkPoColor,
             sage = DarkSageColor,
             admin = DarkAdminColor,
-            quoteLink = DarkQuoteLinkColor,
-            threadCardBg = if (amoledDark) Color(0xE6000000) else glassFill(DarkThreadCardBg, solidCard),
-            replyCardBg = if (amoledDark) Color(0xE6000000) else glassFill(DarkReplyCardBg, solidCard),
-            fabBg = DarkFabColor,
-            fabContent = DarkOnFabColor,
             sageTag = DarkSageTagColor,
             glassTopBar = solidSurface,
             glassNavBar = solidSurface
         )
     } else {
         DaoCustomColors(
-            po = LightPoColor,
             sage = LightSageColor,
             admin = LightAdminColor,
-            quoteLink = LightQuoteLinkColor,
-            threadCardBg = glassFill(LightThreadCardBg, solidCard),
-            replyCardBg = glassFill(LightReplyCardBg, solidCard),
-            fabBg = LightFabColor,
-            fabContent = LightOnFabColor,
             sageTag = LightSageTagColor,
             glassTopBar = solidSurface,
             glassNavBar = solidSurface
