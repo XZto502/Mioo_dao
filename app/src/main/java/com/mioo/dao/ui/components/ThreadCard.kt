@@ -67,7 +67,7 @@ fun ThreadCard(
     enablePressScale: Boolean = false,
     /** When false, skip thumbnail (cold-start: defer decode until list settles). */
     showImage: Boolean = true,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    shape: androidx.compose.ui.graphics.Shape = MaterialTheme.shapes.medium,
     onNumberClick: (() -> Unit)? = null,
     forumName: String? = null,
     showReplyCount: Boolean = true
@@ -160,7 +160,7 @@ fun ThreadCard(
                     modifier = Modifier
                         .background(
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = MaterialTheme.shapes.small
                         )
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {

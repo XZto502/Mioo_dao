@@ -62,7 +62,7 @@ private fun ReadingRoleBadge(
     Text(label, style = readingTextStyle(10f, 14f, FontWeight.Bold), color = content,
         maxLines = 1, softWrap = false,
         modifier = Modifier.padding(start = 4.dp)
-            .background(container, RoundedCornerShape(5.dp))
+            .background(container, MaterialTheme.shapes.extraSmall)
             .padding(horizontal = 5.dp, vertical = 1.dp))
 }
 
@@ -131,7 +131,7 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
         if (!forumName.isNullOrBlank()) {
             Spacer(Modifier.width(6.dp))
             Surface(
-                shape = RoundedCornerShape(6.dp),
+                shape = MaterialTheme.shapes.extraSmall,
                 color = colors.primary.copy(alpha = 0.09f)
             ) {
                 Text(

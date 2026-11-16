@@ -78,7 +78,7 @@ fun ConfirmSendCookieDialog(
                                 val rowColor by animateColorAsState(
                                     if (selected) MaterialTheme.colorScheme.secondaryContainer else readingCardColor(),
                                     animationSpec = tween(if (reduced) 0 else 150), label = "confirmedCookieColor")
-                                Surface(shape = RoundedCornerShape(12.dp),
+                                Surface(shape = MaterialTheme.shapes.small,
                                     color = rowColor,
                                     modifier = Modifier.fillMaxWidth().clickable(enabled = !closing) { chosen = cookie }) {
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {

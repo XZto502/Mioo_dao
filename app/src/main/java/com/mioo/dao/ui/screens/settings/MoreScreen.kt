@@ -66,7 +66,7 @@ fun MoreScreen(
             .verticalScroll(rememberScrollState()).navigationBarsPadding()
             .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 104.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = cardColor,
+            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = cardColor,
                 shadowElevation = 0.dp, tonalElevation = 0.dp, border = cardBorder) {
                 Column {
                     MoreEntry(Icons.Default.Search, "搜索", "串号直达、本地检索与全站搜索", onNavigateToSearch)
@@ -76,7 +76,7 @@ fun MoreScreen(
                     MoreEntry(Icons.Default.Description, "草稿箱", "未发完的回复与新串草稿，随时恢复编辑", onNavigateToDrafts)
                 }
             }
-            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = cardColor,
+            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = cardColor,
                 shadowElevation = 0.dp, tonalElevation = 0.dp, border = cardBorder) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -143,7 +143,7 @@ fun MoreScreen(
 
 @Composable
 private fun MoreIcon(icon: ImageVector) {
-    Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
+    Box(Modifier.size(38.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
         contentAlignment = Alignment.Center) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
     }

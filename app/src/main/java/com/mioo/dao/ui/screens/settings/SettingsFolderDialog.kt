@@ -89,7 +89,7 @@ internal fun FolderInputDialog(
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
                         value = newFolderName, onValueChange = { onNameChange(it) },
-                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                        shape = MaterialTheme.shapes.small, colors = fieldColors,
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = com.mioo.dao.ui.theme.readingTextStyle(14.5f, 20f).fontSize),
                         singleLine = true, modifier = Modifier.fillMaxWidth()
                     )
@@ -98,7 +98,7 @@ internal fun FolderInputDialog(
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(
                         value = newFolderUuid, onValueChange = { onUuidChange(it) },
-                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                        shape = MaterialTheme.shapes.small, colors = fieldColors,
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = com.mioo.dao.ui.theme.readingTextStyle(14.5f, 20f).fontSize),
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
