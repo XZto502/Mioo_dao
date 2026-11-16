@@ -111,7 +111,7 @@ fun RefPopup(
                 .padding(horizontal = 16.dp, vertical = 24.dp)
                 .heightIn(max = maxCardHeight),
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) androidx.compose.ui.graphics.Color(0xFF16181E) else androidx.compose.ui.graphics.Color.White),
+            colors = CardDefaults.cardColors(containerColor = readingCardColor()),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
