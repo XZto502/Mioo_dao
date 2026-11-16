@@ -579,10 +579,11 @@ fun HtmlContent(
 
     val textMeasurer = if (parsed.diceBadges.isNotEmpty()) rememberTextMeasurer() else null
     val density = LocalDensity.current
+    val diceScale = MaterialTheme.typography.bodyMedium.fontSize.value / 14f
     val diceTextStyle = LocalTextStyle.current.merge(
         TextStyle(
-            fontSize = 12.5.sp,
-            lineHeight = 12.5.sp,
+            fontSize = (12.5f * diceScale).sp,
+            lineHeight = (12.5f * diceScale).sp,
             fontFeatureSettings = "tnum",
             platformStyle = PlatformTextStyle(includeFontPadding = false),
             fontWeight = FontWeight.Medium,
@@ -590,7 +591,7 @@ fun HtmlContent(
             fontFamily = mergedStyle.fontFamily
         )
     )
-    val inlineContent = remember(parsed.diceBadges, textMeasurer, density, diceTextStyle) {
+    val inlineContent = remember(parsed.diceBadges, textMeasurer, density, diceTextStyle, diceScale) {
         if (parsed.diceBadges.isEmpty()) {
             emptyMap()
         } else {
@@ -605,7 +606,7 @@ fun HtmlContent(
                 val placeholderWidth = with(density) {
                     (textWidth + (13.dp + 4.dp + 6.dp * 2 + 3.dp * 2 + 2.dp).toPx()).toSp()
                 }
-                val placeholderHeight = with(density) { 22.dp.toSp() }
+                val placeholderHeight = with(density) { (22.dp * diceScale.coerceAtLeast(1f)).toSp() }
                 spec.id to InlineTextContent(
                     placeholder = Placeholder(
                         width = placeholderWidth,
@@ -614,7 +615,7 @@ fun HtmlContent(
                     )
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        DiceBadge(spec, diceTextStyle)
+                        DiceBadge(spec, diceTextStyle, diceScale)
                     }
                 }
             }
@@ -772,7 +773,7 @@ fun HtmlContent(
 
 /** 骰点胶囊：13dp 矢量骰子 + 完整 `出目 [起,止]`。整枚可点，打开本串规则菜单。 */
 @Composable
-private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle) {
+private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle, scale: Float) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val normalBg = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
     val normalFg = MaterialTheme.colorScheme.onSecondaryContainer
@@ -780,7 +781,7 @@ private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle) {
     Row(
         modifier = Modifier
             .wrapContentWidth(unbounded = true)
-            .height(20.dp)
+            .height(20.dp * scale.coerceAtLeast(1f))
             .clip(RoundedCornerShape(6.dp))
             .background(colors.background)
             .then(
