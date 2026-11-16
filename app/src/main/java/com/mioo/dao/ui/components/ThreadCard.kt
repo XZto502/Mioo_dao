@@ -172,7 +172,7 @@ fun ThreadCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "$replyCount 回复",
+                        text = "$replyCount replies",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary
                     )
