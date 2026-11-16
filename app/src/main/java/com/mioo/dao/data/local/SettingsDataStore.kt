@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mioo.dao.data.model.ImageCacheLimit
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -79,7 +80,7 @@ class SettingsDataStore(private val context: Context) {
             }
         }.getOrDefault(defaultQuickInputs)
     }
-    val quickInputsFlow: Flow<List<QuickInputItem>> = context.dataStore.data
+    val quickInputsFlow: Flow<List<QuickInputItem>> = context.dataStore.data.distinctUntilChangedBy { it[quickInputKey] }
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { parseQuickInputs(it[quickInputKey]) }
 
@@ -196,7 +197,7 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[KEY_NETWORK_COMPATIBILITY] = enabled }
     }
 
-    val kaomojiOrderFlow: Flow<List<String>> = context.dataStore.data
+    val kaomojiOrderFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_KAOMOJI_ORDER] }
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { preferences ->
             runCatching {
@@ -357,7 +358,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_THEME_COLOR] ?: "dynamic"
         }
 
-    val cookiesListFlow: Flow<List<String>> = context.dataStore.data
+    val cookiesListFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_COOKIES_LIST] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -383,7 +384,7 @@ class SettingsDataStore(private val context: Context) {
             }
         }
 
-    val cookieNotesFlow: Flow<Map<String, String>> = context.dataStore.data
+    val cookieNotesFlow: Flow<Map<String, String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_COOKIE_NOTES] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -432,7 +433,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_AUTH_COOKIE] ?: ""
         }
 
-    val feedFoldersFlow: Flow<List<com.mioo.dao.data.model.FeedFolder>> = context.dataStore.data
+    val feedFoldersFlow: Flow<List<com.mioo.dao.data.model.FeedFolder>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_FEED_FOLDERS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -460,7 +461,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val blockedThreadsFlow: Flow<List<String>> = context.dataStore.data
+    val blockedThreadsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_BLOCKED_THREADS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -483,7 +484,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val blockedUsersFlow: Flow<List<String>> = context.dataStore.data
+    val blockedUsersFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_BLOCKED_USERS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -506,7 +507,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val pinnedForumsFlow: Flow<List<String>> = context.dataStore.data
+    val pinnedForumsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_PINNED_FORUMS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -529,7 +530,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val expandedForumGroupsFlow: Flow<List<String>> = context.dataStore.data
+    val expandedForumGroupsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_EXPANDED_FORUM_GROUPS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -552,7 +553,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val blockedKeywordsFlow: Flow<List<String>> = context.dataStore.data
+    val blockedKeywordsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_BLOCKED_KEYWORDS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
