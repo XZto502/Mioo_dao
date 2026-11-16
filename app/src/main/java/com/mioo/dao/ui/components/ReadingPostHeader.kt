@@ -48,7 +48,7 @@ internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
                 content = colors.onSecondaryContainer
             )
         }
-        if (post.isAdmin) ReadingRoleBadge("ADMIN", DaoTheme.colors.admin.copy(alpha = 0.12f), DaoTheme.colors.admin)
+        if (post.isAdmin) ReadingRoleBadge("ADMIN")
         if (post.isSage) ReadingRoleBadge("SAGE")
     }
 }
