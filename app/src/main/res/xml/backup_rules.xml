@@ -2,6 +2,4 @@
 <full-backup-content>
     <exclude domain="database" path="." />
     <exclude domain="file" path="." />
-    <!-- userhash / 饼干在 DataStore 里，不进旧版云备份 -->
-    <exclude domain="file" path="datastore/mioo_settings.preferences_pb" />
 </full-backup-content>
