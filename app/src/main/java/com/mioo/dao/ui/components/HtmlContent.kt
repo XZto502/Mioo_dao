@@ -438,12 +438,21 @@ object HtmlParseCache {
     private class Entry(val parsed: ParsedContent, val variants: Array<AnnotatedString?> = arrayOfNulls(4))
     private fun textCost(text: AnnotatedString): Long = text.length * 2L +
         (text.spanStyles.size + text.paragraphStyles.size + text.getStringAnnotations(0, text.length).size) * 128L
+    private var entryCount = 0
     private val cache = object : android.util.LruCache<HtmlCacheKey, Entry>(8 * 1024 * 1024) {
+        override fun entryRemoved(evicted: Boolean, key: HtmlCacheKey, oldValue: Entry, newValue: Entry?) {
+            if (newValue == null) entryCount--
+        }
         override fun sizeOf(key: HtmlCacheKey, value: Entry): Int =
             (key.html.length * 2L + textCost(value.parsed.annotated) +
                 value.variants.filterNotNull().sumOf { textCost(it) } + 256L).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
     }
     private val lock = Any()
+    private fun putEntry(key: HtmlCacheKey, entry: Entry) {
+        if (cache.get(key) == null) entryCount++
+        cache.put(key, entry)
+        if (entryCount > 600) cache.snapshot().keys.firstOrNull()?.let { cache.remove(it) }
+    }
 
     fun getOrParse(
         html: String,
@@ -459,7 +468,7 @@ object HtmlParseCache {
         val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
         val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
         synchronized(lock) {
-            cache.put(key, Entry(parsed))
+            putEntry(key, Entry(parsed))
         }
         return parsed
     }
@@ -479,7 +488,7 @@ object HtmlParseCache {
             cache.get(key)?.let { current ->
                 val variants = current.variants.copyOf()
                 variants[index] = result
-                cache.put(key, Entry(current.parsed, variants))
+                putEntry(key, Entry(current.parsed, variants))
             }
         }
         return result
@@ -506,7 +515,7 @@ object HtmlParseCache {
             val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
             val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
             synchronized(lock) {
-                cache.put(key, Entry(parsed))
+                putEntry(key, Entry(parsed))
             }
         }
     }
