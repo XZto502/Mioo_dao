@@ -124,16 +124,6 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
                 val loader = coil.Coil.imageLoader(this@MiooDaoApp)
                 loader.memoryCache
             }
-            kotlinx.coroutines.delay(400)
-            runCatching {
-                HtmlParseCache.prewarm(
-                    listOf(
-                        "预热<br>测试&gt;&gt;No.1",
-                        "<font color=\"#789922\">&gt;&gt;No.2</font> hello"
-                    ),
-                    Color(0xFF6750A4)
-                )
-            }
         }
         appScope.launch {
             kotlinx.coroutines.delay(3500)

@@ -93,9 +93,6 @@ object NetworkModule {
             .connectionPool(pool)
             .retryOnConnectionFailure(true)
 
-        // 50 MB HTTP response cache to reduce redundant API round-trips
-        val cacheDir = File(appContext.cacheDir, "okhttp_cache")
-        builder.cache(Cache(cacheDir, 50L * 1024 * 1024))
 
         // BODY logging serializes every JSON payload and image upload. Release stays NONE
         // so userhash cookies and upload bodies never hit logcat.
