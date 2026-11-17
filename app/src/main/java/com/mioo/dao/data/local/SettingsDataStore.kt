@@ -1090,12 +1090,17 @@ class SettingsDataStore(private val context: Context) {
 
     /** One-time flag: legacy DataStore drafts have been swept into the Room draft box. */
     suspend fun isDraftsMigrated(): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        safePreferences.first()[KEY_DRAFTS_MIGRATED] ?: false
+        val prefs = safePreferences.first()
+        val complete = prefs[KEY_DRAFTS_MIGRATED] ?: false
+        if (complete && (prefs.contains(KEY_THREAD_DRAFTS) || prefs.contains(KEY_NEW_THREAD_DRAFT))) markDraftsMigrated()
+        complete
     }
 
     suspend fun markDraftsMigrated() {
         context.dataStore.edit { preferences ->
             preferences[KEY_DRAFTS_MIGRATED] = true
+            preferences.remove(KEY_THREAD_DRAFTS)
+            preferences.remove(KEY_NEW_THREAD_DRAFT)
         }
     }
 
