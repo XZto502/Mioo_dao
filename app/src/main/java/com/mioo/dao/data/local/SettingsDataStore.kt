@@ -18,7 +18,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "mioo_settings")
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "mioo_settings",
+    corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { emptyPreferences() }
+)
 
 data class CustomKaomoji(val id: String, val text: String, val alias: String = "")
 data class HeaderImageSettings(val path: String = "", val alpha: Float = 0.8f, val applyToThread: Boolean = false)
@@ -37,29 +40,32 @@ data class ThirdPartyConsent(
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val safePreferences = context.dataStore.data.catch { error ->
+        if (error is IOException) emit(emptyPreferences()) else throw error
+    }
     private val headerPathKey = stringPreferencesKey("header_image_path")
     private val headerAlphaKey = floatPreferencesKey("header_image_alpha")
     private val headerThreadKey = booleanPreferencesKey("header_apply_to_thread")
-    val headerImageSettings = context.dataStore.data.catch { error ->
+    val headerImageSettings = safePreferences.catch { error ->
         if (error is IOException) emit(emptyPreferences()) else throw error
     }.map { HeaderImageSettings(it[headerPathKey].orEmpty(), (it[headerAlphaKey] ?: 0.8f).coerceIn(0.2f, 1f), it[headerThreadKey] ?: false) }
     suspend fun saveHeaderImagePath(path: String) { context.dataStore.edit { it[headerPathKey] = path } }
     suspend fun saveHeaderImageAlpha(alpha: Float) { context.dataStore.edit { it[headerAlphaKey] = alpha.coerceIn(0.2f, 1f) } }
     suspend fun saveHeaderApplyToThread(enabled: Boolean) { context.dataStore.edit { it[headerThreadKey] = enabled } }
     private val offlineExcludedKey = androidx.datastore.preferences.core.stringSetPreferencesKey("offline_auto_download_excluded")
-    val offlineExcludedIds = context.dataStore.data.map { it[offlineExcludedKey].orEmpty().toSet() }
+    val offlineExcludedIds = safePreferences.map { it[offlineExcludedKey].orEmpty().toSet() }
     suspend fun excludeAutomaticOffline(ids: Collection<String>) {
         if (ids.isEmpty()) return
         context.dataStore.edit { it[offlineExcludedKey] = it[offlineExcludedKey].orEmpty() + ids }
     }
     private val scrollTouchGuardKey = booleanPreferencesKey("scroll_touch_guard_enabled")
-    val scrollTouchGuardFlow: Flow<Boolean> = context.dataStore.data.map { it[scrollTouchGuardKey] ?: false }
+    val scrollTouchGuardFlow: Flow<Boolean> = safePreferences.map { it[scrollTouchGuardKey] ?: false }
     suspend fun saveScrollTouchGuard(enabled: Boolean) {
         context.dataStore.edit { it[scrollTouchGuardKey] = enabled }
     }
 
     private val updateChannelKey = stringPreferencesKey("update_channel")
-    val updateChannelFlow = context.dataStore.data.map {
+    val updateChannelFlow = safePreferences.map {
         runCatching { com.mioo.dao.utils.UpdateChannel.valueOf((it[updateChannelKey] ?: "stable").uppercase(java.util.Locale.ROOT)) }
             .getOrDefault(com.mioo.dao.utils.UpdateChannel.STABLE)
     }
@@ -68,7 +74,7 @@ class SettingsDataStore(private val context: Context) {
     }
     private val offlineAutoUpdateKey = booleanPreferencesKey("offline_auto_update")
     private val offlineWifiOnlyKey = booleanPreferencesKey("offline_update_wifi_only")
-    val offlineUpdatePolicy = context.dataStore.data.map {
+    val offlineUpdatePolicy = safePreferences.map {
         (it[offlineAutoUpdateKey] ?: false) to (it[offlineWifiOnlyKey] ?: true)
     }
     suspend fun saveOfflineUpdateEnabled(enabled: Boolean) {
@@ -90,7 +96,7 @@ class SettingsDataStore(private val context: Context) {
             }
         }.getOrDefault(defaultQuickInputs)
     }
-    val quickInputsFlow: Flow<List<QuickInputItem>> = context.dataStore.data.distinctUntilChangedBy { it[quickInputKey] }
+    val quickInputsFlow: Flow<List<QuickInputItem>> = safePreferences.distinctUntilChangedBy { it[quickInputKey] }
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { parseQuickInputs(it[quickInputKey]) }
 
@@ -107,7 +113,7 @@ class SettingsDataStore(private val context: Context) {
     }
     suspend fun resetQuickInputs() { context.dataStore.edit { it.remove(quickInputKey) } }
     private val predictiveBackKey = booleanPreferencesKey("predictive_back_enabled")
-    val predictiveBackFlow: Flow<Boolean> = context.dataStore.data.map { it[predictiveBackKey] ?: false }
+    val predictiveBackFlow: Flow<Boolean> = safePreferences.map { it[predictiveBackKey] ?: false }
 
     suspend fun savePredictiveBack(enabled: Boolean) {
         context.dataStore.edit { it[predictiveBackKey] = enabled }
@@ -116,7 +122,7 @@ class SettingsDataStore(private val context: Context) {
     private val hasShownComplianceDialogKey = booleanPreferencesKey("has_shown_compliance_dialog")
     private val allowThirdPartyServicesKey = booleanPreferencesKey("allow_third_party_services")
 
-    val thirdPartyConsent: Flow<ThirdPartyConsent> = context.dataStore.data.map { preferences ->
+    val thirdPartyConsent: Flow<ThirdPartyConsent> = safePreferences.map { preferences ->
         ThirdPartyConsent(
             hasShownComplianceDialog = preferences[hasShownComplianceDialogKey] ?: false,
             allowThirdPartyServices = preferences[hasShownComplianceDialogKey] == true &&
@@ -179,8 +185,8 @@ class SettingsDataStore(private val context: Context) {
         val KEY_KAOMOJI_ORDER = stringPreferencesKey("kaomoji_order")
     }
 
-    val lastFeedFolderFlow: Flow<String> = context.dataStore.data.map { it[KEY_LAST_FEED_FOLDER] ?: "" }
-    val lastHistoryTypeFlow: Flow<String> = context.dataStore.data.map { it[KEY_LAST_HISTORY_TYPE] ?: "BROWSE" }
+    val lastFeedFolderFlow: Flow<String> = safePreferences.map { it[KEY_LAST_FEED_FOLDER] ?: "" }
+    val lastHistoryTypeFlow: Flow<String> = safePreferences.map { it[KEY_LAST_HISTORY_TYPE] ?: "BROWSE" }
 
     suspend fun saveLastFeedFolder(uuid: String?) {
         context.dataStore.edit { it[KEY_LAST_FEED_FOLDER] = uuid.orEmpty() }
@@ -190,7 +196,7 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[KEY_LAST_HISTORY_TYPE] = type }
     }
 
-    val forumPreviewLinesFlow: Flow<Int> = context.dataStore.data
+    val forumPreviewLinesFlow: Flow<Int> = safePreferences
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { preferences -> preferences[KEY_FORUM_PREVIEW_LINES]?.takeIf { it in listOf(5, 8, 10, 15) } ?: 10 }
 
@@ -199,7 +205,7 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[KEY_FORUM_PREVIEW_LINES] = lines }
     }
 
-    val networkCompatibilityFlow: Flow<Boolean> = context.dataStore.data
+    val networkCompatibilityFlow: Flow<Boolean> = safePreferences
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_NETWORK_COMPATIBILITY] ?: false }
 
@@ -207,7 +213,7 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[KEY_NETWORK_COMPATIBILITY] = enabled }
     }
 
-    val kaomojiOrderFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_KAOMOJI_ORDER] }
+    val kaomojiOrderFlow: Flow<List<String>> = safePreferences.distinctUntilChangedBy { it[KEY_KAOMOJI_ORDER] }
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { preferences ->
             runCatching {
@@ -231,7 +237,7 @@ class SettingsDataStore(private val context: Context) {
         }
     }.getOrDefault(emptyList())
 
-    val customKaomojiFlow: Flow<List<CustomKaomoji>> = context.dataStore.data
+    val customKaomojiFlow: Flow<List<CustomKaomoji>> = safePreferences
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { parseCustomKaomoji(it[customKaomojiKey] ?: "[]") }
 
@@ -248,7 +254,7 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    val userHashFlow: Flow<String?> = context.dataStore.data
+    val userHashFlow: Flow<String?> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -260,7 +266,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_USER_HASH]
         }
 
-    val darkModeFlow: Flow<Boolean> = context.dataStore.data
+    val darkModeFlow: Flow<Boolean> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -272,7 +278,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_DARK_MODE] ?: false
         }
 
-    val lastForumIdFlow: Flow<String?> = context.dataStore.data
+    val lastForumIdFlow: Flow<String?> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -284,7 +290,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_LAST_FORUM_ID]
         }
 
-    val lastForumNameFlow: Flow<String?> = context.dataStore.data
+    val lastForumNameFlow: Flow<String?> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -296,7 +302,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_LAST_FORUM_NAME]
         }
 
-    val themeModeFlow: Flow<String> = context.dataStore.data
+    val themeModeFlow: Flow<String> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -308,7 +314,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_THEME_MODE] ?: "SYSTEM"
         }
 
-    val fontSizeScaleFlow: Flow<Float> = context.dataStore.data
+    val fontSizeScaleFlow: Flow<Float> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -320,7 +326,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_FONT_SIZE_SCALE] ?: 1.0f
         }
 
-    val lineHeightScaleFlow: Flow<Float> = context.dataStore.data
+    val lineHeightScaleFlow: Flow<Float> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -332,7 +338,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_LINE_HEIGHT_SCALE] ?: 1.0f
         }
 
-    val chineseFontFlow: Flow<String> = context.dataStore.data
+    val chineseFontFlow: Flow<String> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -344,7 +350,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_CHINESE_FONT] ?: ""
         }
 
-    val englishFontFlow: Flow<String> = context.dataStore.data
+    val englishFontFlow: Flow<String> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -356,7 +362,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_ENGLISH_FONT] ?: ""
         }
 
-    val themeColorFlow: Flow<String> = context.dataStore.data
+    val themeColorFlow: Flow<String> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -368,7 +374,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_THEME_COLOR] ?: "dynamic"
         }
 
-    val cookiesListFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_COOKIES_LIST] }
+    val cookiesListFlow: Flow<List<String>> = safePreferences.distinctUntilChangedBy { it[KEY_COOKIES_LIST] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -394,7 +400,7 @@ class SettingsDataStore(private val context: Context) {
             }
         }
 
-    val cookieNotesFlow: Flow<Map<String, String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_COOKIE_NOTES] }
+    val cookieNotesFlow: Flow<Map<String, String>> = safePreferences.distinctUntilChangedBy { it[KEY_COOKIE_NOTES] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -419,7 +425,7 @@ class SettingsDataStore(private val context: Context) {
             }
         }
 
-    val selectedCookieIndexFlow: Flow<Int> = context.dataStore.data
+    val selectedCookieIndexFlow: Flow<Int> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -431,7 +437,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_SELECTED_COOKIE_INDEX] ?: 0
         }
 
-    val authCookieFlow: Flow<String?> = context.dataStore.data
+    val authCookieFlow: Flow<String?> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -443,7 +449,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_AUTH_COOKIE] ?: ""
         }
 
-    val feedFoldersFlow: Flow<List<com.mioo.dao.data.model.FeedFolder>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_FEED_FOLDERS] }
+    val feedFoldersFlow: Flow<List<com.mioo.dao.data.model.FeedFolder>> = safePreferences.distinctUntilChangedBy { it[KEY_FEED_FOLDERS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -471,7 +477,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val blockedThreadsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_BLOCKED_THREADS] }
+    val blockedThreadsFlow: Flow<List<String>> = safePreferences.distinctUntilChangedBy { it[KEY_BLOCKED_THREADS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -494,7 +500,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val blockedUsersFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_BLOCKED_USERS] }
+    val blockedUsersFlow: Flow<List<String>> = safePreferences.distinctUntilChangedBy { it[KEY_BLOCKED_USERS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -517,7 +523,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val pinnedForumsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_PINNED_FORUMS] }
+    val pinnedForumsFlow: Flow<List<String>> = safePreferences.distinctUntilChangedBy { it[KEY_PINNED_FORUMS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -540,7 +546,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val expandedForumGroupsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_EXPANDED_FORUM_GROUPS] }
+    val expandedForumGroupsFlow: Flow<List<String>> = safePreferences.distinctUntilChangedBy { it[KEY_EXPANDED_FORUM_GROUPS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -563,7 +569,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val blockedKeywordsFlow: Flow<List<String>> = context.dataStore.data.distinctUntilChangedBy { it[KEY_BLOCKED_KEYWORDS] }
+    val blockedKeywordsFlow: Flow<List<String>> = safePreferences.distinctUntilChangedBy { it[KEY_BLOCKED_KEYWORDS] }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -586,7 +592,7 @@ class SettingsDataStore(private val context: Context) {
             list
         }
 
-    val smartPreloadModeFlow: Flow<String> = context.dataStore.data
+    val smartPreloadModeFlow: Flow<String> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -598,7 +604,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_SMART_PRELOAD_MODE] ?: "DISABLED"
         }
 
-    val preloadCountFlow: Flow<Int> = context.dataStore.data
+    val preloadCountFlow: Flow<Int> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -610,7 +616,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_PRELOAD_COUNT] ?: 10
         }
 
-    val subscriptionNotificationsFlow: Flow<Boolean> = context.dataStore.data
+    val subscriptionNotificationsFlow: Flow<Boolean> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -622,7 +628,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_SUBSCRIPTION_NOTIFICATIONS] ?: false
         }
 
-    val notificationIntervalMinutesFlow: Flow<Int> = context.dataStore.data
+    val notificationIntervalMinutesFlow: Flow<Int> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -634,7 +640,7 @@ class SettingsDataStore(private val context: Context) {
             (preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] ?: 30).coerceIn(15, 180)
         }
 
-    val glassEffectEnabledFlow: Flow<Boolean> = context.dataStore.data
+    val glassEffectEnabledFlow: Flow<Boolean> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -646,7 +652,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_GLASS_EFFECT_ENABLED] ?: true
         }
 
-    val cacheLimitMbFlow: Flow<Int> = context.dataStore.data
+    val cacheLimitMbFlow: Flow<Int> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -660,7 +666,7 @@ class SettingsDataStore(private val context: Context) {
             )
         }
 
-    val showShareCardBrandingFlow: Flow<Boolean> = context.dataStore.data
+    val showShareCardBrandingFlow: Flow<Boolean> = safePreferences
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_SHARE_CARD_BRANDING] ?: true }
 
@@ -668,7 +674,7 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[KEY_SHARE_CARD_BRANDING] = enabled }
     }
 
-    val confirmCookieBeforeSendFlow: Flow<Boolean> = context.dataStore.data
+    val confirmCookieBeforeSendFlow: Flow<Boolean> = safePreferences
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_CONFIRM_COOKIE_BEFORE_SEND] ?: false }
 
@@ -676,7 +682,7 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[KEY_CONFIRM_COOKIE_BEFORE_SEND] = enabled }
     }
 
-    val draftBoxEnabledFlow: Flow<Boolean> = context.dataStore.data
+    val draftBoxEnabledFlow: Flow<Boolean> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -688,7 +694,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_DRAFT_BOX_ENABLED] ?: true
         }
 
-    val quoteAutoDisplayFlow: Flow<Boolean> = context.dataStore.data
+    val quoteAutoDisplayFlow: Flow<Boolean> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -700,7 +706,7 @@ class SettingsDataStore(private val context: Context) {
             preferences[KEY_QUOTE_AUTO_DISPLAY] ?: true
         }
 
-    val dataSaverEnabledFlow: Flow<Boolean> = context.dataStore.data
+    val dataSaverEnabledFlow: Flow<Boolean> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -754,7 +760,7 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    val diceBadgesEnabledFlow: Flow<Boolean> = context.dataStore.data
+    val diceBadgesEnabledFlow: Flow<Boolean> = safePreferences
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -778,7 +784,7 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    val creatorModeFlow: Flow<Boolean> = context.dataStore.data.map { it[KEY_CREATOR_MODE] ?: false }
+    val creatorModeFlow: Flow<Boolean> = safePreferences.map { it[KEY_CREATOR_MODE] ?: false }
 
     suspend fun saveCreatorMode(enabled: Boolean) {
         context.dataStore.edit { it[KEY_CREATOR_MODE] = enabled }
@@ -803,7 +809,7 @@ class SettingsDataStore(private val context: Context) {
     }
 
     suspend fun getNotifiedReplySnapshot(): Map<String, Int> {
-        val raw = context.dataStore.data.first()[KEY_NOTIFIED_REPLY_SNAPSHOT].orEmpty()
+        val raw = safePreferences.first()[KEY_NOTIFIED_REPLY_SNAPSHOT].orEmpty()
         if (raw.isBlank()) return emptyMap()
         return raw.split(',')
             .mapNotNull { part ->
@@ -1052,7 +1058,7 @@ class SettingsDataStore(private val context: Context) {
     }
 
     suspend fun getThreadDraft(threadId: String): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val preferences = context.dataStore.data.first()
+        val preferences = safePreferences.first()
         val jsonStr = preferences[KEY_THREAD_DRAFTS] ?: ""
         if (jsonStr.isNotEmpty()) {
             try {
@@ -1066,7 +1072,7 @@ class SettingsDataStore(private val context: Context) {
 
     /** All legacy per-thread reply drafts (DataStore JSON map), for one-time Room migration. */
     suspend fun getAllThreadDrafts(): Map<String, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val preferences = context.dataStore.data.first()
+        val preferences = safePreferences.first()
         val jsonStr = preferences[KEY_THREAD_DRAFTS] ?: ""
         if (jsonStr.isEmpty()) return@withContext emptyMap()
         try {
@@ -1084,7 +1090,7 @@ class SettingsDataStore(private val context: Context) {
 
     /** One-time flag: legacy DataStore drafts have been swept into the Room draft box. */
     suspend fun isDraftsMigrated(): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        context.dataStore.data.first()[KEY_DRAFTS_MIGRATED] ?: false
+        safePreferences.first()[KEY_DRAFTS_MIGRATED] ?: false
     }
 
     suspend fun markDraftsMigrated() {
@@ -1116,7 +1122,7 @@ class SettingsDataStore(private val context: Context) {
 
     /** 串 → 上次回复所用饼干的映射里取一条（饼干存值，不存索引）。 */
     suspend fun getThreadCookie(threadId: String): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val jsonStr = context.dataStore.data.first()[KEY_THREAD_COOKIE_MAP] ?: return@withContext null
+        val jsonStr = safePreferences.first()[KEY_THREAD_COOKIE_MAP] ?: return@withContext null
         try {
             org.json.JSONObject(jsonStr).optString(threadId, "").takeIf { it.isNotEmpty() }
         } catch (_: Exception) {
@@ -1151,7 +1157,7 @@ class SettingsDataStore(private val context: Context) {
     /** 串 → 骰点规则（存枚举名；未设置过返回 null，调用方回退默认纯色）。 */
     suspend fun getThreadDicePreset(threadId: String): com.mioo.dao.utils.DiceRulePreset? =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val jsonStr = context.dataStore.data.first()[KEY_THREAD_DICE_PRESETS] ?: return@withContext null
+            val jsonStr = safePreferences.first()[KEY_THREAD_DICE_PRESETS] ?: return@withContext null
             try {
                 org.json.JSONObject(jsonStr).optString(threadId, "").takeIf { it.isNotEmpty() }
                     ?.let { name -> com.mioo.dao.utils.DiceRulePreset.fromStored(name) }
@@ -1185,7 +1191,7 @@ class SettingsDataStore(private val context: Context) {
     }
 
     suspend fun getNewThreadDraft(): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val preferences = context.dataStore.data.first()
+        val preferences = safePreferences.first()
         preferences[KEY_NEW_THREAD_DRAFT] ?: ""
     }
 
@@ -1206,7 +1212,7 @@ class SettingsDataStore(private val context: Context) {
      */
     suspend fun getLastForum(): Pair<String, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
-            val preferences = context.dataStore.data.first()
+            val preferences = safePreferences.first()
             val id = preferences[KEY_LAST_FORUM_ID] ?: "-1"
             val name = preferences[KEY_LAST_FORUM_NAME] ?: "时间线"
             id to name
@@ -1222,7 +1228,7 @@ class SettingsDataStore(private val context: Context) {
     suspend fun getColdStartSnapshot(): ColdStartSnapshot =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val preferences = context.dataStore.data.first()
+                val preferences = safePreferences.first()
                 ColdStartSnapshot(
                     lastForumId = preferences[KEY_LAST_FORUM_ID] ?: "-1",
                     lastForumName = preferences[KEY_LAST_FORUM_NAME] ?: "时间线",
