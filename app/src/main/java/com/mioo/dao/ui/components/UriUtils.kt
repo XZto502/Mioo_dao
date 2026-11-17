@@ -31,9 +31,14 @@ suspend fun compressImageUnder2MB(context: Context, sourceUri: Uri): File = with
         val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
         if (longEdge <= 0) throw IOException("无法读取图片尺寸")
         var sample = 1
-        while (longEdge / sample >= 5120) sample *= 2
-        var bitmap = BitmapFactory.decodeFile(source.path, BitmapFactory.Options().apply { inSampleSize = sample })
-            ?: throw IOException("无法解码图片")
+        while (longEdge / sample > 2560) sample *= 2
+        fun decode(): Bitmap? = BitmapFactory.decodeFile(source.path, BitmapFactory.Options().apply { inSampleSize = sample })
+        var bitmap = try {
+            decode()
+        } catch (_: OutOfMemoryError) {
+            sample *= 2
+            try { decode() } catch (e: OutOfMemoryError) { throw IOException("图片过大，无法解码", e) }
+        } ?: throw IOException("无法解码图片")
         try {
             val rotation = runCatching {
                 when (ExifInterface(source.path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
