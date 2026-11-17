@@ -296,7 +296,8 @@ fun ForumScreen(
         snapshotFlow {
             val info = listState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false
-            last >= info.totalItemsCount - 2
+            // The stable footer occupies one slot even while idle.
+            last >= info.totalItemsCount - 3
         }
             .distinctUntilChanged()
             .collect { nearEnd ->
@@ -1066,7 +1067,9 @@ private fun ForumThreadListPane(
             start = 12.dp,
             end = 12.dp,
             top = 12.dp,
-            bottom = 100.dp
+            // Move the existing bottom breathing room into a stable footer.
+            // 8 dp item spacing + its 92 dp height preserve the idle layout.
+            bottom = if (displayItems.isEmpty()) 100.dp else 0.dp
         )
     ) {
         // Only show the empty/loading placeholder when there is truly no data.
@@ -1147,32 +1150,26 @@ private fun ForumThreadListPane(
             }
         }
 
-        if (isLoading && displayItems.isNotEmpty()) {
-            item(key = "loading_footer", contentType = "loading") {
+        if (displayItems.isNotEmpty()) {
+            // Removing a loading item at the scroll boundary clamps the list
+            // immediately upward. Change only its contents, never its geometry.
+            item(key = "paging_footer", contentType = "paging_footer") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
+                        .height(92.dp)
+                        .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                    contentAlignment = Alignment.TopCenter
                 ) {
-                    CircularProgressIndicator()
-                }
-            }
-        }
-
-        if (isLastPage) {
-            item(key = "end_footer", contentType = "end") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "已加载全部帖子。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator()
+                    } else if (isLastPage) {
+                        Text(
+                            text = "已加载全部帖子。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
