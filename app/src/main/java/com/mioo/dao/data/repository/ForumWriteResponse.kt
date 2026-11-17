@@ -80,7 +80,7 @@ internal fun interpretForumWriteResponse(raw: String): XdResponse<String> {
         return XdResponse.Success("已提交")
     }
 
-    if (FAILURE_HINTS.any { plain.contains(it) } || plain.length <= 120) {
+    if (FAILURE_HINTS.any { plain.contains(it) }) {
         return XdResponse.Error(message = plain.take(160).ifBlank { "发送失败" })
     }
     return XdResponse.Success("已提交")
@@ -96,7 +96,7 @@ private fun judgeOutcome(msg: String): XdResponse<String> {
     } else if (text.contains("成功")) {
         XdResponse.Success(text.take(80).ifBlank { "发送成功" })
     } else {
-        XdResponse.Error(message = text.take(160).ifBlank { "发送失败" })
+        XdResponse.Success("已提交")
     }
 }
 private val SCRIPT_OR_STYLE = Regex(
