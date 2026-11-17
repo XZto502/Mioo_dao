@@ -289,6 +289,7 @@ fun SettingsScreen(
         ) {
 
         AppearanceSettingsGroup(settings, viewModel)
+        com.mioo.dao.ui.components.HeaderImageSettingsCard()
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
         TextButton(onClick = { showKaomojiManager = true }, modifier = Modifier.fillMaxWidth()) {
