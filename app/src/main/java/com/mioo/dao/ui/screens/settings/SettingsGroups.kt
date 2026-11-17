@@ -277,7 +277,7 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                 ) {
                     Column {
                         Text(
-                            text = "本地离线数据大小",
+                            text = "本地帖子与列表缓存大小",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                         )
@@ -291,7 +291,7 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                         onClick = { viewModel.clearCache() },
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("清除数据")
+                        Text("清理普通缓存（保留离线串）")
                     }
                 }
 
