@@ -21,6 +21,10 @@ import javax.inject.Singleton
 class SettingsRepository @Inject constructor(
     private val settingsDataStore: SettingsDataStore
 ) {
+    val headerImageSettings = settingsDataStore.headerImageSettings
+    suspend fun saveHeaderImagePath(path: String) = settingsDataStore.saveHeaderImagePath(path)
+    suspend fun saveHeaderImageAlpha(alpha: Float) = settingsDataStore.saveHeaderImageAlpha(alpha)
+    suspend fun saveHeaderApplyToThread(enabled: Boolean) = settingsDataStore.saveHeaderApplyToThread(enabled)
     val offlineUpdatePolicy = settingsDataStore.offlineUpdatePolicy
     suspend fun saveOfflineUpdateEnabled(enabled: Boolean) = settingsDataStore.saveOfflineUpdateEnabled(enabled)
     suspend fun saveOfflineUpdateWifiOnly(wifiOnly: Boolean) = settingsDataStore.saveOfflineUpdateWifiOnly(wifiOnly)

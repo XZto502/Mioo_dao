@@ -21,6 +21,7 @@ import java.io.IOException
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "mioo_settings")
 
 data class CustomKaomoji(val id: String, val text: String, val alias: String = "")
+data class HeaderImageSettings(val path: String = "", val alpha: Float = 0.8f, val applyToThread: Boolean = false)
 
 data class QuickInputItem(val id: String, val label: String, val content: String, val cursorOffsetFromEnd: Int = 0)
 
@@ -36,6 +37,15 @@ data class ThirdPartyConsent(
 )
 
 class SettingsDataStore(private val context: Context) {
+    private val headerPathKey = stringPreferencesKey("header_image_path")
+    private val headerAlphaKey = floatPreferencesKey("header_image_alpha")
+    private val headerThreadKey = booleanPreferencesKey("header_apply_to_thread")
+    val headerImageSettings = context.dataStore.data.catch { error ->
+        if (error is IOException) emit(emptyPreferences()) else throw error
+    }.map { HeaderImageSettings(it[headerPathKey].orEmpty(), (it[headerAlphaKey] ?: 0.8f).coerceIn(0.2f, 1f), it[headerThreadKey] ?: false) }
+    suspend fun saveHeaderImagePath(path: String) { context.dataStore.edit { it[headerPathKey] = path } }
+    suspend fun saveHeaderImageAlpha(alpha: Float) { context.dataStore.edit { it[headerAlphaKey] = alpha.coerceIn(0.2f, 1f) } }
+    suspend fun saveHeaderApplyToThread(enabled: Boolean) { context.dataStore.edit { it[headerThreadKey] = enabled } }
     private val offlineExcludedKey = androidx.datastore.preferences.core.stringSetPreferencesKey("offline_auto_download_excluded")
     val offlineExcludedIds = context.dataStore.data.map { it[offlineExcludedKey].orEmpty().toSet() }
     suspend fun excludeAutomaticOffline(ids: Collection<String>) {
