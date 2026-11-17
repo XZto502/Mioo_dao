@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.mioo.dao.data.model.GithubRelease
 import java.io.File
+import kotlinx.coroutines.*
 
 object UpdateDownloader {
 
@@ -20,6 +21,8 @@ object UpdateDownloader {
     private var urlIndex: Int = 0
     private var releaseTag: String = ""
     private var expectedSize = 0L
+    private var expectedDigest: String? = null
+    private val verificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun cancelActiveDownload(context: Context) {
         if (downloadId < 0L) return
@@ -43,6 +46,7 @@ object UpdateDownloader {
         urlIndex = 0
         releaseTag = release.tagName
         expectedSize = release.assets?.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }?.size ?: 0L
+        expectedDigest = release.assets?.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }?.digest
         Toast.makeText(appContext, "正在后台下载更新包，请稍候...", Toast.LENGTH_LONG).show()
         enqueueCurrent(appContext)
     }
@@ -111,21 +115,27 @@ object UpdateDownloader {
                 }
 
                 if (isSuccess) {
-                    val file = File(ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "mioo_dao_update.apk")
-                    val valid = try {
-                        file.isFile && (expectedSize <= 0L || file.length() == expectedSize) &&
-                            file.inputStream().use { it.read() == 'P'.code && it.read() == 'K'.code }
-                    } catch (_: Exception) { false }
-                    if (!valid) {
-                        file.delete()
-                        isSuccess = false
-                        errorCode = -2
+                    val pending = goAsync()
+                    val size = expectedSize
+                    val digest = expectedDigest
+                    val tag = releaseTag
+                    verificationScope.launch {
+                        try {
+                            val file = File(ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "mioo_dao_update.apk")
+                            val valid = runCatching { validateApk(ctx, file, size, digest, tag) }.getOrDefault(false)
+                            withContext(Dispatchers.Main) {
+                                if (downloadId != id) return@withContext
+                                if (valid) {
+                                    Toast.makeText(ctx, "下载完成，正在调起安装...", Toast.LENGTH_SHORT).show()
+                                    installApk(ctx)
+                                } else {
+                                    file.delete()
+                                    Toast.makeText(ctx, "更新包校验失败，请重新下载", Toast.LENGTH_LONG).show()
+                                }
+                                clearReceiver(ctx)
+                            }
+                        } finally { pending.finish() }
                     }
-                }
-                if (isSuccess) {
-                    Toast.makeText(ctx, "下载完成，正在调起安装...", Toast.LENGTH_SHORT).show()
-                    installApk(ctx)
-                    clearReceiver(ctx)
                     return
                 }
 
@@ -181,6 +191,33 @@ object UpdateDownloader {
         } catch (_: Exception) {
             Toast.makeText(context, "跳转失败，请手动下载", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun validateApk(context: Context, file: File, size: Long, digest: String?, tag: String): Boolean {
+        if (!file.isFile || (size > 0 && file.length() != size)) return false
+        if (!file.inputStream().use { it.read() == 'P'.code && it.read() == 'K'.code }) return false
+        if (!digest.isNullOrBlank()) {
+            val expected = digest.removePrefix("sha256:")
+            if (!expected.matches(Regex("[0-9a-fA-F]{64}"))) return false
+            val sha = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) { val count = input.read(buffer); if (count < 0) break; sha.update(buffer, 0, count) }
+            }
+            val actual = sha.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+            if (!actual.equals(expected, ignoreCase = true)) return false
+        }
+        val pm = context.packageManager
+        val archive = pm.getPackageArchiveInfo(file.path, android.content.pm.PackageManager.GET_SIGNATURES) ?: return false
+        val installed = pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNATURES)
+        if (archive.packageName != context.packageName) return false
+        val expectedCode = channelVersionCode(tag)?.toLong() ?: return false
+        val actualCode = if (android.os.Build.VERSION.SDK_INT >= 28) archive.longVersionCode else archive.versionCode.toLong()
+        if (actualCode != expectedCode) return false
+        if (archive.versionName?.removePrefix("v")?.removePrefix("V") != tag.removePrefix("v").removePrefix("V")) return false
+        val currentSigners = installed.signatures?.toSet().orEmpty()
+        return currentSigners.isNotEmpty() && archive.signatures?.toSet() == currentSigners
     }
 
     private fun installApk(context: Context) {

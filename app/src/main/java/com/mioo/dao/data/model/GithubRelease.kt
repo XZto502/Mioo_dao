@@ -7,7 +7,8 @@ import com.squareup.moshi.JsonClass
 data class GithubAsset(
     @Json(name = "name") val name: String,
     @Json(name = "browser_download_url") val browserDownloadUrl: String,
-    @Json(name = "size") val size: Long
+    @Json(name = "size") val size: Long,
+    @Json(name = "digest") val digest: String? = null
 )
 
 @JsonClass(generateAdapter = true)
