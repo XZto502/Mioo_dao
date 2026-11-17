@@ -435,10 +435,14 @@ private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val d
  * Synchronized put/get — prewarm runs on Default while composition reads on main.
  */
 object HtmlParseCache {
-    private class Entry(val parsed: ParsedContent) {
-        val variants = arrayOfNulls<AnnotatedString>(4)
+    private class Entry(val parsed: ParsedContent, val variants: Array<AnnotatedString?> = arrayOfNulls(4))
+    private fun textCost(text: AnnotatedString): Long = text.length * 2L +
+        (text.spanStyles.size + text.paragraphStyles.size + text.getStringAnnotations(0, text.length).size) * 128L
+    private val cache = object : android.util.LruCache<HtmlCacheKey, Entry>(8 * 1024 * 1024) {
+        override fun sizeOf(key: HtmlCacheKey, value: Entry): Int =
+            (key.html.length * 2L + textCost(value.parsed.annotated) +
+                value.variants.filterNotNull().sumOf { textCost(it) } + 256L).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
     }
-    private val cache = android.util.LruCache<HtmlCacheKey, Entry>(600)
     private val lock = Any()
 
     fun getOrParse(
@@ -469,9 +473,15 @@ object HtmlParseCache {
         val key = HtmlCacheKey(html, color.toArgb(), darkTheme, dicePreset?.name ?: "")
         val entry = synchronized(lock) { cache.get(key) }
         val index = (if (compact) 1 else 0) + (if (trim) 2 else 0)
-        if (entry != null) synchronized(entry) { entry.variants[index]?.let { return it } }
+        if (entry != null) entry.variants[index]?.let { return it }
         val result = prepareHtmlPreview(parsed.annotated, compact, trim)
-        if (entry != null) synchronized(entry) { entry.variants[index] = result }
+        synchronized(lock) {
+            cache.get(key)?.let { current ->
+                val variants = current.variants.copyOf()
+                variants[index] = result
+                cache.put(key, Entry(current.parsed, variants))
+            }
+        }
         return result
     }
 
