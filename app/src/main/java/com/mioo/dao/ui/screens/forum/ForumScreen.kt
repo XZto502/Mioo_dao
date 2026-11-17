@@ -639,7 +639,7 @@ fun ForumScreen(
                                 pendingPostDraft?.let { viewModel.deleteDraft(it.id) }
                                 pendingPostDraft = null
                                 showCreateDialog = false
-                                Toast.makeText(context, "发串成功", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "新串发送成功", Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(context, "发串失败: $message", Toast.LENGTH_LONG).show()
                             }

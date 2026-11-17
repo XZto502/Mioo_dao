@@ -1994,6 +1994,7 @@ private fun ReplyInputBar(
     onClose: () -> Unit = {}
 ) {
     val composerState by viewModel.composerState.collectAsState()
+    val context = LocalContext.current
     ReplyInputArea(
         replyText = composerState.replyText,
         quotedPostNo = composerState.quotedPostNo,
@@ -2018,6 +2019,7 @@ private fun ReplyInputBar(
         onBeginEditing = viewModel::beginReplyEditing,
         onSend = { file, cookie ->
             viewModel.submitReply(imageFile = file, cookieOverride = cookie) {
+                Toast.makeText(context, "回复发送成功", Toast.LENGTH_SHORT).show()
                 editor.attachment.value = null
                 editor.text.value = TextFieldValue()
                 editor.clearHistory()
