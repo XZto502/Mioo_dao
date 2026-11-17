@@ -97,6 +97,9 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -178,6 +181,21 @@ fun ForumScreen(
     var switchingBoard by switchingBoardState
     val emptyStringLambda = remember { { _: String -> } }
     var handledRefreshGeneration by rememberSaveable(currentForumId) { mutableStateOf(0L) }
+    var userScrolledDuringRefresh by remember(currentForumId) { mutableStateOf(false) }
+    val refreshScrollObserver = remember(currentForumId, listState, viewModel) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Observe only; never consume motion or interrupt the list's fling.
+                // The pull that starts a refresh is not a move away from its top.
+                if (source == NestedScrollSource.Drag && available.y != 0f &&
+                    (available.y < 0f || listState.canScrollBackward) &&
+                    viewModel.uiState.value.isRefreshing) {
+                    userScrolledDuringRefresh = true
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     val previousForumId = rememberSaveable { mutableStateOf(currentForumId) }
     // True for a short window after board switch — pause prefetch/prewarm during swap
@@ -187,6 +205,7 @@ fun ForumScreen(
         if (listState.layoutInfo.totalItemsCount > 0) {
             listState.scrollToItem(0)
         }
+        userScrolledDuringRefresh = false
         viewModel.refresh()
     }
 
@@ -238,6 +257,7 @@ fun ForumScreen(
         if (pullToRefreshState.isRefreshing && !uiState.isRefreshing) {
             // A pull can only trigger at the top; don't start another list scroll
             // mutation while the release gesture is dispatching its fling.
+            userScrolledDuringRefresh = false
             viewModel.refresh()
         }
     }
@@ -252,8 +272,8 @@ fun ForumScreen(
         }
     }
 
-    // A refreshed page may insert new keyed rows before the old visible item.
-    // Scroll after the final page-1 emission is applied, not only before requesting it.
+    // Align a refreshed top only if the user has not started reading meanwhile.
+    // A slow SWR response must not jump an already scrolling list back to item 0.
     LaunchedEffect(
         uiState.completedRefreshGeneration,
         uiState.completedRefreshForumId,
@@ -264,7 +284,9 @@ fun ForumScreen(
             return@LaunchedEffect
         }
         withFrameNanos { }
-        listState.scrollToItem(0)
+        if (!userScrolledDuringRefresh && !listState.isScrollInProgress) {
+            listState.scrollToItem(0)
+        }
         handledRefreshGeneration = generation
     }
 
@@ -494,6 +516,7 @@ fun ForumScreen(
                         }
                     }
                     .nestedScroll(pullToRefreshState.nestedScrollConnection)
+                    .nestedScroll(refreshScrollObserver)
             ) {
                 // Single list instance — pass only list fields so chrome/drawer flags
                 // do not force every row to recompose.
