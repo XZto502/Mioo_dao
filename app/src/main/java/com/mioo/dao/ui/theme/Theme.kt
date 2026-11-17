@@ -49,153 +49,149 @@ private object NoRippleTheme : RippleTheme {
     @Composable override fun rippleAlpha() = RippleAlpha(0f, 0f, 0f, 0f)
 }
 
-private val LightColorScheme = lightColorScheme(
-    primary = LightPrimary,
-    onPrimary = LightOnPrimary,
-    primaryContainer = LightPrimaryContainer,
-    onPrimaryContainer = LightOnPrimaryContainer,
-    secondary = LightSecondary,
-    onSecondary = LightOnSecondary,
-    secondaryContainer = LightSecondaryContainer,
-    onSecondaryContainer = LightOnSecondaryContainer,
-    tertiary = LightTertiary,
-    onTertiary = LightOnTertiary,
-    tertiaryContainer = LightTertiaryContainer,
-    onTertiaryContainer = LightOnTertiaryContainer,
-    error = LightError,
-    onError = LightOnError,
-    errorContainer = LightErrorContainer,
-    onBackground = LightOnBackground,
-    background = LightBackground,
-    surface = LightSurface,
-    onSurface = LightOnSurface,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = LightOnSurfaceVariant,
-    outline = LightOutline
+// Fixed palettes keep independent primary, secondary and tertiary tonal families.
+private fun ColorScheme.withTonalSurfaces(dark: Boolean): ColorScheme = copy(
+    onSecondary = if (dark) background else Color.White,
+    onTertiary = if (dark) background else Color.White,
+    onTertiaryContainer = if (dark) tertiary else Color(0xFF1C2024),
+    onBackground = if (dark) Color(0xFFE5E8E6) else Color(0xFF1C2024),
+    onSurface = if (dark) Color(0xFFE5E8E6) else Color(0xFF1C2024),
+    onSurfaceVariant = if (dark) Color(0xFFC2C7C4) else Color(0xFF444A47),
+    outline = if (dark) Color(0xFF8C928F) else Color(0xFF747A77),
+    outlineVariant = if (dark) androidx.compose.ui.graphics.lerp(surfaceVariant, Color.White, 0.16f) else outlineVariant,
+    surfaceTint = Color.Transparent,
+    surfaceContainerLowest = if (dark) background else Color.White,
+    surfaceContainerLow = if (dark) surface else Color(0xFFFCFCFD),
+    surfaceContainer = androidx.compose.ui.graphics.lerp(surface, surfaceVariant, 0.4f),
+    surfaceContainerHigh = androidx.compose.ui.graphics.lerp(surface, surfaceVariant, 0.7f),
+    surfaceContainerHighest = surfaceVariant,
+    surfaceBright = if (dark) androidx.compose.ui.graphics.lerp(surfaceVariant, Color.White, 0.05f) else Color.White,
+    surfaceDim = if (dark) background else surfaceVariant
 )
+
+private val LightColorScheme = lightColorScheme(
+    primary = Color(0xFF6750A4),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFEADDFF),
+    onPrimaryContainer = Color(0xFF22005D),
+    secondary = Color(0xFF625B71),
+    secondaryContainer = Color(0xFFE8DEF8),
+    onSecondaryContainer = Color(0xFF1E192B),
+    tertiary = Color(0xFF7E5260),
+    tertiaryContainer = Color(0xFFFFD9E3),
+    background = Color(0xFFF8F7FA),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFF0EEF4),
+    outlineVariant = Color(0xFFE2DFE8)
+).withTonalSurfaces(false)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = DarkPrimary,
-    onPrimary = DarkOnPrimary,
-    primaryContainer = DarkPrimaryContainer,
-    onPrimaryContainer = DarkOnPrimaryContainer,
-    secondary = DarkSecondary,
-    onSecondary = DarkOnSecondary,
-    secondaryContainer = DarkSecondaryContainer,
-    onSecondaryContainer = DarkOnSecondaryContainer,
-    tertiary = DarkTertiary,
-    onTertiary = DarkOnTertiary,
-    tertiaryContainer = DarkTertiaryContainer,
-    onTertiaryContainer = DarkOnTertiaryContainer,
-    error = DarkError,
-    onError = DarkOnError,
-    errorContainer = DarkErrorContainer,
-    onBackground = DarkOnBackground,
-    background = DarkBackground,
-    surface = DarkSurface,
-    onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = DarkOnSurfaceVariant,
-    outline = DarkOutline
-)
+    primary = Color(0xFFCFBCFF),
+    onPrimary = Color(0xFF381E72),
+    primaryContainer = Color(0xFF4F378A),
+    onPrimaryContainer = Color(0xFFEADDFF),
+    secondary = Color(0xFFCCC2DC),
+    secondaryContainer = Color(0xFF4A4458),
+    onSecondaryContainer = Color(0xFFE8DEF8),
+    tertiary = Color(0xFFEFB8C8),
+    tertiaryContainer = Color(0xFF633B48),
+    background = Color(0xFF131217),
+    surface = Color(0xFF1B1920),
+    surfaceVariant = Color(0xFF26232D)
+).withTonalSurfaces(true)
 
-// Derive matching container roles for each fixed accent; leave Android dynamic palettes intact.
-private fun ColorScheme.withAccentContainers(dark: Boolean): ColorScheme {
-    val base = if (dark) Color(0xFF16181E) else Color.White
-    return copy(
-        secondary = primary,
-        onSecondary = onPrimary,
-        secondaryContainer = primary.copy(alpha = if (dark) 0.22f else 0.14f).compositeOver(base),
-        onSecondaryContainer = primary,
-        primaryContainer = primary.copy(alpha = if (dark) 0.28f else 0.18f).compositeOver(base),
-        onPrimaryContainer = primary,
-        surfaceVariant = if (dark) Color(0xFF44474A) else Color(0xFFE1E3E5),
-        surfaceContainerLow = if (dark) Color(0xFF191C20) else Color(0xFFF5F6F8),
-        surfaceContainer = if (dark) Color(0xFF1D2024) else Color(0xFFEFF0F2),
-        surfaceContainerHigh = if (dark) Color(0xFF282B2F) else Color(0xFFE9EAEC)
-    )
-}
-
-// 1. Custom Teal Color Scheme (PO Teal accent)
 private val LightTealColorScheme = lightColorScheme(
-    primary = Color(0xFF00796B),
+    primary = Color(0xFF00677D),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFB2DFDB),
-    onPrimaryContainer = Color(0xFF00201A),
-    background = LightBackground,
-    surface = LightSurface,
-    onBackground = LightOnBackground,
-    onSurface = LightOnSurface,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = LightOnSurfaceVariant
-).withAccentContainers(false)
+    primaryContainer = Color(0xFFC5ECFA),
+    onPrimaryContainer = Color(0xFF003543),
+    secondary = Color(0xFF4B626B),
+    secondaryContainer = Color(0xFFD6E5EC),
+    onSecondaryContainer = Color(0xFF11262E),
+    tertiary = Color(0xFF565D7E),
+    tertiaryContainer = Color(0xFFDDE1FF),
+    background = Color(0xFFF5F8FA),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFECF1F4),
+    outlineVariant = Color(0xFFDCE3E7)
+).withTonalSurfaces(false)
 
 private val DarkTealColorScheme = darkColorScheme(
-    primary = Color(0xFF80CBC4),
-    onPrimary = Color(0xFF003730),
-    primaryContainer = Color(0xFF004D40),
-    onPrimaryContainer = Color(0xFFB2DFDB),
-    background = DarkBackground,
-    surface = DarkSurface,
-    onBackground = DarkOnBackground,
-    onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = DarkOnSurfaceVariant
-).withAccentContainers(true)
+    primary = Color(0xFF7CD2EA),
+    onPrimary = Color(0xFF003643),
+    primaryContainer = Color(0xFF004E5F),
+    onPrimaryContainer = Color(0xFFC2ECFA),
+    secondary = Color(0xFFB3CAD4),
+    secondaryContainer = Color(0xFF334952),
+    onSecondaryContainer = Color(0xFFCFE6F0),
+    tertiary = Color(0xFFBFC5EB),
+    tertiaryContainer = Color(0xFF3E4565),
+    background = Color(0xFF101416),
+    surface = Color(0xFF171C1F),
+    surfaceVariant = Color(0xFF22282C)
+).withTonalSurfaces(true)
 
-// 2. Custom Pink Color Scheme (Sakura Pink accent)
 private val LightPinkColorScheme = lightColorScheme(
-    primary = Color(0xFFD81B60),
+    primary = Color(0xFFA84467),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFF8BBD0),
-    onPrimaryContainer = Color(0xFF3B0017),
-    background = LightBackground,
-    surface = LightSurface,
-    onBackground = LightOnBackground,
-    onSurface = LightOnSurface,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = LightOnSurfaceVariant
-).withAccentContainers(false)
+    primaryContainer = Color(0xFFFFDCE5),
+    onPrimaryContainer = Color(0xFF481126),
+    secondary = Color(0xFF72575E),
+    secondaryContainer = Color(0xFFF1DFE4),
+    onSecondaryContainer = Color(0xFF2A161C),
+    tertiary = Color(0xFF7A5733),
+    tertiaryContainer = Color(0xFFFFDCC0),
+    background = Color(0xFFFAF6F7),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFF3ECEE),
+    outlineVariant = Color(0xFFE6DCE0)
+).withTonalSurfaces(false)
 
 private val DarkPinkColorScheme = darkColorScheme(
-    primary = Color(0xFFF48FB1),
-    onPrimary = Color(0xFF56002A),
-    primaryContainer = Color(0xFF880E4F),
-    onPrimaryContainer = Color(0xFFF8BBD0),
-    background = DarkBackground,
-    surface = DarkSurface,
-    onBackground = DarkOnBackground,
-    onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = DarkOnSurfaceVariant
-).withAccentContainers(true)
+    primary = Color(0xFFFFB1C7),
+    onPrimary = Color(0xFF641132),
+    primaryContainer = Color(0xFF7A2946),
+    onPrimaryContainer = Color(0xFFFFD9E3),
+    secondary = Color(0xFFE2BDC6),
+    secondaryContainer = Color(0xFF573E45),
+    onSecondaryContainer = Color(0xFFFFD9E2),
+    tertiary = Color(0xFFE8BE96),
+    tertiaryContainer = Color(0xFF5E3F1E),
+    background = Color(0xFF161214),
+    surface = Color(0xFF1E191B),
+    surfaceVariant = Color(0xFF2A2225)
+).withTonalSurfaces(true)
 
-// 3. Custom Green Color Scheme (Forest Green accent)
 private val LightGreenColorScheme = lightColorScheme(
-    primary = Color(0xFF388E3C),
+    primary = Color(0xFF2B6A46),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFC8E6C9),
-    onPrimaryContainer = Color(0xFF002900),
-    background = LightBackground,
-    surface = LightSurface,
-    onBackground = LightOnBackground,
-    onSurface = LightOnSurface,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = LightOnSurfaceVariant
-).withAccentContainers(false)
+    primaryContainer = Color(0xFFD4F0DC),
+    onPrimaryContainer = Color(0xFF0D3B22),
+    secondary = Color(0xFF4E6354),
+    secondaryContainer = Color(0xFFDCE8DF),
+    onSecondaryContainer = Color(0xFF192B1F),
+    tertiary = Color(0xFF3B6470),
+    tertiaryContainer = Color(0xFFC2EAF7),
+    background = Color(0xFFF6F8F6),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFEEF2EE),
+    outlineVariant = Color(0xFFDEE4DF)
+).withTonalSurfaces(false)
 
 private val DarkGreenColorScheme = darkColorScheme(
-    primary = Color(0xFFA5D6A7),
-    onPrimary = Color(0xFF003300),
-    primaryContainer = Color(0xFF1B5E20),
-    onPrimaryContainer = Color(0xFFC8E6C9),
-    background = DarkBackground,
-    surface = DarkSurface,
-    onBackground = DarkOnBackground,
-    onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = DarkOnSurfaceVariant
-).withAccentContainers(true)
+    primary = Color(0xFF8ED5A8),
+    onPrimary = Color(0xFF00391D),
+    primaryContainer = Color(0xFF184F30),
+    onPrimaryContainer = Color(0xFFC5F2D3),
+    secondary = Color(0xFFB6CCB9),
+    secondaryContainer = Color(0xFF35493C),
+    onSecondaryContainer = Color(0xFFD2E8D5),
+    tertiary = Color(0xFFA3CDD9),
+    tertiaryContainer = Color(0xFF214C58),
+    background = Color(0xFF111411),
+    surface = Color(0xFF181C18),
+    surfaceVariant = Color(0xFF232923)
+).withTonalSurfaces(true)
 
 // AMOLED 纯黑：深色下背景/表面纯黑省电，其余颜色跟随动态取色；
 // 浅色模式退回经典色板（选择入口也仅在深色模式下出现）
@@ -246,7 +242,7 @@ fun MiooDaoTheme(
                     background = Color(0xFF000000),
                     surface = Color(0xFF000000),
                     surfaceVariant = Color(0xFF1A1A1E)
-                ).withAccentContainers(dark = true)
+                ).copy(surfaceTint = Color.Transparent)
             } else {
                 LightColorScheme
             }
