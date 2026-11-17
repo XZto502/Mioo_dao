@@ -19,6 +19,7 @@ object UpdateDownloader {
     private var pendingUrls: List<String> = emptyList()
     private var urlIndex: Int = 0
     private var releaseTag: String = ""
+    private var expectedSize = 0L
 
     fun cancelActiveDownload(context: Context) {
         if (downloadId < 0L) return
@@ -41,6 +42,7 @@ object UpdateDownloader {
         pendingUrls = urls
         urlIndex = 0
         releaseTag = release.tagName
+        expectedSize = release.assets?.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }?.size ?: 0L
         Toast.makeText(appContext, "正在后台下载更新包，请稍候...", Toast.LENGTH_LONG).show()
         enqueueCurrent(appContext)
     }
@@ -56,8 +58,8 @@ object UpdateDownloader {
         }
         return listOf(
             "https://ghfast.top/$apkUrl",
-            "https://ghproxy.net/$apkUrl",
-            apkUrl
+            apkUrl,
+            "https://ghproxy.net/$apkUrl"
         )
     }
 
@@ -109,6 +111,18 @@ object UpdateDownloader {
                 }
 
                 if (isSuccess) {
+                    val file = File(ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "mioo_dao_update.apk")
+                    val valid = try {
+                        file.isFile && (expectedSize <= 0L || file.length() == expectedSize) &&
+                            file.inputStream().use { it.read() == 'P'.code && it.read() == 'K'.code }
+                    } catch (_: Exception) { false }
+                    if (!valid) {
+                        file.delete()
+                        isSuccess = false
+                        errorCode = -2
+                    }
+                }
+                if (isSuccess) {
                     Toast.makeText(ctx, "下载完成，正在调起安装...", Toast.LENGTH_SHORT).show()
                     installApk(ctx)
                     clearReceiver(ctx)
@@ -123,6 +137,7 @@ object UpdateDownloader {
                 }
 
                 val errorDetail = when (errorCode) {
+                    -2 -> "更新包不完整或格式错误"
                     DownloadManager.ERROR_CANNOT_RESUME -> "无法恢复下载"
                     DownloadManager.ERROR_DEVICE_NOT_FOUND -> "找不到存储设备"
                     DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "文件已存在"
