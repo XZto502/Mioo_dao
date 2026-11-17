@@ -249,6 +249,14 @@ class ThreadRepositoryImpl @Inject constructor(
     private val stringListAdapter =
         moshi.adapter<List<String>>(Types.newParameterizedType(List::class.java, String::class.java))
     private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    init {
+        preloadScope.launch {
+            try {
+                cacheDao.deleteExpiredNonOfflineCache(System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { android.util.Log.w("ThreadRepository", "Cache expiry cleanup failed", e) }
+        }
+    }
 
     /**
      * Parse raw `thread`/`po` body. Rejects `{success:false,error:...}` before Moshi
@@ -463,6 +471,7 @@ class ThreadRepositoryImpl @Inject constructor(
                     emit(XdResponse.Error(message = "引用的串解析失败"))
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 // Not a valid JSON reply, likely an HTML error string from the server
                 val cleanError = responseString
                     .replace(HTML_OR_NEWLINE, "")
@@ -1084,7 +1093,7 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override fun clearCache(): Flow<XdResponse<Unit>> = flow {
         try {
-            cacheDao.clearAllCache()
+            cacheDao.clearNonOfflineCache()
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
             if (e is CancellationException) throw e

@@ -27,6 +27,12 @@ interface CacheDao {
     @Query("DELETE FROM api_cache")
     suspend fun clearAllCache()
 
+    @Query("DELETE FROM api_cache WHERE cacheKey NOT IN (SELECT 'thread_' || threadId FROM offline_threads)")
+    suspend fun clearNonOfflineCache()
+
+    @Query("DELETE FROM api_cache WHERE cachedAt < :expireTime AND cacheKey NOT IN (SELECT 'thread_' || threadId FROM offline_threads)")
+    suspend fun deleteExpiredNonOfflineCache(expireTime: Long)
+
     @Query("SELECT SUM(LENGTH(jsonResponse)) FROM api_cache")
     suspend fun getTotalCacheSize(): Long?
 
