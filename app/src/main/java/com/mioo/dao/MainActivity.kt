@@ -94,12 +94,12 @@ class MainActivity : ComponentActivity() {
     private var clipboardThreadCandidate = mutableStateOf<String?>(null)
 
     /**
-     * Full clipboard text we already asked about (accept or dismiss).
+     * Fingerprint of clipboard content already handled (accept or dismiss).
      * Only suppress while the clipboard content is unchanged.
      * 进程级：Activity 重建（深浅色切换/语言切换/进程恢复）后不再对同一段剪贴板重复弹窗。
      */
     companion object {
-        @Volatile private var lastPromptedClipboardText: String? = null
+        @Volatile private var lastPromptedClipboardHash: Int? = null
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -388,7 +388,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun markClipboardPromptHandled() {
-        lastPromptedClipboardText = readClipboardText()
+        lastPromptedClipboardHash = readClipboardText()?.hashCode()
         clipboardThreadCandidate.value = null
     }
 
@@ -404,7 +404,7 @@ class MainActivity : ComponentActivity() {
         val text = readClipboardText() ?: return
         if (text.isBlank()) return
         // Same clip content already handled
-        if (text == lastPromptedClipboardText) return
+        if (text.hashCode() == lastPromptedClipboardHash) return
 
         val threadId = ThreadLinkParser.parseEightDigitThreadId(text) ?: return
         clipboardThreadCandidate.value = threadId
