@@ -525,6 +525,7 @@ fun ThreadScreen(
     Box(Modifier.fillMaxSize().graphicsLayer { clip = true }.background(readingBackground())) {
     Scaffold(
         topBar = {
+            com.mioo.dao.ui.components.CustomHeaderBar(thread = true) { headerEnabled, headerShadow ->
             TopAppBar(
                 title = {
                     if (isSearchMode) {
@@ -551,6 +552,7 @@ fun ThreadScreen(
                         Text(
                             text = listUi.thread?.title.effectiveTitle() ?: "详情",
                             style = readingTextStyle(16.5f, 22f, FontWeight.SemiBold).copy(
+                                shadow = headerShadow,
                                 platformStyle = PlatformTextStyle(includeFontPadding = false)
                             ),
                             maxLines = 1,
@@ -580,6 +582,7 @@ fun ThreadScreen(
                                 Text(
                                     text = "第 $page / $total 页",
                                     style = readingTextStyle(10f, 11f).copy(
+                                        shadow = headerShadow,
                                         fontFeatureSettings = "tnum",
                                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                                     ),
@@ -592,6 +595,7 @@ fun ThreadScreen(
                 }
                 },
                 navigationIcon = {
+                    com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
                     if (isSearchMode) {
                         IconButton(onClick = {
                             isSearchMode = false
@@ -605,8 +609,10 @@ fun ThreadScreen(
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
                     }
+                    }
                 },
                 actions = {
+                    com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
                     if (isSearchMode) {
                         if (searchFieldText.isNotEmpty()) {
                             IconButton(onClick = {
@@ -660,16 +666,18 @@ fun ThreadScreen(
                             onShowOverflowMenuChange = { showOverflowMenu = it }
                         )
                     }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(
+                    containerColor = if (headerEnabled) Color.Transparent else MaterialTheme.colorScheme.surface.copy(
                         alpha = if (com.mioo.dao.ui.theme.LocalGlassEffectEnabled.current) 0.98f else 1f
                     ),
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(
+                    scrolledContainerColor = if (headerEnabled) Color.Transparent else MaterialTheme.colorScheme.surface.copy(
                         alpha = if (com.mioo.dao.ui.theme.LocalGlassEffectEnabled.current) 0.98f else 1f
                     )
                 )
             )
+            }
         },
         bottomBar = {
             if (!threadSettings.enableCreatorMode) {

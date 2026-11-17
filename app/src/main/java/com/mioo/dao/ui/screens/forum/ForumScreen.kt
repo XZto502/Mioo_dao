@@ -354,24 +354,26 @@ fun ForumScreen(
     Box(Modifier.fillMaxSize()) {
             Scaffold(
             topBar = {
+                com.mioo.dao.ui.components.CustomHeaderBar { headerEnabled, headerShadow ->
                 TopAppBar(
                     title = {
                         Column {
                             // Instant title swap — no AnimatedContent tax on board change
                             Text(
                                 text = uiState.currentForumName,
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleMedium.copy(shadow = headerShadow),
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                 maxLines = 1
                             )
                             Text(
                                 text = "X岛 · nmbxd.com",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(shadow = headerShadow),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                             )
                         }
                     },
                     navigationIcon = {
+                        com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
                         IconButton(
                             onClick = {
                                 scope.launch {
@@ -390,8 +392,10 @@ fun ForumScreen(
                         ) {
                             Icon(Icons.Default.Menu, contentDescription = "切换板块")
                         }
+                        }
                     },
                     actions = {
+                        com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
                         IconButton(
                             onClick = {
                                 scope.launch { refreshFromTop() }
@@ -400,11 +404,13 @@ fun ForumScreen(
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = "刷新")
                         }
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = readingTopBarColor()
+                        containerColor = if (headerEnabled) Color.Transparent else readingTopBarColor()
                     )
                 )
+                }
             },
             floatingActionButton = {
                 FloatingActionButton(
