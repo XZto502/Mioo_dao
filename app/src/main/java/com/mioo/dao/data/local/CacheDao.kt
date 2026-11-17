@@ -7,6 +7,21 @@ import androidx.room.Query
 
 @Dao
 interface CacheDao {
+    @Query("SELECT rowid AS rowId, LENGTH(CAST(jsonResponse AS BLOB)) AS bytes FROM api_cache WHERE cacheKey NOT IN (SELECT 'thread_' || threadId FROM offline_threads) ORDER BY cachedAt DESC, cacheKey, page")
+    suspend fun nonOfflineSizes(): List<CacheRowSize>
+
+    @Query("DELETE FROM api_cache WHERE rowid IN (:ids) AND cacheKey NOT IN (SELECT 'thread_' || threadId FROM offline_threads)")
+    suspend fun deleteNonOfflineRows(ids: List<Long>)
+
+    @androidx.room.Transaction
+    suspend fun trimNonOfflineBytes(maxBytes: Long) {
+        var used = 0L
+        val removed = mutableListOf<Long>()
+        nonOfflineSizes().forEach { row ->
+            if (row.bytes > maxBytes - used) removed.add(row.rowId) else used += row.bytes
+        }
+        removed.chunked(500).forEach { deleteNonOfflineRows(it) }
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCache(cache: CacheEntity)
@@ -52,3 +67,5 @@ interface CacheDao {
     )
     suspend fun searchThreadCache(query: String, limit: Int = 30): List<CacheEntity>
 }
+
+data class CacheRowSize(val rowId: Long, val bytes: Long)

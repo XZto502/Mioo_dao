@@ -252,7 +252,11 @@ class ThreadRepositoryImpl @Inject constructor(
     init {
         preloadScope.launch {
             try {
-                cacheDao.deleteExpiredNonOfflineCache(System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000)
+                while (true) {
+                    cacheDao.deleteExpiredNonOfflineCache(System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000)
+                    cacheDao.trimNonOfflineBytes(200L * 1024 * 1024)
+                    delay(30L * 60 * 1000)
+                }
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) { android.util.Log.w("ThreadRepository", "Cache expiry cleanup failed", e) }
         }
