@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -216,44 +218,107 @@ fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: (
     }
 }
 
+@Volatile private var cachedHeaderSettings = HeaderImageSettings()
+@Volatile private var cachedHeaderBitmap: Pair<String, ImageBitmap>? = null
+
 @Composable
-internal fun rememberCustomHeaderPainter(thread: Boolean = false): Painter? {
+internal fun rememberCustomHeaderBitmap(thread: Boolean = false): ImageBitmap? {
     val context = LocalContext.current
     val store = remember(context) { SettingsDataStore(context.applicationContext) }
-    val settings by store.headerImageSettings.collectAsState(HeaderImageSettings())
+    val settings by store.headerImageSettings.collectAsState(cachedHeaderSettings)
+    SideEffect { cachedHeaderSettings = settings }
     val path = settings.path.takeIf { it.isNotBlank() && (!thread || settings.applyToThread) }
         ?: return null
-    val request = remember(context, path) {
-        val file = File(path)
-        if (file.isFile) ImageRequest.Builder(context)
-            .data(file)
-            .size(CoilSize.ORIGINAL)
-            .crossfade(false)
-            .build() else null
-    } ?: return null
-    return rememberAsyncImagePainter(request, contentScale = ContentScale.Crop)
+    var imageBitmap by remember(path) {
+        mutableStateOf(
+            cachedHeaderBitmap?.takeIf { it.first == path }?.second ?: run {
+                val file = File(path)
+                if (file.isFile) {
+                    BitmapFactory.decodeFile(path)?.asImageBitmap()?.also {
+                        cachedHeaderBitmap = path to it
+                    }
+                } else null
+            }
+        )
+    }
+    LaunchedEffect(path) {
+        if (imageBitmap == null) {
+            imageBitmap = withContext(Dispatchers.IO) {
+                val file = File(path)
+                if (file.isFile) {
+                    BitmapFactory.decodeFile(path)?.asImageBitmap()?.also {
+                        cachedHeaderBitmap = path to it
+                    }
+                } else null
+            }
+        }
+    }
+    return imageBitmap
 }
 
 @Composable
-fun CustomHeaderBar(thread: Boolean, content: @Composable (Boolean, Shadow) -> Unit) {
-    CustomHeaderBar(rememberCustomHeaderPainter(thread), content)
+fun CustomHeaderBar(
+    thread: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable (Boolean, Shadow) -> Unit
+) {
+    CustomHeaderBar(rememberCustomHeaderBitmap(thread), modifier, content)
 }
 
 /** The image shares the app bar's measured bounds, including its status-bar inset. */
 @Composable
-internal fun CustomHeaderBar(painter: Painter?, content: @Composable (Boolean, Shadow) -> Unit) {
+internal fun CustomHeaderBar(
+    bitmap: ImageBitmap?,
+    modifier: Modifier = Modifier,
+    content: @Composable (Boolean, Shadow) -> Unit
+) {
     val background = MaterialTheme.colorScheme.background
-    Box {
-        if (painter != null) {
-            androidx.compose.foundation.Image(
-                painter, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop
-            )
+    val bleedPx = with(LocalDensity.current) { 24.dp.roundToPx() }
+    Box(
+        modifier.then(
+            if (bitmap == null) Modifier.background(com.mioo.dao.ui.theme.readingTopBarColor())
+            else Modifier
+        )
+    ) {
+        if (bitmap != null) {
+            Canvas(Modifier.matchParentSize()) {
+                val w = size.width
+                val h = size.height
+                if (w > 0f && h > 0f) {
+                    val iw = bitmap.width.toFloat()
+                    val ih = bitmap.height.toFloat()
+                    val scale = max(w / iw, h / ih)
+                    val sw = (w / scale).roundToInt().coerceIn(1, bitmap.width)
+                    val sh = (h / scale).roundToInt().coerceIn(1, bitmap.height)
+                    val sx = ((bitmap.width - sw) / 2f).roundToInt().coerceIn(0, bitmap.width - sw)
+                    val sy = ((bitmap.height - sh) / 2f).roundToInt().coerceIn(0, bitmap.height - sh)
+                    val dw = w.roundToInt()
+                    val dh = h.roundToInt()
+                    drawImage(
+                        image = bitmap,
+                        srcOffset = IntOffset(sx, sy),
+                        srcSize = IntSize(sw, sh),
+                        dstOffset = IntOffset.Zero,
+                        dstSize = IntSize(dw, dh),
+                        filterQuality = FilterQuality.High
+                    )
+                    // Clamp the right edge across the enter-slide margin so -20.dp never shows a gap.
+                    val rightCol = (sx + sw - 1).coerceIn(0, bitmap.width - 1)
+                    drawImage(
+                        image = bitmap,
+                        srcOffset = IntOffset(rightCol, sy),
+                        srcSize = IntSize(1, sh),
+                        dstOffset = IntOffset(dw, 0),
+                        dstSize = IntSize(bleedPx, dh)
+                    )
+                }
+            }
         }
-        content(painter != null, if (painter != null) Shadow(background.copy(alpha = 0.85f), blurRadius = 6f) else Shadow.None)
+        content(bitmap != null, if (bitmap != null) Shadow(background.copy(alpha = 0.85f), blurRadius = 6f) else Shadow.None)
     }
 }
 
 @Composable
-fun HeaderActionRow(content: @Composable () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) { content() }
+fun HeaderActionRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) { content() }
 }

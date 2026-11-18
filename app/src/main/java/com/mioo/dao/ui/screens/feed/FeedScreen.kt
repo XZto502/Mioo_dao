@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
@@ -85,6 +86,7 @@ import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.theme.DaoTheme
+import com.mioo.dao.ui.theme.readingTopBarColor
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
@@ -99,6 +101,7 @@ fun FeedScreen(
     viewModel: FeedViewModel,
     onNavigateToThread: (threadId: String) -> Unit,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
+    isActiveTab: () -> Boolean = { true },
     modifier: Modifier = Modifier
 ) {
     var activeImageUrl by remember { mutableStateOf<String?>(null) }
@@ -162,7 +165,7 @@ fun FeedScreen(
             navigateToThread(id)
         }
     }
-    BackHandler(enabled = searching && activeImageUrl == null && pendingOfflineDelete == null) {
+    BackHandler(enabled = searching && activeImageUrl == null && pendingOfflineDelete == null && isActiveTab()) {
         closeSearch()
     }
 
@@ -217,7 +220,7 @@ fun FeedScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -273,7 +276,7 @@ fun FeedScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = DaoTheme.colors.glassTopBar
+                    containerColor = readingTopBarColor()
                 )
             )
         },
@@ -526,6 +529,7 @@ fun FeedScreen(
     }
     }
 }
+
 @Composable
 private fun OfflineFeedRow(
     summary: com.mioo.dao.data.local.OfflineThreadSummary,

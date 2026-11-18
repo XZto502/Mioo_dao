@@ -68,10 +68,11 @@ fun HistoryScreen(
     onNavigateToThread: (String) -> Unit,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
     openGeneration: Int = 0,
+    isActiveTab: () -> Boolean = { true },
+    reducedMotion: Boolean = isReducedMotionEnabled(),
     viewModel: HistoryViewModel = hiltViewModel(),
     modifier: Modifier = Modifier
 ) {
-    val reducedMotion = isReducedMotionEnabled()
     val types = remember { HistoryType.values() }
     val initialType by viewModel.initialType.collectAsState()
     val restoredType = initialType ?: return
@@ -104,11 +105,11 @@ fun HistoryScreen(
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(image) { onImageViewerOpenChange(image != null) }
     DisposableEffect(Unit) { onDispose { onImageViewerOpenChange(false) } }
-    BackHandler(enabled = showSearch && image == null && clearType == null && deleteItem == null) {
+    BackHandler(enabled = showSearch && image == null && clearType == null && deleteItem == null && isActiveTab()) {
         closeSearch()
     }
 
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Scaffold(
             containerColor = readingBackground(),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -149,7 +150,7 @@ fun HistoryScreen(
                             Icon(Icons.Outlined.DeleteSweep, contentDescription = "清空${type.label}")
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = DaoTheme.colors.glassTopBar)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = readingTopBarColor())
                 )
             },
             snackbarHost = { SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(bottom = 104.dp)) }
@@ -174,7 +175,7 @@ fun HistoryScreen(
                     }
                 }
 
-                HorizontalPager(state = pager, beyondBoundsPageCount = 2, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
+                HorizontalPager(state = pager, beyondBoundsPageCount = 0, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
                     val records by viewModel.items(category).collectAsState()
                     val quoteColor = MaterialTheme.colorScheme.primary
@@ -238,6 +239,8 @@ fun HistoryScreen(
     ) }
 }
 
+private val collapseBlankLinesRegex = Regex("(\\r?\\n\\s*){2,}")
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () -> Unit, onImageClick: (String) -> Unit) {
@@ -273,7 +276,7 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
             val bodyStyle = readingBodyStyle()
             if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = bodyStyle,
                 maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false, compactBlankLines = true)
-            else Text(item.content.replace(Regex("(\\r?\\n\\s*){2,}"), "\n"), style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
+            else Text(item.content.replace(collapseBlankLinesRegex, "\n"), style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",

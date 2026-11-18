@@ -87,6 +87,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -762,33 +764,147 @@ private fun MainTabs(
 ) {
     val tabState = rememberSaveableStateHolder()
     val slidePx = with(LocalDensity.current) { 20.dp.roundToPx() }
-    // Keep the local image decoded when AnimatedContent disposes the board page.
-    val boardHeader = com.mioo.dao.ui.components.rememberCustomHeaderPainter()
-    AnimatedContent(
-        targetState = currentTabIndex,
-        modifier = Modifier.fillMaxSize(),
-        transitionSpec = {
-            if (reducedMotion) {
-                EnterTransition.None togetherWith ExitTransition.None
+    val boardHeader = com.mioo.dao.ui.components.rememberCustomHeaderBitmap()
+    var mountedTabs by remember { mutableStateOf(setOf(currentTabIndex)) }
+    var activeTab by remember { mutableIntStateOf(currentTabIndex) }
+    var outgoingTab by remember { mutableStateOf<Int?>(null) }
+    var transitionDirection by remember { mutableIntStateOf(1) }
+    val enterProgress = remember { Animatable(1f) }
+    val exitAlpha = remember { Animatable(0f) }
+
+    val boardHeaderState = rememberUpdatedState(boardHeader)
+    val activeTabState = rememberUpdatedState(activeTab)
+    val outgoingTabState = rememberUpdatedState(outgoingTab)
+    val reducedMotionState = rememberUpdatedState(reducedMotion)
+
+    // Keep modifier instances stable across tab switches so ForumScreen never recomposes
+    // or detaches hardware layers mid-transition.
+    val boardHeaderMod = remember(slidePx) {
+        Modifier.graphicsLayer {
+            val splitEnter = activeTabState.value == 0 &&
+                outgoingTabState.value != null &&
+                boardHeaderState.value != null &&
+                !reducedMotionState.value
+            translationX = if (splitEnter) -slidePx * (1f - enterProgress.value) else 0f
+        }
+    }
+    val boardBodyMod = remember(slidePx) {
+        Modifier.graphicsLayer {
+            val splitEnter = activeTabState.value == 0 &&
+                outgoingTabState.value != null &&
+                boardHeaderState.value != null &&
+                !reducedMotionState.value
+            if (splitEnter) {
+                val p = enterProgress.value
+                alpha = p
+                translationX = -slidePx * (1f - p)
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
             } else {
-                val direction = if (targetState >= initialState) 1 else -1
-                val enterFade = if (targetState == 0 && boardHeader != null) EnterTransition.None
-                    else fadeIn(tween(160, easing = FastOutSlowInEasing))
-                (enterFade +
-                    slideInHorizontally(tween(160, easing = FastOutSlowInEasing)) {
-                        direction * slidePx
-                    }) togetherWith fadeOut(tween(70, easing = LinearEasing))
+                alpha = 1f
+                translationX = 0f
+                compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Auto
             }
-        },
-        label = "home tab"
-    ) { page ->
-        tabState.SaveableStateProvider(page) {
-        PageBackdrop {
-            when (page) {
-                0 -> {
-                    val viewModel: ForumViewModel = hiltViewModel()
-                    ForumScreen(
-                        viewModel = viewModel,
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        // Warm History after cold start settles so its first open and return to Board don't hitch.
+        kotlinx.coroutines.delay(1800)
+        if (2 !in mountedTabs) mountedTabs = mountedTabs + 2
+    }
+
+    LaunchedEffect(currentTabIndex, reducedMotion) {
+        if (currentTabIndex !in mountedTabs) {
+            mountedTabs = mountedTabs + currentTabIndex
+        }
+        if (currentTabIndex == activeTab) return@LaunchedEffect
+        transitionDirection = if (currentTabIndex >= activeTab) 1 else -1
+        if (reducedMotion) {
+            outgoingTab = null
+            activeTab = currentTabIndex
+            enterProgress.snapTo(1f)
+            exitAlpha.snapTo(0f)
+        } else {
+            outgoingTab = activeTab
+            activeTab = currentTabIndex
+            enterProgress.snapTo(0f)
+            exitAlpha.snapTo(1f)
+            val enterEasing = if (activeTab == 0 && boardHeader != null) {
+                androidx.compose.animation.core.LinearOutSlowInEasing
+            } else {
+                FastOutSlowInEasing
+            }
+            kotlinx.coroutines.coroutineScope {
+                launch { enterProgress.animateTo(1f, tween(160, easing = enterEasing)) }
+                launch { exitAlpha.animateTo(0f, tween(70, easing = LinearEasing)) }
+            }
+            outgoingTab = null
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(readingBackground())) {
+        for (page in 0..3) {
+            if (page !in mountedTabs) continue
+            key(page) {
+                val isActive = page == activeTab
+                val isOutgoing = page == outgoingTab && outgoingTab != activeTab
+                val isVisible = isActive || isOutgoing
+                val isTransitioning = outgoingTab != null
+                val splitBoardEnter = isActive && isTransitioning && page == 0 && boardHeader != null && !reducedMotion
+                val isPageActive = remember(page) { { activeTabState.value == page } }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .zIndex(
+                            when {
+                                isActive -> 2f
+                                isOutgoing -> 1f
+                                else -> -1f
+                            }
+                        )
+                        .drawWithContent {
+                            if (isVisible) drawContent()
+                        }
+                        .pointerInput(isVisible) {
+                            if (!isVisible) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        awaitPointerEvent(PointerEventPass.Initial)
+                                            .changes.forEach { it.consume() }
+                                    }
+                                }
+                            }
+                        }
+                        .graphicsLayer {
+                            when {
+                                isOutgoing -> {
+                                    alpha = exitAlpha.value
+                                    translationX = 0f
+                                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                                }
+                                isActive && isTransitioning && !splitBoardEnter -> {
+                                    val p = enterProgress.value
+                                    alpha = p
+                                    translationX = transitionDirection * slidePx * (1f - p)
+                                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                                }
+                                isActive -> {
+                                    alpha = 1f
+                                    translationX = 0f
+                                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Auto
+                                }
+                                else -> {
+                                    alpha = 0f
+                                    translationX = 0f
+                                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Auto
+                                }
+                            }
+                        }
+                ) {
+                    TabPageContent(
+                        page = page,
+                        tabState = tabState,
+                        historyOpenGeneration = historyOpenGeneration,
                         onNavigateToThread = onNavigateToThread,
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = dockSinkFraction,
@@ -796,22 +912,11 @@ private fun MainTabs(
                         boardDrawerSlot = boardDrawerSlot,
                         onImageViewerOpenChange = onImageViewerOpenChange,
                         onComposerOpenChange = onComposerOpenChange,
-                        headerPainter = boardHeader
-                    )
-                }
-                1 -> {
-                    val viewModel: FeedViewModel = hiltViewModel()
-                    FeedScreen(
-                        viewModel = viewModel,
-                        onNavigateToThread = onNavigateToThread,
-                        onImageViewerOpenChange = onImageViewerOpenChange
-                    )
-                }
-                2 -> HistoryScreen(onNavigateToThread = onNavigateToThread, onImageViewerOpenChange = onImageViewerOpenChange, openGeneration = historyOpenGeneration)
-                else -> {
-                    val viewModel: SettingsViewModel = hiltViewModel()
-                    MoreScreen(
-                        viewModel = viewModel,
+                        reducedMotion = reducedMotion,
+                        boardHeader = boardHeader,
+                        boardHeaderMod = boardHeaderMod,
+                        boardBodyMod = boardBodyMod,
+                        isPageActive = isPageActive,
                         onNavigateToSettings = onNavigateToSettings,
                         onNavigateToDrafts = onNavigateToDrafts,
                         onNavigateToSearch = onNavigateToSearch
@@ -819,6 +924,75 @@ private fun MainTabs(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TabPageContent(
+    page: Int,
+    tabState: androidx.compose.runtime.saveable.SaveableStateHolder,
+    historyOpenGeneration: Int,
+    onNavigateToThread: (String) -> Unit,
+    onColdStartContentReady: () -> Unit,
+    dockSinkFraction: () -> Float,
+    drawerState: androidx.compose.material3.DrawerState,
+    boardDrawerSlot: BoardDrawerSlot,
+    onImageViewerOpenChange: (Boolean) -> Unit,
+    onComposerOpenChange: (Boolean) -> Unit,
+    reducedMotion: Boolean,
+    boardHeader: androidx.compose.ui.graphics.ImageBitmap?,
+    boardHeaderMod: Modifier,
+    boardBodyMod: Modifier,
+    isPageActive: () -> Boolean,
+    onNavigateToSettings: () -> Unit,
+    onNavigateToDrafts: () -> Unit,
+    onNavigateToSearch: () -> Unit
+) {
+    tabState.SaveableStateProvider(page) {
+        when (page) {
+            0 -> {
+                val viewModel: ForumViewModel = hiltViewModel()
+                ForumScreen(
+                    viewModel = viewModel,
+                    onNavigateToThread = onNavigateToThread,
+                    onColdStartContentReady = onColdStartContentReady,
+                    dockSinkFraction = dockSinkFraction,
+                    drawerState = drawerState,
+                    boardDrawerSlot = boardDrawerSlot,
+                    onImageViewerOpenChange = onImageViewerOpenChange,
+                    onComposerOpenChange = onComposerOpenChange,
+                    headerBitmap = boardHeader,
+                    headerModifier = boardHeaderMod,
+                    bodyModifier = boardBodyMod
+                )
+            }
+            1 -> PageBackdrop {
+                val viewModel: FeedViewModel = hiltViewModel()
+                FeedScreen(
+                    viewModel = viewModel,
+                    onNavigateToThread = onNavigateToThread,
+                    onImageViewerOpenChange = onImageViewerOpenChange,
+                    isActiveTab = isPageActive
+                )
+            }
+            2 -> PageBackdrop {
+                HistoryScreen(
+                    onNavigateToThread = onNavigateToThread,
+                    onImageViewerOpenChange = onImageViewerOpenChange,
+                    openGeneration = historyOpenGeneration,
+                    isActiveTab = isPageActive,
+                    reducedMotion = reducedMotion
+                )
+            }
+            else -> PageBackdrop {
+                val viewModel: SettingsViewModel = hiltViewModel()
+                MoreScreen(
+                    viewModel = viewModel,
+                    onNavigateToSettings = onNavigateToSettings,
+                    onNavigateToDrafts = onNavigateToDrafts,
+                    onNavigateToSearch = onNavigateToSearch
+                )
+            }
         }
     }
 }

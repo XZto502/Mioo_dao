@@ -54,12 +54,12 @@ fun MoreScreen(
     val cardColor = readingCardColor()
     val cardBorder = com.mioo.dao.ui.theme.readingCardBorder()
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         containerColor = readingBackground(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(title = { Text("更多", style = MaterialTheme.typography.titleMedium.copy(fontSize = MaterialTheme.typography.titleMedium.fontSize * 1.125f), fontWeight = FontWeight.Bold, maxLines = 1) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DaoTheme.colors.glassTopBar))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = com.mioo.dao.ui.theme.readingTopBarColor()))
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())

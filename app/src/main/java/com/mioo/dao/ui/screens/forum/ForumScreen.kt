@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.foundation.background
 import androidx.compose.ui.platform.LocalViewConfiguration
 import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
 import com.mioo.dao.ui.components.rememberResponsiveListFling
@@ -152,7 +153,11 @@ fun ForumScreen(
     drawerState: DrawerState,
     boardDrawerSlot: BoardDrawerSlot,
     modifier: Modifier = Modifier,
-    headerPainter: androidx.compose.ui.graphics.painter.Painter? = null
+
+    headerBitmap: androidx.compose.ui.graphics.ImageBitmap? = null,
+    headerModifier: Modifier = Modifier,
+    bodyModifier: Modifier = Modifier,
+
 ) {
     val uiState by viewModel.uiState.collectAsState()
     // Pins + cookies only — theme/font changes must not recompose the board list
@@ -378,8 +383,9 @@ fun ForumScreen(
     Box(Modifier.fillMaxSize()) {
             Scaffold(
             topBar = {
-                com.mioo.dao.ui.components.CustomHeaderBar(headerPainter) { headerEnabled, headerShadow ->
+                com.mioo.dao.ui.components.CustomHeaderBar(headerBitmap, headerModifier) { headerEnabled, headerShadow ->
                 TopAppBar(
+
                     title = {
                         Column {
                             // Instant title swap — no AnimatedContent tax on board change
@@ -440,6 +446,7 @@ fun ForumScreen(
                 FloatingActionButton(
                     onClick = { showCreateDialog = true },
                     modifier = Modifier
+                        .then(bodyModifier)
                         .padding(bottom = 120.dp)
                         // dock 下沉时同步向内缩小 + 淡出 + 轻微下沉（绘制时读取，不触发重组）
                         .graphicsLayer {
@@ -470,12 +477,14 @@ fun ForumScreen(
             },
             modifier = modifier,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = readingBackground()
+            containerColor = if (headerBitmap != null) Color.Transparent else readingBackground()
         ) { paddingValues ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .then(bodyModifier)
+                    .background(readingBackground())
                     .pointerInput(drawerState, listState, switchingBoard) {
                         // A flinging LazyColumn starts dragging immediately and may consume
                         // the horizontal touch before the parent drawer sees its slop.
