@@ -250,9 +250,11 @@ fun ForumScreen(
 
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
 
-    val pullThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 80.dp.toPx() }
-    val pullToRefreshState = remember(currentForumId, pullThresholdPx) {
-        ForumPullRefreshState(pullThresholdPx)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val pullThresholdPx = with(density) { 80.dp.toPx() }
+    val pullActivationSlopPx = with(density) { 8.dp.toPx() }
+    val pullToRefreshState = remember(currentForumId, pullThresholdPx, pullActivationSlopPx) {
+        ForumPullRefreshState(pullThresholdPx, pullActivationSlopPx)
     }
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
     val showTopLoading = uiState.isRefreshing ||
@@ -491,7 +493,10 @@ fun ForumScreen(
                         // Observe Initial even when consumed, but claim only a clear right drag.
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                            if (switchingBoard || !drawerState.isClosed) {
+                            if (switchingBoard ||
+                                drawerState.currentValue != DrawerValue.Closed ||
+                                drawerState.targetValue != DrawerValue.Closed
+                            ) {
                                 return@awaitEachGesture
                             }
                             val intent = BoardSwipeIntent(viewConfiguration.touchSlop)

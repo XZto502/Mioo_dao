@@ -309,6 +309,13 @@ fun FeedScreen(
                 }
             }
 
+            val pagerTouchGuard = com.mioo.dao.ui.components.rememberTouchGuardConfiguration(
+                com.mioo.dao.ui.components.LocalScrollTouchGuardEnabled.current
+            )
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.foundation.LocalOverscrollConfiguration provides null,
+                androidx.compose.ui.platform.LocalViewConfiguration provides pagerTouchGuard
+            ) {
             HorizontalPager(state = pager, beyondBoundsPageCount = 1, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
                 val folderId = folderIds[page]
                 val current = folderId == uiState.selectedFolderId
@@ -427,9 +434,14 @@ fun FeedScreen(
                         if (current && searchQuery.isEmpty() && shouldLoadMore.value) viewModel.loadMoreRemote()
                     }
 
-                    com.mioo.dao.ui.components.ReadingTouchGuard {
+                    val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
+                    val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
+                    ) {
                     LazyColumn(
                         state = listState,
+                        flingBehavior = responsiveFling,
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -519,6 +531,7 @@ fun FeedScreen(
             }
                 }
             }
+            }
         }
     }
     activeImageUrl?.let { imageUrl ->
@@ -529,6 +542,7 @@ fun FeedScreen(
     }
     }
 }
+private val FALLBACK_FORUM_NAME_REGEX = Regex("^板块\\s*(\\d+)$")
 
 @Composable
 private fun OfflineFeedRow(

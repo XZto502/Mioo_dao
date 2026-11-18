@@ -102,4 +102,20 @@ class ForumPullRefreshStateTest {
         state.endRefresh()
         assertEquals(Offset.Zero, state.nestedScrollConnection.onPreScroll(Offset(0f, -30f), NestedScrollSource.Drag))
     }
+
+    @Test fun subSlopDownwardPullDoesNotSwallowImmediateUpwardReversal() {
+        val state = ForumPullRefreshState(80f, pullActivationSlopPx = 24f)
+        val scroll = state.nestedScrollConnection
+        assertEquals(Offset.Zero, scroll.onPostScroll(Offset.Zero, Offset(0f, 18f), NestedScrollSource.Drag))
+        assertEquals(0f, state.progress, 0f)
+        assertEquals(Offset.Zero, scroll.onPreScroll(Offset(0f, -20f), NestedScrollSource.Drag))
+    }
+
+    @Test fun downwardPullPastSlopActivatesRefreshAndExcessProgresses() {
+        val state = ForumPullRefreshState(80f, pullActivationSlopPx = 24f)
+        val scroll = state.nestedScrollConnection
+        scroll.onPostScroll(Offset.Zero, Offset(0f, 18f), NestedScrollSource.Drag)
+        scroll.onPostScroll(Offset.Zero, Offset(0f, 12f), NestedScrollSource.Drag)
+        assertTrue(state.progress > 0f)
+    }
 }

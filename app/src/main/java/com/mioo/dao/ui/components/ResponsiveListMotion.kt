@@ -65,13 +65,8 @@ class ResponsiveListFling internal constructor(
     internal var currentVelocity = 0f
     internal var running = false
     override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
-        // A slow release should settle near the finger. Ease into full momentum
-        // as the gesture gets faster so adjacent release speeds feel continuous.
-        val speedDp = abs(initialVelocity) / density
-        val blend = ((speedDp - 170f) / (630f - 170f)).coerceIn(0f, 1f)
-        val easedBlend = blend * blend * (3f - 2f * blend)
-        val momentum = 0.05f + 1.01f * easedBlend
-        val velocity = (initialVelocity * momentum).coerceIn(-16000f, 16000f)
+        val velocity = scaleResponsiveFlingVelocity(initialVelocity, density)
+        if (abs(velocity) <= 1f) return 0f
         var previous = 0f
         var remainingVelocity = velocity
         running = true
@@ -91,6 +86,16 @@ class ResponsiveListFling internal constructor(
             currentVelocity = 0f
         }
     }
+}
+
+internal fun scaleResponsiveFlingVelocity(initialVelocity: Float, density: Float): Float {
+    val safeDensity = density.coerceAtLeast(1f)
+    // Settle very slow positioning releases near the finger without damping quick reverse flicks.
+    val speedDp = abs(initialVelocity) / safeDensity
+    val blend = ((speedDp - 60f) / (280f - 60f)).coerceIn(0f, 1f)
+    val easedBlend = blend * blend * (3f - 2f * blend)
+    val momentum = 0.15f + 0.91f * easedBlend
+    return (initialVelocity * momentum).coerceIn(-16000f, 16000f)
 }
 
 /** A settled-looking fling should not require a separate tap just to stop it. */

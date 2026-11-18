@@ -175,6 +175,13 @@ fun HistoryScreen(
                     }
                 }
 
+                val pagerTouchGuard = com.mioo.dao.ui.components.rememberTouchGuardConfiguration(
+                    com.mioo.dao.ui.components.LocalScrollTouchGuardEnabled.current
+                )
+                CompositionLocalProvider(
+                    androidx.compose.foundation.LocalOverscrollConfiguration provides null,
+                    androidx.compose.ui.platform.LocalViewConfiguration provides pagerTouchGuard
+                ) {
                 HorizontalPager(state = pager, beyondBoundsPageCount = 0, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
                     val records by viewModel.items(category).collectAsState()
@@ -204,19 +211,26 @@ fun HistoryScreen(
                             Text(if (categoryQuery.isBlank()) "暂无${category.label}" else "没有匹配的记录",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    } else if (readyRecords.isNotEmpty()) com.mioo.dao.ui.components.ReadingTouchGuard {
-                    LazyColumn(
-                        state = list, modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
-                            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
-                            HistoryCard(entry, onClick = { viewModel.open(entry, onNavigateToThread) },
-                                onLongClick = { deleteItem = entry }, onImageClick = { image = it })
+                    } else if (readyRecords.isNotEmpty()) {
+                        val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
+                        val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
+                        CompositionLocalProvider(androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration) {
+                            LazyColumn(
+                                state = list,
+                                flingBehavior = responsiveFling,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
+                                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
+                                    HistoryCard(entry, onClick = { viewModel.open(entry, onNavigateToThread) },
+                                        onLongClick = { deleteItem = entry }, onImageClick = { image = it })
+                                }
+                            }
                         }
                     }
-                    }
+                }
                 }
             }
         }

@@ -16,9 +16,13 @@ import kotlinx.coroutines.CancellationException
  * cancels that animation and can leave invisible distance consuming subsequent upward drags.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-internal class ForumPullRefreshState(override val positionalThreshold: Float) : PullToRefreshState {
+internal class ForumPullRefreshState(
+    override val positionalThreshold: Float,
+    private val pullActivationSlopPx: Float = 0f
+) : PullToRefreshState {
     private var delegate by mutableStateOf(newState(false))
     private var releasing: PullToRefreshState? = null
+    private var pendingDownPull = 0f
 
     private fun newState(refreshing: Boolean) = PullToRefreshState(
         positionalThresholdPx = positionalThreshold,
@@ -34,11 +38,13 @@ internal class ForumPullRefreshState(override val positionalThreshold: Float) : 
 
     override fun startRefresh() {
         // A toolbar refresh can overlap the previous release animation as well.
+        pendingDownPull = 0f
         delegate = newState(true)
     }
 
     override fun endRefresh() {
         // endRefresh() in 1.2 resets the indicator, but not its accumulated drag distance.
+        pendingDownPull = 0f
         delegate = newState(false)
     }
 
@@ -48,6 +54,7 @@ internal class ForumPullRefreshState(override val positionalThreshold: Float) : 
             // The previous release is still animating. Give the new gesture its
             // own state before consuming any of its distance; its cancellation
             // must not erase the new pull.
+            pendingDownPull = 0f
             delegate = newState(false)
         }
     }
@@ -55,15 +62,34 @@ internal class ForumPullRefreshState(override val positionalThreshold: Float) : 
     override var nestedScrollConnection: NestedScrollConnection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
             prepareForDrag(source)
+            if (available.y < 0f) {
+                pendingDownPull = 0f
+            }
             return delegate.nestedScrollConnection.onPreScroll(available, source)
         }
 
         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
             prepareForDrag(source)
+            if (source == NestedScrollSource.Drag &&
+                available.y > 0f &&
+                !delegate.isRefreshing &&
+                delegate.progress == 0f &&
+                delegate.verticalOffset == 0f &&
+                pullActivationSlopPx > 0f
+            ) {
+                pendingDownPull += available.y
+                if (pendingDownPull <= pullActivationSlopPx) {
+                    return Offset.Zero
+                }
+                val excess = pendingDownPull - pullActivationSlopPx
+                pendingDownPull = 0f
+                return delegate.nestedScrollConnection.onPostScroll(consumed, available.copy(y = excess), source)
+            }
             return delegate.nestedScrollConnection.onPostScroll(consumed, available, source)
         }
 
         override suspend fun onPreFling(available: Velocity): Velocity {
+            pendingDownPull = 0f
             val releasedState = delegate
             if (!releasedState.isRefreshing && releasedState.progress == 0f && releasedState.verticalOffset == 0f) {
                 return Velocity.Zero

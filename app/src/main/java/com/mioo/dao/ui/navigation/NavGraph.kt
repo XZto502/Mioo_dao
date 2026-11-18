@@ -310,7 +310,8 @@ fun MiooDaoNavGraph(
         drawerState = boardDrawerState,
         // Closed-state opening is direction-arbitrated by the board list. Having
         // both draggable handlers compete cancels opening while the list flings.
-        gesturesEnabled = boardDrawerState.currentValue == DrawerValue.Open &&
+        gesturesEnabled = (boardDrawerState.currentValue == DrawerValue.Open ||
+            boardDrawerState.targetValue == DrawerValue.Open) &&
             boardDrawerSlot.gesturesEnabled &&
             currentRoute == Screen.Home.route &&
             currentTabIndex == 0 &&
