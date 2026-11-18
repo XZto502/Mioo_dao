@@ -1,8 +1,7 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.SavedStateHandle
 import com.mioo.dao.data.local.DraftEntity
 import com.mioo.dao.data.local.PostDraftContent
@@ -161,7 +160,15 @@ class ThreadViewModel @Inject constructor(
      * Per-key observable quote map. Compose only invalidates items that read a given id,
      * so filling quote A does not recompose the card that only needs quote B.
      */
-    val quoteCache: SnapshotStateMap<String, Reply> = mutableStateMapOf()
+    private val quoteReplies = java.util.concurrent.ConcurrentHashMap<String, Reply>()
+    private val quoteSlotLock = Any()
+    private val quotePostSlots = HashMap<String, androidx.compose.runtime.MutableState<PostData?>>()
+
+    fun quotePostState(id: String): androidx.compose.runtime.State<PostData?> {
+        synchronized(quoteSlotLock) {
+            return quotePostSlots.getOrPut(id) { mutableStateOf(null) }
+        }
+    }
 
     fun sharePosts(): List<PostData> {
         val thread = _listState.value.thread ?: return emptyList()
@@ -180,7 +187,7 @@ class ThreadViewModel @Inject constructor(
         val upstream = ids.filterNot { it in local }.map { id -> async {
             semaphore.withPermit {
                 try {
-                    val reply = quoteCache[id] ?: kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                    val reply = quoteReplies[id] ?: kotlinx.coroutines.withTimeoutOrNull(8000L) {
                         (threadRepository.getRefPost(id).first() as? XdResponse.Success)?.data
                     }
                     reply?.let { id to it.toPostData(it.userHash == main?.userId) }
@@ -933,19 +940,48 @@ class ThreadViewModel @Inject constructor(
         return result
     }
 
+    private fun Reply.toInlineQuotePostData(poUserHash: String?): PostData {
+        val base = toPostData(isPo = userHash == poUserHash)
+        val targetResto = when {
+            resto != null && resto > 0L -> resto.toString()
+            idStr == threadId -> threadId
+            else -> idStr
+        }
+        return base.copy(resto = targetResto)
+    }
+
+    private fun publishQuoteSlotsOnMain(entries: Map<String, Pair<Reply, PostData>>) {
+        for ((id, pair) in entries) {
+            quoteReplies[id] = pair.first
+            synchronized(quoteSlotLock) {
+                quotePostSlots.getOrPut(id) { mutableStateOf(null) }
+            }.value = pair.second
+        }
+    }
+
+    private fun publishQuoteSlotOnMain(id: String, reply: Reply, postData: PostData) {
+        quoteReplies[id] = reply
+        synchronized(quoteSlotLock) {
+            quotePostSlots.getOrPut(id) { mutableStateOf(null) }
+        }.value = postData
+    }
+
     private fun seedLocalQuotes(replies: List<Reply>, mainThread: Thread) {
         val postsById = rawPosts.associateBy { it.idStr }
+        val poUserHash = mainThread.userHash
         for (reply in replies) {
             val ids = extractQuoteIdsFromContent(reply.content)
             for (id in ids) {
-                if (quoteCache.containsKey(id)) continue
+                if (quoteReplies.containsKey(id)) continue
                 val local = postsById[id]
                 if (local != null) {
-                    quoteCache[id] = local.copy(resto = threadId.toLongOrNull())
+                    val adjusted = local.copy(resto = threadId.toLongOrNull())
+                    publishQuoteSlotOnMain(id, adjusted, adjusted.toInlineQuotePostData(poUserHash))
                     continue
                 }
                 if (mainThread.idStr == id) {
-                    quoteCache[id] = mainThread.toReplyPlaceholder()
+                    val placeholder = mainThread.toReplyPlaceholder()
+                    publishQuoteSlotOnMain(id, placeholder, placeholder.toInlineQuotePostData(poUserHash))
                 }
             }
         }
@@ -961,22 +997,25 @@ class ThreadViewModel @Inject constructor(
             }
             if (quoteIds.isEmpty()) return@launch
 
-            val missingIds = quoteIds.filter { it !in quoteCache }
+            val missingIds = quoteIds.filter { !quoteReplies.containsKey(it) }
             if (missingIds.isEmpty()) return@launch
 
             val postsById = rawPosts.associateBy { it.idStr }
             val mainThread = _listState.value.thread
-            val localBatch = HashMap<String, Reply>()
+            val poUserHash = mainThread?.userHash
+            val localBatch = HashMap<String, Pair<Reply, PostData>>()
             val networkIds = ArrayList<String>()
 
             for (id in missingIds) {
                 val localReply = postsById[id]
                 if (localReply != null) {
-                    localBatch[id] = localReply.copy(resto = threadId.toLongOrNull())
+                    val adjusted = localReply.copy(resto = threadId.toLongOrNull())
+                    localBatch[id] = adjusted to adjusted.toInlineQuotePostData(poUserHash)
                     continue
                 }
                 if (mainThread != null && mainThread.idStr == id) {
-                    localBatch[id] = mainThread.toReplyPlaceholder()
+                    val placeholder = mainThread.toReplyPlaceholder()
+                    localBatch[id] = placeholder to placeholder.toInlineQuotePostData(poUserHash)
                     continue
                 }
                 networkIds.add(id)
@@ -984,7 +1023,7 @@ class ThreadViewModel @Inject constructor(
 
             if (localBatch.isNotEmpty()) {
                 withContext(Dispatchers.Main.immediate) {
-                    if (generation == loadGeneration) quoteCache.putAll(localBatch)
+                    if (generation == loadGeneration) publishQuoteSlotsOnMain(localBatch)
                 }
             }
 
@@ -1001,9 +1040,10 @@ class ThreadViewModel @Inject constructor(
                             // 错误文案且弹窗不再走网络重试（重进串才能恢复）
                             val reply = resolveQuoteFromNetwork(id)
                             if (reply != null) {
+                                val postData = reply.toInlineQuotePostData(poUserHash)
                                 withContext(Dispatchers.Main.immediate) {
-                                    if (generation == loadGeneration && id !in quoteCache) {
-                                        quoteCache[id] = reply
+                                    if (generation == loadGeneration && !quoteReplies.containsKey(id)) {
+                                        publishQuoteSlotOnMain(id, reply, postData)
                                     }
                                 }
                             }
@@ -1396,7 +1436,7 @@ class ThreadViewModel @Inject constructor(
             while (refBackStack.size > 12) refBackStack.removeFirst()
         }
         val canGoBack = refBackStack.isNotEmpty()
-        val cached = quoteCache[postId]
+        val cached = quoteReplies[postId]
         if (cached != null) {
             _refPopupState.value = ThreadRefPopupUiState(
                 refPostId = postId,
@@ -1421,7 +1461,10 @@ class ThreadViewModel @Inject constructor(
                 when (response) {
                     is XdResponse.Success -> {
                         val reply = response.data
-                        quoteCache[postId] = reply
+                        val inlinePost = withContext(Dispatchers.Default) {
+                            reply.toInlineQuotePostData(_listState.value.thread?.userHash)
+                        }
+                        publishQuoteSlotOnMain(postId, reply, inlinePost)
                         _refPopupState.update {
                             it.copy(
                                 isRefLoading = false,

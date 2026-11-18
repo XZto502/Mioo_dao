@@ -453,7 +453,7 @@ fun FeedScreen(
                             ) { summary ->
                                 OfflineFeedRow(
                                     summary = summary,
-                                    forumName = Regex("^板块\\s*(\\d+)$").matchEntire(summary.forumName)?.groupValues?.get(1)?.let { forumNames[it] } ?: summary.forumName,
+                                    forumName = FALLBACK_FORUM_NAME_REGEX.matchEntire(summary.forumName)?.groupValues?.get(1)?.let { forumNames[it] } ?: summary.forumName,
                                     isUpdating = summary.threadId in uiState.offlineUpdatingIds,
                                     onNavigateToThread = openThread,
                                     onUpdate = {

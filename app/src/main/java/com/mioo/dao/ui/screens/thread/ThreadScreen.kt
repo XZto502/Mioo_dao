@@ -202,7 +202,6 @@ import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.RefPopup
 import com.mioo.dao.ui.components.ViewerImage
 import com.mioo.dao.ui.components.IslandImage
-import com.mioo.dao.ui.components.toPostData
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.theme.DaoTheme
@@ -261,7 +260,7 @@ fun ThreadScreen(
         }
         onDispose { viewModel.registerPrependAnchorProvider(null) }
     }
-    val quoteCache = viewModel.quoteCache
+    val resolveQuotePost = remember(viewModel) { viewModel::quotePostState }
     // Must re-read startPage when it changes (e.g. prepend earlier pages after resume).
     val listStartPage = listUi.startPage
     val totalPages = viewModel.totalPages
@@ -882,7 +881,7 @@ fun ThreadScreen(
                     ) { item ->
                         ThreadReplyRow(
                             item = item,
-                            quoteCache = quoteCache,
+                            resolveQuotePost = resolveQuotePost,
                             inlineQuotesEnabled = threadSettings.quoteAutoDisplayEnabled,
                             poUserHash = poUserHash,
                             currentThreadId = viewModel.threadId,
@@ -1809,7 +1808,7 @@ private fun ThreadPageJumpButton(
 @Composable
 private fun ThreadReplyRow(
     item: ReplyDisplayItem,
-    quoteCache: androidx.compose.runtime.snapshots.SnapshotStateMap<String, Reply>,
+    resolveQuotePost: (String) -> androidx.compose.runtime.State<com.mioo.dao.ui.components.PostData?>,
     inlineQuotesEnabled: Boolean,
     poUserHash: String?,
     currentThreadId: String,
@@ -1825,24 +1824,20 @@ private fun ThreadReplyRow(
     onShareCard: () -> Unit
 ) {
     // 每个引用从首帧就拥有同样的预览槽位；缓存命中只替换槽位内容。
-    val quotedPostsData by remember(item.quoteIds, inlineQuotesEnabled, quoteCache, poUserHash, currentThreadId) {
+    val quoteSlots = remember(item.quoteIds, inlineQuotesEnabled, resolveQuotePost) {
+        if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
+            emptyList()
+        } else {
+            item.quoteIds.map { id -> id to resolveQuotePost(id) }
+        }
+    }
+    val quotedPostsData by remember(quoteSlots) {
         derivedStateOf {
-            if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
+            if (quoteSlots.isEmpty()) {
                 StablePostList(emptyList())
             } else {
-                StablePostList(item.quoteIds.map { id ->
-                    val quote = quoteCache[id]
-                    if (quote == null) {
-                        com.mioo.dao.ui.components.pendingInlineQuote(id)
-                    } else {
-                        val base = quote.toPostData(isPo = quote.userHash == poUserHash)
-                        val targetResto = when {
-                            quote.resto != null && quote.resto > 0L -> quote.resto.toString()
-                            quote.idStr == currentThreadId -> currentThreadId
-                            else -> quote.idStr
-                        }
-                        base.copy(resto = targetResto)
-                    }
+                StablePostList(quoteSlots.map { (id, state) ->
+                    state.value ?: com.mioo.dao.ui.components.pendingInlineQuote(id)
                 })
             }
         }
