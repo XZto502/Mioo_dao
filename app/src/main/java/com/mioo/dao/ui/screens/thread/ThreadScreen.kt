@@ -1634,7 +1634,7 @@ private fun ThreadPageJumpButton(
             val density = LocalDensity.current
             val bounds = anchorBounds
             val marginPx = with(density) { 12.dp.roundToPx() }
-            val bubbleWidthPx = with(density) { 300.dp.roundToPx() }
+            val bubbleWidthPx = with(density) { 244.dp.roundToPx() }
             val gapPx = with(density) { 8.dp.roundToPx() }
             val windowWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
             val desiredLeft = windowWidthPx - marginPx - bubbleWidthPx
@@ -1667,14 +1667,14 @@ private fun ThreadPageJumpButton(
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shadowElevation = 6.dp,
-                modifier = Modifier.width(300.dp)
+                modifier = Modifier.width(244.dp)
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                     // 第 1 行：步进器 + 可点击页码胶囊（点胶囊 = 精确输入）
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp),
+                            .height(32.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1684,7 +1684,7 @@ private fun ThreadPageJumpButton(
                                 sliderPage = 1f
                             },
                             enabled = currentPage > 1,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(Icons.Default.FirstPage, contentDescription = "首页", modifier = Modifier.size(18.dp))
                         }
@@ -1694,7 +1694,7 @@ private fun ThreadPageJumpButton(
                                 sliderPage = (currentPage - 1).toFloat()
                             },
                             enabled = currentPage > 1,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一页", modifier = Modifier.size(18.dp))
                         }
@@ -1710,7 +1710,7 @@ private fun ThreadPageJumpButton(
                                 onExpandedChange(false)
                                 onOpenInputDialog()
                             },
-                            modifier = Modifier.height(48.dp)
+                            modifier = Modifier.height(32.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1762,7 +1762,7 @@ private fun ThreadPageJumpButton(
                                 sliderPage = (currentPage + 1).toFloat()
                             },
                             enabled = currentPage < totalPages,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一页", modifier = Modifier.size(18.dp))
                         }
@@ -1772,7 +1772,7 @@ private fun ThreadPageJumpButton(
                                 sliderPage = totalPages.toFloat()
                             },
                             enabled = currentPage < totalPages,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(Icons.Default.LastPage, contentDescription = "末页", modifier = Modifier.size(18.dp))
                         }
@@ -1791,7 +1791,7 @@ private fun ThreadPageJumpButton(
                     },
                         valueRange = 1f..totalPages.toFloat().coerceAtLeast(1f),
                         steps = if (totalPages in 3..20) totalPages - 2 else 0,
-                        modifier = Modifier.height(48.dp)
+                        modifier = Modifier.height(32.dp)
                     )
                 }
             }
