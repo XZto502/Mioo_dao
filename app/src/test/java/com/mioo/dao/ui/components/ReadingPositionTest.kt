@@ -1,5 +1,6 @@
 package com.mioo.dao.ui.components
 
+import com.mioo.dao.ui.screens.thread.CreatorButtonScrollTracker
 import com.mioo.dao.ui.screens.thread.readingLazyIndex
 import com.mioo.dao.ui.screens.thread.resolveReadingIndex
 import com.mioo.dao.ui.screens.thread.shouldLoadPreviousAtEdge
@@ -58,5 +59,21 @@ class ReadingPositionTest {
         assertEquals(3, resolveReadingIndex("b", "op", listOf("new", "a", "b"), 1))
         assertEquals(0, resolveReadingIndex("op", "op", listOf("a"), 10))
         assertEquals(4, resolveReadingIndex("removed", "op", listOf("a"), 4))
+    }
+
+    @Test fun creatorButtonSinksOnUpwardSwipeAndReturnsOnDownwardSwipe() {
+        val tracker = CreatorButtonScrollTracker(hideDistancePx = 36f, showDistancePx = 16f)
+        // Tiny upward jitter stays visible
+        assertTrue(tracker.onDrag(-20f, currentVisible = true))
+        // Crossing hideDistance sinks the button
+        assertFalse(tracker.onDrag(-20f, currentVisible = true))
+        // Continuing upward stays hidden
+        assertFalse(tracker.onDrag(-25f, currentVisible = false))
+        // Tiny downward reverse stays hidden until threshold, then immediately restores
+        assertFalse(tracker.onDrag(10f, currentVisible = false))
+        assertTrue(tracker.onDrag(8f, currentVisible = false))
+        // At top edge, any downward swipe restores immediately
+        assertFalse(tracker.onDrag(-40f, currentVisible = true))
+        assertTrue(tracker.onDrag(4f, currentVisible = false, atTop = true))
     }
 }

@@ -336,27 +336,38 @@ fun ThreadScreen(
     // A short last page (or an empty page) cannot move at all. Observe the user's
     // drag before consumption, rather than requiring a changed list position.
     var creatorButtonVisible by remember(viewModel) { mutableStateOf(true) }
+    val creatorScrollDensity = androidx.compose.ui.platform.LocalDensity.current
+    val hideCreatorDistance = with(creatorScrollDensity) { 36.dp.toPx() }
+    val showCreatorDistance = with(creatorScrollDensity) { 16.dp.toPx() }
+    val creatorTracker = remember(viewModel, hideCreatorDistance, showCreatorDistance) {
+        CreatorButtonScrollTracker(hideCreatorDistance, showCreatorDistance)
+    }
     val creatorSink by animateFloatAsState(
         targetValue = if (creatorButtonVisible) 0f else 1f,
         animationSpec = tween(if (reducedMotion) 0 else 340),
         label = "写作按钮"
     )
-    LaunchedEffect(listState, creatorButtonVisible) {
+    LaunchedEffect(listState, creatorButtonVisible, creatorTracker) {
         if (!creatorButtonVisible) {
             snapshotFlow { listState.isScrollInProgress }.collectLatest { scrolling ->
                 if (!scrolling) {
-                    delay(2500)
+                    delay(1500)
+                    creatorTracker.reset()
                     creatorButtonVisible = true
                 }
             }
         }
     }
     var userMovedDuringRestore by remember(viewModel, listUi.contentRevision) { mutableStateOf(false) }
-    val edgePaging = remember(listState, viewModel, listUi.contentRevision) {
+    val edgePaging = remember(listState, viewModel, listUi.contentRevision, creatorTracker) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source == NestedScrollSource.Drag && available.y != 0f) {
-                    creatorButtonVisible = false
+                    creatorButtonVisible = creatorTracker.onDrag(
+                        deltaY = available.y,
+                        currentVisible = creatorButtonVisible,
+                        atTop = !listState.canScrollBackward
+                    )
                     val state = viewModel.listUiState.value
                     if (state.pendingScrollIndex != null && !state.isReplacing && state.thread != null) {
                         userMovedDuringRestore = true
@@ -510,7 +521,12 @@ fun ThreadScreen(
         creatorOpen = true
     }
     LaunchedEffect(viewModel, creatorOpen) {
-        if (creatorOpen) viewModel.beginReplyEditing()
+        if (creatorOpen) {
+            viewModel.beginReplyEditing()
+        } else {
+            creatorTracker.reset()
+            creatorButtonVisible = true
+        }
     }
     val selectedReplyCookie = viewModel.threadCookieIndex.collectAsState().value
         ?.takeIf { it in threadSettings.cookiesList.indices } ?: threadSettings.selectedCookieIndex

@@ -55,3 +55,38 @@ internal fun resolveWindowReadingIndex(
         ?: targetPageIds.lastOrNull()
     return resolveReadingIndex(anchor, threadId, windowIds, 0)
 }
+
+/** Tracks vertical drag intent for the thread creator button, including short non-scrollable pages. */
+internal class CreatorButtonScrollTracker(
+    private val hideDistancePx: Float,
+    private val showDistancePx: Float
+) {
+    private var directionDistance = 0f
+
+    fun onDrag(deltaY: Float, currentVisible: Boolean, atTop: Boolean = false): Boolean {
+        if (deltaY == 0f) return currentVisible
+        if (atTop && deltaY > 0f) {
+            directionDistance = 0f
+            return true
+        }
+        if (directionDistance * deltaY < 0f) {
+            directionDistance = 0f
+        }
+        directionDistance += deltaY
+        return when {
+            directionDistance <= -hideDistancePx -> {
+                directionDistance = 0f
+                false
+            }
+            directionDistance >= showDistancePx -> {
+                directionDistance = 0f
+                true
+            }
+            else -> currentVisible
+        }
+    }
+
+    fun reset() {
+        directionDistance = 0f
+    }
+}
