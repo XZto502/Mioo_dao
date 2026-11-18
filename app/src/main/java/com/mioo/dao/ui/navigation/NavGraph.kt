@@ -198,8 +198,7 @@ fun MiooDaoNavGraph(
     }
 
     // Read once per activity. Querying animator scale on every navigation janks the first frame.
-    val context = LocalContext.current
-    val reducedMotion = remember(context) { isReducedMotionEnabled(context) }
+    val reducedMotion = isReducedMotionEnabled()
     val predictiveBackEnabled = LocalPredictiveBackEnabled.current
     val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
 

@@ -49,6 +49,8 @@ import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.navigation.MiooDaoNavGraph
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.LocalReducedMotionEnabled
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import com.mioo.dao.ui.theme.MiooDaoTheme
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.installImmersiveBarGuard
@@ -92,6 +94,7 @@ class MainActivity : ComponentActivity() {
 
     /** Clipboard-detected 8-digit thread id awaiting user confirmation. */
     private var clipboardThreadCandidate = mutableStateOf<String?>(null)
+    private val reducedMotionState = mutableStateOf(false)
 
     /**
      * Fingerprint of clipboard content already handled (accept or dismiss).
@@ -126,6 +129,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         pendingThreadIdState.value = parsePendingThreadId(intent)
+        reducedMotionState.value = isReducedMotionEnabled(this)
 
         // Never stick on splash if list is empty/error/slow network (prefer first-content callback)
         lifecycleScope.launch {
@@ -213,6 +217,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val reducedMotion by reducedMotionState
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalReducedMotionEnabled provides reducedMotion
+            ) {
             MiooDaoTheme(
                 darkTheme = darkTheme,
                 themeColor = themeColor,
@@ -354,7 +362,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+            }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        reducedMotionState.value = isReducedMotionEnabled(this)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -369,6 +383,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingThreadIdState.value = parsePendingThreadId(intent)
+        reducedMotionState.value = isReducedMotionEnabled(this)
     }
 
     private fun parsePendingThreadId(intent: Intent?): String? {
