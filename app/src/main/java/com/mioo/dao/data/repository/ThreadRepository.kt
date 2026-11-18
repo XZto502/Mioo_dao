@@ -1223,7 +1223,9 @@ class ThreadRepositoryImpl @Inject constructor(
     // --- 已离线串 ---
 
     override fun getOfflineThreadSummaries(): Flow<List<com.mioo.dao.data.local.OfflineThreadSummary>> =
-        offlineThreadDao.observeSummaries()
+        offlineThreadDao.observeSummaryChanges()
+            .map { count -> if (count == 0) emptyList() else offlineThreadDao.getSummaries() }
+            .distinctUntilChanged()
 
     override fun isThreadDownloaded(threadId: String): Flow<Boolean> =
         offlineThreadDao.observeDownloaded(threadId)

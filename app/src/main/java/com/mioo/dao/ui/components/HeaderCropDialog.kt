@@ -10,10 +10,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
@@ -26,15 +26,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+import coil.size.Size as CoilSize
 import com.mioo.dao.data.local.HeaderImageSettings
 import com.mioo.dao.data.local.SettingsDataStore
 import kotlinx.coroutines.*
@@ -44,37 +47,37 @@ import kotlin.math.*
 private const val HEADER_RATIO = 3.8f
 
 @Composable
-fun HeaderImageSettingsCard() {
+fun HeaderImageSettingsContent() {
     val context = LocalContext.current
     val store = remember(context) { SettingsDataStore(context.applicationContext) }
     val settings by store.headerImageSettings.collectAsState(HeaderImageSettings())
     val scope = rememberCoroutineScope()
-    var alpha by remember(settings.alpha) { mutableFloatStateOf(settings.alpha) }
     var cropUri by remember { mutableStateOf<Uri?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { cropUri = it }
     fun choose() = picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-    Card(colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()), shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("自定义顶栏背景", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (settings.path.isNotBlank()) {
-                AsyncImage(File(settings.path), "顶栏背景预览", Modifier.fillMaxWidth().aspectRatio(HEADER_RATIO).clip(MaterialTheme.shapes.small).clickable { choose() }, contentScale = ContentScale.Crop, alpha = alpha)
-            }
-            TextButton(onClick = { choose() }) { Text(if (settings.path.isBlank()) "选择图片并裁切" else "重新选择或裁切") }
-            if (settings.path.isNotBlank()) {
-                Text("图片浓度", style = MaterialTheme.typography.bodyMedium)
-                Slider(value = alpha, onValueChange = { alpha = it }, valueRange = 0.2f..1f,
-                    onValueChangeFinished = { scope.launch { store.saveHeaderImageAlpha(alpha) } })
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("同时应用到串详情页", Modifier.weight(1f))
-                    Switch(settings.applyToThread, { enabled -> scope.launch { store.saveHeaderApplyToThread(enabled) } })
+    if (settings.path.isBlank()) {
+        FilledTonalButton(onClick = { choose() }) { Text("选择图片并裁切") }
+    } else {
+        AsyncImage(
+            model = File(settings.path),
+            contentDescription = "顶栏背景预览",
+            modifier = Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(12.dp)).clickable { choose() },
+            contentScale = ContentScale.Crop
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = { choose() }) { Text("更换图片") }
+            OutlinedButton(onClick = {
+                scope.launch {
+                    store.saveHeaderImagePath("")
+                    withContext(Dispatchers.IO) { cleanOldHeaders(context.filesDir, "") }
                 }
-                TextButton(onClick = {
-                    scope.launch {
-                        store.saveHeaderImagePath("")
-                        withContext(Dispatchers.IO) { cleanOldHeaders(context.filesDir, "") }
-                    }
-                }) { Text("恢复默认") }
-            }
+            }) { Text("清除顶图") }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("同时应用到串详情页", Modifier.weight(1f))
+            Switch(settings.applyToThread, { enabled ->
+                scope.launch { store.saveHeaderApplyToThread(enabled) }
+            })
         }
     }
     cropUri?.let { uri ->
@@ -159,8 +162,6 @@ fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: (
                             val height = image.height * base * zoom
                             drawImage(imageBitmap, dstOffset = IntOffset(((size.width - width) / 2 + offset.x).roundToInt(), ((size.height - height) / 2 + offset.y).roundToInt()), dstSize = IntSize(width.roundToInt(), height.roundToInt()))
                             val top = (size.height - frameHeight) / 2
-                            drawRect(Color.Black.copy(alpha = 0.6f), size = Size(size.width, top))
-                            drawRect(Color.Black.copy(alpha = 0.6f), topLeft = Offset(0f, top + frameHeight), size = Size(size.width, top))
                             drawRect(Color.White, Offset(1f, top), Size(size.width - 2, frameHeight), style = Stroke(1.dp.toPx()))
                         }
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -215,32 +216,44 @@ fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: (
     }
 }
 
-/** The image shares the app bar's measured bounds, including its status-bar inset. */
 @Composable
-fun CustomHeaderBar(thread: Boolean = false, content: @Composable (Boolean, Shadow) -> Unit) {
+internal fun rememberCustomHeaderPainter(thread: Boolean = false): Painter? {
     val context = LocalContext.current
     val store = remember(context) { SettingsDataStore(context.applicationContext) }
     val settings by store.headerImageSettings.collectAsState(HeaderImageSettings())
-    val enabled = settings.path.isNotBlank() && (!thread || settings.applyToThread) && File(settings.path).isFile
+    val path = settings.path.takeIf { it.isNotBlank() && (!thread || settings.applyToThread) }
+        ?: return null
+    val request = remember(context, path) {
+        val file = File(path)
+        if (file.isFile) ImageRequest.Builder(context)
+            .data(file)
+            .size(CoilSize.ORIGINAL)
+            .crossfade(false)
+            .build() else null
+    } ?: return null
+    return rememberAsyncImagePainter(request, contentScale = ContentScale.Crop)
+}
+
+@Composable
+fun CustomHeaderBar(thread: Boolean, content: @Composable (Boolean, Shadow) -> Unit) {
+    CustomHeaderBar(rememberCustomHeaderPainter(thread), content)
+}
+
+/** The image shares the app bar's measured bounds, including its status-bar inset. */
+@Composable
+internal fun CustomHeaderBar(painter: Painter?, content: @Composable (Boolean, Shadow) -> Unit) {
     val background = MaterialTheme.colorScheme.background
     Box {
-        if (enabled) {
-            AsyncImage(File(settings.path), null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = settings.alpha)
-            Canvas(Modifier.matchParentSize()) {
-                drawRect(Brush.verticalGradient(
-                    0f to background.copy(alpha = 0.2f),
-                    0.5f to Color.Transparent,
-                    (1f - 10.dp.toPx() / size.height).coerceIn(0.5f, 0.99f) to Color.Transparent,
-                    1f to background.copy(alpha = 0.5f)
-                ))
-            }
+        if (painter != null) {
+            androidx.compose.foundation.Image(
+                painter, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop
+            )
         }
-        content(enabled, if (enabled) Shadow(background.copy(alpha = 0.85f), blurRadius = 6f) else Shadow.None)
+        content(painter != null, if (painter != null) Shadow(background.copy(alpha = 0.85f), blurRadius = 6f) else Shadow.None)
     }
 }
 
 @Composable
-fun HeaderActionProtection(enabled: Boolean, content: @Composable () -> Unit) {
-    Row(Modifier.then(if (enabled) Modifier.background(MaterialTheme.colorScheme.background.copy(alpha = 0.72f), MaterialTheme.shapes.small) else Modifier),
-        verticalAlignment = Alignment.CenterVertically) { content() }
+fun HeaderActionRow(content: @Composable () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) { content() }
 }

@@ -762,6 +762,8 @@ private fun MainTabs(
 ) {
     val tabState = rememberSaveableStateHolder()
     val slidePx = with(LocalDensity.current) { 20.dp.roundToPx() }
+    // Keep the local image decoded when AnimatedContent disposes the board page.
+    val boardHeader = com.mioo.dao.ui.components.rememberCustomHeaderPainter()
     AnimatedContent(
         targetState = currentTabIndex,
         modifier = Modifier.fillMaxSize(),
@@ -770,7 +772,9 @@ private fun MainTabs(
                 EnterTransition.None togetherWith ExitTransition.None
             } else {
                 val direction = if (targetState >= initialState) 1 else -1
-                (fadeIn(tween(160, easing = FastOutSlowInEasing)) +
+                val enterFade = if (targetState == 0 && boardHeader != null) EnterTransition.None
+                    else fadeIn(tween(160, easing = FastOutSlowInEasing))
+                (enterFade +
                     slideInHorizontally(tween(160, easing = FastOutSlowInEasing)) {
                         direction * slidePx
                     }) togetherWith fadeOut(tween(70, easing = LinearEasing))
@@ -791,7 +795,8 @@ private fun MainTabs(
                         drawerState = drawerState,
                         boardDrawerSlot = boardDrawerSlot,
                         onImageViewerOpenChange = onImageViewerOpenChange,
-                        onComposerOpenChange = onComposerOpenChange
+                        onComposerOpenChange = onComposerOpenChange,
+                        headerPainter = boardHeader
                     )
                 }
                 1 -> {

@@ -52,6 +52,8 @@ data class FeedUiState(
     val remoteReplyCounts: Map<String, Int> = emptyMap(),
     val feedFolders: List<FeedFolder> = emptyList(),
     val isLoading: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val hasMoreRemote: Boolean = false,
     val selectedFolderId: String? = null,
     val selectionReady: Boolean = false,
     /** 正在重新离线的串号（更新按钮转圈）。 */
@@ -149,6 +151,8 @@ class FeedViewModel @Inject constructor(
             it.copy(
                 selectedFolderId = uuid,
                 isLoading = false,
+                isLoadingMore = false,
+                hasMoreRemote = false,
                 // 任何切换都清空旧数据：留着会在新文件夹标题下展示上一个夹的帖子
                 remoteThreads = emptyList(),
                 remoteDisplayItems = emptyList(),
@@ -169,7 +173,7 @@ class FeedViewModel @Inject constructor(
         remoteEndReached = false
         remoteFeedJob?.cancel()
         remoteFeedJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, isLoadingMore = false, hasMoreRemote = false) }
             threadRepository.getFeed(uuid, 1).collect { response ->
                 // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
                 if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
@@ -185,7 +189,8 @@ class FeedViewModel @Inject constructor(
                             remoteThreads = threads,
                             remoteReplyCounts = knownCounts,
                             remoteDisplayItems = items,
-                            isLoading = false
+                            isLoading = false,
+                            hasMoreRemote = threads.isNotEmpty()
                         )
                     }
                     enrichRemoteReplyCounts(uuid, threads)
@@ -265,6 +270,7 @@ class FeedViewModel @Inject constructor(
         // 独立标志：加载更多不动 isLoading（那是首页全屏 spinner 的开关，动了会闪屏）
         if (remoteLoadingMore || remoteEndReached || _uiState.value.isLoading) return
         remoteLoadingMore = true
+        _uiState.update { it.copy(isLoadingMore = true) }
         val page = remotePage + 1
         val generation = remoteGeneration
         remoteLoadMoreJob = viewModelScope.launch {
@@ -275,6 +281,7 @@ class FeedViewModel @Inject constructor(
                         val fresh = response.data
                         if (fresh.isEmpty()) {
                             remoteEndReached = true
+                            _uiState.update { it.copy(hasMoreRemote = false) }
                             return@collect
                         }
                         val state = _uiState.value
@@ -288,7 +295,8 @@ class FeedViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 remoteThreads = it.remoteThreads + added,
-                                remoteDisplayItems = it.remoteDisplayItems + items.withReplyCounts(it.remoteReplyCounts)
+                                remoteDisplayItems = it.remoteDisplayItems + items.withReplyCounts(it.remoteReplyCounts),
+                                hasMoreRemote = !remoteEndReached
                             )
                         }
                         if (added.isNotEmpty()) enrichRemoteReplyCounts(uuid, added)
@@ -298,7 +306,10 @@ class FeedViewModel @Inject constructor(
                     }
                 }
             } finally {
-                if (remoteGeneration == generation) remoteLoadingMore = false
+                if (remoteGeneration == generation) {
+                    remoteLoadingMore = false
+                    _uiState.update { it.copy(isLoadingMore = false) }
+                }
             }
         }
     }

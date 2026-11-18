@@ -595,7 +595,7 @@ fun ThreadScreen(
                 }
                 },
                 navigationIcon = {
-                    com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
+                    com.mioo.dao.ui.components.HeaderActionRow {
                     if (isSearchMode) {
                         IconButton(onClick = {
                             isSearchMode = false
@@ -612,7 +612,7 @@ fun ThreadScreen(
                     }
                 },
                 actions = {
-                    com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
+                    com.mioo.dao.ui.components.HeaderActionRow {
                     if (isSearchMode) {
                         if (searchFieldText.isNotEmpty()) {
                             IconButton(onClick = {

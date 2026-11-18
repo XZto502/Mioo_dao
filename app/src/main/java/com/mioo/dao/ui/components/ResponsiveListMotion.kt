@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import kotlin.math.abs
@@ -50,18 +51,27 @@ fun rememberResponsiveListConfiguration(): ViewConfiguration {
 @Composable
 fun rememberResponsiveListFling(): ResponsiveListFling {
     val decay = remember { exponentialDecay<Float>(frictionMultiplier = 0.52f) }
-    return remember(decay) {
-        ResponsiveListFling(decay)
+    val density = LocalDensity.current.density
+    return remember(decay, density) {
+        ResponsiveListFling(decay, density)
     }
 }
 
-class ResponsiveListFling internal constructor(private val decay: DecayAnimationSpec<Float>) : FlingBehavior {
+class ResponsiveListFling internal constructor(
+    private val decay: DecayAnimationSpec<Float>,
+    private val density: Float
+) : FlingBehavior {
     // Plain fields: updating velocity must not recompose list rows on each frame.
     internal var currentVelocity = 0f
     internal var running = false
     override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
-        val velocity = if (abs(initialVelocity) > 1200f)
-            (initialVelocity * 1.15f).coerceIn(-16000f, 16000f) else initialVelocity
+        // A slow release should settle near the finger. Ease into full momentum
+        // as the gesture gets faster so adjacent release speeds feel continuous.
+        val speedDp = abs(initialVelocity) / density
+        val blend = ((speedDp - 170f) / (630f - 170f)).coerceIn(0f, 1f)
+        val easedBlend = blend * blend * (3f - 2f * blend)
+        val momentum = 0.05f + 1.01f * easedBlend
+        val velocity = (initialVelocity * momentum).coerceIn(-16000f, 16000f)
         var previous = 0f
         var remainingVelocity = velocity
         running = true

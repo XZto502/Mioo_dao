@@ -151,7 +151,8 @@ fun ForumScreen(
     /** 与主框架共用，使抽屉盖在底部导航之上。 */
     drawerState: DrawerState,
     boardDrawerSlot: BoardDrawerSlot,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    headerPainter: androidx.compose.ui.graphics.painter.Painter? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     // Pins + cookies only — theme/font changes must not recompose the board list
@@ -377,7 +378,7 @@ fun ForumScreen(
     Box(Modifier.fillMaxSize()) {
             Scaffold(
             topBar = {
-                com.mioo.dao.ui.components.CustomHeaderBar { headerEnabled, headerShadow ->
+                com.mioo.dao.ui.components.CustomHeaderBar(headerPainter) { headerEnabled, headerShadow ->
                 TopAppBar(
                     title = {
                         Column {
@@ -396,7 +397,7 @@ fun ForumScreen(
                         }
                     },
                     navigationIcon = {
-                        com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
+                        com.mioo.dao.ui.components.HeaderActionRow {
                         IconButton(
                             onClick = {
                                 scope.launch {
@@ -418,7 +419,7 @@ fun ForumScreen(
                         }
                     },
                     actions = {
-                        com.mioo.dao.ui.components.HeaderActionProtection(headerEnabled) {
+                        com.mioo.dao.ui.components.HeaderActionRow {
                         IconButton(
                             onClick = {
                                 scope.launch { refreshFromTop() }

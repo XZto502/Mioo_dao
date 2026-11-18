@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -158,22 +160,30 @@ fun ThreadCard(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
+                        .height(22.dp)
                         .background(
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                            shape = MaterialTheme.shapes.small
+                            shape = RoundedCornerShape(50)
                         )
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .padding(start = 8.dp, end = 9.5.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Comment,
                         contentDescription = "回复数",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(13.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.5.dp))
                     Text(
                         text = "$replyCount replies",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.offset(y = (-0.5).dp),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = 11.5.sp,
+                            lineHeight = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFeatureSettings = "tnum",
+                            platformStyle = PlatformTextStyle(includeFontPadding = false)
+                        ),
                         color = MaterialTheme.colorScheme.primary
                     )
                 }

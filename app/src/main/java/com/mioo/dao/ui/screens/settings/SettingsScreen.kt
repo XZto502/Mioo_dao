@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cookie
@@ -61,6 +62,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -289,14 +291,42 @@ fun SettingsScreen(
         ) {
 
         AppearanceSettingsGroup(settings, viewModel)
-        com.mioo.dao.ui.components.HeaderImageSettingsCard()
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Outlined.Image, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("自定义顶栏背景", style = settingsItemStyle())
+                }
+                com.mioo.dao.ui.components.HeaderImageSettingsContent()
+            }
+        }
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
-        TextButton(onClick = { showKaomojiManager = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("自定义颜文字（${customKaomoji.size}）")
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("自定义颜文字", style = settingsItemStyle())
+                Text("已添加 ${customKaomoji.size} 个", style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FilledTonalButton(onClick = { showKaomojiManager = true }) { Text("管理") }
         }
-        TextButton(onClick = { confirmResetQuickInputs = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("恢复默认快捷输入")
+        SettingsGroupDivider()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("创作快捷输入", style = settingsItemStyle())
+                Text("长按编辑器底部快捷项可编辑", style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = { confirmResetQuickInputs = true }) { Text("恢复默认") }
         }
         SettingsGroupDivider()
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
