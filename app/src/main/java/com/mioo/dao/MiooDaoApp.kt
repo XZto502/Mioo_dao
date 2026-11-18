@@ -158,16 +158,16 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
     override fun newImageLoader(): ImageLoader {
         synchronized(imageLoaderLock) {
             installedImageLoader?.let { return it }
-            enforceDiskCacheLimit(diskCacheMaxBytes)
             val loader = buildImageLoader(diskCacheMaxBytes)
             installedImageLoader = loader
+            enforcedDiskCacheBytes = diskCacheMaxBytes
             return loader
         }
     }
 
     /**
      * Coil opens one disk cache per directory and only trims down on close.
-     * Shut the current cache, trim to the new cap, then install a new loader.
+     * Shut the current cache, trim to the new cap when shrinking, then install a new loader.
      * [Coil.setImageLoader] stays outside [imageLoaderLock]: newImageLoader runs
      * under Coil's lock and then takes this lock.
      */
@@ -176,17 +176,21 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
         val bytes = ImageCacheLimit.toBytes(mb)
         var myGeneration = 0L
         val swap = synchronized(imageLoaderLock) {
-            if (bytes == diskCacheMaxBytes && enforcedDiskCacheBytes == bytes) return
+            val previousBytes = diskCacheMaxBytes
             diskCacheMaxBytes = bytes
             val previous = installedImageLoader
             if (previous == null) {
-                enforceDiskCacheLimit(bytes)
                 return
             }
+            if (bytes == previousBytes && enforcedDiskCacheBytes == bytes) return
             val previousClient = imageHttpClient
             previous.shutdown()
             closeCoilDiskCache(previous.diskCache)
-            enforceDiskCacheLimit(bytes)
+            if (bytes < previousBytes) {
+                enforceDiskCacheLimit(bytes)
+            } else {
+                enforcedDiskCacheBytes = bytes
+            }
             val replacement = buildImageLoader(bytes)
             installedImageLoader = replacement
             myGeneration = imageLoaderSwapGeneration.incrementAndGet()
