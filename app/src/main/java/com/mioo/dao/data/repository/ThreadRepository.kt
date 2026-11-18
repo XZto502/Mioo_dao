@@ -249,6 +249,7 @@ class ThreadRepositoryImpl @Inject constructor(
     private val stringListAdapter =
         moshi.adapter<List<String>>(Types.newParameterizedType(List::class.java, String::class.java))
     private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val refPostCache = RefPostMemoryCache<Reply>(scope = preloadScope, flowContext = Dispatchers.IO)
     init {
         preloadScope.launch {
             try {
@@ -460,19 +461,21 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun getRefPost(id: String): Flow<XdResponse<Reply>> = flow {
-        try {
+    override fun getRefPost(id: String): Flow<XdResponse<Reply>> =
+        refPostCache.getOrFetch(id) { fetchRefPostNetwork(it) }
+
+    private suspend fun fetchRefPostNetwork(id: String): XdResponse<Reply> {
+        return try {
             val responseString = apiService.ref(id).string()
             extractQuotedJsonString(responseString)?.let { msg ->
-                emit(XdResponse.Error(message = msg.ifBlank { "该引用不存在或已被删除" }))
-                return@flow
+                return XdResponse.Error(message = msg.ifBlank { "该引用不存在或已被删除" })
             }
             try {
                 val reply = replyAdapter.fromJson(responseString)
                 if (reply != null) {
-                    emit(XdResponse.Success(reply))
+                    XdResponse.Success(reply)
                 } else {
-                    emit(XdResponse.Error(message = "引用的串解析失败"))
+                    XdResponse.Error(message = "引用的串解析失败")
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -482,13 +485,13 @@ class ThreadRepositoryImpl @Inject constructor(
                     .replace("\"", "")
                     .trim()
                 val errorMsg = cleanError.ifEmpty { "该引用不存在或已被删除" }
-                emit(XdResponse.Error(message = errorMsg))
+                XdResponse.Error(message = errorMsg)
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            emit(XdResponse.Error(message = e.localizedMessage ?: "Network error", throwable = e))
+            XdResponse.Error(message = e.localizedMessage ?: "Network error", throwable = e)
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     override fun doPostThread(
         fid: String,
@@ -1098,6 +1101,7 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun clearCache(): Flow<XdResponse<Unit>> = flow {
         try {
             cacheDao.clearNonOfflineCache()
+            refPostCache.clear()
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
