@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListFling
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
@@ -142,7 +144,13 @@ fun DraftBoxScreen(
                 )
             }
         } else {
+            val responsiveConfiguration = rememberResponsiveListConfiguration()
+            val responsiveFling = rememberResponsiveListFling()
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
+            ) {
             LazyColumn(
+                flingBehavior = responsiveFling,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = 12.dp,
@@ -168,6 +176,7 @@ fun DraftBoxScreen(
                         }
                     )
                 }
+            }
             }
         }
     }

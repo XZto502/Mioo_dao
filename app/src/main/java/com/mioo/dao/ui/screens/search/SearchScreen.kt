@@ -38,6 +38,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.sp
+import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListFling
 import com.mioo.dao.ui.screens.settings.secondaryPageBackground
 import com.mioo.dao.ui.screens.settings.secondaryCardBackground
 import androidx.compose.material3.Scaffold
@@ -172,7 +174,13 @@ fun SearchScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val responsiveConfiguration = rememberResponsiveListConfiguration()
+            val responsiveFling = rememberResponsiveListFling()
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
+            ) {
             LazyColumn(
+                flingBehavior = responsiveFling,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
@@ -296,6 +304,7 @@ fun SearchScreen(
                 items(uiState.result.hits, key = { "${it.source}_${it.threadId}" }) { hit ->
                     SearchHitRow(hit = hit, onClick = { onNavigateToThread(hit.threadId) })
                 }
+            }
             }
         }
     }

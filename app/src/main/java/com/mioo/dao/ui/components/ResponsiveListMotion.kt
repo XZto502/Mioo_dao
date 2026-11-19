@@ -50,10 +50,17 @@ fun rememberResponsiveListConfiguration(): ViewConfiguration {
 
 @Composable
 fun rememberResponsiveListFling(): ResponsiveListFling {
-    val decay = remember { exponentialDecay<Float>(frictionMultiplier = 0.52f) }
-    val density = LocalDensity.current.density
-    return remember(decay, density) {
-        ResponsiveListFling(decay, density)
+    val density = LocalDensity.current
+    val velocityThresholdPx = with(density) { 12.dp.toPx() }
+    val decay = remember(velocityThresholdPx) {
+        exponentialDecay<Float>(
+            frictionMultiplier = 0.52f,
+            absVelocityThreshold = velocityThresholdPx
+        )
+    }
+    val densityScale = density.density
+    return remember(decay, densityScale) {
+        ResponsiveListFling(decay, densityScale)
     }
 }
 
@@ -69,6 +76,7 @@ class ResponsiveListFling internal constructor(
         if (abs(velocity) <= 1f) return 0f
         var previous = 0f
         var remainingVelocity = velocity
+        var hitBoundary = false
         running = true
         currentVelocity = velocity
         try {
@@ -78,9 +86,12 @@ class ResponsiveListFling internal constructor(
             previous = value
             remainingVelocity = this.velocity
             currentVelocity = this.velocity
-            if (abs(delta - consumed) > 0.5f) cancelAnimation()
+            if (abs(delta - consumed) > 0.5f) {
+                hitBoundary = true
+                cancelAnimation()
+            }
         }
-        return if (abs(remainingVelocity) <= 0.1f) 0f else remainingVelocity
+        return if (hitBoundary) remainingVelocity else 0f
         } finally {
             running = false
             currentVelocity = 0f

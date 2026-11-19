@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListFling
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -235,7 +237,13 @@ fun OfflineThreadsScreen(
             val navBarBottom = with(density) {
                 WindowInsets.navigationBars.getBottom(density).toDp()
             }
+            val responsiveConfiguration = rememberResponsiveListConfiguration()
+            val responsiveFling = rememberResponsiveListFling()
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
+            ) {
             LazyColumn(
+                flingBehavior = responsiveFling,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 12.dp,
@@ -261,6 +269,7 @@ fun OfflineThreadsScreen(
                         modifier = Modifier.animateItemPlacement()
                     )
                 }
+            }
             }
         }
     }
