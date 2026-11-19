@@ -1,5 +1,6 @@
 package com.mioo.dao.data.local
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.ColumnInfo
@@ -15,6 +16,7 @@ import androidx.room.PrimaryKey
  * [replyCount] 缓存最近一次抓到的回复总数：feed 接口本身不返回任何回复数字段，
  * 收藏界面显示时需要额外逐串补抓，这里把结果留到下次直接上屏。
  */
+@Immutable
 @Entity(
     tableName = "cloud_feed_threads",
     primaryKeys = ["feedUuid", "threadId"],

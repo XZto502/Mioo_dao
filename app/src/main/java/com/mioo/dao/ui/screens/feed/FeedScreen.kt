@@ -70,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
@@ -94,6 +95,9 @@ import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -110,16 +114,16 @@ fun FeedScreen(
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
     val uiState by viewModel.uiState.collectAsState()
     if (!uiState.selectionReady) return
-    val cloudIndex by viewModel.cloudIndex.collectAsState()
-    val fullyIndexedCloudFolders by viewModel.fullyIndexedCloudFolders.collectAsState()
     val browseState = rememberSaveableStateHolder()
     val forumViewModel: ForumViewModel = hiltViewModel()
-    val forumState by forumViewModel.uiState.collectAsState()
-    LaunchedEffect(forumState.forumGroups.isEmpty()) {
-        if (forumState.forumGroups.isEmpty()) forumViewModel.loadForumGroups()
+    val forumGroups by remember(forumViewModel) {
+        forumViewModel.uiState.map { it.forumGroups }.distinctUntilChanged()
+    }.collectAsState(initial = forumViewModel.uiState.value.forumGroups)
+    LaunchedEffect(forumGroups.isEmpty()) {
+        if (forumGroups.isEmpty()) forumViewModel.loadForumGroups()
     }
-    val forumNames = remember(forumState.forumGroups) {
-        forumState.forumGroups.flatMap { it.forums }.associate { it.id to it.name }
+    val forumNames = remember(forumGroups) {
+        forumGroups.flatMap { it.forums }.associate { it.id to it.name }
     }
     val folderIds = remember(uiState.feedFolders) { listOf(null) + uiState.feedFolders.map { it.uuid } }
     val pager = rememberPagerState(initialPage = folderIds.indexOf(uiState.selectedFolderId).coerceAtLeast(0)) { folderIds.size }
@@ -207,11 +211,13 @@ fun FeedScreen(
     }
 
     // Pre-parse HTML for currently visible feed list
+    val prewarmDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     LaunchedEffect(
         uiState.selectedFolderId,
         uiState.localDisplayItems,
         uiState.remoteDisplayItems,
-        quoteLinkColor
+        quoteLinkColor,
+        prewarmDarkTheme
     ) {
         val htmls = if (uiState.selectedFolderId == null) {
             uiState.localDisplayItems.map { it.postData.content }
@@ -220,7 +226,7 @@ fun FeedScreen(
         }
         if (htmls.isNotEmpty()) {
             withContext(Dispatchers.Default) {
-                HtmlParseCache.prewarm(htmls, quoteLinkColor)
+                HtmlParseCache.prewarm(htmls, quoteLinkColor, prewarmDarkTheme)
             }
         }
     }
@@ -297,9 +303,8 @@ fun FeedScreen(
             if (searchQuery.isNotEmpty()) {
                 FeedTitleSearch(
                     query = searchQuery,
-                    cloudIndex = cloudIndex.entries,
+                    viewModel = viewModel,
                     state = uiState,
-                    indexingIncomplete = uiState.feedFolders.any { it.uuid !in fullyIndexedCloudFolders },
                     onOpenThread = openThread
                 )
             } else browseState.SaveableStateProvider("browse") {
@@ -333,7 +338,12 @@ fun FeedScreen(
             HorizontalPager(state = pager, beyondBoundsPageCount = 1, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
                 val folderId = folderIds[page]
                 val current = folderId == uiState.selectedFolderId
-                val cachedRows = cloudIndex.byFolder[folderId].orEmpty()
+                val cachedRows by remember(viewModel, folderId) {
+                    if (folderId == null) flowOf(emptyList())
+                    else viewModel.cloudIndex.map { it.byFolder[folderId].orEmpty() }.distinctUntilChanged()
+                }.collectAsState(
+                    initial = if (folderId == null) emptyList() else viewModel.cloudIndex.value.byFolder[folderId].orEmpty()
+                )
                 val pageState = if (current) uiState else pageSnapshots[pageKey(folderId)]
                     ?: FeedUiState(selectedFolderId = folderId, isLoading = cachedRows.isEmpty())
                 val listState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
@@ -557,11 +567,14 @@ private fun OfflineFeedRow(
 @Composable
 private fun FeedTitleSearch(
     query: String,
-    cloudIndex: List<CloudFeedThreadEntity>,
+    viewModel: FeedViewModel,
     state: FeedUiState,
-    indexingIncomplete: Boolean,
     onOpenThread: (String) -> Unit
 ) {
+    val cloudIndexSnapshot by viewModel.cloudIndex.collectAsState()
+    val fullyIndexedCloudFolders by viewModel.fullyIndexedCloudFolders.collectAsState()
+    val cloudIndex = cloudIndexSnapshot.entries
+    val indexingIncomplete = state.feedFolders.any { it.uuid !in fullyIndexedCloudFolders }
     val titleIndex by produceState<FeedTitleIndex?>(
         null, cloudIndex, state.feedFolders, state.offlineSummaries, state.bookmarkedThreads
     ) {
@@ -580,25 +593,32 @@ private fun FeedTitleSearch(
     }
     val rows = results?.takeIf { it.first == query }?.second
     val listState = remember(query) { LazyListState() }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        state = listState,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp, 12.dp, 12.dp, 100.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+    val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
+    val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
     ) {
-        if (rows?.isEmpty() == true) {
-            item {
-                Text(
-                    if (indexingIncomplete) "暂未找到匹配标题，部分云端收藏尚未同步"
-                    else "没有匹配的收藏标题",
-                    Modifier.fillMaxWidth().padding(top = 24.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            flingBehavior = responsiveFling,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp, 12.dp, 12.dp, 100.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (rows?.isEmpty() == true) {
+                item {
+                    Text(
+                        if (indexingIncomplete) "暂未找到匹配标题，部分云端收藏尚未同步"
+                        else "没有匹配的收藏标题",
+                        Modifier.fillMaxWidth().padding(top = 24.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
-        }
-        items(rows.orEmpty(), key = { it.threadId }) { row ->
-            FeedTitleRow(row.threadId, row.title, row.sources, onOpenThread)
+            items(rows.orEmpty(), key = { it.threadId }) { row ->
+                FeedTitleRow(row.threadId, row.title, row.sources, onOpenThread)
+            }
         }
     }
 }
@@ -613,6 +633,7 @@ private fun FeedTitleRow(
     onUnsubscribe: (() -> Unit)? = null
 ) {
     var confirmDelete by remember(threadId) { mutableStateOf(false) }
+    val subtitle = remember(sources, threadId) { (sources + "No.$threadId").joinToString(" · ") }
     Surface(
         modifier = Modifier.fillMaxWidth().combinedClickable(
             onClick = { onOpenThread(threadId) },
@@ -624,7 +645,6 @@ private fun FeedTitleRow(
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title ?: "No.$threadId", style = MaterialTheme.typography.titleSmall)
-            val subtitle = (sources + "No.$threadId").joinToString(" · ")
             if (title != null || sources.isNotEmpty()) {
                 Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

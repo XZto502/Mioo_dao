@@ -60,6 +60,7 @@ data class FeedUiState(
     val offlineUpdatingIds: Set<String> = emptySet()
 )
 
+@Immutable
 internal class CloudFeedIndexSnapshot(val entries: List<CloudFeedThreadEntity>) {
     val byFolder = entries.groupBy { it.feedUuid }
 }
