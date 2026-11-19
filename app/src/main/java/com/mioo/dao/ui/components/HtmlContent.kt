@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -435,23 +436,29 @@ private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val d
  * Synchronized put/get — prewarm runs on Default while composition reads on main.
  */
 object HtmlParseCache {
+    private const val MAX_BYTES = 8L * 1024L * 1024L
+    private const val MAX_ENTRIES = 600
     private class Entry(val parsed: ParsedContent, val variants: Array<AnnotatedString?> = arrayOfNulls(4))
+    private class SizedEntry(val entry: Entry, val bytes: Long)
     private fun textCost(text: AnnotatedString): Long = text.length * 2L +
         (text.spanStyles.size + text.paragraphStyles.size + text.getStringAnnotations(0, text.length).size) * 128L
-    private var entryCount = 0
-    private val cache = object : android.util.LruCache<HtmlCacheKey, Entry>(8 * 1024 * 1024) {
-        override fun entryRemoved(evicted: Boolean, key: HtmlCacheKey, oldValue: Entry, newValue: Entry?) {
-            if (newValue == null) entryCount--
-        }
-        override fun sizeOf(key: HtmlCacheKey, value: Entry): Int =
-            (key.html.length * 2L + textCost(value.parsed.annotated) +
-                value.variants.filterNotNull().sumOf { textCost(it) } + 256L).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
-    }
+    private fun entryCost(key: HtmlCacheKey, value: Entry): Long =
+        (key.html.length * 2L + textCost(value.parsed.annotated) +
+            value.variants.filterNotNull().sumOf { textCost(it) } + 256L).coerceAtLeast(1L)
+    private var totalBytes = 0L
+    private val cache = LinkedHashMap<HtmlCacheKey, SizedEntry>(128, 0.75f, true)
     private val lock = Any()
     private fun putEntry(key: HtmlCacheKey, entry: Entry) {
-        if (cache.get(key) == null) entryCount++
-        cache.put(key, entry)
-        if (entryCount > 600) cache.snapshot().keys.firstOrNull()?.let { cache.remove(it) }
+        cache.remove(key)?.let { totalBytes -= it.bytes }
+        val cost = entryCost(key, entry)
+        cache[key] = SizedEntry(entry, cost)
+        totalBytes += cost
+        val it = cache.entries.iterator()
+        while (it.hasNext() && (cache.size > MAX_ENTRIES || totalBytes > MAX_BYTES)) {
+            val eldest = it.next()
+            totalBytes -= eldest.value.bytes
+            it.remove()
+        }
     }
 
     fun getOrParse(
@@ -463,7 +470,7 @@ object HtmlParseCache {
         val colorArgb = quoteLinkColor.toArgb()
         val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
         synchronized(lock) {
-            cache.get(key)?.let { return it.parsed }
+            cache[key]?.entry?.let { return it.parsed }
         }
         val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
         val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
@@ -480,12 +487,13 @@ object HtmlParseCache {
         val parsed = getOrParse(html, color, darkTheme, dicePreset)
         if (!compact && !trim) return parsed.annotated
         val key = HtmlCacheKey(html, color.toArgb(), darkTheme, dicePreset?.name ?: "")
-        val entry = synchronized(lock) { cache.get(key) }
         val index = (if (compact) 1 else 0) + (if (trim) 2 else 0)
-        if (entry != null) entry.variants[index]?.let { return it }
+        synchronized(lock) {
+            cache[key]?.entry?.variants?.get(index)?.let { return it }
+        }
         val result = prepareHtmlPreview(parsed.annotated, compact, trim)
         synchronized(lock) {
-            cache.get(key)?.let { current ->
+            cache[key]?.entry?.let { current ->
                 val variants = current.variants.copyOf()
                 variants[index] = result
                 putEntry(key, Entry(current.parsed, variants))
@@ -510,7 +518,7 @@ object HtmlParseCache {
         for (html in htmlList) {
             if (html.isBlank()) continue
             val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
-            val hit = synchronized(lock) { cache.get(key) != null }
+            val hit = synchronized(lock) { cache.containsKey(key) }
             if (hit) continue
             val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
             val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
@@ -674,6 +682,44 @@ fun HtmlContent(
         else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.22f)
     val spoilerOutline = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val haptics = LocalHapticFeedback.current
+    val spoilerRects = remember(layoutResult, spoilerRanges, density) {
+        val layout = layoutResult
+        if (layout == null || spoilerRanges.isEmpty() || layout.lineCount == 0) {
+            emptyList()
+        } else {
+            val insetPx = with(density) { 1.5.dp.toPx() }
+            val visibleEnd = layout.getLineEnd(layout.lineCount - 1)
+            val textLen = layout.layoutInput.text.length
+            spoilerRanges.map { range ->
+                val endOffset = minOf(range.end, visibleEnd, textLen)
+                if (range.start < 0 || range.start >= endOffset) {
+                    emptyList()
+                } else {
+                    val firstLine = layout.getLineForOffset(range.start)
+                    val lastLine = layout.getLineForOffset(endOffset - 1)
+                    buildList {
+                        for (line in firstLine..lastLine) {
+                            val start = maxOf(range.start, layout.getLineStart(line))
+                            val end = minOf(range.end, layout.getLineEnd(line, visibleEnd = true))
+                            if (start >= end) continue
+                            var left = Float.POSITIVE_INFINITY
+                            var right = Float.NEGATIVE_INFINITY
+                            for (offset in start until end) {
+                                val bounds = layout.getBoundingBox(offset)
+                                left = minOf(left, bounds.left)
+                                right = maxOf(right, bounds.right)
+                            }
+                            val top = layout.getLineTop(line) + insetPx
+                            val bottom = layout.getLineBottom(line) - insetPx
+                            if (right > left && bottom > top) {
+                                add(Rect(left, top, right, bottom))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     val textModifier = if (!enableGestures) {
         modifier
@@ -746,36 +792,26 @@ fun HtmlContent(
     Text(
         text = displayText,
         modifier = if (spoilerRanges.isEmpty()) textModifier else textModifier.drawBehind {
-            val layout = layoutResult ?: return@drawBehind
-            spoilerRanges.forEachIndexed { index, range ->
-                if (layout.lineCount == 0) return@forEachIndexed
-                val visibleEnd = layout.getLineEnd(layout.lineCount - 1)
-                val endOffset = minOf(range.end, visibleEnd, layout.layoutInput.text.length)
-                if (range.start < 0 || range.start >= endOffset) return@forEachIndexed
-                val firstLine = layout.getLineForOffset(range.start)
-                val lastOffset = endOffset - 1
-                val lastLine = layout.getLineForOffset(lastOffset)
+            if (spoilerRects.isEmpty()) return@drawBehind
+            val radius = CornerRadius(6.dp.toPx())
+            val stroke = Stroke(width = 0.5.dp.toPx())
+            spoilerRects.forEachIndexed { index, lineRects ->
+                if (lineRects.isEmpty()) return@forEachIndexed
                 val progress = spoilerProgress[index].value
                 val fill = androidx.compose.ui.graphics.lerp(spoilerHiddenColor, spoilerRevealedColor, progress)
-                for (line in firstLine..lastLine) {
-                    val start = maxOf(range.start, layout.getLineStart(line))
-                    val end = minOf(range.end, layout.getLineEnd(line, visibleEnd = true))
-                    if (start >= end) continue
-                    var left = Float.POSITIVE_INFINITY
-                    var right = Float.NEGATIVE_INFINITY
-                    for (offset in start until end) {
-                        val bounds = layout.getBoundingBox(offset)
-                        left = minOf(left, bounds.left)
-                        right = maxOf(right, bounds.right)
+                lineRects.forEach { rect ->
+                    val topLeft = rect.topLeft
+                    val rectSize = rect.size
+                    drawRoundRect(fill, topLeft = topLeft, size = rectSize, cornerRadius = radius)
+                    if (progress < 1f) {
+                        drawRoundRect(
+                            spoilerOutline.copy(alpha = spoilerOutline.alpha * (1f - progress)),
+                            topLeft = topLeft,
+                            size = rectSize,
+                            cornerRadius = radius,
+                            style = stroke
+                        )
                     }
-                    val top = layout.getLineTop(line) + 1.5.dp.toPx()
-                    val bottom = layout.getLineBottom(line) - 1.5.dp.toPx()
-                    if (right <= left || bottom <= top) continue
-                    val rectSize = Size(right - left, bottom - top)
-                    val radius = CornerRadius(6.dp.toPx())
-                    drawRoundRect(fill, topLeft = Offset(left, top), size = rectSize, cornerRadius = radius)
-                    if (progress < 1f) drawRoundRect(spoilerOutline.copy(alpha = spoilerOutline.alpha * (1f - progress)),
-                        topLeft = Offset(left, top), size = rectSize, cornerRadius = radius, style = Stroke(width = 0.5.dp.toPx()))
                 }
             }
         },

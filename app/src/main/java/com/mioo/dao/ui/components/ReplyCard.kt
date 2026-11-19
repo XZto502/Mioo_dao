@@ -212,7 +212,7 @@ fun QuotedPostBox(
                 Text("No.${quote.id}", style = readingTextStyle(11f, 16f).copy(fontFeatureSettings = "tnum"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                 val previewContent = remember(quote.content) {
-                    quote.content.replace(Regex("(?i)(?:\\s|<br\\s*/?>|&nbsp;)+$"), "")
+                    quote.content.replace(TRAILING_QUOTE_BREAKS_REGEX, "")
                 }
                 if (previewContent.isBlank()) Text("（图片或空内容）", style = readingQuoteStyle())
                 else HtmlContent(html = previewContent, onQuoteClick = {}, style = readingQuoteStyle(),
@@ -222,17 +222,22 @@ fun QuotedPostBox(
     }
 }
 
+private val TRAILING_QUOTE_BREAKS_REGEX = Regex("(?i)(?:\\s|<br\\s*/?>|&nbsp;)+$")
+private val QUOTE_BR_REGEX = Regex("(?i)<br\\s*/?>")
+private val QUOTE_TAG_REGEX = Regex("<[^>]*>")
+private val QUOTE_WS_REGEX = Regex("\\s+")
+
 /** 引用卡片收起态的一行纯文本预览：去 HTML 标签/实体、压空白、截断。 */
 private fun quotePreviewPlain(html: String): String {
     val plain = html
-        .replace(Regex("(?i)<br\\s*/?>"), " ")
-        .replace(Regex("<[^>]*>"), "")
+        .replace(QUOTE_BR_REGEX, " ")
+        .replace(QUOTE_TAG_REGEX, "")
         .replace("&gt;", ">")
         .replace("&lt;", "<")
         .replace("&quot;", "\"")
         .replace("&nbsp;", " ")
         .replace("&amp;", "&")
-        .replace(Regex("\\s+"), " ")
+        .replace(QUOTE_WS_REGEX, " ")
         .trim()
     return when {
         plain.isEmpty() -> "（图片或空内容）"

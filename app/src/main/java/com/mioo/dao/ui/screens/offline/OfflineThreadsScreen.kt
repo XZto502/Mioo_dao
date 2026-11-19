@@ -302,6 +302,8 @@ fun OfflineThreadsScreen(
     }
 }
 
+private val OFFLINE_BLANK_LINES_REGEX = Regex("(\\r?\\n\\s*){2,}")
+
 /** 离线串卡片：管理页与收藏页「已离线」标签共用。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -348,13 +350,20 @@ fun OfflineThreadCard(
                 Spacer(modifier = Modifier.height(6.dp))
             }
             if (summary.contentSummary.isNotBlank()) {
-                Text(summary.contentSummary.replace(Regex("(\\r?\\n\\s*){2,}"), "\n"), style = readingBodyStyle(), maxLines = 5, overflow = TextOverflow.Ellipsis)
+                val displaySummary = remember(summary.contentSummary) {
+                    summary.contentSummary.replace(OFFLINE_BLANK_LINES_REGEX, "\n")
+                }
+                Text(displaySummary, style = readingBodyStyle(), maxLines = 5, overflow = TextOverflow.Ellipsis)
             }
             summary.coverFile?.takeIf { it.isNotBlank() }?.let { cover ->
                 val coverFile = remember(cover, offlineImageDir) { File(offlineImageDir, cover) }
-                if (coverFile.isFile) {
+                var coverLoadFailed by remember(cover, offlineImageDir) { mutableStateOf(false) }
+                if (!coverLoadFailed) {
                     Spacer(modifier = Modifier.height(10.dp))
-                    com.mioo.dao.ui.components.LocalImagePreview(coverFile)
+                    com.mioo.dao.ui.components.LocalImagePreview(
+                        coverFile,
+                        onError = { coverLoadFailed = true }
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -375,8 +384,11 @@ fun OfflineThreadCard(
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
+                val formattedDownloadedAt = remember(summary.downloadedAt) {
+                    downloadedTimeFormat.format(Date(summary.downloadedAt))
+                }
                 Text(
-                    text = downloadedTimeFormat.format(Date(summary.downloadedAt)),
+                    text = formattedDownloadedAt,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFeatureSettings = "tnum"
                     ),

@@ -153,8 +153,9 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
             Spacer(Modifier.width(6.dp))
             ReadingPill(forumName)
         }
+        val formattedTime = remember(post.createdAt) { formatReadingTime(post.createdAt) }
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
+            Text(" · $formattedTime", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
                 color = colors.onSurfaceVariant.copy(alpha = 0.75f),
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
