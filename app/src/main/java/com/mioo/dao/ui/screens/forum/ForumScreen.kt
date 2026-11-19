@@ -1111,7 +1111,7 @@ private fun ForumThreadListPane(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            emptyHint ?: "该板块下暂无帖子。",
+                            emptyHint ?: "该板块下暂无串。",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         if (!emptyHint.isNullOrBlank() && !isLastPage) {
@@ -1185,7 +1185,7 @@ private fun ForumThreadListPane(
                         CircularProgressIndicator()
                     } else if (isLastPage) {
                         Text(
-                            text = "已加载全部帖子。",
+                            text = "已加载全部串。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

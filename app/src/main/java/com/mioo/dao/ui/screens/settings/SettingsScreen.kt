@@ -356,7 +356,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "滑动缩放以调整帖子和回复的内容文本字号大小。",
+                    text = "滑动缩放以调整串与回复的正文字号大小。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -385,7 +385,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "预览文字：欢迎来到喵岛讨论区！",
+                    text = "预览文字：欢迎来到喵岛！",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -436,7 +436,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "预览文字：欢迎来到喵岛讨论区！\n行间距越大，正文越舒展，阅读长串更轻松。",
+                    text = "预览文字：欢迎来到喵岛！\n行间距越大，正文越舒展，阅读长串更轻松。",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -556,7 +556,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
+                    text = "开启后，回复中的 >>No.xxx 引用以预览卡片形式显示在正文中，点击可弹窗查看详情；关闭后仅保留引用链接，点击弹出浮层查看所引用的内容",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -629,7 +629,7 @@ fun SettingsScreen(
                 }
             }
         }
-        Text("发帖与饼干", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("发言与饼干", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 1. Cookie Configuration (饼干设置)
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
@@ -646,7 +646,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "在此添加并选择您发帖和回复时使用的发言饼干 (userhash)。",
+                    text = "在此添加并选择发串和回复时使用的发言饼干 (userhash)。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1106,7 +1106,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "添加额外的收藏夹UUID，可在收藏界面作为卡片独立浏览。",
+                    text = "添加额外的订阅 UUID（云端收藏夹），可在收藏界面分页独立浏览。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1162,8 +1162,8 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "后台定期向 X岛 官方接口查询：云端订阅夹（feed UUID）与本地收藏串是否有新回复，有更新则发系统通知。\n" +
-                        "说明：岛方未对第三方开放实时推送通道，蓝岛等客户端也是本地轮询同一套订阅数据，并非互相收对方 App 的推送。",
+                    text = "后台定期向 X 岛官方接口查询云端订阅（订阅 UUID）与本地收藏串是否有新回复，有更新时发送系统通知。\n" +
+                        "说明：岛方未开放实时推送通道，第三方客户端均通过本地定时轮询获取订阅更新。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1339,7 +1339,7 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("网络兼容模式", style = settingsItemStyle())
                 Spacer(Modifier.height(8.dp))
-                Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
+                Text("发串、回复或加载串内容经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 Spacer(Modifier.height(12.dp))
@@ -1374,7 +1374,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
+                    text = "开启后串内与列表附图不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )

@@ -141,7 +141,7 @@ fun ThreadCard(
             postData.imageUrl?.let { imageUrl ->
                     Spacer(modifier = Modifier.height(10.dp))
                 if (showImage) {
-                    ListThumbAsyncImage(imageUrl, "帖子附图", preserveRatio = true,
+                    ListThumbAsyncImage(imageUrl, "串附图", preserveRatio = true,
                         modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
                             indication = null) { onImageClick(imageUrl) })
                 } else {

@@ -120,7 +120,7 @@ fun DiceDialog(
                     )
                 }
                 Text(
-                    text = "预览  [$rangeStart,$rangeEnd]，发帖后由岛方掷骰回填结果",
+                    text = "预览  [$rangeStart,$rangeEnd]，发送后由岛方掷骰回填结果",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

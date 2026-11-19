@@ -500,7 +500,7 @@ fun ThreadScreen(
 
     LaunchedEffect(threadSettings.blockedThreads) {
         if (threadSettings.blockedThreads.contains(viewModel.threadId)) {
-            Toast.makeText(context, "该帖子已被屏蔽", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "该串已被屏蔽", Toast.LENGTH_SHORT).show()
             onBackClick()
         }
     }

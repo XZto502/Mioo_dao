@@ -126,7 +126,7 @@ fun List<BookmarkEntity>.toBookmarkListItems(): List<BookmarkListItem> {
             postData = PostData(
                 id = entity.id,
                 title = entity.title.effectiveTitle(),
-                userName = entity.name ?: "Anonymous",
+                userName = entity.name ?: "无名氏",
                 userId = entity.userid,
                 createdAt = formatPostTime(entity.now),
                 content = entity.content,

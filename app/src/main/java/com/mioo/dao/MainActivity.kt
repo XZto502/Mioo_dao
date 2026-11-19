@@ -254,13 +254,13 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本软件（喵岛）是由 Sanae-Koishi 开发的第三方客户端，不受 X 岛官方支持。使用时您的数据安全与数据泄露风险无法由 X 岛本身保证。",
                                     fontWeight = FontWeight.Bold)
-                                Text("论坛内容来自 X 岛（www.nmbxd.com）。饼干、浏览历史、本地收藏和草稿保存在手机上。发帖时，饼干和发帖内容会发送给 X 岛。云端收藏通过 X 岛服务同步。")
+                                Text("版块与串内容来自 X 岛（www.nmbxd.com）。饼干、浏览历史、本地收藏和草稿保存在手机上。发串或回复时，饼干和发言内容会发送给 X 岛。云端收藏通过 X 岛服务同步。")
                                 Text("可选的第三方服务", fontWeight = FontWeight.Bold)
-                                Text("更新检查和下载连接 GitHub、jsDelivr、ghproxy.net 或 ghfast.top 获取版本信息和安装包，不发送饼干、帖子内容或本地记录。")
+                                Text("更新检查和下载连接 GitHub、jsDelivr、ghproxy.net 或 ghfast.top 获取版本信息和安装包，不发送饼干、串内容或本地记录。")
                                 Text("主动使用外部搜索时会将关键词交给所选搜索引擎。主动使用以图搜源时会将公开图片链接交给 SauceNAO、Ascii2d 或 Yandex。")
                                 Text("网络兼容模式可能通过阿里 DNS 或腾讯 DNS 解析 X 岛 API 域名。解析服务只收到域名查询。")
-                                Text("主动打开帖子或关于页面中的链接时，浏览器会访问对应网站。")
-                                Text("拒绝后仍可浏览 X 岛、发帖、回帖和使用收藏与饼干功能。你可以在设置中更改选择。")
+                                Text("主动打开串内或关于页面中的链接时，浏览器会访问对应网站。")
+                                Text("拒绝后仍可浏览 X 岛、发串、回复和使用收藏与饼干功能。你可以在设置中更改选择。")
                             }
                         },
                         confirmButton = {

@@ -272,7 +272,7 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后会在网络连接可用时预先下载帖子，方便您在无网环境下进行阅读。",
+                    text = "开启后会在网络连接可用时预先缓存串内容，方便在无网环境下阅读。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -288,7 +288,7 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                 ) {
                     Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                         Text(
-                            text = "本地帖子与列表缓存大小",
+                            text = "本地串与列表缓存大小",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                         )
@@ -347,7 +347,7 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
 
                 pendingClearTarget?.let { target ->
                     val (title, message) = when (target) {
-                        CacheClearConfirmTarget.DATA -> "确认清理缓存？" to "将清理本地帖子与列表缓存，已离线保存的串会保留。"
+                        CacheClearConfirmTarget.DATA -> "确认清理缓存？" to "将清理本地串与列表缓存，已离线保存的串会保留。"
                         CacheClearConfirmTarget.IMAGE -> "确认清理图片？" to "将清理已缓存的图片文件，离线串图片会保留，需要时会重新加载。"
                     }
                     AlertDialog(
