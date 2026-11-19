@@ -86,8 +86,10 @@ import com.mioo.dao.ui.components.HtmlParseCache
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
+import com.mioo.dao.ui.components.ResponsiveListFling
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
+import com.mioo.dao.ui.components.slowFlingClick
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.readingTopBarColor
 import com.mioo.dao.ui.theme.MiooMotion
@@ -485,6 +487,7 @@ fun FeedScreen(
                             ) { item ->
                                 LocalBookmarkRow(
                                     item = item,
+                                    fling = responsiveFling,
                                     onNavigateToThread = openThread,
                                     onUnsubscribe = { viewModel.unsubscribe(item.id) },
                                     onImageClick = { activeImageUrl = it },
@@ -506,13 +509,14 @@ fun FeedScreen(
                             ) { entry ->
                                 val item = remoteById[entry.threadId]
                                 if (item == null) {
-                                    FeedTitleRow(entry.threadId, entry.title, emptySet(), openThread) {
+                                    FeedTitleRow(entry.threadId, entry.title, emptySet(), responsiveFling, openThread) {
                                         viewModel.unsubscribeRemote(folderId, entry.threadId)
                                     }
                                 } else {
                                     RemoteBookmarkRow(
                                         item = if (entry.replyCount > 0 && entry.replyCount != item.replyCount)
                                             item.copy(replyCount = entry.replyCount) else item,
+                                        fling = responsiveFling,
                                         onNavigateToThread = openThread,
                                         onUnsubscribe = {
                                             viewModel.unsubscribeRemote(folderId, item.idStr)
@@ -617,7 +621,7 @@ private fun FeedTitleSearch(
                 }
             }
             items(rows.orEmpty(), key = { it.threadId }) { row ->
-                FeedTitleRow(row.threadId, row.title, row.sources, onOpenThread)
+                FeedTitleRow(row.threadId, row.title, row.sources, responsiveFling, onOpenThread)
             }
         }
     }
@@ -629,16 +633,21 @@ private fun FeedTitleRow(
     threadId: String,
     title: String?,
     sources: Set<String>,
+    fling: ResponsiveListFling,
     onOpenThread: (String) -> Unit,
     onUnsubscribe: (() -> Unit)? = null
 ) {
     var confirmDelete by remember(threadId) { mutableStateOf(false) }
+    val onClick = remember(threadId, onOpenThread) { { onOpenThread(threadId) } }
     val subtitle = remember(sources, threadId) { (sources + "No.$threadId").joinToString(" · ") }
     Surface(
-        modifier = Modifier.fillMaxWidth().combinedClickable(
-            onClick = { onOpenThread(threadId) },
-            onLongClick = onUnsubscribe?.let { { confirmDelete = true } }
-        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .slowFlingClick(fling, onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onUnsubscribe?.let { { confirmDelete = true } }
+            ),
         shape = MaterialTheme.shapes.medium,
         color = com.mioo.dao.ui.theme.readingCardColor(),
         border = com.mioo.dao.ui.theme.readingCardBorder()
@@ -658,6 +667,7 @@ private fun FeedTitleRow(
 @Composable
 private fun LocalBookmarkRow(
     item: BookmarkListItem,
+    fling: ResponsiveListFling,
     onNavigateToThread: (String) -> Unit,
     onUnsubscribe: () -> Unit,
     onImageClick: (String) -> Unit,
@@ -668,6 +678,7 @@ private fun LocalBookmarkRow(
 
     Box {
         ThreadCard(
+            modifier = Modifier.slowFlingClick(fling, onClick),
             postData = item.postData,
             replyCount = item.replyCount,
             onThreadClick = onClick,
@@ -706,6 +717,7 @@ private fun LocalBookmarkRow(
 @Composable
 private fun RemoteBookmarkRow(
     item: ThreadListItem,
+    fling: ResponsiveListFling,
     onNavigateToThread: (String) -> Unit,
     onUnsubscribe: () -> Unit,
     onImageClick: (String) -> Unit,
@@ -715,6 +727,7 @@ private fun RemoteBookmarkRow(
     val onClick = remember(item.idStr) { { onNavigateToThread(item.idStr) } }
 
     ThreadCard(
+        modifier = Modifier.slowFlingClick(fling, onClick),
         postData = item.postData,
         replyCount = item.replyCount,
         onThreadClick = onClick,

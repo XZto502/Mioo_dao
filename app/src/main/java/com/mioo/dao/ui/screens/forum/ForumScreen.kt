@@ -752,8 +752,12 @@ private fun ForumBoardDrawer(
                 .filter { forumSettings.pinnedForums.contains(it.id) }
                 .distinctBy { it.id }
         }
+        val drawerConfiguration = rememberResponsiveListConfiguration()
+        val drawerFling = rememberResponsiveListFling()
+        CompositionLocalProvider(LocalViewConfiguration provides drawerConfiguration) {
         LazyColumn(
             state = drawerListState,
+            flingBehavior = drawerFling,
             modifier = Modifier.fillMaxSize(),
             // 抽屉盖住底栏后，只留系统导航条安全区，滚到底仍能看全板块
             contentPadding = PaddingValues(
@@ -878,6 +882,7 @@ private fun ForumBoardDrawer(
                     }
                 }
             }
+        }
         }
     }
 }

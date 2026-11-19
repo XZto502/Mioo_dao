@@ -57,6 +57,7 @@ import com.mioo.dao.ui.components.ReadingIdentity
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbAsyncImage
 import com.mioo.dao.ui.components.formatReadingTimestamp
+import com.mioo.dao.ui.components.slowFlingClick
 import com.mioo.dao.ui.theme.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -224,8 +225,16 @@ fun HistoryScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
-                                    HistoryCard(entry, onClick = { viewModel.open(entry, onNavigateToThread) },
-                                        onLongClick = { deleteItem = entry }, onImageClick = { image = it })
+                                    val onClick = remember(entry, viewModel, onNavigateToThread) {
+                                        { viewModel.open(entry, onNavigateToThread) }
+                                    }
+                                    HistoryCard(
+                                        entry,
+                                        onClick = onClick,
+                                        onLongClick = { deleteItem = entry },
+                                        onImageClick = { image = it },
+                                        modifier = Modifier.slowFlingClick(responsiveFling, onClick)
+                                    )
                                 }
                             }
                         }
@@ -257,12 +266,18 @@ private val collapseBlankLinesRegex = Regex("(\\r?\\n\\s*){2,}")
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () -> Unit, onImageClick: (String) -> Unit) {
+private fun HistoryCard(
+    item: HistoryItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onImageClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val scheme = MaterialTheme.colorScheme
     val meta = readingMetaStyle()
     val date = formatReadingTimestamp(item.timestamp, includeSeconds = false)
     Card(
-        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = com.mioo.dao.ui.theme.readingCardBorder()
