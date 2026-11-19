@@ -53,6 +53,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import coil.size.Precision
+import coil.size.Scale
 import coil.size.Size
 import coil.imageLoader
 import coil.memory.MemoryCache
@@ -68,11 +69,13 @@ object ListThumbImage {
      * Use 288 so decode/upload is cheaper while still sharp on xxhdpi; Coil INEXACT keeps cache hits stable.
      */
     const val SIZE_PX: Int = 288
+    const val MAX_DECODE_PX: Int = 768
 
     fun request(context: Context, imageUrl: String): ImageRequest {
         return ImageRequest.Builder(context)
             .data(imageUrl)
-            .size(Size.ORIGINAL)
+            .size(Size(MAX_DECODE_PX, MAX_DECODE_PX))
+            .scale(Scale.FIT)
             .precision(Precision.INEXACT)
             .memoryCacheKey(imageUrl)
             .diskCacheKey(imageUrl)
@@ -86,7 +89,9 @@ object ListThumbImage {
  * Lightweight list thumbnail: [AsyncImage] + static placeholder while loading.
  * Avoids Subcompose overhead and infinite shimmer work for every visible cell.
  */
-private val thumbSizeCache = java.util.concurrent.ConcurrentHashMap<String, IntSize>()
+private val thumbSizeCache = android.util.LruCache<String, IntSize>(512)
+private val ThumbFrameShape = RoundedCornerShape(10.dp)
+private val AttachmentFrameShape = RoundedCornerShape(12.dp)
 
 @Composable
 fun ListThumbAsyncImage(
@@ -101,16 +106,15 @@ fun ListThumbAsyncImage(
     val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
     var imgSize by remember(listUrl) {
         val bitmap = context.imageLoader.memoryCache?.get(MemoryCache.Key(listUrl))?.bitmap
-        mutableStateOf(thumbSizeCache[listUrl] ?: bitmap?.let { IntSize(it.width, it.height) })
+        mutableStateOf(thumbSizeCache.get(listUrl) ?: bitmap?.let { IntSize(it.width, it.height) })
     }
     val ratio = imgSize?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) }
     val frameHeight = minOf(previewMaxSize, 116.dp)
-    val frameShape = RoundedCornerShape(10.dp)
     val frame = if (preserveRatio) {
         modifier.size(frameHeight * (ratio ?: 1f), frameHeight)
-            .clip(frameShape)
+            .clip(ThumbFrameShape)
             .then(if (imgSize == null) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) else Modifier)
-            .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), frameShape)
+            .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), ThumbFrameShape)
     } else modifier
     val dataSaver = com.mioo.dao.ui.theme.LocalDataSaverEnabled.current
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
@@ -157,7 +161,7 @@ fun ListThumbAsyncImage(
                 val drawable = state.result.drawable
                 if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
                     val resolved = IntSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
-                    thumbSizeCache[listUrl] = resolved
+                    thumbSizeCache.put(listUrl, resolved)
                     imgSize = resolved
                 }
             },
@@ -172,11 +176,10 @@ private fun android.graphics.drawable.Drawable.previewRatio(): Float =
 private fun Modifier.previewFrame(ratio: Float, maxWidth: androidx.compose.ui.unit.Dp,
     maxHeight: androidx.compose.ui.unit.Dp): Modifier {
     val boundedRatio = ratio.coerceIn(0.45f, 2.4f)
-    val shape = RoundedCornerShape(10.dp)
     return widthIn(max = minOf(maxWidth, maxHeight * boundedRatio))
         .aspectRatio(boundedRatio)
-        .clip(shape)
-        .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), shape)
+        .clip(ThumbFrameShape)
+        .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), ThumbFrameShape)
 }
 
 @Composable
@@ -186,23 +189,35 @@ fun LocalImagePreview(
     attachment: Boolean = false,
     attachmentBackground: Color = Color.Unspecified,
     onClick: (() -> Unit)? = null,
-    onRemove: (() -> Unit)? = null
+    onRemove: (() -> Unit)? = null,
+    onError: (() -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val decodePx = if (attachment) 320 else 576
+    val request = remember(context, model, decodePx) {
+        ImageRequest.Builder(context)
+            .data(model)
+            .size(Size(decodePx, decodePx))
+            .scale(Scale.FIT)
+            .precision(Precision.INEXACT)
+            .crossfade(false)
+            .build()
+    }
     if (attachment) {
         val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
         val cardBg = if (attachmentBackground != Color.Unspecified) attachmentBackground
             else if (dark) Color(0xFF16181E) else Color.White
         val badgeBg = if (dark) Color(0xFF2C303A) else Color(0xFF3A3F4B)
-        val shape = RoundedCornerShape(12.dp)
         Box(modifier.wrapContentSize()) {
             AsyncImage(
-                model = model,
+                model = request,
                 contentDescription = "已选图片",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.padding(top = 7.dp, end = 7.dp).size(80.dp)
-                    .clip(shape)
-                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), shape)
-                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                    .clip(AttachmentFrameShape)
+                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), AttachmentFrameShape)
+                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+                onError = onError?.let { handler -> { handler() } }
             )
             if (onRemove != null) {
                 Box(
@@ -220,11 +235,12 @@ fun LocalImagePreview(
     var ratio by remember(model) { mutableStateOf(1.2f) }
     Box(modifier.size(120.dp), contentAlignment = Alignment.CenterStart) {
     Box(Modifier.previewFrame(ratio, 120.dp, 120.dp)) {
-        AsyncImage(model, "附图预览",
+        AsyncImage(request, "附图预览",
             modifier = Modifier.matchParentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
             contentScale = if (ratio < 0.45f) ContentScale.Crop else ContentScale.Fit,
             alignment = if (ratio < 0.45f) Alignment.TopCenter else Alignment.Center,
-            onSuccess = { ratio = it.result.drawable.previewRatio() })
+            onSuccess = { ratio = it.result.drawable.previewRatio() },
+            onError = onError?.let { handler -> { handler() } })
         if (onRemove != null) {
             Box(
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)
