@@ -71,16 +71,13 @@ object NetworkModule {
             resolver("https://doh.pub/dns-query", "1.12.12.12", "120.53.53.53")
         ))
         val pool = okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES)
-        var previousMode = compatible()
+        val previousMode = java.util.concurrent.atomic.AtomicBoolean(compatible())
         val builder = OkHttpClient.Builder()
             .dns(dns)
             .addInterceptor { chain ->
-                synchronized(pool) {
-                    val mode = compatible()
-                    if (mode != previousMode) {
-                        pool.evictAll()
-                        previousMode = mode
-                    }
+                val mode = compatible()
+                if (previousMode.getAndSet(mode) != mode) {
+                    pool.evictAll()
                 }
                 chain.proceed(chain.request())
             }

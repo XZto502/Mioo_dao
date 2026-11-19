@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 
+internal data class FetchedThread(val thread: Thread, val rawJson: String)
+
 internal fun shouldUseCachedOfflinePage(conservative: Boolean, page: Int, previousReplyCount: Int, pageSize: Int): Boolean =
     conservative && page < (previousReplyCount + pageSize - 1) / pageSize
 
@@ -24,11 +26,10 @@ internal class OfflineThreadDownloader(
     private val cacheDao: CacheDao,
     private val offlineThreadDao: OfflineThreadDao,
     private val context: Context,
-    private val threadAdapter: JsonAdapter<Thread>,
     private val stringListAdapter: JsonAdapter<List<String>>
 ) {
     class Dependencies(
-        val fetchThread: suspend (String, Int) -> Thread,
+        val fetchThreadWithRaw: suspend (String, Int) -> FetchedThread,
         val saveToHistory: suspend (Thread) -> Unit,
         val addBookmark: suspend (Thread) -> Unit,
         val parseThreadBody: (String) -> Thread,
@@ -40,14 +41,14 @@ internal class OfflineThreadDownloader(
     fun download(tid: String, conservative: Boolean, dependencies: Dependencies): Flow<XdResponse<Unit>> = flow {
         try {
             val previousOffline = if (conservative) offlineThreadDao.get(tid) else null
-            val page1 = dependencies.fetchThread(tid, 1)
+            val page1Fetched = dependencies.fetchThreadWithRaw(tid, 1)
+            val page1 = page1Fetched.thread
             if (!conservative) {
                 dependencies.saveToHistory(page1)
                 dependencies.addBookmark(page1)
             }
 
-            val json1 = threadAdapter.toJson(page1)
-            cacheDao.insertCache(CacheEntity("thread_$tid", 1, json1))
+            cacheDao.insertCache(CacheEntity("thread_$tid", 1, page1Fetched.rawJson))
 
             val totalReplies = page1.replyCount ?: 0
             val repliesPage1Size = page1.replies?.size ?: 0
@@ -69,9 +70,9 @@ internal class OfflineThreadDownloader(
                             continue
                         }
                         if (conservative) delay(2000)
-                        val threadPage = dependencies.fetchThread(tid, page)
-                        val jsonPage = threadAdapter.toJson(threadPage)
-                        cacheDao.insertCache(CacheEntity("thread_$tid", page, jsonPage))
+                        val pageFetched = dependencies.fetchThreadWithRaw(tid, page)
+                        val threadPage = pageFetched.thread
+                        cacheDao.insertCache(CacheEntity("thread_$tid", page, pageFetched.rawJson))
                         allPosts.addAll(threadPage.replies.orEmpty())
                         if (!conservative) delay(300)
                     } catch (e: Exception) {

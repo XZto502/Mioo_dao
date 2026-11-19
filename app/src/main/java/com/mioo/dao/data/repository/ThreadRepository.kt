@@ -34,6 +34,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Job
@@ -215,6 +217,8 @@ class ThreadRepositoryImpl @Inject constructor(
 
     companion object {
         private val HTML_OR_NEWLINE = Regex("<.*?>|\\n")
+        private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>")
+        private val MULTI_SPACE_REGEX = Regex("\\s+")
     }
 
     /** X-island business error (auth / deleted / rate limit) — not a transport failure. */
@@ -256,6 +260,8 @@ class ThreadRepositoryImpl @Inject constructor(
     init {
         preloadScope.launch {
             try {
+                // Defer periodic expiry/trim past cold-start first paint & initial scroll.
+                delay(20_000L)
                 while (true) {
                     cacheDao.deleteExpiredNonOfflineCache(System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000)
                     cacheDao.trimNonOfflineBytes(200L * 1024 * 1024)
@@ -266,9 +272,30 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }
 
+    private fun extractThreadErrorEnvelope(trimmed: String): String? {
+        return try {
+            val o = org.json.JSONObject(trimmed)
+            val hasId = o.has("id")
+            val successFalse = o.has("success") && !o.optBoolean("success", true)
+            val errorOnly = o.has("error") && !hasId
+            if (successFalse || errorOnly) {
+                val msg = sequenceOf("error", "msg", "message")
+                    .map { o.optString(it) }
+                    .firstOrNull { it.isNotBlank() }
+                msg ?: "访问被拒绝，请先在设置中添加饼干"
+            } else {
+                null
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /**
-     * Parse raw `thread`/`po` body. Rejects `{success:false,error:...}` before Moshi
-     * so we don't thrash on "Required value 'id' missing" and never cache error JSON.
+     * Parse raw `thread`/`po` body. Rejects `{success:false,error:...}` without parsing
+     * large thread payloads twice via DOM JSONObject + Moshi.
      */
     private fun parseThreadBody(raw: String): Thread {
         val trimmed = raw.trim()
@@ -276,28 +303,25 @@ class ThreadRepositoryImpl @Inject constructor(
         extractQuotedJsonString(trimmed)?.let { msg ->
             throw ApiBusinessException(msg.ifBlank { "该串不存在或已被删除" })
         }
-        if (trimmed.startsWith("{")) {
-            try {
-                val o = org.json.JSONObject(trimmed)
-                val hasId = o.has("id")
-                val successFalse = o.has("success") && !o.optBoolean("success", true)
-                val errorOnly = o.has("error") && !hasId
-                if (successFalse || errorOnly) {
-                    val msg = sequenceOf("error", "msg", "message")
-                        .map { o.optString(it) }
-                        .firstOrNull { it.isNotBlank() }
-                    throw ApiBusinessException(msg ?: "访问被拒绝，请先在设置中添加饼干")
-                }
-            } catch (e: ApiBusinessException) {
-                throw e
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // fall through to Moshi
-            }
+        if (trimmed.startsWith("{") && trimmed.length <= 1024 &&
+            (trimmed.contains("\"success\":false") || trimmed.contains("\"success\": false"))
+        ) {
+            extractThreadErrorEnvelope(trimmed)?.let { throw ApiBusinessException(it) }
         }
-        return threadAdapter.fromJson(raw)
-            ?: throw ApiBusinessException("解析串失败")
+        val parsed = try {
+            threadAdapter.fromJson(trimmed)
+        } catch (e: com.squareup.moshi.JsonDataException) {
+            if (trimmed.startsWith("{")) {
+                extractThreadErrorEnvelope(trimmed)?.let { throw ApiBusinessException(it) }
+            }
+            throw e
+        } catch (e: java.io.IOException) {
+            if (trimmed.startsWith("{")) {
+                extractThreadErrorEnvelope(trimmed)?.let { throw ApiBusinessException(it) }
+            }
+            throw e
+        }
+        return parsed ?: throw ApiBusinessException("解析串失败")
     }
 
     private fun mapThreadException(e: Exception): String = when (e) {
@@ -311,15 +335,21 @@ class ThreadRepositoryImpl @Inject constructor(
         else -> e.localizedMessage ?: "Network error"
     }
 
-    private suspend fun fetchThread(tid: String, page: Int): Thread {
+    private suspend fun fetchThreadWithRaw(tid: String, page: Int): FetchedThread {
         val raw = apiService.thread(tid, page).string()
-        return parseThreadBody(raw)
+        return FetchedThread(parseThreadBody(raw), raw)
     }
 
-    private suspend fun fetchPo(tid: String, page: Int): Thread {
+    private suspend fun fetchThread(tid: String, page: Int): Thread =
+        fetchThreadWithRaw(tid, page).thread
+
+    private suspend fun fetchPoWithRaw(tid: String, page: Int): FetchedThread {
         val raw = apiService.po(tid, page).string()
-        return parseThreadBody(raw)
+        return FetchedThread(parseThreadBody(raw), raw)
     }
+
+    private suspend fun fetchPo(tid: String, page: Int): Thread =
+        fetchPoWithRaw(tid, page).thread
 
     private suspend fun hasUserCookie(): Boolean {
         val list = runCatching { settingsDataStore.cookiesListFlow.first() }.getOrNull()
@@ -398,30 +428,29 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>> = flow {
         val cacheKey = "thread_$tid"
         var emittedCache = false
-        var cachedJson: String? = null
+        var cachedThread: Thread? = null
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
                 // Never surface a cached error envelope as a thread
-                val cachedThread = runCatching { parseThreadBody(cached.jsonResponse) }.getOrNull()
-                if (cachedThread != null) {
-                    cachedJson = cached.jsonResponse
-                    emit(XdResponse.Success(cachedThread))
+                val decoded = runCatching { parseThreadBody(cached.jsonResponse) }.getOrNull()
+                if (decoded != null) {
+                    cachedThread = decoded
+                    emit(XdResponse.Success(decoded))
                     emittedCache = true
                 }
             }
-            val response = fetchThread(tid, page)
-            val networkJson = threadAdapter.toJson(response)
-            if (!(emittedCache && cachedJson == networkJson)) {
-                cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
-                emit(XdResponse.Success(response))
+            val fetched = fetchThreadWithRaw(tid, page)
+            if (!(emittedCache && cachedThread == fetched.thread)) {
+                cacheDao.insertCache(CacheEntity(cacheKey, page, fetched.rawJson))
+                emit(XdResponse.Success(fetched.thread))
             }
             // Content must reach the collector before history lookup or persistence.
             if (page <= 1) {
                 preloadScope.launch {
                     try {
-                        saveToHistory(response)
-                        cloudFeedDao.updateThreadMetadata(tid, response.title.effectiveTitle(), response.replyCount ?: 0)
+                        saveToHistory(fetched.thread)
+                        cloudFeedDao.updateThreadMetadata(tid, fetched.thread.title.effectiveTitle(), fetched.thread.replyCount ?: 0)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -440,22 +469,21 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun getPoDetail(tid: String, page: Int): Flow<XdResponse<Thread>> = flow {
         val cacheKey = "po_$tid"
         var emittedCache = false
-        var cachedJson: String? = null
+        var cachedThread: Thread? = null
         try {
             val cached = cacheDao.getCache(cacheKey, page)
             if (cached != null) {
-                val cachedThread = runCatching { parseThreadBody(cached.jsonResponse) }.getOrNull()
-                if (cachedThread != null) {
-                    cachedJson = cached.jsonResponse
-                    emit(XdResponse.Success(cachedThread))
+                val decoded = runCatching { parseThreadBody(cached.jsonResponse) }.getOrNull()
+                if (decoded != null) {
+                    cachedThread = decoded
+                    emit(XdResponse.Success(decoded))
                     emittedCache = true
                 }
             }
-            val response = fetchPo(tid, page)
-            val networkJson = threadAdapter.toJson(response)
-            if (!(emittedCache && cachedJson == networkJson)) {
-                cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
-                emit(XdResponse.Success(response))
+            val fetched = fetchPoWithRaw(tid, page)
+            if (!(emittedCache && cachedThread == fetched.thread)) {
+                cacheDao.insertCache(CacheEntity(cacheKey, page, fetched.rawJson))
+                emit(XdResponse.Success(fetched.thread))
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -888,7 +916,22 @@ class ThreadRepositoryImpl @Inject constructor(
         val digitsOnly = q.removePrefix("No.").removePrefix("no.").removePrefix(">>").trim()
         val directThreadId = digitsOnly.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
 
-        val historyHits = historyDao.searchHistory(q).map { entity ->
+        val (historyEntities, bookmarkEntities, caches) = coroutineScope {
+            val historyDeferred = async { historyDao.searchHistory(q) }
+            val bookmarkDeferred = async { historyDao.searchBookmarks(q) }
+            val cacheDeferred = async {
+                try {
+                    cacheDao.searchThreadCache(q)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+            Triple(historyDeferred.await(), bookmarkDeferred.await(), cacheDeferred.await())
+        }
+
+        val historyHits = historyEntities.map { entity ->
             LocalSearchHit(
                 threadId = entity.id,
                 title = entity.title,
@@ -898,7 +941,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 timestamp = entity.timestamp
             )
         }
-        val bookmarkHits = historyDao.searchBookmarks(q).map { entity ->
+        val bookmarkHits = bookmarkEntities.map { entity ->
             LocalSearchHit(
                 threadId = entity.id,
                 title = entity.title,
@@ -908,14 +951,6 @@ class ThreadRepositoryImpl @Inject constructor(
                 timestamp = entity.timestamp,
                 newReplyCount = entity.newReplyCount
             )
-        }
-
-        val caches = try {
-            cacheDao.searchThreadCache(q)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            emptyList()
         }
         val cacheHits = caches.mapNotNull { cache ->
             ensureActive()
@@ -1219,9 +1254,8 @@ class ThreadRepositoryImpl @Inject constructor(
             for (bookmark in bookmarks) {
                 val tid = bookmark.id
                 try {
-                    val response = fetchThread(tid, 1)
-                    val json = threadAdapter.toJson(response)
-                    cacheDao.insertCache(CacheEntity("thread_$tid", 1, json))
+                    val fetched = fetchThreadWithRaw(tid, 1)
+                    cacheDao.insertCache(CacheEntity("thread_$tid", 1, fetched.rawJson))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -1273,9 +1307,8 @@ class ThreadRepositoryImpl @Inject constructor(
                     if (isRecentlyCached) continue
 
                     try {
-                        val response = fetchThread(tid, 1)
-                        val json = threadAdapter.toJson(response)
-                        cacheDao.insertCache(CacheEntity("thread_$tid", 1, json))
+                        val fetched = fetchThreadWithRaw(tid, 1)
+                        cacheDao.insertCache(CacheEntity("thread_$tid", 1, fetched.rawJson))
                         // Longer gap so list fling / image decode keep the network slot
                         delay(750)
                     } catch (e: Exception) {
@@ -1300,9 +1333,9 @@ class ThreadRepositoryImpl @Inject constructor(
      * 已有页/图按 key 覆盖或跳过，只补新增。
      */
     override fun downloadFullThread(tid: String, conservative: Boolean): Flow<XdResponse<Unit>> =
-        OfflineThreadDownloader(cacheDao, offlineThreadDao, context, threadAdapter, stringListAdapter).download(
+        OfflineThreadDownloader(cacheDao, offlineThreadDao, context, stringListAdapter).download(
             tid, conservative, OfflineThreadDownloader.Dependencies(
-                fetchThread = ::fetchThread,
+                fetchThreadWithRaw = ::fetchThreadWithRaw,
                 saveToHistory = ::saveToHistory,
                 addBookmark = ::addBookmark,
                 parseThreadBody = ::parseThreadBody,
@@ -1424,14 +1457,14 @@ class ThreadRepositoryImpl @Inject constructor(
     /** 主楼正文纯文本摘要（去标签/实体、压空白、截断），离线列表与角标用。 */
     private fun plainSummary(html: String, maxLen: Int = 300): String {
         val plain = html
-            .replace(Regex("(?i)<br\\s*/?>"), " ")
+            .replace(BR_TAG_REGEX, " ")
             .replace(HTML_OR_NEWLINE, " ")
             .replace("&gt;", ">")
             .replace("&lt;", "<")
             .replace("&quot;", "\"")
             .replace("&nbsp;", " ")
             .replace("&amp;", "&")
-            .replace(Regex("\\s+"), " ")
+            .replace(MULTI_SPACE_REGEX, " ")
             .trim()
         return if (plain.length > maxLen) plain.take(maxLen) + "…" else plain
     }
