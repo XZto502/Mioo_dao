@@ -15,10 +15,12 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -1082,6 +1084,23 @@ private suspend fun MutableFloatState.animateTo(
     }
 }
 
+private suspend fun MutableFloatState.animateDecayClamped(
+    initialVelocity: Float,
+    maxAbs: Float,
+    decay: DecayAnimationSpec<Float>
+) {
+    if (!initialVelocity.isFinite() || abs(initialVelocity) <= 1f || maxAbs <= 0f) return
+    val state = this
+    val start = state.floatValue.coerceIn(-maxAbs, maxAbs)
+    state.floatValue = start
+    if ((start <= -maxAbs && initialVelocity < 0f) || (start >= maxAbs && initialVelocity > 0f)) return
+    val anim = Animatable(start)
+    anim.updateBounds(lowerBound = -maxAbs, upperBound = maxAbs)
+    anim.animateDecay(initialVelocity, decay) {
+        state.floatValue = value
+    }
+}
+
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectViewerGestures(
     zoom: MutableFloatState,
     offsetX: MutableFloatState,
@@ -1104,6 +1123,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
     val touchSlop = viewConfiguration.touchSlop
     val fling = android.view.ViewConfiguration.get(hapticView.context).scaledMinimumFlingVelocity.toFloat()
     val dismissThreshold = 120.dp.toPx()
+    val panDecay = exponentialDecay<Float>(frictionMultiplier = 0.72f, absVelocityThreshold = 15.dp.toPx())
     awaitEachGesture {
         // Wait for the next real touch before cancelling a return/zoom animation.
         // Cancelling before awaitFirstDown also cancels the animation just started on up.
@@ -1205,6 +1225,21 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                             launch { dismissY.animateTo(0f, spring()) }
                             launch { dismissScale.animateTo(1f, spring()) }
                             launch { backgroundAlpha.animateTo(1f, spring()) }
+                        }
+                    })
+                }
+            }
+            3 -> {
+                val (maxX, maxY) = calculateBounds(
+                    containerSize(), intrinsicSize(), zoom.value, angle(), fitScale()
+                )
+                val vx = if (abs(velocity.x) > fling && maxX > 0f) velocity.x.coerceIn(-12000f, 12000f) else 0f
+                val vy = if (abs(velocity.y) > fling && maxY > 0f) velocity.y.coerceIn(-12000f, 12000f) else 0f
+                if (vx != 0f || vy != 0f) {
+                    onMotionStarted(animScope.launch {
+                        coroutineScope {
+                            if (vx != 0f) launch { offsetX.animateDecayClamped(vx, maxX, panDecay) }
+                            if (vy != 0f) launch { offsetY.animateDecayClamped(vy, maxY, panDecay) }
                         }
                     })
                 }
