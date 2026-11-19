@@ -134,7 +134,10 @@ interface ThreadRepository {
 
     // Remote Feed operations
     fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>>
-    fun addFeed(uuid: String, tid: String): Flow<XdResponse<String>>
+    fun addFeed(uuid: String, tid: String, title: String? = null, replyCount: Int = 0): Flow<XdResponse<String>>
+    fun observeCloudFeedIndex(uuids: List<String>): Flow<List<com.mioo.dao.data.local.CloudFeedThreadEntity>>
+    fun observeFullyIndexedCloudFolders(): Flow<List<String>>
+    suspend fun syncCloudFeedIndex(uuid: String)
     fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>>
 
     /** Cloud-feed membership cache: is this thread in any known 云端收藏夹? */
@@ -153,7 +156,6 @@ interface ThreadRepository {
      * 补抓一个云端订阅串的回复总数并写入缓存。
      * feed 接口不返回回复数，只能按串抓第 1 页；失败返回 null。
      */
-    suspend fun refreshCloudFeedReplyCount(tid: String): Int?
 
     // 发言草稿箱 (draft box): reply drafts keyed by thread, post drafts keyed by board.
     fun getDrafts(): Flow<List<com.mioo.dao.data.local.DraftEntity>>
@@ -245,6 +247,7 @@ class ThreadRepositoryImpl @Inject constructor(
     private val threadListType = Types.newParameterizedType(List::class.java, Thread::class.java)
     private val threadListAdapter = moshi.adapter<List<Thread>>(threadListType)
     private val threadAdapter = moshi.adapter(Thread::class.java)
+    private val cacheSearchAdapter = moshi.adapter(CachedThreadSearchPreview::class.java)
     private val replyAdapter = moshi.adapter(Reply::class.java)
     private val stringListAdapter =
         moshi.adapter<List<String>>(Types.newParameterizedType(List::class.java, String::class.java))
@@ -418,6 +421,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 preloadScope.launch {
                     try {
                         saveToHistory(response)
+                        cloudFeedDao.updateThreadMetadata(tid, response.title.effectiveTitle(), response.replyCount ?: 0)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -825,11 +829,7 @@ class ThreadRepositoryImpl @Inject constructor(
         }
         for (folder in folders.take(5)) {
             try {
-                val feedThreads = apiService.feed(folder.uuid, 1)
-                cloudFeedDao.replaceAll(
-                    folder.uuid,
-                    feedThreads.map { com.mioo.dao.data.local.CloudFeedThreadEntity(folder.uuid, it.idStr) }
-                )
+                val feedThreads = fetchIndexedFeedPage(folder.uuid, 1).threads
                 for (thread in feedThreads.take(limit)) {
                     val id = thread.idStr
                     val count = thread.replyCount ?: 0
@@ -879,10 +879,10 @@ class ThreadRepositoryImpl @Inject constructor(
         progressDao.delete(threadId)
     }
 
-    override suspend fun searchLocal(query: String): LocalSearchResult {
+    override suspend fun searchLocal(query: String): LocalSearchResult = withContext(Dispatchers.Default) {
         val q = query.trim()
         if (q.isEmpty()) {
-            return LocalSearchResult(query = q)
+            return@withContext LocalSearchResult(query = q)
         }
 
         val digitsOnly = q.removePrefix("No.").removePrefix("no.").removePrefix(">>").trim()
@@ -910,24 +910,30 @@ class ThreadRepositoryImpl @Inject constructor(
             )
         }
 
-        val cacheHits = mutableListOf<LocalSearchHit>()
-        try {
-            val caches = cacheDao.searchThreadCache(q)
-            for (cache in caches) {
-                val thread = runCatching { threadAdapter.fromJson(cache.jsonResponse) }.getOrNull()
-                    ?: continue
-                cacheHits.add(
-                    LocalSearchHit(
-                        threadId = thread.idStr,
-                        title = thread.title,
-                        snippet = thread.content,
-                        userId = thread.userHash,
-                        source = LocalSearchSource.CACHE,
-                        timestamp = cache.cachedAt
-                    )
-                )
-            }
+        val caches = try {
+            cacheDao.searchThreadCache(q)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
+            emptyList()
+        }
+        val cacheHits = caches.mapNotNull { cache ->
+            ensureActive()
+            val thread = try {
+                cacheSearchAdapter.fromJson(cache.jsonResponse)
+            } catch (_: java.io.IOException) {
+                null
+            } catch (_: com.squareup.moshi.JsonDataException) {
+                null
+            } ?: return@mapNotNull null
+            LocalSearchHit(
+                threadId = thread.id.toString(),
+                title = thread.title,
+                snippet = thread.content,
+                userId = thread.userHash,
+                source = LocalSearchSource.CACHE,
+                timestamp = cache.cachedAt
+            )
         }
 
         // Deduplicate by threadId, prefer bookmark > history > cache
@@ -942,27 +948,111 @@ class ThreadRepositoryImpl @Inject constructor(
         historyHits.forEach(::putPrefer)
         cacheHits.forEach(::putPrefer)
 
-        return LocalSearchResult(
+        ensureActive()
+        LocalSearchResult(
             query = q,
             directThreadId = directThreadId,
             hits = merged.values.sortedByDescending { it.timestamp }
         )
     }
 
+    private val cloudFeedPageLock = Mutex()
+    private val cloudFeedMutations = mutableMapOf<String, Long>()
+
+    private data class IndexedFeedPage(val threads: List<Thread>, val inserted: Int?)
+
+    private fun List<Thread>.toCloudIndexEntries(uuid: String, page: Int) =
+        distinctBy { it.id }.mapIndexed { index, thread ->
+            com.mioo.dao.data.local.CloudFeedThreadEntity(
+                feedUuid = uuid, threadId = thread.idStr, title = thread.title.effectiveTitle(),
+                position = (page - 1) * 1000 + index
+            )
+        }
+
+    private suspend fun fetchIndexedFeedPage(uuid: String, page: Int): IndexedFeedPage {
+        val generation = cloudFeedPageLock.withLock { cloudFeedMutations[uuid] }
+        val threads = apiService.feed(uuid, page)
+        val inserted = cloudFeedPageLock.withLock {
+            // A slow background fetch must not block a save or revive a just-removed item.
+            if (generation == cloudFeedMutations[uuid]) {
+                cloudFeedDao.indexPage(uuid, threads.toCloudIndexEntries(uuid, page))
+            } else null
+        }
+        return IndexedFeedPage(threads, inserted)
+    }
+
+    private fun recordCloudFeedMutation(uuid: String) {
+        cloudFeedMutations[uuid] = (cloudFeedMutations[uuid] ?: 0) + 1
+    }
+
+    override fun observeCloudFeedIndex(uuids: List<String>) =
+        cloudFeedDao.observeIndex(uuids).distinctUntilChanged()
+
+    override fun observeFullyIndexedCloudFolders() = cloudFeedDao.observeFullyIndexedFolders().distinctUntilChanged()
+
+    override suspend fun syncCloudFeedIndex(uuid: String) = withContext(Dispatchers.IO) {
+        val startedAt = System.currentTimeMillis()
+        val previous = cloudFeedDao.syncState(uuid)
+        if (previous != null && startedAt - previous.lastCheckedAt in 0 until 50L * 60 * 1000) {
+            return@withContext
+        }
+        val fullScan = previous == null || startedAt - previous.lastFullScanAt !in 0 until 24L * 60 * 60 * 1000
+        val generation = cloudFeedPageLock.withLock { cloudFeedMutations[uuid] }
+        val seen = HashSet<String>()
+        val pending = ArrayList<com.mioo.dao.data.local.CloudFeedThreadEntity>()
+        var mayRemoveMissing = true
+        var page = 1
+        while (true) {
+            if (settingsDataStore.dataSaverEnabledFlow.first() ||
+                settingsDataStore.feedFoldersFlow.first().none { it.uuid == uuid }) return@withContext
+
+            val (threads, inserted) = if (fullScan) {
+                val threads = apiService.feed(uuid, page)
+                pending.addAll(threads.toCloudIndexEntries(uuid, page))
+                // Group background writes so Room does not reload every folder
+                // once per page; foreground saves and first-page loads still commit immediately.
+                if (page % 5 == 0 || threads.isEmpty()) {
+                    cloudFeedPageLock.withLock {
+                        if (generation != cloudFeedMutations[uuid]) return@withContext
+                        cloudFeedDao.indexPage(uuid, pending.distinctBy { it.threadId })
+                        pending.clear()
+                    }
+                }
+                IndexedFeedPage(threads, null)
+            } else fetchIndexedFeedPage(uuid, page)
+            if (threads.isEmpty()) {
+                val state = com.mioo.dao.data.local.CloudFeedSyncEntity(
+                    uuid, startedAt, if (fullScan && mayRemoveMissing) startedAt else previous?.lastFullScanAt ?: 0
+                )
+                if (fullScan && mayRemoveMissing) {
+                    cloudFeedPageLock.withLock {
+                        if (generation == cloudFeedMutations[uuid]) {
+                            cloudFeedDao.finishFullScan(state, seen, startedAt)
+                        }
+                    }
+                } else {
+                    cloudFeedDao.saveSyncState(state)
+                }
+                break
+            }
+            val ids = threads.map { it.idStr }.distinct()
+            val unseen = ids.count { seen.add(it) }
+            // An overlapping snapshot cannot safely remove missing rows. A wholly
+            // repeated page also means the server may have ignored the page number.
+            if (unseen < ids.size) mayRemoveMissing = false
+            if (unseen == 0) throw IllegalStateException("云端收藏分页重复")
+            if (!fullScan && page >= 2 && inserted == 0) {
+                cloudFeedDao.saveSyncState(requireNotNull(previous).copy(lastCheckedAt = startedAt))
+                break
+            }
+            page++
+            delay(850)
+        }
+    }
+
     override fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         try {
-            val response = apiService.feed(uuid, page)
-            // Cache membership so detail pages can show cloud-subscribed state.
-            if (page == 1) {
-                cloudFeedDao.replaceAll(
-                    uuid,
-                    response.map { com.mioo.dao.data.local.CloudFeedThreadEntity(uuid, it.idStr) }
-                )
-            } else {
-                cloudFeedDao.insertAll(
-                    response.map { com.mioo.dao.data.local.CloudFeedThreadEntity(uuid, it.idStr) }
-                )
-            }
+            val response = fetchIndexedFeedPage(uuid, page).threads
             emit(XdResponse.Success(response))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -971,12 +1061,18 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun addFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
+    override fun addFeed(uuid: String, tid: String, title: String?, replyCount: Int): Flow<XdResponse<String>> = flow {
         try {
-            val response = apiService.addFeed(uuid, tid)
-            val interpreted = interpretPlainFeedWrite(response.string())
-            if (interpreted is XdResponse.Success) {
-                cloudFeedDao.insert(com.mioo.dao.data.local.CloudFeedThreadEntity(uuid, tid))
+            val interpreted = cloudFeedPageLock.withLock {
+                interpretPlainFeedWrite(apiService.addFeed(uuid, tid).string()).also { result ->
+                    if (result is XdResponse.Success) {
+                        cloudFeedDao.indexPage(uuid, listOf(com.mioo.dao.data.local.CloudFeedThreadEntity(
+                            feedUuid = uuid, threadId = tid, title = title.effectiveTitle(),
+                            replyCount = replyCount, position = -1
+                        )))
+                        recordCloudFeedMutation(uuid)
+                    }
+                }
             }
             emit(interpreted)
         } catch (e: Exception) {
@@ -988,10 +1084,13 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
         try {
-            val response = apiService.delFeed(uuid, tid)
-            val interpreted = interpretPlainFeedWrite(response.string())
-            if (interpreted is XdResponse.Success) {
-                cloudFeedDao.removeFeedThread(uuid, tid)
+            val interpreted = cloudFeedPageLock.withLock {
+                interpretPlainFeedWrite(apiService.delFeed(uuid, tid).string()).also { result ->
+                    if (result is XdResponse.Success) {
+                        cloudFeedDao.removeFeedThread(uuid, tid)
+                        recordCloudFeedMutation(uuid)
+                    }
+                }
             }
             emit(interpreted)
         } catch (e: Exception) {
@@ -1052,10 +1151,12 @@ class ThreadRepositoryImpl @Inject constructor(
             var removed = 0
             for (uuid in uuids) {
                 try {
-                    val response = apiService.delFeed(uuid, tid)
-                    if (interpretPlainFeedWrite(response.string()) is XdResponse.Success) {
-                        cloudFeedDao.removeFeedThread(uuid, tid)
-                        removed++
+                    cloudFeedPageLock.withLock {
+                        if (interpretPlainFeedWrite(apiService.delFeed(uuid, tid).string()) is XdResponse.Success) {
+                            cloudFeedDao.removeFeedThread(uuid, tid)
+                            recordCloudFeedMutation(uuid)
+                            removed++
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -1082,19 +1183,6 @@ class ThreadRepositoryImpl @Inject constructor(
                 throw e
             } catch (_: Exception) {
                 emptyMap()
-            }
-        }
-
-    override suspend fun refreshCloudFeedReplyCount(tid: String): Int? =
-        withContext(Dispatchers.IO) {
-            try {
-                val count = fetchThread(tid, 1).replyCount ?: return@withContext null
-                cloudFeedDao.updateReplyCount(tid, count)
-                count
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
             }
         }
 

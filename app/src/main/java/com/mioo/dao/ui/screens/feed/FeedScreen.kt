@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +63,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,11 +80,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.components.BookmarkListItem
+import com.mioo.dao.data.local.CloudFeedThreadEntity
 import com.mioo.dao.ui.components.HtmlParseCache
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
-import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.theme.DaoTheme
@@ -108,6 +110,9 @@ fun FeedScreen(
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
     val uiState by viewModel.uiState.collectAsState()
     if (!uiState.selectionReady) return
+    val cloudIndex by viewModel.cloudIndex.collectAsState()
+    val fullyIndexedCloudFolders by viewModel.fullyIndexedCloudFolders.collectAsState()
+    val browseState = rememberSaveableStateHolder()
     val forumViewModel: ForumViewModel = hiltViewModel()
     val forumState by forumViewModel.uiState.collectAsState()
     LaunchedEffect(forumState.forumGroups.isEmpty()) {
@@ -237,7 +242,7 @@ fun FeedScreen(
                                     }
                                 },
                             singleLine = true,
-                            placeholder = { Text("搜索当前收藏夹") },
+                            placeholder = { Text("搜索收藏标题") },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { hideSearchKeyboard() }),
                             colors = TextFieldDefaults.colors(
@@ -264,7 +269,7 @@ fun FeedScreen(
                             contentDescription = if (searching) "关闭搜索" else "搜索收藏"
                         )
                     }
-                    IconButton(onClick = {
+                    if (!searching) IconButton(onClick = {
                         scope.launch { listStates[pageKey(uiState.selectedFolderId)]?.animateScrollToItem(0) }
                         if (uiState.selectedFolderId != null) {
                             viewModel.refreshRemote()
@@ -289,6 +294,15 @@ fun FeedScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            if (searchQuery.isNotEmpty()) {
+                FeedTitleSearch(
+                    query = searchQuery,
+                    cloudIndex = cloudIndex.entries,
+                    state = uiState,
+                    indexingIncomplete = uiState.feedFolders.any { it.uuid !in fullyIndexedCloudFolders },
+                    onOpenThread = openThread
+                )
+            } else browseState.SaveableStateProvider("browse") {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 folderIds.forEachIndexed { index, id ->
                     val selected = pager.targetPage == index
@@ -319,43 +333,18 @@ fun FeedScreen(
             HorizontalPager(state = pager, beyondBoundsPageCount = 1, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
                 val folderId = folderIds[page]
                 val current = folderId == uiState.selectedFolderId
+                val cachedRows = cloudIndex.byFolder[folderId].orEmpty()
                 val pageState = if (current) uiState else pageSnapshots[pageKey(folderId)]
-                val browseListState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
-                val listState = if (searchQuery.isEmpty()) browseListState else remember(searchQuery) { LazyListState() }
+                    ?: FeedUiState(selectedFolderId = folderId, isLoading = cachedRows.isEmpty())
+                val listState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
                 SideEffect { listStates[pageKey(folderId)] = listState }
-                if (pageState == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                } else {
                 val uiState = pageState
-                val results by produceState<FeedSearchResults?>(
-                    null, searchQuery, uiState.offlineSummaries, uiState.localDisplayItems, uiState.remoteDisplayItems
-                ) {
-                    if (searchQuery.isEmpty()) {
-                        value = null
-                        return@produceState
-                    }
-                    if (value?.query != searchQuery) delay(150)
-                    value = withContext(Dispatchers.Default) {
-                        FeedSearchResults(
-                            searchQuery,
-                            if (folderId == null) uiState.offlineSummaries.filter {
-                                matchesFeedSearch(searchQuery, it.threadId, it.title, it.contentSummary)
-                            } else emptyList(),
-                            if (folderId == null) uiState.localDisplayItems.filter {
-                                it.postData.matchesFeedSearch(searchQuery)
-                            } else emptyList(),
-                            if (folderId != null) uiState.remoteDisplayItems.filter {
-                                it.postData.matchesFeedSearch(searchQuery)
-                            } else emptyList()
-                        )
-                    }
-                }
-                val matched = results?.takeIf { it.query == searchQuery }
-                val offlineItems = matched?.offline ?: uiState.offlineSummaries
-                val localItems = matched?.local ?: uiState.localDisplayItems
-                val remoteItems = matched?.remote ?: uiState.remoteDisplayItems
+                val offlineItems = uiState.offlineSummaries
+                val localItems = uiState.localDisplayItems
+                val remoteItems = uiState.remoteDisplayItems
+                val remoteById = remember(remoteItems) { remoteItems.associateBy { it.idStr } }
             when {
-                uiState.isLoading || (searchQuery.isNotEmpty() && matched == null) -> {
+                uiState.isLoading && cachedRows.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -363,7 +352,7 @@ fun FeedScreen(
                         CircularProgressIndicator()
                     }
                 }
-                searchQuery.isEmpty() && uiState.selectedFolderId == null &&
+                uiState.selectedFolderId == null &&
                     uiState.offlineSummaries.isEmpty() &&
                     uiState.localDisplayItems.isEmpty() -> {
                     Box(
@@ -390,7 +379,7 @@ fun FeedScreen(
                         }
                     }
                 }
-                searchQuery.isEmpty() && uiState.selectedFolderId != null && uiState.remoteDisplayItems.isEmpty() -> {
+                uiState.selectedFolderId != null && cachedRows.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -403,15 +392,19 @@ fun FeedScreen(
                     }
                 }
                 else -> {
-                    val feedImageUrls = remember(
+                    val feedImageUrls by produceState<List<String?>>(
+                        emptyList(),
                         uiState.selectedFolderId,
                         localItems,
-                        remoteItems
+                        cachedRows,
+                        remoteById
                     ) {
-                        if (uiState.selectedFolderId == null) {
-                            localItems.map { it.postData.imageUrl }
-                        } else {
-                            remoteItems.map { it.postData.imageUrl }
+                        value = withContext(Dispatchers.Default) {
+                            if (uiState.selectedFolderId == null) {
+                                localItems.map { it.postData.imageUrl }
+                            } else {
+                                cachedRows.map { remoteById[it.threadId]?.postData?.imageUrl }
+                            }
                         }
                     }
                     PrefetchListImages(
@@ -423,15 +416,16 @@ fun FeedScreen(
                     )
 
                     // 触底加载更多（本地收藏为全量数据，loadMoreRemote 在 VM 里对 null 夹直接返回）
-                    val shouldLoadMore = remember(listState) {
+                    val shouldLoadMore = remember(listState, remoteItems.size, cachedRows.size) {
                         derivedStateOf {
-                            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-                                ?: return@derivedStateOf false
-                            last.index >= listState.layoutInfo.totalItemsCount - 3
+                            val lastLoadedRow = remoteItems.size - 1
+                            lastLoadedRow >= 0 && listState.layoutInfo.visibleItemsInfo.any {
+                                it.index in (lastLoadedRow - 2)..lastLoadedRow
+                            }
                         }
                     }
-                    LaunchedEffect(current, searchQuery.isEmpty(), shouldLoadMore.value) {
-                        if (current && searchQuery.isEmpty() && shouldLoadMore.value) viewModel.loadMoreRemote()
+                    LaunchedEffect(current, remoteItems.size, shouldLoadMore.value) {
+                        if (current && shouldLoadMore.value) viewModel.loadMoreRemote()
                     }
 
                     val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
@@ -451,12 +445,6 @@ fun FeedScreen(
                             bottom = 100.dp
                         )
                     ) {
-                        if (searchQuery.isNotEmpty() && offlineItems.isEmpty() && localItems.isEmpty() && remoteItems.isEmpty()) {
-                            item(key = "search_empty") {
-                                Text("没有匹配的收藏", Modifier.fillMaxWidth().padding(top = 24.dp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                            }
-                        }
                         if (uiState.selectedFolderId == null) {
                             items(
                                 items = offlineItems,
@@ -496,32 +484,32 @@ fun FeedScreen(
                         } else {
                             val folderId = uiState.selectedFolderId!!
                             items(
-                                items = remoteItems,
-                                key = { it.idStr },
+                                items = cachedRows,
+                                key = { it.threadId },
                                 contentType = { item ->
-                                    if (item.hasImage) "remote_image" else "remote_text"
-                                }
-                            ) { item ->
-                                RemoteBookmarkRow(
-                                    item = item,
-                                    onNavigateToThread = openThread,
-                                    onUnsubscribe = {
-                                        viewModel.unsubscribeRemote(folderId, item.idStr)
-                                    },
-                                    onImageClick = { activeImageUrl = it },
-                                    emptyStringLambda = emptyStringLambda
-                                )
-                            }
-                        }
-                        if (searchQuery.isNotEmpty() && folderId != null && current && uiState.hasMoreRemote) {
-                            item(key = "search_more") {
-                                Column(Modifier.fillMaxWidth().padding(top = 8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("搜索范围为已加载的收藏", style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    TextButton(onClick = viewModel::loadMoreRemote, enabled = !uiState.isLoadingMore) {
-                                        Text(if (uiState.isLoadingMore) "正在加载" else "加载更多并搜索")
+                                    when (remoteById[item.threadId]?.hasImage) {
+                                        true -> "remote_image"
+                                        false -> "remote_text"
+                                        null -> "indexed_title"
                                     }
+                                }
+                            ) { entry ->
+                                val item = remoteById[entry.threadId]
+                                if (item == null) {
+                                    FeedTitleRow(entry.threadId, entry.title, emptySet(), openThread) {
+                                        viewModel.unsubscribeRemote(folderId, entry.threadId)
+                                    }
+                                } else {
+                                    RemoteBookmarkRow(
+                                        item = if (entry.replyCount > 0 && entry.replyCount != item.replyCount)
+                                            item.copy(replyCount = entry.replyCount) else item,
+                                        onNavigateToThread = openThread,
+                                        onUnsubscribe = {
+                                            viewModel.unsubscribeRemote(folderId, item.idStr)
+                                        },
+                                        onImageClick = { activeImageUrl = it },
+                                        emptyStringLambda = emptyStringLambda
+                                    )
                                 }
                             }
                         }
@@ -529,7 +517,7 @@ fun FeedScreen(
                     }
                 }
             }
-                }
+            }
             }
             }
         }
@@ -566,25 +554,85 @@ private fun OfflineFeedRow(
     )
 }
 
-private data class FeedSearchResults(
-    val query: String,
-    val offline: List<com.mioo.dao.data.local.OfflineThreadSummary>,
-    val local: List<BookmarkListItem>,
-    val remote: List<ThreadListItem>
-)
-
-private fun PostData.matchesFeedSearch(query: String): Boolean =
-    matchesFeedSearch(query, id, title, content)
-
-private fun matchesFeedSearch(query: String, id: String, title: String?, content: String): Boolean {
-    val idQuery = query.removePrefix(">>").let { if (it.startsWith("No.", ignoreCase = true)) it.drop(3) else it }
-    if ((idQuery.isNotEmpty() && id.contains(idQuery)) || title?.contains(query, ignoreCase = true) == true) return true
-    val plain = if ('<' in content || '&' in content) {
-        androidx.core.text.HtmlCompat.fromHtml(content, androidx.core.text.HtmlCompat.FROM_HTML_MODE_COMPACT)
-    } else {
-        content
+@Composable
+private fun FeedTitleSearch(
+    query: String,
+    cloudIndex: List<CloudFeedThreadEntity>,
+    state: FeedUiState,
+    indexingIncomplete: Boolean,
+    onOpenThread: (String) -> Unit
+) {
+    val titleIndex by produceState<FeedTitleIndex?>(
+        null, cloudIndex, state.feedFolders, state.offlineSummaries, state.bookmarkedThreads
+    ) {
+        value = withContext(Dispatchers.Default) {
+            buildFeedTitleIndex(cloudIndex, state.feedFolders, state.offlineSummaries, state.bookmarkedThreads)
+        }
     }
-    return plain.contains(query, ignoreCase = true)
+    val results by produceState<Pair<String, List<FeedTitleMatch>>?>(
+        null, query, titleIndex
+    ) {
+        val index = titleIndex ?: return@produceState
+        if (value?.first != query) delay(150)
+        value = query to withContext(Dispatchers.Default) {
+            index.search(query)
+        }
+    }
+    val rows = results?.takeIf { it.first == query }?.second
+    val listState = remember(query) { LazyListState() }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp, 12.dp, 12.dp, 100.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (rows?.isEmpty() == true) {
+            item {
+                Text(
+                    if (indexingIncomplete) "暂未找到匹配标题，部分云端收藏尚未同步"
+                    else "没有匹配的收藏标题",
+                    Modifier.fillMaxWidth().padding(top = 24.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        items(rows.orEmpty(), key = { it.threadId }) { row ->
+            FeedTitleRow(row.threadId, row.title, row.sources, onOpenThread)
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FeedTitleRow(
+    threadId: String,
+    title: String?,
+    sources: Set<String>,
+    onOpenThread: (String) -> Unit,
+    onUnsubscribe: (() -> Unit)? = null
+) {
+    var confirmDelete by remember(threadId) { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = { onOpenThread(threadId) },
+            onLongClick = onUnsubscribe?.let { { confirmDelete = true } }
+        ),
+        shape = MaterialTheme.shapes.medium,
+        color = com.mioo.dao.ui.theme.readingCardColor(),
+        border = com.mioo.dao.ui.theme.readingCardBorder()
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title ?: "No.$threadId", style = MaterialTheme.typography.titleSmall)
+            val subtitle = (sources + "No.$threadId").joinToString(" · ")
+            if (title != null || sources.isNotEmpty()) {
+                Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    if (confirmDelete && onUnsubscribe != null) {
+        RemoteUnsubscribeDialog(threadId, onDismiss = { confirmDelete = false }, onUnsubscribe = onUnsubscribe)
+    }
 }
 
 @Composable
@@ -656,17 +704,20 @@ private fun RemoteBookmarkRow(
         compactPreviewBlankLines = true
     )
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            properties = immersiveDialogProperties(),
-            title = { ImmersiveDialogEffect(); Text("取消订阅？") },
-            text = { Text("将从订阅列表移除 No.${item.idStr}") },
-            confirmButton = {
-                Button(onClick = { confirmDelete = false; onUnsubscribe() }) { Text("移除") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
-            }
-        )
+        RemoteUnsubscribeDialog(item.idStr, onDismiss = { confirmDelete = false }, onUnsubscribe = onUnsubscribe)
     }
+}
+
+@Composable
+private fun RemoteUnsubscribeDialog(threadId: String, onDismiss: () -> Unit, onUnsubscribe: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = immersiveDialogProperties(),
+        title = { ImmersiveDialogEffect(); Text("取消订阅？") },
+        text = { Text("将从订阅列表移除 No.$threadId") },
+        confirmButton = {
+            Button(onClick = { onDismiss(); onUnsubscribe() }) { Text("移除") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
 }

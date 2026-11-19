@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.local.BookmarkEntity
+import com.mioo.dao.data.local.CloudFeedThreadEntity
 import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.model.FeedFolder
 import com.mioo.dao.data.model.Thread
@@ -32,12 +33,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
-/** 单次进入夹列表最多补抓多少串的回复数，保护服务器。 */
-private const val REPLY_COUNT_ENRICH_LIMIT = 80
 
 @Immutable
 data class FeedUiState(
@@ -60,6 +60,10 @@ data class FeedUiState(
     val offlineUpdatingIds: Set<String> = emptySet()
 )
 
+internal class CloudFeedIndexSnapshot(val entries: List<CloudFeedThreadEntity>) {
+    val byFolder = entries.groupBy { it.feedUuid }
+}
+
 @HiltViewModel
 class FeedViewModel @Inject constructor(
     private val threadRepository: ThreadRepository,
@@ -69,6 +73,21 @@ class FeedViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(FeedUiState())
     val uiState: StateFlow<FeedUiState> = _uiState
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    internal val cloudIndex = settingsDataStore.feedFoldersFlow
+        .map { folders -> folders.map { it.uuid }.distinct().sorted() }
+        .distinctUntilChanged()
+        .flatMapLatest { uuids ->
+            if (uuids.isEmpty()) flowOf(emptyList()) else threadRepository.observeCloudFeedIndex(uuids)
+        }
+        .map(::CloudFeedIndexSnapshot)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CloudFeedIndexSnapshot(emptyList()))
+
+    val fullyIndexedCloudFolders = threadRepository.observeFullyIndexedCloudFolders()
+        .map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     /** 一次性错误提示事件（取消订阅失败 / 加载更多失败等），由 FeedScreen 弹 Toast */
     private val _errorEvents = MutableSharedFlow<String>()
@@ -136,14 +155,12 @@ class FeedViewModel @Inject constructor(
     }
 
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
-    private var replyCountJob: kotlinx.coroutines.Job? = null
     private var remoteLoadMoreJob: kotlinx.coroutines.Job? = null
     private var remoteGeneration = 0L
 
     fun selectFolder(uuid: String?) {
         viewModelScope.launch { settingsDataStore.saveLastFeedFolder(uuid) }
         remoteFeedJob?.cancel()
-        replyCountJob?.cancel()
         remoteLoadMoreJob?.cancel()
         remoteGeneration++
         remoteLoadingMore = false
@@ -168,7 +185,6 @@ class FeedViewModel @Inject constructor(
         val generation = ++remoteGeneration
         remoteLoadMoreJob?.cancel()
         remoteLoadingMore = false
-        replyCountJob?.cancel()
         remotePage = 1
         remoteEndReached = false
         remoteFeedJob?.cancel()
@@ -193,7 +209,6 @@ class FeedViewModel @Inject constructor(
                             hasMoreRemote = threads.isNotEmpty()
                         )
                     }
-                    enrichRemoteReplyCounts(uuid, threads)
                 } else {
                     // 失败也清空：不能让上一个夹的数据顶替当前夹展示
                     _uiState.update {
@@ -205,34 +220,6 @@ class FeedViewModel @Inject constructor(
                         )
                     }
                 }
-            }
-        }
-    }
-
-    /** feed 接口不带回复数：逐个刷新串的第 1 页并缓存回复数，250ms 限速。 */
-    private fun enrichRemoteReplyCounts(uuid: String, threads: List<Thread>) {
-        replyCountJob?.cancel()
-        replyCountJob = viewModelScope.launch {
-            var consecutiveFailures = 0
-            for (thread in threads.take(REPLY_COUNT_ENRICH_LIMIT)) {
-                if (_uiState.value.selectedFolderId != uuid) return@launch
-                val count = threadRepository.refreshCloudFeedReplyCount(thread.idStr)
-                if (count != null) {
-                    consecutiveFailures = 0
-                    _uiState.update { state ->
-                        if (state.selectedFolderId != uuid) return@update state
-                        if (state.remoteReplyCounts[thread.idStr] == count) return@update state
-                        val merged = state.remoteReplyCounts + (thread.idStr to count)
-                        state.copy(
-                            remoteReplyCounts = merged,
-                            remoteDisplayItems = state.remoteDisplayItems.withReplyCounts(mapOf(thread.idStr to count))
-                        )
-                    }
-                } else {
-                    consecutiveFailures++
-                    if (consecutiveFailures >= 3) return@launch
-                }
-                delay(250)
             }
         }
     }
@@ -258,7 +245,14 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch {
             threadRepository.delFeed(uuid, threadId).collect { response ->
                 when (response) {
-                    is XdResponse.Success -> loadRemoteFeed(uuid)
+                    is XdResponse.Success -> {
+                        _uiState.update { state ->
+                            if (state.selectedFolderId != uuid) state else state.copy(
+                                remoteThreads = state.remoteThreads.filterNot { it.idStr == threadId },
+                                remoteDisplayItems = state.remoteDisplayItems.filterNot { it.idStr == threadId }
+                            )
+                        }
+                    }
                     is XdResponse.Error -> _errorEvents.tryEmit("取消订阅失败：${response.message}")
                 }
             }
@@ -299,7 +293,6 @@ class FeedViewModel @Inject constructor(
                                 hasMoreRemote = !remoteEndReached
                             )
                         }
-                        if (added.isNotEmpty()) enrichRemoteReplyCounts(uuid, added)
                     } else {
                         // 失败回退页码，让用户下拉重试
                         _errorEvents.tryEmit("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")

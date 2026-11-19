@@ -110,6 +110,18 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
     private fun deferNonCriticalWarm() {
         appScope.launch(Dispatchers.IO) {
+            var first = true
+            SettingsDataStore(this@MiooDaoApp).feedFoldersFlow
+                .map { folders -> folders.map { it.uuid }.toSet() }
+                .distinctUntilChanged()
+                .collect { uuids ->
+                    com.mioo.dao.notification.CloudFeedIndexScheduler.apply(
+                        this@MiooDaoApp, uuids.isNotEmpty(), foldersChanged = !first
+                    )
+                    first = false
+                }
+        }
+        appScope.launch(Dispatchers.IO) {
             var initialPolicy = true
             SettingsDataStore(this@MiooDaoApp).offlineUpdatePolicy
                 .distinctUntilChanged().collect { (enabled, wifiOnly) ->

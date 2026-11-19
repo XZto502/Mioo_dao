@@ -10,11 +10,12 @@ import androidx.room.RoomDatabase
         CacheEntity::class,
         ThreadProgressEntity::class,
         CloudFeedThreadEntity::class,
+        CloudFeedSyncEntity::class,
         DraftEntity::class,
         OfflineThreadEntity::class,
         PostActionHistoryEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

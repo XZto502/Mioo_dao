@@ -58,7 +58,7 @@ interface CacheDao {
     @Query(
         """
         SELECT * FROM api_cache
-        WHERE cacheKey LIKE 'thread_%'
+        WHERE cacheKey GLOB 'thread_*'
           AND page = 1
           AND jsonResponse LIKE '%' || :query || '%'
         ORDER BY cachedAt DESC

@@ -131,6 +131,14 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE cloud_feed_threads ADD COLUMN title TEXT")
+            db.execSQL("ALTER TABLE cloud_feed_threads ADD COLUMN position INTEGER NOT NULL DEFAULT 2147483647")
+            db.execSQL("CREATE TABLE IF NOT EXISTS cloud_feed_sync (feedUuid TEXT NOT NULL PRIMARY KEY, lastCheckedAt INTEGER NOT NULL, lastFullScanAt INTEGER NOT NULL)")
+        }
+    }
+
     @Provides
     @Singleton
     fun providePostActionHistoryDao(database: AppDatabase): com.mioo.dao.data.local.PostActionHistoryDao = database.postActionHistoryDao()
@@ -149,7 +157,7 @@ object DatabaseModule {
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
             // 侧载分发下用户可能回滚安装旧版：降级重建好过访问 DB 即崩溃循环
             .fallbackToDestructiveMigrationOnDowngrade()
-            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())

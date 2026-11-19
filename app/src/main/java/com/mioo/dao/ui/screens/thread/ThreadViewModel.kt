@@ -1159,7 +1159,7 @@ class ThreadViewModel @Inject constructor(
                     threadRepository.addBookmark(thread)
                 }
             } else {
-                threadRepository.addFeed(folderUuid, threadId).collect { response ->
+                threadRepository.addFeed(folderUuid, threadId, thread.title, thread.replyCount ?: 0).collect { response ->
                     when (response) {
                         is XdResponse.Success -> onComplete?.invoke("已保存至云端收藏夹")
                         is XdResponse.Error ->
@@ -1187,7 +1187,8 @@ class ThreadViewModel @Inject constructor(
 
     fun saveToFolder(folderUuid: String, onComplete: () -> Unit) {
         viewModelScope.launch {
-            threadRepository.addFeed(folderUuid, threadId).collect {
+            val thread = _listState.value.thread ?: return@launch
+            threadRepository.addFeed(folderUuid, threadId, thread.title, thread.replyCount ?: 0).collect {
                 onComplete()
             }
         }
