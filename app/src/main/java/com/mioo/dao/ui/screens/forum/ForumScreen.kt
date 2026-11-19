@@ -125,6 +125,7 @@ import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -1034,14 +1035,36 @@ private fun ForumThreadListPane(
             }
     }
 
-    // Thumbnails after first paint settles — cold path keeps decode off the critical frame.
+    // Preserve reading anchor if cold-start SWR network refresh updates items after user starts scrolling.
+    var previousDisplayItems by remember(forumKey) { mutableStateOf(displayItems) }
+    LaunchedEffect(forumKey, displayItems) {
+        val oldItems = previousDisplayItems
+        previousDisplayItems = displayItems
+        if (oldItems.isNotEmpty() && displayItems.isNotEmpty() && oldItems.first().id != displayItems.first().id) {
+            val anchorIndex = listState.firstVisibleItemIndex
+            val anchorOffset = listState.firstVisibleItemScrollOffset
+            if (anchorIndex > 0 || anchorOffset > 0) {
+                val anchorId = oldItems.getOrNull(anchorIndex)?.id
+                val newIndex = if (anchorId != null) displayItems.indexOfFirst { it.id == anchorId } else -1
+                if (newIndex >= 0 && newIndex != anchorIndex) {
+                    listState.scrollToItem(newIndex, anchorOffset)
+                }
+            }
+        }
+    }
+
+    // Thumbnails only enable after continuous scroll idle so they never pop in mid-drag.
     LaunchedEffect(forumKey, listReady, warmEnabled) {
         if (!listReady || !warmEnabled || showImages) return@LaunchedEffect
         delay(450)
         snapshotFlow { listState.isScrollInProgress }
-            .first { scrolling -> !scrolling }
-        delay(200)
-        showImages = true
+            .distinctUntilChanged()
+            .collectLatest { scrolling ->
+                if (!scrolling) {
+                    delay(200)
+                    showImages = true
+                }
+            }
     }
 
     val prefetchUrls = remember(displayItems, showImages) {
