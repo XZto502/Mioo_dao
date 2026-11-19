@@ -4,12 +4,15 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -36,6 +39,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -78,6 +83,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.ui.components.BookmarkListItem
@@ -250,7 +256,7 @@ fun FeedScreen(
                                     }
                                 },
                             singleLine = true,
-                            placeholder = { Text("搜索收藏标题") },
+                            placeholder = { Text("搜索收藏标题或内容") },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { hideSearchKeyboard() }),
                             colors = TextFieldDefaults.colors(
@@ -307,7 +313,8 @@ fun FeedScreen(
                     query = searchQuery,
                     viewModel = viewModel,
                     state = uiState,
-                    onOpenThread = openThread
+                    onOpenThread = openThread,
+                    onImageClick = { activeImageUrl = it }
                 )
             } else browseState.SaveableStateProvider("browse") {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -562,17 +569,26 @@ private fun FeedTitleSearch(
     query: String,
     viewModel: FeedViewModel,
     state: FeedUiState,
-    onOpenThread: (String) -> Unit
+    onOpenThread: (String) -> Unit,
+    onImageClick: (String) -> Unit
 ) {
+    LaunchedEffect(Unit) { viewModel.ensureFeedSearchCache() }
     val cloudIndexSnapshot by viewModel.cloudIndex.collectAsState()
     val fullyIndexedCloudFolders by viewModel.fullyIndexedCloudFolders.collectAsState()
+    val cachedThreads by viewModel.cachedFeedThreads.collectAsState()
     val cloudIndex = cloudIndexSnapshot.entries
     val indexingIncomplete = state.feedFolders.any { it.uuid !in fullyIndexedCloudFolders }
     val titleIndex by produceState<FeedTitleIndex?>(
-        null, cloudIndex, state.feedFolders, state.offlineSummaries, state.bookmarkedThreads
+        null, cloudIndex, state.feedFolders, state.offlineSummaries, state.bookmarkedThreads, cachedThreads
     ) {
         value = withContext(Dispatchers.Default) {
-            buildFeedTitleIndex(cloudIndex, state.feedFolders, state.offlineSummaries, state.bookmarkedThreads)
+            buildFeedTitleIndex(
+                cloudIndex,
+                state.feedFolders,
+                state.offlineSummaries,
+                state.bookmarkedThreads,
+                cachedThreads
+            )
         }
     }
     val results by produceState<Pair<String, List<FeedTitleMatch>>?>(
@@ -586,6 +602,8 @@ private fun FeedTitleSearch(
     }
     val rows = results?.takeIf { it.first == query }?.second
     val listState = remember(query) { LazyListState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val offlineImageDir = remember { java.io.File(context.filesDir, "offline_images") }
     val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
     val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
     androidx.compose.runtime.CompositionLocalProvider(
@@ -596,13 +614,13 @@ private fun FeedTitleSearch(
             state = listState,
             flingBehavior = responsiveFling,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp, 12.dp, 12.dp, 100.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (rows?.isEmpty() == true) {
                 item {
                     Text(
-                        if (indexingIncomplete) "暂未找到匹配标题，部分云端收藏尚未同步"
-                        else "没有匹配的收藏标题",
+                        if (indexingIncomplete) "暂未找到匹配的收藏，部分云端收藏尚未同步"
+                        else "没有匹配的收藏",
                         Modifier.fillMaxWidth().padding(top = 24.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
@@ -610,7 +628,13 @@ private fun FeedTitleSearch(
                 }
             }
             items(rows.orEmpty(), key = { it.threadId }) { row ->
-                FeedTitleRow(row.threadId, row.title, row.sources, responsiveFling, onOpenThread)
+                FeedSearchResultCard(
+                    match = row,
+                    fling = responsiveFling,
+                    offlineImageDir = offlineImageDir,
+                    onClick = { onOpenThread(row.threadId) },
+                    onImageClick = onImageClick
+                )
             }
         }
     }
@@ -618,38 +642,134 @@ private fun FeedTitleSearch(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FeedTitleRow(
-    threadId: String,
-    title: String?,
-    sources: Set<String>,
+private fun FeedSearchResultCard(
+    match: FeedTitleMatch,
     fling: ResponsiveListFling,
-    onOpenThread: (String) -> Unit,
-    onUnsubscribe: (() -> Unit)? = null
+    offlineImageDir: java.io.File,
+    onClick: () -> Unit,
+    onImageClick: (String) -> Unit
 ) {
-    var confirmDelete by remember(threadId) { mutableStateOf(false) }
-    val onClick = remember(threadId, onOpenThread) { { onOpenThread(threadId) } }
-    val subtitle = remember(sources, threadId) { (sources + "No.$threadId").joinToString(" · ") }
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .slowFlingClick(fling, onClick)
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onUnsubscribe?.let { { confirmDelete = true } }
-            ),
-        shape = MaterialTheme.shapes.medium,
-        color = com.mioo.dao.ui.theme.readingCardColor(),
-        border = com.mioo.dao.ui.theme.readingCardBorder()
-    ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title ?: "No.$threadId", style = MaterialTheme.typography.titleSmall)
-            if (title != null || sources.isNotEmpty()) {
-                Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+    val scheme = MaterialTheme.colorScheme
+    val meta = com.mioo.dao.ui.theme.readingMetaStyle()
+    val bodyStyle = com.mioo.dao.ui.theme.readingBodyStyle()
+    val onOpen = remember(match.threadId, onClick) { onClick }
+    val sourceLabel = remember(match.sources) { match.sources.joinToString(" · ") }
+    val dateLabel = remember(match.createdAt, match.timestamp) {
+        when {
+            match.createdAt.isNotBlank() -> com.mioo.dao.ui.components.formatReadingTime(match.createdAt)
+            match.timestamp > 0L -> com.mioo.dao.ui.components.formatReadingTimestamp(match.timestamp, includeSeconds = false)
+            else -> ""
         }
     }
-    if (confirmDelete && onUnsubscribe != null) {
-        RemoteUnsubscribeDialog(threadId, onDismiss = { confirmDelete = false }, onUnsubscribe = onUnsubscribe)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .slowFlingClick(fling, onOpen)
+            .combinedClickable(onClick = onOpen),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = com.mioo.dao.ui.theme.readingCardBorder()
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                com.mioo.dao.ui.components.ReadingIdentity(
+                    com.mioo.dao.ui.components.PostData(
+                        id = match.threadId,
+                        userId = match.userId.ifBlank { "无名氏" },
+                        createdAt = "",
+                        content = "",
+                        isPo = false,
+                        isAdmin = match.userId.equals("Admin", ignoreCase = true)
+                    )
+                )
+                if (sourceLabel.isNotBlank()) {
+                    Spacer(Modifier.width(6.dp))
+                    com.mioo.dao.ui.components.ReadingPill(sourceLabel, maxWidth = 140)
+                }
+                if (dateLabel.isNotBlank()) {
+                    Text(
+                        " · $dateLabel",
+                        modifier = Modifier.weight(1f),
+                        style = meta.copy(fontWeight = FontWeight.Normal),
+                        color = scheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "No.${match.threadId}",
+                    style = meta.copy(fontWeight = FontWeight.Normal),
+                    maxLines = 1,
+                    softWrap = false,
+                    color = scheme.onSurfaceVariant
+                )
+            }
+            if (match.title != null || !match.htmlContent.isNullOrBlank() || !match.plainContent.isNullOrBlank()) {
+                Spacer(Modifier.height(10.dp))
+            }
+            match.title?.let { title ->
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = scheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!match.htmlContent.isNullOrBlank() || !match.plainContent.isNullOrBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+            if (!match.htmlContent.isNullOrBlank()) {
+                com.mioo.dao.ui.components.HtmlContent(
+                    match.htmlContent,
+                    onQuoteClick = {},
+                    style = bodyStyle,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                    enableGestures = false,
+                    compactBlankLines = true
+                )
+            } else if (!match.plainContent.isNullOrBlank()) {
+                Text(
+                    match.plainContent,
+                    style = bodyStyle,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            val remoteImage = match.imageUrl
+            if (!remoteImage.isNullOrBlank()) {
+                Spacer(Modifier.height(10.dp))
+                com.mioo.dao.ui.components.ListThumbAsyncImage(
+                    imageUrl = remoteImage,
+                    contentDescription = "串附图",
+                    preserveRatio = true,
+                    modifier = Modifier.clickable { onImageClick(remoteImage) }
+                )
+            } else if (!match.coverFile.isNullOrBlank()) {
+                val coverFile = remember(match.coverFile, offlineImageDir) {
+                    java.io.File(offlineImageDir, match.coverFile)
+                }
+                var coverFailed by remember(match.coverFile, offlineImageDir) { mutableStateOf(false) }
+                if (!coverFailed) {
+                    Spacer(Modifier.height(10.dp))
+                    com.mioo.dao.ui.components.LocalImagePreview(
+                        coverFile,
+                        onError = { coverFailed = true }
+                    )
+                }
+            }
+            if (match.replyCount > 0) {
+                Spacer(Modifier.height(10.dp))
+                com.mioo.dao.ui.components.ReadingPill("${match.replyCount} 回复", maxWidth = 160)
+            }
+        }
     }
 }
 

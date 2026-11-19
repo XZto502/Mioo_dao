@@ -29,6 +29,12 @@ interface CacheDao {
     @Query("SELECT * FROM api_cache WHERE cacheKey = :cacheKey AND page = :page LIMIT 1")
     suspend fun getCache(cacheKey: String, page: Int): CacheEntity?
 
+    @Query("SELECT * FROM api_cache WHERE cacheKey IN (:keys) ORDER BY page ASC")
+    suspend fun getCachesByKeys(keys: List<String>): List<CacheEntity>
+
+    @Query("SELECT * FROM api_cache WHERE cacheKey IN (:keys) AND page = 1")
+    suspend fun getPage1CachesByKeys(keys: List<String>): List<CacheEntity>
+
     @Query("SELECT * FROM api_cache WHERE cacheKey = :cacheKey ORDER BY cachedAt DESC LIMIT 1")
     suspend fun getLatestPage(cacheKey: String): CacheEntity?
 

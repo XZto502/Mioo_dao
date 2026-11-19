@@ -90,6 +90,24 @@ class FeedViewModel @Inject constructor(
         .map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    private val _cachedFeedThreads = MutableStateFlow<Map<String, Thread>>(emptyMap())
+    val cachedFeedThreads: StateFlow<Map<String, Thread>> = _cachedFeedThreads
+
+    fun ensureFeedSearchCache() {
+        viewModelScope.launch {
+            val uuids = _uiState.value.feedFolders.map { it.uuid }
+            val cloudIds = cloudIndex.value.entries.mapTo(HashSet()) { it.threadId }
+            val diskCached = threadRepository.getCachedThreadsByIds(uuids, cloudIds)
+            val merged = HashMap<String, Thread>(diskCached.size + 32)
+            merged.putAll(diskCached)
+            remoteFolderCache.values.forEach { folder ->
+                folder.threads.forEach { thread -> merged[thread.idStr] = thread }
+            }
+            _uiState.value.remoteThreads.forEach { thread -> merged[thread.idStr] = thread }
+            _cachedFeedThreads.value = merged
+        }
+    }
+
     /** 一次性错误提示事件（取消订阅失败 / 加载更多失败等），由 FeedScreen 弹 Toast */
     private val _errorEvents = MutableSharedFlow<String>()
     val errorEvents: SharedFlow<String> = _errorEvents.asSharedFlow()

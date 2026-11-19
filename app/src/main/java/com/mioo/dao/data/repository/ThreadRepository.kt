@@ -154,6 +154,9 @@ interface ThreadRepository {
     /** 该夹内已缓存的回复数（threadId → count，仅含 >0 的已知值）。 */
     suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int>
 
+    /** 从本地 api_cache 读取已缓存的云端收藏夹页与串详情首楼，用于收藏搜索正文与卡片展示。 */
+    suspend fun getCachedThreadsByIds(feedUuids: List<String>, threadIds: Set<String>): Map<String, Thread>
+
     /**
      * 补抓一个云端订阅串的回复总数并写入缓存。
      * feed 接口不返回回复数，只能按串抓第 1 页；失败返回 null。
@@ -1239,6 +1242,42 @@ class ThreadRepositoryImpl @Inject constructor(
                 emptyMap()
             }
         }
+
+    override suspend fun getCachedThreadsByIds(
+        feedUuids: List<String>,
+        threadIds: Set<String>
+    ): Map<String, Thread> = withContext(Dispatchers.IO) {
+        val result = HashMap<String, Thread>()
+        val feedKeys = feedUuids.asSequence().filter { it.isNotBlank() }.distinct().map { "feed_$it" }.toList()
+        for (batch in feedKeys.chunked(500)) {
+            runCatching { cacheDao.getCachesByKeys(batch) }.getOrNull().orEmpty().forEach { cache ->
+                val list = runCatching { threadListAdapter.fromJson(cache.jsonResponse) }.getOrNull() ?: return@forEach
+                for (thread in list) {
+                    result.putIfAbsent(thread.idStr, thread)
+                }
+            }
+        }
+        val missingKeys = threadIds.asSequence()
+            .filter { it.isNotBlank() && it !in result }
+            .map { "thread_$it" }
+            .toList()
+        for (batch in missingKeys.chunked(500)) {
+            runCatching { cacheDao.getPage1CachesByKeys(batch) }.getOrNull().orEmpty().forEach { cache ->
+                val preview = runCatching { cacheSearchAdapter.fromJson(cache.jsonResponse) }.getOrNull() ?: return@forEach
+                val tid = preview.id.toString()
+                result.putIfAbsent(
+                    tid,
+                    Thread(
+                        id = preview.id,
+                        title = preview.title,
+                        content = preview.content,
+                        userHash = preview.userHash
+                    )
+                )
+            }
+        }
+        result
+    }
 
     override fun clearCache(): Flow<XdResponse<Unit>> = flow {
         try {
