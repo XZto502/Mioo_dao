@@ -354,9 +354,9 @@ fun FeedScreen(
                 val offlineItems = uiState.offlineSummaries
                 val localItems = uiState.localDisplayItems
                 val remoteItems = uiState.remoteDisplayItems
-                val remoteById = remember(remoteItems) { remoteItems.associateBy { it.idStr } }
+                val cachedById = remember(cachedRows) { cachedRows.associateBy { it.threadId } }
             when {
-                uiState.isLoading && cachedRows.isEmpty() -> {
+                uiState.isLoading && remoteItems.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -391,7 +391,7 @@ fun FeedScreen(
                         }
                     }
                 }
-                uiState.selectedFolderId != null && cachedRows.isEmpty() -> {
+                uiState.selectedFolderId != null && !uiState.isLoading && remoteItems.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -408,14 +408,13 @@ fun FeedScreen(
                         emptyList(),
                         uiState.selectedFolderId,
                         localItems,
-                        cachedRows,
-                        remoteById
+                        remoteItems
                     ) {
                         value = withContext(Dispatchers.Default) {
                             if (uiState.selectedFolderId == null) {
                                 localItems.map { it.postData.imageUrl }
                             } else {
-                                cachedRows.map { remoteById[it.threadId]?.postData?.imageUrl }
+                                remoteItems.map { it.postData.imageUrl }
                             }
                         }
                     }
@@ -497,34 +496,24 @@ fun FeedScreen(
                         } else {
                             val folderId = uiState.selectedFolderId!!
                             items(
-                                items = cachedRows,
-                                key = { it.threadId },
+                                items = remoteItems,
+                                key = { it.idStr },
                                 contentType = { item ->
-                                    when (remoteById[item.threadId]?.hasImage) {
-                                        true -> "remote_image"
-                                        false -> "remote_text"
-                                        null -> "indexed_title"
-                                    }
+                                    if (item.hasImage) "remote_image" else "remote_text"
                                 }
-                            ) { entry ->
-                                val item = remoteById[entry.threadId]
-                                if (item == null) {
-                                    FeedTitleRow(entry.threadId, entry.title, emptySet(), responsiveFling, openThread) {
-                                        viewModel.unsubscribeRemote(folderId, entry.threadId)
-                                    }
-                                } else {
-                                    RemoteBookmarkRow(
-                                        item = if (entry.replyCount > 0 && entry.replyCount != item.replyCount)
-                                            item.copy(replyCount = entry.replyCount) else item,
-                                        fling = responsiveFling,
-                                        onNavigateToThread = openThread,
-                                        onUnsubscribe = {
-                                            viewModel.unsubscribeRemote(folderId, item.idStr)
-                                        },
-                                        onImageClick = { activeImageUrl = it },
-                                        emptyStringLambda = emptyStringLambda
-                                    )
-                                }
+                            ) { item ->
+                                val cachedCount = cachedById[item.idStr]?.replyCount ?: 0
+                                RemoteBookmarkRow(
+                                    item = if (cachedCount > 0 && cachedCount != item.replyCount)
+                                        item.copy(replyCount = cachedCount) else item,
+                                    fling = responsiveFling,
+                                    onNavigateToThread = openThread,
+                                    onUnsubscribe = {
+                                        viewModel.unsubscribeRemote(folderId, item.idStr)
+                                    },
+                                    onImageClick = { activeImageUrl = it },
+                                    emptyStringLambda = emptyStringLambda
+                                )
                             }
                         }
                     }

@@ -1086,13 +1086,30 @@ class ThreadRepositoryImpl @Inject constructor(
     }
 
     override fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
+        val cacheKey = "feed_$uuid"
+        var emittedCache = false
+        var cachedList: List<Thread>? = null
         try {
+            val cached = cacheDao.getCache(cacheKey, page)
+            if (cached != null) {
+                val decoded = runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull()
+                if (decoded != null) {
+                    cachedList = decoded
+                    emit(XdResponse.Success(decoded))
+                    emittedCache = true
+                }
+            }
             val response = fetchIndexedFeedPage(uuid, page).threads
-            emit(XdResponse.Success(response))
+            if (!(emittedCache && cachedList == response)) {
+                cacheDao.insertCache(CacheEntity(cacheKey, page, threadListAdapter.toJson(response)))
+                emit(XdResponse.Success(response))
+            }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            val msg = e.localizedMessage ?: "Network error"
-            emit(XdResponse.Error(message = msg, throwable = e))
+            if (!emittedCache) {
+                val msg = e.localizedMessage ?: "Network error"
+                emit(XdResponse.Error(message = msg, throwable = e))
+            }
         }
     }.flowOn(Dispatchers.IO)
 
@@ -1105,6 +1122,7 @@ class ThreadRepositoryImpl @Inject constructor(
                             feedUuid = uuid, threadId = tid, title = title.effectiveTitle(),
                             replyCount = replyCount, position = -1
                         )))
+                        cacheDao.deleteCacheByKey("feed_$uuid")
                         recordCloudFeedMutation(uuid)
                     }
                 }
@@ -1123,6 +1141,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 interpretPlainFeedWrite(apiService.delFeed(uuid, tid).string()).also { result ->
                     if (result is XdResponse.Success) {
                         cloudFeedDao.removeFeedThread(uuid, tid)
+                        cacheDao.deleteCacheByKey("feed_$uuid")
                         recordCloudFeedMutation(uuid)
                     }
                 }

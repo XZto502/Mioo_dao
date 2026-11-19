@@ -155,6 +155,17 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    private data class CachedRemoteFolder(
+        val threads: List<Thread>,
+        val displayItems: List<ThreadListItem>,
+        val replyCounts: Map<String, Int>,
+        val page: Int,
+        val endReached: Boolean,
+        val hasMore: Boolean
+    )
+
+    private val remoteFolderCache = HashMap<String, CachedRemoteFolder>()
+
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
     private var remoteLoadMoreJob: kotlinx.coroutines.Job? = null
     private var remoteGeneration = 0L
@@ -165,6 +176,23 @@ class FeedViewModel @Inject constructor(
         remoteLoadMoreJob?.cancel()
         remoteGeneration++
         remoteLoadingMore = false
+        val cached = if (uuid != null) remoteFolderCache[uuid] else null
+        if (cached != null) {
+            remotePage = cached.page
+            remoteEndReached = cached.endReached
+            _uiState.update {
+                it.copy(
+                    selectedFolderId = uuid,
+                    isLoading = false,
+                    isLoadingMore = false,
+                    hasMoreRemote = cached.hasMore,
+                    remoteThreads = cached.threads,
+                    remoteDisplayItems = cached.displayItems,
+                    remoteReplyCounts = cached.replyCounts
+                )
+            }
+            return
+        }
         _uiState.update {
             it.copy(
                 selectedFolderId = uuid,
@@ -190,7 +218,7 @@ class FeedViewModel @Inject constructor(
         remoteEndReached = false
         remoteFeedJob?.cancel()
         remoteFeedJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, isLoadingMore = false, hasMoreRemote = false) }
+            _uiState.update { it.copy(isLoading = it.remoteDisplayItems.isEmpty(), isLoadingMore = false) }
             threadRepository.getFeed(uuid, 1).collect { response ->
                 // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
                 if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
@@ -201,24 +229,37 @@ class FeedViewModel @Inject constructor(
                     val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
                     val items = buildRemoteItems(threads, knownCounts)
                     if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
+                    val hasMore = threads.isNotEmpty()
+                    remoteEndReached = !hasMore
+                    remoteFolderCache[uuid] = CachedRemoteFolder(
+                        threads = threads,
+                        displayItems = items,
+                        replyCounts = knownCounts,
+                        page = 1,
+                        endReached = remoteEndReached,
+                        hasMore = hasMore
+                    )
                     _uiState.update {
                         it.copy(
                             remoteThreads = threads,
                             remoteReplyCounts = knownCounts,
                             remoteDisplayItems = items,
                             isLoading = false,
-                            hasMoreRemote = threads.isNotEmpty()
+                            hasMoreRemote = hasMore
                         )
                     }
                 } else {
-                    // 失败也清空：不能让上一个夹的数据顶替当前夹展示
-                    _uiState.update {
-                        it.copy(
-                            remoteThreads = emptyList(),
-                            remoteDisplayItems = emptyList(),
-                            remoteReplyCounts = emptyMap(),
-                            isLoading = false
-                        )
+                    if (_uiState.value.remoteDisplayItems.isEmpty()) {
+                        _uiState.update {
+                            it.copy(
+                                remoteThreads = emptyList(),
+                                remoteDisplayItems = emptyList(),
+                                remoteReplyCounts = emptyMap(),
+                                isLoading = false
+                            )
+                        }
+                    } else {
+                        _uiState.update { it.copy(isLoading = false) }
                     }
                 }
             }
@@ -247,6 +288,12 @@ class FeedViewModel @Inject constructor(
             threadRepository.delFeed(uuid, threadId).collect { response ->
                 when (response) {
                     is XdResponse.Success -> {
+                        remoteFolderCache[uuid]?.let { cached ->
+                            remoteFolderCache[uuid] = cached.copy(
+                                threads = cached.threads.filterNot { it.idStr == threadId },
+                                displayItems = cached.displayItems.filterNot { it.idStr == threadId }
+                            )
+                        }
                         _uiState.update { state ->
                             if (state.selectedFolderId != uuid) state else state.copy(
                                 remoteThreads = state.remoteThreads.filterNot { it.idStr == threadId },
@@ -287,11 +334,22 @@ class FeedViewModel @Inject constructor(
                         if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                         if (added.isEmpty()) remoteEndReached = true
                         remotePage = page
+                        val nextThreads = state.remoteThreads + added
+                        val nextItems = state.remoteDisplayItems + items.withReplyCounts(state.remoteReplyCounts)
+                        val hasMore = !remoteEndReached
+                        remoteFolderCache[uuid] = CachedRemoteFolder(
+                            threads = nextThreads,
+                            displayItems = nextItems,
+                            replyCounts = state.remoteReplyCounts,
+                            page = remotePage,
+                            endReached = remoteEndReached,
+                            hasMore = hasMore
+                        )
                         _uiState.update {
                             it.copy(
-                                remoteThreads = it.remoteThreads + added,
-                                remoteDisplayItems = it.remoteDisplayItems + items.withReplyCounts(it.remoteReplyCounts),
-                                hasMoreRemote = !remoteEndReached
+                                remoteThreads = nextThreads,
+                                remoteDisplayItems = nextItems,
+                                hasMoreRemote = hasMore
                             )
                         }
                     } else {
