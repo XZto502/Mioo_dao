@@ -29,7 +29,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,9 +45,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mioo.dao.data.model.ImageCacheLimit
 import com.mioo.dao.data.model.ThemeMode
+import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.settingsItemStyle
 import com.mioo.dao.ui.theme.settingsDescriptionStyle
 import androidx.compose.ui.graphics.Color
+
+private enum class CacheClearConfirmTarget {
+    DATA,
+    IMAGE
+}
 
 
 @Composable
@@ -269,13 +278,15 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
+                var pendingClearTarget by remember { mutableStateOf<CacheClearConfirmTarget?>(null) }
+
                 // Cache Size & Clear
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                         Text(
                             text = "本地帖子与列表缓存大小",
                             style = MaterialTheme.typography.bodyMedium,
@@ -288,10 +299,10 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                         )
                     }
                     OutlinedButton(
-                        onClick = { viewModel.clearCache() },
+                        onClick = { pendingClearTarget = CacheClearConfirmTarget.DATA },
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("清理普通缓存（保留离线串）")
+                        Text("清理缓存")
                     }
                 }
 
@@ -314,7 +325,7 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                         Text(
                             text = "图片缓存",
                             style = MaterialTheme.typography.bodyMedium,
@@ -327,11 +338,47 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
                         )
                     }
                     OutlinedButton(
-                        onClick = { viewModel.clearImageCache(context) },
+                        onClick = { pendingClearTarget = CacheClearConfirmTarget.IMAGE },
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("清理图片")
                     }
+                }
+
+                pendingClearTarget?.let { target ->
+                    val (title, message) = when (target) {
+                        CacheClearConfirmTarget.DATA -> "确认清理缓存？" to "将清理本地帖子与列表缓存，已离线保存的串会保留。"
+                        CacheClearConfirmTarget.IMAGE -> "确认清理图片？" to "将清理已缓存的图片文件，离线串图片会保留，需要时会重新加载。"
+                    }
+                    AlertDialog(
+                        onDismissRequest = { pendingClearTarget = null },
+                        properties = immersiveDialogProperties(),
+                        shape = MaterialTheme.shapes.large,
+                        tonalElevation = 0.dp,
+                        title = {
+                            ImmersiveDialogEffect()
+                            Text(title)
+                        },
+                        text = { Text(message) },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    when (target) {
+                                        CacheClearConfirmTarget.DATA -> viewModel.clearCache()
+                                        CacheClearConfirmTarget.IMAGE -> viewModel.clearImageCache(context)
+                                    }
+                                    pendingClearTarget = null
+                                }
+                            ) {
+                                Text("清理", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingClearTarget = null }) {
+                                Text("取消")
+                            }
+                        }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
