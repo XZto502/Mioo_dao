@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
     // ThreadRepository is NOT field-injected: avoids pulling the full network/Room graph
     // into Activity creation. Update-check resolves it lazily after cold list settles.
 
+    private var initialExternalThreadIdState = mutableStateOf<String?>(null)
     private var pendingThreadIdState = mutableStateOf<String?>(null)
 
     /** Clipboard-detected 8-digit thread id awaiting user confirmation. */
@@ -128,7 +129,10 @@ class MainActivity : ComponentActivity() {
         // Decor does not fit system windows so WindowInsets.ime animates smoothly into Compose.
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        pendingThreadIdState.value = parsePendingThreadId(intent)
+        val launchThreadId = parsePendingThreadId(intent)
+        val directExternalId = if (intent?.action == Intent.ACTION_VIEW) launchThreadId else null
+        initialExternalThreadIdState.value = directExternalId
+        pendingThreadIdState.value = if (directExternalId != null) null else launchThreadId
         reducedMotionState.value = isReducedMotionEnabled(this)
 
         // Never stick on splash if list is empty/error/slow network (prefer first-content callback)
@@ -179,6 +183,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val initialExternalThreadId by initialExternalThreadIdState
             val pendingThreadId by pendingThreadIdState
             val clipboardThreadId by clipboardThreadCandidate
 
@@ -237,6 +242,7 @@ class MainActivity : ComponentActivity() {
                     LocalScrollTouchGuardEnabled provides scrollTouchGuardEnabled
                 ) {
                     MiooDaoNavGraph(
+                        initialThreadId = initialExternalThreadId,
                         pendingThreadId = pendingThreadId,
                         onPendingThreadConsumed = { pendingThreadIdState.value = null },
                         onColdStartContentReady = {

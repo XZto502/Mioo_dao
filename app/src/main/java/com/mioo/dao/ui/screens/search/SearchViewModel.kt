@@ -22,8 +22,7 @@ data class SearchUiState(
     val isSearching: Boolean = false,
     val result: LocalSearchResult = LocalSearchResult(),
     val recentQueries: List<String> = emptyList(),
-    val preferredEngine: XdWebSearch.Engine = XdWebSearch.Engine.GOOGLE,
-    val webSearchUrl: String? = null
+    val preferredEngine: XdWebSearch.Engine = XdWebSearch.Engine.GOOGLE
 )
 
 @HiltViewModel
@@ -38,7 +37,7 @@ class SearchViewModel @Inject constructor(
     private val recent = ArrayDeque<String>()
 
     fun onQueryChange(query: String) {
-        _uiState.update { it.copy(query = query, webSearchUrl = null) }
+        _uiState.update { it.copy(query = query) }
         searchJob?.cancel()
         if (query.isBlank()) {
             _uiState.update { it.copy(isSearching = false, result = LocalSearchResult()) }
@@ -82,22 +81,18 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(preferredEngine = engine) }
     }
 
-    /** Open browser with site: restricted engine search. */
-    fun openSiteSearch(engine: XdWebSearch.Engine = _uiState.value.preferredEngine) {
+    /** Build site: restricted search URL & update recent queries. */
+    fun prepareSiteSearchUrl(engine: XdWebSearch.Engine = _uiState.value.preferredEngine): String? {
         val q = _uiState.value.query.trim()
-        if (q.isEmpty()) return
+        if (q.isEmpty()) return null
         pushRecent(q)
         _uiState.update {
             it.copy(
                 preferredEngine = engine,
-                recentQueries = recent.toList(),
-                webSearchUrl = XdWebSearch.siteSearchUrl(q, engine)
+                recentQueries = recent.toList()
             )
         }
-    }
-
-    fun consumeWebSearchUrl() {
-        _uiState.update { it.copy(webSearchUrl = null) }
+        return XdWebSearch.siteSearchUrl(q, engine)
     }
 
     fun applyRecent(query: String) {

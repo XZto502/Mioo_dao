@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
@@ -48,17 +51,28 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.mioo.dao.data.model.LocalSearchHit
 import com.mioo.dao.data.model.XdWebSearch
 import com.mioo.dao.data.model.effectiveTitle
@@ -73,15 +87,27 @@ fun SearchScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
     val allowThirdParty = LocalThirdPartyServicesAllowed.current
-
-    LaunchedEffect(uiState.webSearchUrl, allowThirdParty) {
-        val url = uiState.webSearchUrl ?: return@LaunchedEffect
-        if (allowThirdParty) runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val listState = rememberLazyListState()
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val customTabToolbarColor = MaterialTheme.colorScheme.surface.toArgb()
+    val customTabsController = rememberCustomTabsWarmController(
+        enabled = allowThirdParty,
+        preconnectOrigin = engineOriginUrl(uiState.preferredEngine)
+    )
+    var linksApproved by remember(context) { mutableStateOf(areXIslandLinksApproved(context)) }
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                linksApproved = areXIslandLinksApproved(context)
+            }
         }
-        viewModel.consumeWebSearchUrl()
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Scaffold(
@@ -117,6 +143,12 @@ fun SearchScreen(
                 onValueChange = viewModel::onQueryChange,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    viewModel.searchNow()
+                }),
                 placeholder = { Text("串号 / 关键词") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
@@ -129,8 +161,11 @@ fun SearchScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = if (allowThirdParty) "全站搜索通过外部搜索引擎检索 X 岛。下方同时显示本地结果。"
-                    else "在本地历史、收藏和缓存中搜索，也可直接输入串号。",
+                text = if (allowThirdParty) {
+                    "全站搜索将调用 Chrome 套件检索 X 岛；在系统“默认打开”中授权 X 岛域名后，点搜索串结果可直达本应用。下方同时显示本地结果。"
+                } else {
+                    "在本地历史、收藏和缓存中搜索，也可直接输入串号。"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -138,7 +173,7 @@ fun SearchScreen(
             if (allowThirdParty) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "外部搜索引擎",
+                    text = "搜索引擎",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -152,6 +187,15 @@ fun SearchScreen(
                             label = { Text(engine.label) }
                         )
                     }
+                }
+                if (!linksApproved) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "未授权默认打开 X 岛域名（nmbxd.com / nmbxd1.com），点此授权后点击搜索串结果可直达 ›",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { openAppDefaultLinksSettings(context) }
+                    )
                 }
             }
 
@@ -180,6 +224,7 @@ fun SearchScreen(
                 androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
             ) {
             LazyColumn(
+                state = listState,
                 flingBehavior = responsiveFling,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -231,7 +276,22 @@ fun SearchScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable(enabled = uiState.query.isNotBlank()) {
-                                    viewModel.openSiteSearch()
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                    val url = viewModel.prepareSiteSearchUrl() ?: return@clickable
+                                    val launched = launchCustomTabSearch(
+                                        context = context,
+                                        url = url,
+                                        toolbarColorArgb = customTabToolbarColor,
+                                        isDarkTheme = isDarkTheme,
+                                        session = customTabsController.getSession(),
+                                        preferredPackage = customTabsController.packageName
+                                    )
+                                    if (!launched) {
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        }
+                                    }
                                 },
                             shape = RoundedCornerShape(16.dp),
                             elevation = CardDefaults.cardElevation(0.dp),
@@ -248,7 +308,7 @@ fun SearchScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "site:nmbxd.com OR site:nmbxd1.com ${uiState.query.trim()}",
+                                    text = "Chrome 套件 · site:nmbxd.com OR site:nmbxd1.com ${uiState.query.trim()}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 2,

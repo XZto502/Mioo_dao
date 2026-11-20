@@ -136,6 +136,7 @@ sealed class Screen(val route: String) {
 @Composable
 fun MiooDaoNavGraph(
     modifier: Modifier = Modifier,
+    initialThreadId: String? = null,
     pendingThreadId: String? = null,
     onPendingThreadConsumed: () -> Unit = {},
     /** First board list paint / error — dismiss system splash. */
@@ -147,6 +148,13 @@ fun MiooDaoNavGraph(
     var committingPageBack by remember { mutableStateOf(false) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val hostActivity = LocalContext.current as? android.app.Activity
+
+    LaunchedEffect(initialThreadId) {
+        if (!initialThreadId.isNullOrBlank()) {
+            onColdStartContentReady()
+        }
+    }
 
     // A second tap can land while the detail page is still sliding over the list.
     // The list stays hit-testable until the cover finishes, so ignore that repeat.
@@ -182,6 +190,7 @@ fun MiooDaoNavGraph(
         }
     }
 
+    var instantThreadTarget by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(pendingThreadId) {
         val id = pendingThreadId ?: return@LaunchedEffect
         if (id.isNotBlank()) {
@@ -191,6 +200,7 @@ fun MiooDaoNavGraph(
             val alreadyOpen = top?.destination?.route == Screen.Thread.route &&
                 top?.arguments?.getString("threadId") == id
             if (!alreadyOpen) {
+                instantThreadTarget = id
                 navController.navigate(Screen.Thread.createRoute(id))
             }
             onPendingThreadConsumed()
@@ -355,6 +365,15 @@ fun MiooDaoNavGraph(
             navController,
             reducedMotion,
             predictiveBackEnabled,
+            initialThreadId = initialThreadId,
+            consumeInstantOpen = { entry ->
+                val target = instantThreadTarget
+                val match = target != null &&
+                    entry.destination.route == Screen.Thread.route &&
+                    entry.arguments?.getString("threadId") == target
+                if (match) instantThreadTarget = null
+                match
+            },
             registerBackRequest = { requestPageBack = it },
             onCommitBack = { entry ->
                 committingPageBack = true
@@ -510,13 +529,22 @@ fun MiooDaoNavGraph(
             Screen.Thread.route -> {
                 PageBackdrop {
                     val viewModel: ThreadViewModel = hiltViewModel(entry)
+                    val isRootExternalThread = !initialThreadId.isNullOrBlank() &&
+                        navController.previousBackStackEntry == null &&
+                        navBackStackEntry?.id == entry.id
                     ThreadScreen(
                         viewModel = viewModel,
                         onBackClick = {
-                            if (committingPageBack) navController.popBackStack() else requestPageBack?.invoke()
+                            if (navController.previousBackStackEntry == null) {
+                                hostActivity?.finish()
+                            } else if (committingPageBack) {
+                                navController.popBackStack()
+                            } else {
+                                requestPageBack?.invoke()
+                            }
                         },
                         onNavigateToThread = navigateToThread,
-                        registerSystemBack = remember(entry.id) {
+                        registerSystemBack = if (isRootExternalThread) null else remember(entry.id) {
                             { handler ->
                                 if (handler == null) threadLeaveHandlers.remove(entry.id)
                                 else threadLeaveHandlers[entry.id] = handler
@@ -558,14 +586,17 @@ private fun ParallaxPageHost(
     controller: NavHostController,
     reducedMotion: Boolean,
     predictiveBackEnabled: Boolean,
+    initialThreadId: String? = null,
+    consumeInstantOpen: (NavBackStackEntry) -> Boolean = { false },
     registerBackRequest: ((() -> Unit)?) -> Unit,
     onCommitBack: (NavBackStackEntry) -> Boolean,
     content: @Composable (NavBackStackEntry) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val storeOwner = checkNotNull(LocalViewModelStoreOwner.current)
-    val graph = remember(controller) {
-        controller.createGraph(startDestination = Screen.Home.route) {
+    val startDestination = if (!initialThreadId.isNullOrBlank()) Screen.Thread.route else Screen.Home.route
+    val graph = remember(controller, startDestination, initialThreadId) {
+        controller.createGraph(startDestination = startDestination) {
             composable(Screen.Home.route) {}
             composable(Screen.Search.route) {}
             composable(Screen.SettingsDetail.route) {}
@@ -573,8 +604,14 @@ private fun ParallaxPageHost(
             composable(
                 Screen.Thread.route,
                 arguments = listOf(
-                    navArgument("threadId") { type = NavType.StringType },
-                    navArgument("replyDraftId") { type = NavType.LongType; defaultValue = 0L }
+                    navArgument("threadId") {
+                        type = NavType.StringType
+                        if (!initialThreadId.isNullOrBlank()) defaultValue = initialThreadId
+                    },
+                    navArgument("replyDraftId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    }
                 )
             ) {}
         }
@@ -609,9 +646,10 @@ private fun ParallaxPageHost(
         val activeIds = entries.map { it.id }.toSet()
         entries.forEachIndexed { index, entry ->
             if (layers.none { it.entry.id == entry.id }) {
-                val layer = PageLayer(entry, initiallyOpen = index == 0 || reducedMotion)
+                val instant = index == 0 || reducedMotion || consumeInstantOpen(entry)
+                val layer = PageLayer(entry, initiallyOpen = instant)
                 layers.add(layer)
-                if (index > 0 && !reducedMotion) {
+                if (!instant) {
                     layer.animation = scope.launch {
                         layer.firstLayout.await()
                         withFrameNanos { }
@@ -808,8 +846,8 @@ private fun MainTabs(
     }
 
     LaunchedEffect(Unit) {
-        // Warm History after cold start settles so its first open and return to Board don't hitch.
-        kotlinx.coroutines.delay(1800)
+        // Warm History well after initial cold-start browsing + image load window settles.
+        kotlinx.coroutines.delay(8000)
         if (2 !in mountedTabs) mountedTabs = mountedTabs + 2
     }
 
