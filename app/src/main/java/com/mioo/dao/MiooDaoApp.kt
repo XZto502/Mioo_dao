@@ -248,6 +248,7 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
             // No crossfade on cold path — less GPU/animation work during first flings
             .crossfade(false)
             .allowHardware(true)
+            .bitmapFactoryMaxParallelism(2)
             .bitmapConfig(
                 if (lowRam) android.graphics.Bitmap.Config.RGB_565
                 else android.graphics.Bitmap.Config.ARGB_8888

@@ -18,11 +18,40 @@ private val readingMonthDayMinutes = DateTimeFormatter.ofPattern("MM-dd HH:mm", 
 private val readingYearDaySeconds = DateTimeFormatter.ofPattern("yy-MM-dd HH:mm:ss", Locale.ROOT)
 private val readingYearDayMinutes = DateTimeFormatter.ofPattern("yy-MM-dd HH:mm", Locale.ROOT)
 
+private class ParsedReadingTime(val value: LocalDateTime?)
+
+private val readingTimeCacheLock = Any()
+private val parsedReadingTimeCache =
+    object : LinkedHashMap<String, ParsedReadingTime>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ParsedReadingTime>?): Boolean =
+            size > 512
+    }
+
+private fun parseServerReadingTime(trimmed: String): LocalDateTime? {
+    synchronized(readingTimeCacheLock) {
+        parsedReadingTimeCache[trimmed]?.let { return it.value }
+    }
+    val match = serverReadingTime.matchEntire(trimmed)
+    val parsed = if (match != null) {
+        runCatching {
+            LocalDateTime.parse("${match.groupValues[1]} ${match.groupValues[2]}", readingTimeParser)
+        }.getOrNull()
+    } else null
+    synchronized(readingTimeCacheLock) {
+        parsedReadingTimeCache[trimmed] = ParsedReadingTime(parsed)
+    }
+    return parsed
+}
+
+internal fun prewarmReadingTimes(rawTimes: Collection<String>) {
+    for (raw in rawTimes) {
+        val trimmed = raw.trim()
+        if (trimmed.isNotEmpty()) parseServerReadingTime(trimmed)
+    }
+}
+
 internal fun formatReadingTime(raw: String, now: LocalDateTime = LocalDateTime.now()): String {
-    val match = serverReadingTime.matchEntire(raw.trim()) ?: return raw
-    val time = runCatching {
-        LocalDateTime.parse("${match.groupValues[1]} ${match.groupValues[2]}", readingTimeParser)
-    }.getOrNull() ?: return raw
+    val time = parseServerReadingTime(raw.trim()) ?: return raw
     return formatReadingDateTime(time, now)
 }
 

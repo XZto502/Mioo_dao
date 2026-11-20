@@ -540,8 +540,10 @@ fun ForumScreen(
                 key(currentForumId) {
                     ForumThreadListPane(
                         forumKey = currentForumId,
-                        forumNames = remember(uiState.forumGroups) {
-                            uiState.forumGroups.flatMap { it.forums }.associate { it.id to it.name }
+                        forumNames = remember(uiState.forumGroups, currentForumId) {
+                            if (currentForumId == "-1") {
+                                uiState.forumGroups.flatMap { it.forums }.associate { it.id to it.name }
+                            } else emptyMap()
                         },
                         previewMaxLines = previewMaxLines,
                         displayItems = uiState.displayItems,
@@ -996,20 +998,22 @@ private fun ForumThreadListPane(
         onFirstScreenReady()
     }
 
-    // Cold head prewarm: only first viewport (4) so first paint wins CPU over Default parse.
+    // Cold head prewarm: only first viewport (4) so active scroll never fights background HTML parsing/locks.
+    // Remaining rows warm cleanly inside the idle-only snapshotFlow below when scrolling pauses.
     LaunchedEffect(forumKey, listReady, quoteLinkColor, prewarmDarkTheme) {
         if (!listReady || displayItems.isEmpty()) return@LaunchedEffect
-        val head = displayItems.take(4).map { it.postData.content }
-        withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.HtmlParseCache.prewarm(head, quoteLinkColor, prewarmDarkTheme)
+        val headCount = minOf(4, displayItems.size)
+        val headHtml = ArrayList<String>(headCount)
+        for (i in 0 until headCount) {
+            headHtml.add(displayItems[i].postData.content)
         }
-        // Remainder of first page after first composition window
-        delay(120)
-        if (displayItems.size > 4) {
-            val rest = displayItems.drop(4).take(8).map { it.postData.content }
-            withContext(Dispatchers.Default) {
-                com.mioo.dao.ui.components.HtmlParseCache.prewarm(rest, quoteLinkColor, prewarmDarkTheme)
-            }
+        withContext(Dispatchers.Default) {
+            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                headHtml,
+                quoteLinkColor,
+                prewarmDarkTheme,
+                compactBlankLines = true
+            )
         }
     }
     LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, warmEnabled) {
@@ -1028,30 +1032,21 @@ private fun ForumThreadListPane(
                 val start = first.coerceAtLeast(0)
                 val end = (last + 5).coerceAtMost(displayItems.size)
                 if (start >= end) return@collect
-                val slice = displayItems.subList(start, end).map { it.postData.content }
+                val slice = displayItems.subList(start, end)
+                val htmlSlice = slice.map { it.postData.content }
+                val timeSlice = slice.map { it.postData.createdAt }
                 withContext(Dispatchers.Default) {
-                    com.mioo.dao.ui.components.HtmlParseCache.prewarm(slice, quoteLinkColor, prewarmDarkTheme)
+                    com.mioo.dao.ui.components.prewarmReadingTimes(timeSlice)
+                    com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                        htmlSlice,
+                        quoteLinkColor,
+                        prewarmDarkTheme,
+                        compactBlankLines = true
+                    )
                 }
             }
     }
 
-    // Preserve reading anchor if cold-start SWR network refresh updates items after user starts scrolling.
-    var previousDisplayItems by remember(forumKey) { mutableStateOf(displayItems) }
-    LaunchedEffect(forumKey, displayItems) {
-        val oldItems = previousDisplayItems
-        previousDisplayItems = displayItems
-        if (oldItems.isNotEmpty() && displayItems.isNotEmpty() && oldItems.first().id != displayItems.first().id) {
-            val anchorIndex = listState.firstVisibleItemIndex
-            val anchorOffset = listState.firstVisibleItemScrollOffset
-            if (anchorIndex > 0 || anchorOffset > 0) {
-                val anchorId = oldItems.getOrNull(anchorIndex)?.id
-                val newIndex = if (anchorId != null) displayItems.indexOfFirst { it.id == anchorId } else -1
-                if (newIndex >= 0 && newIndex != anchorIndex) {
-                    listState.scrollToItem(newIndex, anchorOffset)
-                }
-            }
-        }
-    }
 
     // Thumbnails only enable after continuous scroll idle so they never pop in mid-drag.
     LaunchedEffect(forumKey, listReady, warmEnabled) {
@@ -1076,7 +1071,7 @@ private fun ForumThreadListPane(
         listState = listState,
         sizePx = ListThumbImage.SIZE_PX,
         ahead = 2,
-        initialDelayMs = 500,
+        initialDelayMs = 450,
         // Prefetch only when not flinging (see PrefetchListImages)
         enabled = warmEnabled && showImages && listReady
     )

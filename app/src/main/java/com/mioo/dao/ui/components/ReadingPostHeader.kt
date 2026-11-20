@@ -153,14 +153,16 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
             Spacer(Modifier.width(6.dp))
             ReadingPill(forumName)
         }
+        val baseMetaStyle = readingMetaStyle()
+        val metaClockStyle = remember(baseMetaStyle) { baseMetaStyle.copy(fontWeight = FontWeight.Normal) }
         val formattedTime = remember(post.createdAt) { formatReadingTime(post.createdAt) }
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(" · $formattedTime", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
+            Text(" · $formattedTime", style = metaClockStyle,
                 color = colors.onSurfaceVariant.copy(alpha = 0.75f),
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
         }
-        Text("No.${post.id}", modifier = numberModifier, style = readingMetaStyle(),
+        Text("No.${post.id}", modifier = numberModifier, style = baseMetaStyle,
             color = colors.onSurfaceVariant.copy(alpha = 0.75f),
             maxLines = 1, softWrap = false)
     }

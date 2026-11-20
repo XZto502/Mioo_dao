@@ -511,19 +511,40 @@ object HtmlParseCache {
         htmlList: Collection<String>,
         quoteLinkColor: Color,
         darkTheme: Boolean = false,
-        dicePreset: DiceRulePreset? = null
+        dicePreset: DiceRulePreset? = null,
+        compactBlankLines: Boolean = false,
+        trimOuterWhitespace: Boolean = false
     ) {
         if (htmlList.isEmpty()) return
         val colorArgb = quoteLinkColor.toArgb()
+        val needVariant = compactBlankLines || trimOuterWhitespace
+        val variantIndex = (if (compactBlankLines) 1 else 0) + (if (trimOuterWhitespace) 2 else 0)
         for (html in htmlList) {
             if (html.isBlank()) continue
             val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
-            val hit = synchronized(lock) { cache.containsKey(key) }
-            if (hit) continue
+            val existingEntry = synchronized(lock) { cache[key]?.entry }
+            if (existingEntry != null) {
+                if (!needVariant || existingEntry.variants[variantIndex] != null) continue
+                val variant = prepareHtmlPreview(existingEntry.parsed.annotated, compactBlankLines, trimOuterWhitespace)
+                synchronized(lock) {
+                    cache[key]?.entry?.let { current ->
+                        if (current.variants[variantIndex] == null) {
+                            val variants = current.variants.copyOf()
+                            variants[variantIndex] = variant
+                            putEntry(key, Entry(current.parsed, variants))
+                        }
+                    }
+                }
+                continue
+            }
             val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
             val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
+            val variants = arrayOfNulls<AnnotatedString>(4)
+            if (needVariant) {
+                variants[variantIndex] = prepareHtmlPreview(parsed.annotated, compactBlankLines, trimOuterWhitespace)
+            }
             synchronized(lock) {
-                putEntry(key, Entry(parsed))
+                putEntry(key, Entry(parsed, variants))
             }
         }
     }

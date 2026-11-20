@@ -44,6 +44,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -69,10 +70,14 @@ object ListThumbImage {
      * Use 288 so decode/upload is cheaper while still sharp on xxhdpi; Coil INEXACT keeps cache hits stable.
      */
     const val SIZE_PX: Int = 288
-    const val MAX_DECODE_PX: Int = 768
+    const val MAX_DECODE_PX: Int = 480
 
-    fun request(context: Context, imageUrl: String): ImageRequest {
-        return ImageRequest.Builder(context)
+    fun request(
+        context: Context,
+        imageUrl: String,
+        onSuccessSize: ((width: Int, height: Int) -> Unit)? = null
+    ): ImageRequest {
+        val builder = ImageRequest.Builder(context)
             .data(imageUrl)
             .size(Size(MAX_DECODE_PX, MAX_DECODE_PX))
             .scale(Scale.FIT)
@@ -81,7 +86,21 @@ object ListThumbImage {
             .diskCacheKey(imageUrl)
             .crossfade(false)
             .allowHardware(true)
-            .build()
+        if (onSuccessSize != null) {
+            builder.listener(
+                onSuccess = { _, result ->
+                    val d = result.drawable
+                    onSuccessSize(d.intrinsicWidth, d.intrinsicHeight)
+                }
+            )
+        }
+        return builder.build()
+    }
+
+    internal fun recordSize(listUrl: String, width: Int, height: Int) {
+        if (width > 0 && height > 0) {
+            thumbSizeCache.put(listUrl, IntSize(width, height))
+        }
     }
 }
 
@@ -104,17 +123,23 @@ fun ListThumbAsyncImage(
 ) {
     val context = LocalContext.current
     val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
+    val memoryKey = remember(listUrl) { MemoryCache.Key(listUrl) }
     var imgSize by remember(listUrl) {
-        val bitmap = context.imageLoader.memoryCache?.get(MemoryCache.Key(listUrl))?.bitmap
-        mutableStateOf(thumbSizeCache.get(listUrl) ?: bitmap?.let { IntSize(it.width, it.height) })
+        val cached = thumbSizeCache.get(listUrl)
+        val resolved = cached ?: context.imageLoader.memoryCache?.get(memoryKey)?.bitmap?.let {
+            IntSize(it.width, it.height).also { sz -> thumbSizeCache.put(listUrl, sz) }
+        }
+        mutableStateOf(resolved)
     }
     val ratio = imgSize?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) }
     val frameHeight = minOf(previewMaxSize, 116.dp)
+    val placeholderColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    val borderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    val placeholderPainter = remember(placeholderColor) { ColorPainter(placeholderColor) }
     val frame = if (preserveRatio) {
         modifier.size(frameHeight * (ratio ?: 1f), frameHeight)
             .clip(ThumbFrameShape)
-            .then(if (imgSize == null) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)) else Modifier)
-            .border(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), ThumbFrameShape)
+            .border(0.5.dp, borderColor, ThumbFrameShape)
     } else modifier
     val dataSaver = com.mioo.dao.ui.theme.LocalDataSaverEnabled.current
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
@@ -155,14 +180,21 @@ fun ListThumbAsyncImage(
             model = request,
             contentDescription = contentDescription,
             modifier = frame,
+            placeholder = if (preserveRatio) placeholderPainter else null,
             contentScale = ContentScale.Crop,
             alignment = Alignment.Center,
             onSuccess = { state ->
                 val drawable = state.result.drawable
-                if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
-                    val resolved = IntSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
+                val w = drawable.intrinsicWidth
+                val h = drawable.intrinsicHeight
+                if (w > 0 && h > 0) {
+                    val resolved = IntSize(w, h)
                     thumbSizeCache.put(listUrl, resolved)
-                    imgSize = resolved
+                    val nextRatio = (w.toFloat() / h).coerceIn(0.48f, 2.1f)
+                    val curRatio = ratio ?: 1f
+                    if (kotlin.math.abs(nextRatio - curRatio) >= 0.02f) {
+                        imgSize = resolved
+                    }
                 }
             },
             onError = { if (!useFull) useFull = true }

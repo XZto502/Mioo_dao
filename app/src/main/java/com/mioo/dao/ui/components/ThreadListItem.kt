@@ -53,32 +53,7 @@ fun List<Thread>.toFilteredThreadListItems(
     blockedKeywords: List<String>
 ): List<ThreadListItem> {
     if (isEmpty()) return emptyList()
-    val matcher = KeywordMatcher.build(blockedKeywords)
-    val result = ArrayList<ThreadListItem>(size)
-    for (thread in this) {
-        if (thread.idStr in blockedThreads) continue
-        if (thread.userHash in blockedUsers) continue
-        if (!matcher.isEmpty) {
-            val haystack = buildString(thread.content.length + (thread.title?.length ?: 0) + 1) {
-                thread.title?.let { append(it); append('\n') }
-                append(thread.content)
-            }.lowercase()
-            if (matcher.containsMatch(haystack, textIsLowercase = true)) continue
-        }
-        result.add(
-            ThreadListItem(
-                id = thread.id,
-                idStr = thread.idStr,
-                userHash = thread.userHash,
-                replyCount = thread.replyCount ?: 0,
-                postData = thread.toPostData(),
-                rawContent = thread.content,
-                hasImage = !thread.img.isNullOrBlank(),
-                forumId = thread.fidStr
-            )
-        )
-    }
-    return result
+    return toFilteredThreadListItems(blockedThreads, blockedUsers, KeywordMatcher.build(blockedKeywords))
 }
 
 /**
@@ -91,6 +66,7 @@ fun List<Thread>.toFilteredThreadListItems(
     keywordMatcher: KeywordMatcher
 ): List<ThreadListItem> {
     if (isEmpty()) return emptyList()
+    val rawTimes = ArrayList<String>(size)
     val result = ArrayList<ThreadListItem>(size)
     for (thread in this) {
         if (thread.idStr in blockedThreads) continue
@@ -102,19 +78,22 @@ fun List<Thread>.toFilteredThreadListItems(
             }.lowercase()
             if (keywordMatcher.containsMatch(haystack, textIsLowercase = true)) continue
         }
+        val postData = thread.toPostData()
+        rawTimes.add(postData.createdAt)
         result.add(
             ThreadListItem(
                 id = thread.id,
                 idStr = thread.idStr,
                 userHash = thread.userHash,
                 replyCount = thread.replyCount ?: 0,
-                postData = thread.toPostData(),
+                postData = postData,
                 rawContent = thread.content,
                 hasImage = !thread.img.isNullOrBlank(),
                 forumId = thread.fidStr
             )
         )
     }
+    prewarmReadingTimes(rawTimes)
     return result
 }
 

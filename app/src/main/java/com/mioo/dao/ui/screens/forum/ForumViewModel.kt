@@ -71,6 +71,7 @@ class ForumViewModel @Inject constructor(
     private var blockedThreads: Set<String> = emptySet()
     private var blockedUsers: Set<String> = emptySet()
     private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
+    private var appliedBlockFilters: Triple<Set<String>, Set<String>, List<String>>? = null
     /** Pages skipped because every row was hidden by block rules. Caps auto-follow. */
     private var blockedPageSkips = 0
     private var refreshGeneration = 0L
@@ -93,6 +94,7 @@ class ForumViewModel @Inject constructor(
             blockedThreads = snap.blockedThreads.toHashSet()
             blockedUsers = snap.blockedUsers.toHashSet()
             keywordMatcher = KeywordMatcher.build(snap.blockedKeywords)
+            appliedBlockFilters = Triple(blockedThreads, blockedUsers, snap.blockedKeywords)
             forumId = snap.lastForumId
             _uiState.update { it.copy(currentForumName = snap.lastForumName) }
             // First network/disk slot = timeline/showf (SWR cache paints immediately)
@@ -106,8 +108,13 @@ class ForumViewModel @Inject constructor(
                 .map { Triple(it.blockedThreads, it.blockedUsers, it.blockedKeywords) }
                 .distinctUntilChanged()
                 .collect { (threads, users, keywords) ->
-                    blockedThreads = threads.toHashSet()
-                    blockedUsers = users.toHashSet()
+                    val threadSet = threads.toHashSet()
+                    val userSet = users.toHashSet()
+                    val nextFilters = Triple<Set<String>, Set<String>, List<String>>(threadSet, userSet, keywords)
+                    if (nextFilters == appliedBlockFilters) return@collect
+                    appliedBlockFilters = nextFilters
+                    blockedThreads = threadSet
+                    blockedUsers = userSet
                     keywordMatcher = KeywordMatcher.build(keywords)
                     if (_uiState.value.threads.isNotEmpty()) {
                         rebuildDisplayItems()
@@ -115,9 +122,9 @@ class ForumViewModel @Inject constructor(
                 }
         }
 
-        // Board drawer catalog after list fling window — never share bandwidth with cold list.
+        // Board drawer catalog after cold start + first scroll window — never share CPU/bandwidth with cold list.
         viewModelScope.launch {
-            delay(2000)
+            delay(2800)
             if (_uiState.value.forumGroups.isEmpty()) {
                 loadForumGroupsSync()
             }
