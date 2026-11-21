@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -59,6 +60,9 @@ import coil.size.Size
 import coil.imageLoader
 import coil.memory.MemoryCache
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 
 /**
  * Shared list-thumbnail decode size (px). Keep prefetch + card requests aligned
@@ -124,20 +128,27 @@ fun ListThumbAsyncImage(
     val context = LocalContext.current
     val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
     val memoryKey = remember(listUrl) { MemoryCache.Key(listUrl) }
-    var imgSize by remember(listUrl) {
+    val imageSize = remember(listUrl) {
         val cached = thumbSizeCache.get(listUrl)
         val resolved = cached ?: context.imageLoader.memoryCache?.get(memoryKey)?.bitmap?.let {
             IntSize(it.width, it.height).also { sz -> thumbSizeCache.put(listUrl, sz) }
         }
         mutableStateOf(resolved)
     }
-    val ratio = imgSize?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) }
     val frameHeight = minOf(previewMaxSize, 116.dp)
     val placeholderColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
     val borderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
     val placeholderPainter = remember(placeholderColor) { ColorPainter(placeholderColor) }
     val frame = if (preserveRatio) {
-        modifier.size(frameHeight * (ratio ?: 1f), frameHeight)
+        modifier.layout { measurable, constraints ->
+            // The image result can change the width. Read it during measurement
+            // so a download finishing does not recompose the preview.
+            val ratio = imageSize.value?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) } ?: 1f
+            val width = constraints.constrainWidth((frameHeight * ratio).roundToPx())
+            val height = constraints.constrainHeight(frameHeight.roundToPx())
+            val thumbnail = measurable.measure(Constraints.fixed(width, height))
+            layout(width, height) { thumbnail.placeRelative(0, 0) }
+        }
             .clip(ThumbFrameShape)
             .border(0.5.dp, borderColor, ThumbFrameShape)
     } else modifier
@@ -191,9 +202,9 @@ fun ListThumbAsyncImage(
                     val resolved = IntSize(w, h)
                     thumbSizeCache.put(listUrl, resolved)
                     val nextRatio = (w.toFloat() / h).coerceIn(0.48f, 2.1f)
-                    val curRatio = ratio ?: 1f
+                    val curRatio = imageSize.value?.let { (it.width.toFloat() / it.height).coerceIn(0.48f, 2.1f) } ?: 1f
                     if (kotlin.math.abs(nextRatio - curRatio) >= 0.02f) {
-                        imgSize = resolved
+                        imageSize.value = resolved
                     }
                 }
             },

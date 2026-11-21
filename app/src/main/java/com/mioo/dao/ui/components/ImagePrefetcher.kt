@@ -53,7 +53,8 @@ fun PrefetchListImages(
             val first = info.visibleItemsInfo.firstOrNull()?.index ?: listState.firstVisibleItemIndex
             val last = info.visibleItemsInfo.lastOrNull()?.index
                 ?: (first + info.visibleItemsInfo.size.coerceAtLeast(1))
-            val start = first.coerceAtLeast(0)
+            // Visible rows already enqueue their own requests through AsyncImage.
+            val start = (last + 1).coerceAtLeast(0)
             val end = (last + ahead + 1).coerceAtMost(urlsNow.size)
             Triple(start, end, urlsNow.size)
         }
