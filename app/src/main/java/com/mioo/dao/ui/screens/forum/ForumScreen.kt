@@ -999,33 +999,28 @@ private fun ForumThreadListPane(
         onFirstScreenReady()
     }
 
-    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, warmEnabled, displayItems) {
+    val previewDicePreset = com.mioo.dao.ui.components.LocalDicePreset.current
+    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, previewDicePreset, warmEnabled, displayItems) {
         if (!warmEnabled) return@LaunchedEffect
         snapshotFlow {
-            if (listState.isScrollInProgress) return@snapshotFlow null
             val info = listState.layoutInfo
-            val first = info.visibleItemsInfo.firstOrNull()?.index ?: listState.firstVisibleItemIndex
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: first
-            first to last
+            // Advance in four-row batches. A continuous fling can cross several
+            // batches before the list is ever idle.
+            (info.visibleItemsInfo.lastOrNull()?.index ?: 0) / 4
         }
             .distinctUntilChanged()
-            .collectLatest { range ->
-                if (range == null || displayItems.isEmpty()) return@collectLatest
-                val (first, last) = range
-                val start = first.coerceAtLeast(0)
-                val end = (last + 5).coerceAtMost(displayItems.size)
+            .collectLatest { batch ->
+                val start = (batch * 4 - 4).coerceAtLeast(0)
+                val end = (batch * 4 + 12).coerceAtMost(displayItems.size)
                 if (start >= end) return@collectLatest
-                val slice = displayItems.subList(start, end)
-                val htmlSlice = slice.map { it.postData.content }
-                val timeSlice = slice.map { it.postData.createdAt }
                 withContext(Dispatchers.Default) {
-                    com.mioo.dao.ui.components.prewarmReadingTimes(timeSlice)
-                    com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                        htmlSlice,
-                        quoteLinkColor,
-                        prewarmDarkTheme,
-                        compactBlankLines = true
-                    )
+                    for (index in start until end) {
+                        kotlinx.coroutines.yield()
+                        com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                            listOf(displayItems[index].postData.content), quoteLinkColor,
+                            prewarmDarkTheme, previewDicePreset, compactBlankLines = true
+                        )
+                    }
                 }
             }
     }

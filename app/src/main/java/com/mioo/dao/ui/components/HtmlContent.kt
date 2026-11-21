@@ -626,6 +626,14 @@ fun HtmlContent(
     val mergedStyle = remember(style, surfaceColor) {
         if (style.color == Color.Unspecified) style.copy(color = surfaceColor) else style
     }
+    val spoilerRanges = remember(linkedText) {
+        linkedText.getStringAnnotations("SPOILER", 0, linkedText.length)
+    }
+    if (!enableGestures && spoilerRanges.isEmpty() && parsed.diceBadges.isEmpty()) {
+        Text(text = linkedText, modifier = modifier, style = mergedStyle, maxLines = maxLines,
+            overflow = overflow, onTextLayout = NoOpOnTextLayout)
+        return
+    }
 
     val textMeasurer = if (parsed.diceBadges.isNotEmpty()) rememberTextMeasurer() else null
     val density = LocalDensity.current
@@ -673,9 +681,6 @@ fun HtmlContent(
     }
 
     var revealedSpoilers by remember(html) { mutableStateOf(emptySet<String>()) }
-    val spoilerRanges = remember(linkedText) {
-        linkedText.getStringAnnotations("SPOILER", 0, linkedText.length)
-    }
     val reducedMotion = isReducedMotionEnabled()
     val spoilerProgress = spoilerRanges.map { range ->
         key(range.item) {
