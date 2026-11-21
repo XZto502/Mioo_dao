@@ -987,7 +987,6 @@ private fun ForumThreadListPane(
      * showImages uses rememberSaveable so thread detail → back does not flash empty thumbs.
      */
     val listReady = displayItems.isNotEmpty()
-    val isThumbnailListScrolling = remember(listState) { { listState.isScrollInProgress } }
     var showImages by rememberSaveable(forumKey) { mutableStateOf(false) }
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
@@ -1135,7 +1134,6 @@ private fun ForumThreadListPane(
                 fling = responsiveFling,
                 previewMaxLines = previewMaxLines,
                 showImage = showImages,
-                isThumbnailListScrolling = isThumbnailListScrolling,
                 emptyStringLambda = emptyStringLambda,
                 onNavigateToThread = onNavigateToThread,
                 onImageClick = onImageClick,
@@ -1206,7 +1204,6 @@ private fun ForumThreadRow(
     fling: ResponsiveListFling,
     previewMaxLines: Int,
     showImage: Boolean,
-    isThumbnailListScrolling: () -> Boolean,
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
     onImageClick: (String) -> Unit,
@@ -1229,8 +1226,7 @@ private fun ForumThreadRow(
         onLongClick = onLongClick,
         contentMaxLines = previewMaxLines,
         compactPreviewBlankLines = true,
-        showImage = showImage && item.hasImage,
-        isThumbnailListScrolling = isThumbnailListScrolling
+        showImage = showImage && item.hasImage
     )
 }
 

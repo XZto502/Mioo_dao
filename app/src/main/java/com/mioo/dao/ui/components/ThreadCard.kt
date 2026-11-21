@@ -72,8 +72,7 @@ fun ThreadCard(
     shape: androidx.compose.ui.graphics.Shape = MaterialTheme.shapes.medium,
     onNumberClick: (() -> Unit)? = null,
     forumName: String? = null,
-    showReplyCount: Boolean = true,
-    isThumbnailListScrolling: (() -> Boolean)? = null
+    showReplyCount: Boolean = true
 ) {
     val border = readingCardBorder()
     // CardDefaults.* are @Composable — call at composition level, not inside remember {}
@@ -144,7 +143,6 @@ fun ThreadCard(
                     Spacer(modifier = Modifier.height(10.dp))
                 if (showImage) {
                     ListThumbAsyncImage(imageUrl, "串附图", preserveRatio = true,
-                        isListScrolling = isThumbnailListScrolling,
                         modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() },
                             indication = null) { onImageClick(imageUrl) })
                 } else {

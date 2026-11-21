@@ -10,7 +10,6 @@ import androidx.compose.animation.core.tween
 import com.mioo.dao.ui.theme.MiooMotion
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -33,13 +32,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -48,13 +45,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
-import coil.compose.rememberAsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
@@ -64,9 +59,6 @@ import coil.size.Size
 import coil.imageLoader
 import coil.memory.MemoryCache
 import androidx.compose.ui.unit.IntSize
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 
 /**
  * Shared list-thumbnail decode size (px). Keep prefetch + card requests aligned
@@ -127,8 +119,7 @@ fun ListThumbAsyncImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     preserveRatio: Boolean = false,
-    previewMaxSize: androidx.compose.ui.unit.Dp = 120.dp,
-    isListScrolling: (() -> Boolean)? = null
+    previewMaxSize: androidx.compose.ui.unit.Dp = 120.dp
 ) {
     val context = LocalContext.current
     val listUrl = remember(imageUrl) { IslandImage.listUrl(imageUrl) }
@@ -145,8 +136,8 @@ fun ListThumbAsyncImage(
     val placeholderColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
     val borderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
     val placeholderPainter = remember(placeholderColor) { ColorPainter(placeholderColor) }
-    fun frameFor(aspectRatio: Float?): Modifier = if (preserveRatio) {
-        modifier.size(frameHeight * (aspectRatio ?: 1f), frameHeight)
+    val frame = if (preserveRatio) {
+        modifier.size(frameHeight * (ratio ?: 1f), frameHeight)
             .clip(ThumbFrameShape)
             .border(0.5.dp, borderColor, ThumbFrameShape)
     } else modifier
@@ -154,7 +145,7 @@ fun ListThumbAsyncImage(
     var manualLoaded by rememberSaveable(imageUrl) { mutableStateOf(false) }
     if (dataSaver && !manualLoaded) {
         // 省流量模式：占位不加载，点击才拉这一张
-        Box(frameFor(ratio), contentAlignment = Alignment.CenterStart) {
+        Box(frame, contentAlignment = Alignment.CenterStart) {
         Box(
             modifier = Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
@@ -185,49 +176,10 @@ fun ListThumbAsyncImage(
         ListThumbImage.request(context, currentUrl)
     }
 
-    if (isListScrolling != null) {
-        val loader = rememberAsyncImagePainter(model = request, contentScale = ContentScale.Crop)
-        var displayed by remember(imageUrl) { mutableStateOf<Painter?>(null) }
-        // Keep a completed result off the drawing tree until the gesture and its
-        // fling have settled. Existing thumbnails stay visible.
-        LaunchedEffect(loader, request, listUrl, isListScrolling) {
-            snapshotFlow { loader.state }.collectLatest { state ->
-                when (state) {
-                    is AsyncImagePainter.State.Success -> {
-                        val drawable = state.result.drawable
-                        val width = drawable.intrinsicWidth
-                        val height = drawable.intrinsicHeight
-                        ListThumbImage.recordSize(listUrl, width, height)
-                        do {
-                            snapshotFlow { isListScrolling() }.first { !it }
-                            delay(80)
-                        } while (isListScrolling())
-                        android.os.Trace.beginSection("Mioo.thumbnail.publish")
-                        try {
-                            if (width > 0 && height > 0) imgSize = IntSize(width, height)
-                            displayed = state.painter
-                        } finally {
-                            android.os.Trace.endSection()
-                        }
-                    }
-                    is AsyncImagePainter.State.Error -> if (!useFull) useFull = true
-                    else -> Unit
-                }
-            }
-        }
-        Image(
-            painter = displayed ?: placeholderPainter,
-            contentDescription = contentDescription,
-            modifier = frameFor(ratio),
-            contentScale = contentScale
-        )
-        return
-    }
-
     AsyncImage(
             model = request,
             contentDescription = contentDescription,
-            modifier = frameFor(ratio),
+            modifier = frame,
             placeholder = if (preserveRatio) placeholderPainter else null,
             contentScale = ContentScale.Crop,
             alignment = Alignment.Center,
