@@ -82,10 +82,17 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
         // Read the image-cache cap before the first picture. DataStore only — no Hilt graph.
         appScope.launch(Dispatchers.IO) {
+            var warmedLoader = false
             runCatching {
                 SettingsDataStore(this@MiooDaoApp).cacheLimitMbFlow
                     .distinctUntilChanged()
-                    .collect { applyImageCacheLimit(it) }
+                    .collect {
+                        applyImageCacheLimit(it)
+                        if (!warmedLoader) {
+                            warmedLoader = true
+                            Coil.imageLoader(this@MiooDaoApp).memoryCache
+                        }
+                    }
             }
         }
 
@@ -128,14 +135,6 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
                     com.mioo.dao.notification.OfflineUpdateScheduler.apply(this@MiooDaoApp, enabled, wifiOnly, !initialPolicy)
                     initialPolicy = false
                 }
-        }
-        appScope.launch {
-            // After cold list + splash typically done
-            kotlinx.coroutines.delay(1800)
-            runCatching {
-                val loader = coil.Coil.imageLoader(this@MiooDaoApp)
-                loader.memoryCache
-            }
         }
         appScope.launch {
             kotlinx.coroutines.delay(3500)

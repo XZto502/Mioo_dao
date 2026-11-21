@@ -38,7 +38,6 @@ import javax.inject.Inject
 data class ForumUiState(
     val threads: List<Thread> = emptyList(),
     val displayItems: List<ThreadListItem> = emptyList(),
-    val forumGroups: List<ForumGroup> = emptyList(),
     val currentForumName: String = "时间线",
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
@@ -63,6 +62,9 @@ class ForumViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(ForumUiState())
     val uiState: StateFlow<ForumUiState> = _uiState.asStateFlow()
+
+    private val _forumGroups = MutableStateFlow<List<ForumGroup>>(emptyList())
+    val forumGroups: StateFlow<List<ForumGroup>> = _forumGroups.asStateFlow()
 
     private var currentPage = 1
     private var listJob: Job? = null
@@ -125,7 +127,7 @@ class ForumViewModel @Inject constructor(
         // Board drawer catalog after cold start + first scroll window — never share CPU/bandwidth with cold list.
         viewModelScope.launch {
             delay(2800)
-            if (_uiState.value.forumGroups.isEmpty()) {
+            if (_forumGroups.value.isEmpty()) {
                 loadForumGroupsSync()
             }
         }
@@ -134,7 +136,7 @@ class ForumViewModel @Inject constructor(
     private suspend fun loadForumGroupsSync() {
         forumRepository.getForumList().collect { response ->
             if (response is XdResponse.Success) {
-                _uiState.update { it.copy(forumGroups = response.data) }
+                _forumGroups.value = response.data
             }
         }
     }
@@ -185,7 +187,7 @@ class ForumViewModel @Inject constructor(
         viewModelScope.launch {
             forumRepository.getForumList().collect { response ->
                 if (response is XdResponse.Success) {
-                    _uiState.update { it.copy(forumGroups = response.data) }
+                    _forumGroups.value = response.data
                 }
             }
         }

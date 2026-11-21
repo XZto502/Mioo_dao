@@ -90,6 +90,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -113,6 +114,7 @@ import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
+import com.mioo.dao.ui.components.awaitContinuousIdle
 import com.mioo.dao.ui.theme.readingBackground
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
@@ -153,6 +155,7 @@ fun ForumScreen(
     /** 与主框架共用，使抽屉盖在底部导航之上。 */
     drawerState: DrawerState,
     boardDrawerSlot: BoardDrawerSlot,
+    onScrollInProgressChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 
     headerBitmap: androidx.compose.ui.graphics.ImageBitmap? = null,
@@ -169,6 +172,15 @@ fun ForumScreen(
     val currentForumId = viewModel.forumId
     val listState = rememberSaveable(currentForumId, saver = LazyListState.Saver) {
         LazyListState()
+    }
+    val latestScrollChange = rememberUpdatedState(onScrollInProgressChange)
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { latestScrollChange.value(it) }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { latestScrollChange.value(false) }
     }
     val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -331,9 +343,10 @@ fun ForumScreen(
         }
     }
 
-    LaunchedEffect(drawerState.currentValue) {
-        if (drawerState.currentValue != DrawerValue.Open) return@LaunchedEffect
-        if (uiState.forumGroups.isEmpty()) {
+    LaunchedEffect(drawerState.currentValue, drawerState.targetValue) {
+        val visible = drawerState.currentValue != DrawerValue.Closed ||
+            drawerState.targetValue != DrawerValue.Closed
+        if (visible && viewModel.forumGroups.value.isEmpty()) {
             viewModel.loadForumGroups()
         }
     }
@@ -346,6 +359,18 @@ fun ForumScreen(
     }
 
     val allowBackgroundWarm = !drawerBlocksMainList && !boardSwitchQuiet
+    val drawerWarmedState = remember { mutableStateOf(false) }
+    val drawerVisibleState = rememberUpdatedState(drawerBlocksMainList)
+    LaunchedEffect(listState, drawerBlocksMainList) {
+        if (drawerBlocksMainList) {
+            drawerWarmedState.value = true
+            return@LaunchedEffect
+        }
+        if (drawerWarmedState.value) return@LaunchedEffect
+        viewModel.forumGroups.first { it.isNotEmpty() }
+        awaitContinuousIdle(snapshotFlow { listState.isScrollInProgress }, 1200L)
+        drawerWarmedState.value = true
+    }
 
     val selectBoard = remember(viewModel, drawerState, scope, switchingBoardState) {
         { id: String, name: String ->
@@ -375,6 +400,7 @@ fun ForumScreen(
                 viewModel = viewModel,
                 settingsViewModel = settingsViewModel,
                 drawerListState = drawerListState,
+                populateList = { drawerVisibleState.value || drawerWarmedState.value },
                 onSelectBoard = selectBoard
             )
         }
@@ -539,13 +565,10 @@ fun ForumScreen(
                 // Single list instance — pass only list fields so chrome/drawer flags
                 // do not force every row to recompose.
                 key(currentForumId) {
+                    val timelineForumNames = rememberTimelineForumNames(currentForumId, viewModel)
                     ForumThreadListPane(
                         forumKey = currentForumId,
-                        forumNames = remember(uiState.forumGroups, currentForumId) {
-                            if (currentForumId == "-1") {
-                                uiState.forumGroups.flatMap { it.forums }.associate { it.id to it.name }
-                            } else emptyMap()
-                        },
+                        forumNames = timelineForumNames,
                         previewMaxLines = previewMaxLines,
                         displayItems = uiState.displayItems,
                         isLoading = uiState.isLoading,
@@ -704,14 +727,25 @@ fun ForumScreen(
 }
 
 @Composable
+private fun rememberTimelineForumNames(
+    forumKey: String,
+    viewModel: ForumViewModel
+): Map<String, String> {
+    if (forumKey != "-1") return emptyMap()
+    val forumGroups by viewModel.forumGroups.collectAsState()
+    return remember(forumGroups) {
+        forumGroups.flatMap { it.forums }.associate { it.id to it.name }
+    }
+}
+
+@Composable
 private fun ForumBoardDrawer(
     viewModel: ForumViewModel,
     settingsViewModel: SettingsViewModel,
     drawerListState: LazyListState,
+    populateList: () -> Boolean,
     onSelectBoard: (String, String) -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
     val context = LocalContext.current
     ModalDrawerSheet(
         modifier = Modifier
@@ -751,143 +785,163 @@ private fun ForumBoardDrawer(
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        val pinnedForumsList = remember(uiState.forumGroups, forumSettings.pinnedForums) {
-            uiState.forumGroups.flatMap { it.forums }
-                .filter { forumSettings.pinnedForums.contains(it.id) }
-                .distinctBy { it.id }
+        if (populateList()) {
+            ForumBoardDrawerList(
+                viewModel = viewModel,
+                settingsViewModel = settingsViewModel,
+                drawerListState = drawerListState,
+                onSelectBoard = onSelectBoard
+            )
         }
-        val drawerConfiguration = rememberResponsiveListConfiguration()
-        val drawerFling = rememberResponsiveListFling()
-        CompositionLocalProvider(LocalViewConfiguration provides drawerConfiguration) {
-        LazyColumn(
-            state = drawerListState,
-            flingBehavior = drawerFling,
-            modifier = Modifier.fillMaxSize(),
-            // 抽屉盖住底栏后，只留系统导航条安全区，滚到底仍能看全板块
-            contentPadding = PaddingValues(
-                top = 8.dp,
-                bottom = WindowInsets.navigationBars.asPaddingValues()
-                    .calculateBottomPadding() + 16.dp,
-                start = 12.dp,
-                end = 12.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            if (pinnedForumsList.isNotEmpty()) {
-                item(key = "header_pinned", contentType = "drawer_header") {
-                    Text(
-                        text = "置顶版块",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-                    )
-                }
-                items(pinnedForumsList, key = { "pinned_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
-                    ForumDrawerItem(
-                        name = forum.name,
-                        isSelected = forum.id == viewModel.forumId,
-                        showStar = true,
-                        starTint = MaterialTheme.colorScheme.primary,
-                        onClick = { onSelectBoard(forum.id, forum.name) },
-                        onLongClick = {
-                            val wasPinned = forumSettings.pinnedForums.contains(forum.id)
-                            settingsViewModel.togglePinForum(forum.id)
-                            Toast.makeText(
-                                context,
-                                if (wasPinned) "已取消置顶" else "已将版块置顶",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    )
-                }
-                item(key = "divider_pinned", contentType = "drawer_divider") {
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                }
-            }
+    }
+}
 
-            // Normal Forum Groups — 每组一个 item，展开/收起整体做手风琴动画
-            uiState.forumGroups.forEach { group ->
-                val groupExpanded = forumSettings.expandedForumGroups.contains(group.id)
-                item(key = "group_${group.id}", contentType = "drawer_group") {
-                    Column {
-                        Row(
+@Composable
+private fun ForumBoardDrawerList(
+    viewModel: ForumViewModel,
+    settingsViewModel: SettingsViewModel,
+    drawerListState: LazyListState,
+    onSelectBoard: (String, String) -> Unit
+) {
+    val forumGroups by viewModel.forumGroups.collectAsState()
+    val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
+    val context = LocalContext.current
+    val pinnedForumsList = remember(forumGroups, forumSettings.pinnedForums) {
+        forumGroups.flatMap { it.forums }
+            .filter { forumSettings.pinnedForums.contains(it.id) }
+            .distinctBy { it.id }
+    }
+    val drawerConfiguration = rememberResponsiveListConfiguration()
+    val drawerFling = rememberResponsiveListFling()
+    CompositionLocalProvider(LocalViewConfiguration provides drawerConfiguration) {
+    LazyColumn(
+        state = drawerListState,
+        flingBehavior = drawerFling,
+        modifier = Modifier.fillMaxSize(),
+        // 抽屉盖住底栏后，只留系统导航条安全区，滚到底仍能看全板块
+        contentPadding = PaddingValues(
+            top = 8.dp,
+            bottom = WindowInsets.navigationBars.asPaddingValues()
+                .calculateBottomPadding() + 16.dp,
+            start = 12.dp,
+            end = 12.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (pinnedForumsList.isNotEmpty()) {
+            item(key = "header_pinned", contentType = "drawer_header") {
+                Text(
+                    text = "置顶版块",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                )
+            }
+            items(pinnedForumsList, key = { "pinned_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
+                ForumDrawerItem(
+                    name = forum.name,
+                    isSelected = forum.id == viewModel.forumId,
+                    showStar = true,
+                    starTint = MaterialTheme.colorScheme.primary,
+                    onClick = { onSelectBoard(forum.id, forum.name) },
+                    onLongClick = {
+                        val wasPinned = forumSettings.pinnedForums.contains(forum.id)
+                        settingsViewModel.togglePinForum(forum.id)
+                        Toast.makeText(
+                            context,
+                            if (wasPinned) "已取消置顶" else "已将版块置顶",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+            }
+            item(key = "divider_pinned", contentType = "drawer_divider") {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
+
+        // Normal Forum Groups — 每组一个 item，展开/收起整体做手风琴动画
+        forumGroups.forEach { group ->
+            val groupExpanded = forumSettings.expandedForumGroups.contains(group.id)
+            item(key = "group_${group.id}", contentType = "drawer_group") {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = group.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${group.forums.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                        val chevronRotation by animateFloatAsState(
+                            targetValue = if (groupExpanded) 180f else 0f,
+                            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                            label = "drawerChevron"
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ExpandMore,
+                            contentDescription = if (groupExpanded) "收起分类" else "展开分类",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = group.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f)
+                                .size(18.dp)
+                                .rotate(chevronRotation)
+                        )
+                    }
+                    // 收起时 AnimatedVisibility 不组合内容，抽屉的懒加载不受影响
+                    AnimatedVisibility(
+                        visible = groupExpanded,
+                        enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                            expandVertically(
+                                animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                expandFrom = Alignment.Top
+                            ),
+                        exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
+                            shrinkVertically(
+                                animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                shrinkTowards = Alignment.Top
                             )
-                            Text(
-                                text = "${group.forums.size}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(end = 6.dp)
-                            )
-                            val chevronRotation by animateFloatAsState(
-                                targetValue = if (groupExpanded) 180f else 0f,
-                                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                                label = "drawerChevron"
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ExpandMore,
-                                contentDescription = if (groupExpanded) "收起分类" else "展开分类",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .rotate(chevronRotation)
-                            )
-                        }
-                        // 收起时 AnimatedVisibility 不组合内容，抽屉的懒加载不受影响
-                        AnimatedVisibility(
-                            visible = groupExpanded,
-                            enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                                expandVertically(
-                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                    expandFrom = Alignment.Top
-                                ),
-                            exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
-                                shrinkVertically(
-                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                    shrinkTowards = Alignment.Top
+                    ) {
+                        Column {
+                            group.forums.forEach { forum ->
+                                val isPinned = forumSettings.pinnedForums.contains(forum.id)
+                                ForumDrawerItem(
+                                    name = forum.name,
+                                    isSelected = forum.id == viewModel.forumId,
+                                    showStar = isPinned,
+                                    starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                    onClick = { onSelectBoard(forum.id, forum.name) },
+                                    onLongClick = {
+                                        settingsViewModel.togglePinForum(forum.id)
+                                        Toast.makeText(
+                                            context,
+                                            if (isPinned) "已取消置顶" else "已将版块置顶",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 )
-                        ) {
-                            Column {
-                                group.forums.forEach { forum ->
-                                    val isPinned = forumSettings.pinnedForums.contains(forum.id)
-                                    ForumDrawerItem(
-                                        name = forum.name,
-                                        isSelected = forum.id == viewModel.forumId,
-                                        showStar = isPinned,
-                                        starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                        onClick = { onSelectBoard(forum.id, forum.name) },
-                                        onLongClick = {
-                                            settingsViewModel.togglePinForum(forum.id)
-                                            Toast.makeText(
-                                                context,
-                                                if (isPinned) "已取消置顶" else "已将版块置顶",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    )
-                                }
                             }
                         }
                     }
                 }
             }
         }
-        }
+    }
     }
 }
 
@@ -1029,15 +1083,16 @@ private fun ForumThreadListPane(
     // Thumbnails only enable after continuous scroll idle so they never pop in mid-drag.
     LaunchedEffect(forumKey, listReady, warmEnabled) {
         if (!listReady || !warmEnabled || showImages) return@LaunchedEffect
-        delay(450)
-        snapshotFlow { listState.isScrollInProgress }
-            .distinctUntilChanged()
-            .collectLatest { scrolling ->
-                if (!scrolling) {
-                    delay(200)
-                    showImages = true
-                }
-            }
+        // Commit the first text-only list frames, then enable thumbnails while still idle
+        // (before human touch latency) instead of colliding 650ms into the first drag.
+        withFrameNanos { }
+        withFrameNanos { }
+        if (!listState.isScrollInProgress) {
+            showImages = true
+            return@LaunchedEffect
+        }
+        awaitContinuousIdle(snapshotFlow { listState.isScrollInProgress }, 250L)
+        showImages = true
     }
 
     val prefetchUrls = remember(displayItems, showImages) {

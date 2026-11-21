@@ -124,9 +124,7 @@ fun FeedScreen(
     if (!uiState.selectionReady) return
     val browseState = rememberSaveableStateHolder()
     val forumViewModel: ForumViewModel = hiltViewModel()
-    val forumGroups by remember(forumViewModel) {
-        forumViewModel.uiState.map { it.forumGroups }.distinctUntilChanged()
-    }.collectAsState(initial = forumViewModel.uiState.value.forumGroups)
+    val forumGroups by forumViewModel.forumGroups.collectAsState()
     LaunchedEffect(forumGroups.isEmpty()) {
         if (forumGroups.isEmpty()) forumViewModel.loadForumGroups()
     }

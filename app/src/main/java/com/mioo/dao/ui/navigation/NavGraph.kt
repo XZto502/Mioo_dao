@@ -845,9 +845,12 @@ private fun MainTabs(
         }
     }
 
+    val forumScrolling = remember { kotlinx.coroutines.flow.MutableStateFlow(false) }
+
     LaunchedEffect(Unit) {
         // Warm History well after initial cold-start browsing + image load window settles.
         kotlinx.coroutines.delay(8000)
+        com.mioo.dao.ui.components.awaitContinuousIdle(forumScrolling, 1200L)
         if (2 !in mountedTabs) mountedTabs = mountedTabs + 2
     }
 
@@ -955,6 +958,9 @@ private fun MainTabs(
                         boardHeaderMod = boardHeaderMod,
                         boardBodyMod = boardBodyMod,
                         isPageActive = isPageActive,
+                        onForumScrollInProgressChange = remember(forumScrolling) {
+                            { forumScrolling.value = it }
+                        },
                         onNavigateToSettings = onNavigateToSettings,
                         onNavigateToDrafts = onNavigateToDrafts,
                         onNavigateToSearch = onNavigateToSearch
@@ -982,6 +988,7 @@ private fun TabPageContent(
     boardHeaderMod: Modifier,
     boardBodyMod: Modifier,
     isPageActive: () -> Boolean,
+    onForumScrollInProgressChange: (Boolean) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToDrafts: () -> Unit,
     onNavigateToSearch: () -> Unit
@@ -997,6 +1004,7 @@ private fun TabPageContent(
                     dockSinkFraction = dockSinkFraction,
                     drawerState = drawerState,
                     boardDrawerSlot = boardDrawerSlot,
+                    onScrollInProgressChange = onForumScrollInProgressChange,
                     onImageViewerOpenChange = onImageViewerOpenChange,
                     onComposerOpenChange = onComposerOpenChange,
                     headerBitmap = boardHeader,
