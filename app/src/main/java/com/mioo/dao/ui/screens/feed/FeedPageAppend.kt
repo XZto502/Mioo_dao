@@ -16,6 +16,18 @@ internal fun <T> mergeChangedFirstPage(
     return current.filter { key(it) in changed } + received.filterNot { key(it) in changed }
 }
 
+internal fun <T> appendFeedRows(
+    rows: List<T>, added: List<T>, replacing: Set<String>, key: (T) -> String
+): List<T> {
+    if (replacing.isEmpty()) return if (added.isEmpty()) rows else rows + added
+    return buildList(rows.size + added.size) {
+        for (row in rows) {
+            if (key(row) !in replacing) add(row)
+        }
+        addAll(added)
+    }
+}
+
 /** Match first-occurrence paging semantics without rebuilding existing display rows. */
 internal fun <T, K> newFeedPageItems(
     existing: List<T>,

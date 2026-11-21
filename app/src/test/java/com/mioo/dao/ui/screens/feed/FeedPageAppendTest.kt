@@ -6,6 +6,25 @@ import org.junit.Test
 class FeedPageAppendTest {
     private data class Item(val id: Int, val content: String)
 
+    @Test fun confirmedChangesSurviveAnOlderFirstPage() {
+        val cached = listOf("keep", "removed")
+        val removed = applyFeedChange(cached, "removed", null) { it }
+        val current = applyFeedChange(removed, "new", "new") { it }
+        val received = listOf("keep", "removed", "another")
+        assertEquals(
+            listOf("new", "keep", "another"),
+            mergeChangedFirstPage(current, received, setOf("new", "removed")) { it }
+        )
+    }
+
+    @Test fun ordinaryAppendDoesNotScanExistingRowsForReplacement() {
+        val rows = listOf("first", "second")
+        assertSame(rows, appendFeedRows(rows, emptyList(), emptySet()) { error("No replacements") })
+        assertEquals(rows + "third",
+            appendFeedRows(rows, listOf("third"), emptySet()) { error("No replacements") })
+        assertEquals(listOf("first", "third"), appendFeedRows(rows, listOf("third"), setOf("second")) { it })
+    }
+
     @Test fun firstPageCannotSeedDuplicateKeysIntoLaterPages() {
         val first = newFeedPageItems(emptyList(), listOf(Item(1, "first"), Item(1, "duplicate"))) { it.id }
         val next = newFeedPageItems(first, listOf(Item(1, "again"), Item(2, "second"))) { it.id }

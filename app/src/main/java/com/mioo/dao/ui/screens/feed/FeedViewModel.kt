@@ -373,8 +373,8 @@ class FeedViewModel @Inject constructor(
                         val replaced = if (changed.isEmpty()) previewIds else previewIds - changed
                         _uiState.update {
                             it.copy(
-                                remoteThreads = it.remoteThreads.filterNot { thread -> thread.idStr in replaced } + added,
-                                remoteDisplayItems = it.remoteDisplayItems.filterNot { item -> item.idStr in replaced } + items
+                                remoteThreads = appendFeedRows(it.remoteThreads, added, replaced) { row -> row.idStr },
+                                remoteDisplayItems = appendFeedRows(it.remoteDisplayItems, items, replaced) { row -> row.idStr }
                             )
                         }
                         previewIds = added.mapTo(HashSet()) { it.idStr }
@@ -391,7 +391,7 @@ class FeedViewModel @Inject constructor(
                     val state = _uiState.updateAndGet {
                         it.copy(
                             hasMoreRemote = !empty,
-                            loadedRemotePage = if (previewIds.isNotEmpty()) remotePage else it.loadedRemotePage
+                            loadedRemotePage = remotePage
                         )
                     }
                     remoteFolderCache[uuid] = CachedRemoteFolder(
