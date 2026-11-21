@@ -1,7 +1,10 @@
 package com.mioo.dao.data.repository
 
 import android.content.Context
+import com.mioo.dao.data.api.extractQuotedJsonString
+import com.mioo.dao.data.model.XdResponse
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
 // Each folder has its own crash marker. It contains no cookie or subscription identifier.
@@ -14,7 +17,7 @@ internal fun cloudFeedRepairMarker(context: Context, uuid: String): File {
 
 data class CloudRemovalResult(val removed: Int, val absent: Int, val failed: Set<String>) {
     fun message(): String = when {
-        failed.isEmpty() && removed > 0 -> "已从 ${removed} 个云端收藏夹移除"
+        failed.isEmpty() && removed > 0 -> "${removed} 个云端收藏夹已确认移除"
         failed.isEmpty() -> "云端收藏夹中没有找到该串"
         removed > 0 -> "已从 ${removed} 个收藏夹移除，另有 ${failed.size} 个失败，可重试"
         else -> "${failed.size} 个收藏夹移除失败，可重试"
@@ -27,3 +30,18 @@ private val absentSubscription = Regex(
 
 internal fun isAbsentSubscription(message: String): Boolean =
     absentSubscription.matches(message.trim().trimEnd('。', '！', '!'))
+
+internal fun parseCloudFeedWrite(raw: String, removing: Boolean): XdResponse<String> {
+    val body = raw.trim().removePrefix("\uFEFF").trim()
+    val text = (extractQuotedJsonString(body) ?: body.removeSurrounding("\"")).trim()
+    val normalized = text.trimEnd('!', '！', '。')
+    val successful = if (removing) normalized == "取消订阅成功" else
+        normalized in setOf("订阅成功", "订阅大成功→_→", "订阅大成功")
+    return when {
+        successful -> XdResponse.Success(text)
+        removing && isAbsentSubscription(text) -> XdResponse.Error(text)
+        normalized in setOf("该串不存在", "该主题不存在", "请求失败", "订阅失败", "取消订阅失败") ->
+            XdResponse.Error(text)
+        else -> XdResponse.Error("收藏操作结果待确认", throwable = IOException("Unexpected cloud feed write response"))
+    }
+}

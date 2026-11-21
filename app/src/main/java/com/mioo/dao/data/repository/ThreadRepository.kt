@@ -234,16 +234,6 @@ class ThreadRepositoryImpl @Inject constructor(
     /** X-island business error (auth / deleted / rate limit) — not a transport failure. */
     private class ApiBusinessException(message: String) : Exception(message)
 
-    private fun interpretPlainFeedWrite(raw: String): XdResponse<String> {
-        val quoted = extractQuotedJsonString(raw.trim())
-        val text = (quoted ?: raw.trim().trim('"')).ifBlank { raw }
-        return if ((quoted != null && isXdBusinessPlainString(quoted)) || isAbsentSubscription(text)) {
-            XdResponse.Error(message = text)
-        } else {
-            XdResponse.Success(text)
-        }
-    }
-
     private fun File.asImagePart(): MultipartBody.Part {
         val mime = when (extension.lowercase()) {
             "png" -> "image/png"
@@ -1204,7 +1194,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 newMarker = marker.createNewFile()
                 folder.generation++
                 val response = if (entry == null) apiService.delFeed(uuid, tid) else apiService.addFeed(uuid, tid)
-                interpretPlainFeedWrite(response.string())
+                parseCloudFeedWrite(response.string(), removing = entry == null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1219,7 +1209,7 @@ class ThreadRepositoryImpl @Inject constructor(
                     } else scheduleCloudFeedRepair(uuid, folder)
                 }
             }
-            else if (newMarker) marker.delete()
+            else if (newMarker && result is XdResponse.Error && result.throwable == null) marker.delete()
             result
         }
     }
