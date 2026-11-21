@@ -188,7 +188,7 @@ fun ForumScreen(
     var switchingBoard by switchingBoardState
     val emptyStringLambda = remember { { _: String -> } }
     var handledRefreshGeneration by rememberSaveable(currentForumId) { mutableStateOf(0L) }
-    var userScrolledDuringRefresh by remember(currentForumId) { mutableStateOf(false) }
+    var alignAfterManualRefresh by remember(currentForumId) { mutableStateOf(false) }
     val refreshScrollObserver = remember(currentForumId, listState, viewModel) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -196,8 +196,8 @@ fun ForumScreen(
                 // The pull that starts a refresh is not a move away from its top.
                 if (source == NestedScrollSource.Drag && available.y != 0f &&
                     (available.y < 0f || listState.canScrollBackward) &&
-                    viewModel.uiState.value.isRefreshing) {
-                    userScrolledDuringRefresh = true
+                    alignAfterManualRefresh) {
+                    alignAfterManualRefresh = false
                 }
                 return Offset.Zero
             }
@@ -212,7 +212,7 @@ fun ForumScreen(
         if (listState.layoutInfo.totalItemsCount > 0) {
             listState.scrollToItem(0)
         }
-        userScrolledDuringRefresh = false
+        alignAfterManualRefresh = true
         viewModel.refresh()
     }
 
@@ -266,7 +266,7 @@ fun ForumScreen(
         if (pullToRefreshState.isRefreshing && !uiState.isRefreshing) {
             // A pull can only trigger at the top; don't start another list scroll
             // mutation while the release gesture is dispatching its fling.
-            userScrolledDuringRefresh = false
+            alignAfterManualRefresh = true
             viewModel.refresh()
         }
     }
@@ -293,9 +293,10 @@ fun ForumScreen(
             return@LaunchedEffect
         }
         withFrameNanos { }
-        if (!userScrolledDuringRefresh && !listState.isScrollInProgress) {
+        if (alignAfterManualRefresh && !listState.isScrollInProgress) {
             listState.scrollToItem(0)
         }
+        alignAfterManualRefresh = false
         handledRefreshGeneration = generation
     }
 
@@ -998,25 +999,7 @@ private fun ForumThreadListPane(
         onFirstScreenReady()
     }
 
-    // Cold head prewarm: only first viewport (4) so active scroll never fights background HTML parsing/locks.
-    // Remaining rows warm cleanly inside the idle-only snapshotFlow below when scrolling pauses.
-    LaunchedEffect(forumKey, listReady, quoteLinkColor, prewarmDarkTheme) {
-        if (!listReady || displayItems.isEmpty()) return@LaunchedEffect
-        val headCount = minOf(4, displayItems.size)
-        val headHtml = ArrayList<String>(headCount)
-        for (i in 0 until headCount) {
-            headHtml.add(displayItems[i].postData.content)
-        }
-        withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                headHtml,
-                quoteLinkColor,
-                prewarmDarkTheme,
-                compactBlankLines = true
-            )
-        }
-    }
-    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, warmEnabled) {
+    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, warmEnabled, displayItems) {
         if (!warmEnabled) return@LaunchedEffect
         snapshotFlow {
             if (listState.isScrollInProgress) return@snapshotFlow null
@@ -1026,12 +1009,12 @@ private fun ForumThreadListPane(
             first to last
         }
             .distinctUntilChanged()
-            .collect { range ->
-                if (range == null || displayItems.isEmpty()) return@collect
+            .collectLatest { range ->
+                if (range == null || displayItems.isEmpty()) return@collectLatest
                 val (first, last) = range
                 val start = first.coerceAtLeast(0)
                 val end = (last + 5).coerceAtMost(displayItems.size)
-                if (start >= end) return@collect
+                if (start >= end) return@collectLatest
                 val slice = displayItems.subList(start, end)
                 val htmlSlice = slice.map { it.postData.content }
                 val timeSlice = slice.map { it.postData.createdAt }
