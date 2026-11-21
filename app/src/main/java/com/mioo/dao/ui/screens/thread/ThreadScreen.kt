@@ -1438,9 +1438,9 @@ private fun ThreadChromeActions(
             expanded = showBookmarkMenu,
             onDismissRequest = { onShowBookmarkMenuChange(false) }
         ) {
-            if (chrome.isCloudSubscribed) {
+            if (chrome.isCloudSubscribed || chrome.failedRemovalFolders.isNotEmpty()) {
                 Md3MenuPillItem(
-                    label = "从云端收藏夹移除",
+                    label = if (chrome.failedRemovalFolders.isEmpty()) "从云端收藏夹移除" else "重试移除失败的收藏夹",
                     leadingIcon = Icons.Outlined.CloudOff,
                     destructive = true,
                     onClick = {

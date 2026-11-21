@@ -12,6 +12,10 @@ import com.mioo.dao.data.model.GithubRelease
 import com.mioo.dao.data.local.BookmarkEntity
 import com.mioo.dao.data.local.CacheDao
 import com.mioo.dao.data.local.CacheEntity
+import com.mioo.dao.data.local.CachePostPreview
+import com.mioo.dao.data.local.AppDatabase
+import com.mioo.dao.data.local.CloudFeedThreadEntity
+import androidx.room.withTransaction
 import com.mioo.dao.data.local.HistoryDao
 import com.mioo.dao.data.local.HistoryEntity
 import com.mioo.dao.data.local.BrowseHistoryRecord
@@ -49,6 +53,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -140,6 +145,7 @@ interface ThreadRepository {
     fun observeCloudFeedIndex(uuids: List<String>): Flow<List<com.mioo.dao.data.local.CloudFeedThreadEntity>>
     fun observeFullyIndexedCloudFolders(): Flow<List<String>>
     suspend fun syncCloudFeedIndex(uuid: String)
+    suspend fun clearRemovedCloudFolder(uuid: String)
     fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>>
 
     /** Cloud-feed membership cache: is this thread in any known 云端收藏夹? */
@@ -149,13 +155,13 @@ interface ThreadRepository {
     fun observeCloudFolderUuids(tid: String): Flow<Set<String>>
 
     /** Remove [tid] from every cloud feed it is cached under. Emits removed count. */
-    fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>>
+    fun removeCloudSubscriptions(tid: String, retryFolders: Set<String>? = null): Flow<XdResponse<CloudRemovalResult>>
 
     /** 该夹内已缓存的回复数（threadId → count，仅含 >0 的已知值）。 */
     suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int>
 
     /** 从本地 api_cache 读取已缓存的云端收藏夹页与串详情首楼，用于收藏搜索正文与卡片展示。 */
-    suspend fun getCachedThreadsByIds(feedUuids: List<String>, threadIds: Set<String>): Map<String, Thread>
+    fun observeCachedFeedPosts(feedUuids: List<String>): Flow<Map<String, CachePostPreview>>
 
     /**
      * 补抓一个云端订阅串的回复总数并写入缓存。
@@ -210,6 +216,7 @@ class ThreadRepositoryImpl @Inject constructor(
     private val cacheDao: CacheDao,
     private val progressDao: ProgressDao,
     private val cloudFeedDao: com.mioo.dao.data.local.CloudFeedDao,
+    private val database: AppDatabase,
     private val draftStorage: DraftStorage,
     private val offlineThreadDao: com.mioo.dao.data.local.OfflineThreadDao,
     private val forumRepository: ForumRepository,
@@ -230,8 +237,8 @@ class ThreadRepositoryImpl @Inject constructor(
     private fun interpretPlainFeedWrite(raw: String): XdResponse<String> {
         val quoted = extractQuotedJsonString(raw.trim())
         val text = (quoted ?: raw.trim().trim('"')).ifBlank { raw }
-        return if (quoted != null && isXdBusinessPlainString(quoted)) {
-            XdResponse.Error(message = quoted)
+        return if ((quoted != null && isXdBusinessPlainString(quoted)) || isAbsentSubscription(text)) {
+            XdResponse.Error(message = text)
         } else {
             XdResponse.Success(text)
         }
@@ -255,16 +262,21 @@ class ThreadRepositoryImpl @Inject constructor(
     private val threadListAdapter = moshi.adapter<List<Thread>>(threadListType)
     private val threadAdapter = moshi.adapter(Thread::class.java)
     private val cacheSearchAdapter = moshi.adapter(CachedThreadSearchPreview::class.java)
+    private val cacheSearchListAdapter = moshi.adapter<List<CachedThreadSearchPreview>>(
+        Types.newParameterizedType(List::class.java, CachedThreadSearchPreview::class.java)
+    )
     private val replyAdapter = moshi.adapter(Reply::class.java)
     private val stringListAdapter =
         moshi.adapter<List<String>>(Types.newParameterizedType(List::class.java, String::class.java))
     private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val postIndexBackfillLock = Mutex()
     private val refPostCache = RefPostMemoryCache<Reply>(scope = preloadScope, flowContext = Dispatchers.IO)
     init {
         preloadScope.launch {
             try {
                 // Defer periodic expiry/trim past cold-start first paint & initial scroll.
                 delay(20_000L)
+                startPostIndexBackfill()
                 while (true) {
                     cacheDao.deleteExpiredNonOfflineCache(System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000)
                     cacheDao.trimNonOfflineBytes(200L * 1024 * 1024)
@@ -445,7 +457,9 @@ class ThreadRepositoryImpl @Inject constructor(
             }
             val fetched = fetchThreadWithRaw(tid, page)
             if (!(emittedCache && cachedThread == fetched.thread)) {
-                cacheDao.insertCache(CacheEntity(cacheKey, page, fetched.rawJson))
+                val row = CacheEntity(cacheKey, page, fetched.rawJson)
+                if (page == 1) cacheDao.insertIndexedCache(row, listOf(fetched.thread))
+                else cacheDao.insertCache(row)
                 emit(XdResponse.Success(fetched.thread))
             }
             // Content must reach the collector before history lookup or persistence.
@@ -860,7 +874,7 @@ class ThreadRepositoryImpl @Inject constructor(
         }
         for (folder in folders.take(5)) {
             try {
-                val feedThreads = fetchIndexedFeedPage(folder.uuid, 1).threads
+                val feedThreads = fetchIndexedFeedPage(folder.uuid, 1)?.threads ?: continue
                 for (thread in feedThreads.take(limit)) {
                     val id = thread.idStr
                     val count = thread.replyCount ?: 0
@@ -994,8 +1008,15 @@ class ThreadRepositoryImpl @Inject constructor(
         )
     }
 
-    private val cloudFeedPageLock = Mutex()
-    private val cloudFeedMutations = mutableMapOf<String, Long>()
+    private val cloudFolders = java.util.concurrent.ConcurrentHashMap<String, CloudFolderState>()
+    private class CloudFolderState {
+        val lock = Mutex()
+        var generation = 0L
+        val pending = linkedMapOf<String, CloudFeedThreadEntity?>()
+        var retryJob: Job? = null
+    }
+
+    private fun cloudFolder(uuid: String) = cloudFolders.computeIfAbsent(uuid) { CloudFolderState() }
 
     private data class IndexedFeedPage(val threads: List<Thread>, val inserted: Int?)
 
@@ -1007,20 +1028,43 @@ class ThreadRepositoryImpl @Inject constructor(
             )
         }
 
-    private suspend fun fetchIndexedFeedPage(uuid: String, page: Int): IndexedFeedPage {
-        val generation = cloudFeedPageLock.withLock { cloudFeedMutations[uuid] }
+    private suspend fun fetchIndexedFeedPage(
+        uuid: String,
+        page: Int,
+        shouldCache: (List<Thread>) -> Boolean = { false }
+    ): IndexedFeedPage? {
+        val folder = cloudFolder(uuid)
+        val generation = folder.lock.withLock { folder.generation }
         val threads = apiService.feed(uuid, page)
-        val inserted = cloudFeedPageLock.withLock {
+        val pageJson = if (shouldCache(threads)) threadListAdapter.toJson(threads) else null
+        val inserted = folder.lock.withLock {
             // A slow background fetch must not block a save or revive a just-removed item.
-            if (generation == cloudFeedMutations[uuid]) {
+            if (generation == folder.generation && isConfiguredCloudFolder(uuid)) {
+                persistCloudFeedChanges(uuid, folder)
+                if (pageJson != null) {
+                    cacheDao.insertIndexedCache(CacheEntity("feed_$uuid", page, pageJson), threads)
+                }
                 cloudFeedDao.indexPage(uuid, threads.toCloudIndexEntries(uuid, page))
             } else null
         }
-        return IndexedFeedPage(threads, inserted)
+        return inserted?.let { IndexedFeedPage(threads, it) }
     }
 
-    private fun recordCloudFeedMutation(uuid: String) {
-        cloudFeedMutations[uuid] = (cloudFeedMutations[uuid] ?: 0) + 1
+    private suspend fun isConfiguredCloudFolder(uuid: String): Boolean =
+        settingsDataStore.feedFoldersFlow.first().any { it.uuid == uuid }
+
+    override suspend fun clearRemovedCloudFolder(uuid: String) {
+        val folder = cloudFolder(uuid)
+        folder.lock.withLock {
+            if (isConfiguredCloudFolder(uuid)) return
+            folder.generation++
+            folder.pending.clear()
+            database.withTransaction {
+                cloudFeedDao.clearFolderIndex(uuid)
+                cacheDao.deleteCacheByKey("feed_$uuid")
+            }
+            cloudFeedRepairMarker(context, uuid).delete()
+        }
     }
 
     override fun observeCloudFeedIndex(uuids: List<String>) =
@@ -1029,13 +1073,20 @@ class ThreadRepositoryImpl @Inject constructor(
     override fun observeFullyIndexedCloudFolders() = cloudFeedDao.observeFullyIndexedFolders().distinctUntilChanged()
 
     override suspend fun syncCloudFeedIndex(uuid: String) = withContext(Dispatchers.IO) {
+        val folder = cloudFolder(uuid)
+        val generation = folder.lock.withLock {
+            if (!isConfiguredCloudFolder(uuid)) return@withContext
+            persistCloudFeedChanges(uuid, folder)
+            folder.generation
+        }
         val startedAt = System.currentTimeMillis()
         val previous = cloudFeedDao.syncState(uuid)
-        if (previous != null && startedAt - previous.lastCheckedAt in 0 until 50L * 60 * 1000) {
+        val marker = cloudFeedRepairMarker(context, uuid)
+        val repairing = marker.exists()
+        if (!repairing && previous != null && startedAt - previous.lastCheckedAt in 0 until 50L * 60 * 1000) {
             return@withContext
         }
-        val fullScan = previous == null || startedAt - previous.lastFullScanAt !in 0 until 24L * 60 * 60 * 1000
-        val generation = cloudFeedPageLock.withLock { cloudFeedMutations[uuid] }
+        val fullScan = repairing || previous == null || startedAt - previous.lastFullScanAt !in 0 until 24L * 60 * 60 * 1000
         val seen = HashSet<String>()
         val pending = ArrayList<com.mioo.dao.data.local.CloudFeedThreadEntity>()
         var mayRemoveMissing = true
@@ -1050,26 +1101,32 @@ class ThreadRepositoryImpl @Inject constructor(
                 // Group background writes so Room does not reload every folder
                 // once per page; foreground saves and first-page loads still commit immediately.
                 if (page % 5 == 0 || threads.isEmpty()) {
-                    cloudFeedPageLock.withLock {
-                        if (generation != cloudFeedMutations[uuid]) return@withContext
+                    folder.lock.withLock {
+                        if (generation != folder.generation || !isConfiguredCloudFolder(uuid)) return@withContext
                         cloudFeedDao.indexPage(uuid, pending.distinctBy { it.threadId })
                         pending.clear()
                     }
                 }
                 IndexedFeedPage(threads, null)
-            } else fetchIndexedFeedPage(uuid, page)
+            } else fetchIndexedFeedPage(uuid, page) ?: return@withContext
             if (threads.isEmpty()) {
                 val state = com.mioo.dao.data.local.CloudFeedSyncEntity(
                     uuid, startedAt, if (fullScan && mayRemoveMissing) startedAt else previous?.lastFullScanAt ?: 0
                 )
                 if (fullScan && mayRemoveMissing) {
-                    cloudFeedPageLock.withLock {
-                        if (generation == cloudFeedMutations[uuid]) {
-                            cloudFeedDao.finishFullScan(state, seen, startedAt)
+                    folder.lock.withLock {
+                        if (generation == folder.generation) {
+                            database.withTransaction {
+                                cloudFeedDao.finishFullScan(state, seen, startedAt)
+                                if (repairing) cacheDao.markFeedPagesStale("feed_$uuid")
+                            }
+                            if (repairing) marker.delete()
                         }
                     }
                 } else {
-                    cloudFeedDao.saveSyncState(state)
+                    folder.lock.withLock {
+                        if (generation == folder.generation) cloudFeedDao.saveSyncState(state)
+                    }
                 }
                 break
             }
@@ -1080,7 +1137,11 @@ class ThreadRepositoryImpl @Inject constructor(
             if (unseen < ids.size) mayRemoveMissing = false
             if (unseen == 0) throw IllegalStateException("云端收藏分页重复")
             if (!fullScan && page >= 2 && inserted == 0) {
-                cloudFeedDao.saveSyncState(requireNotNull(previous).copy(lastCheckedAt = startedAt))
+                folder.lock.withLock {
+                    if (generation == folder.generation) {
+                        cloudFeedDao.saveSyncState(requireNotNull(previous).copy(lastCheckedAt = startedAt))
+                    }
+                }
                 break
             }
             page++
@@ -1093,18 +1154,21 @@ class ThreadRepositoryImpl @Inject constructor(
         var emittedCache = false
         var cachedList: List<Thread>? = null
         try {
-            val cached = cacheDao.getCache(cacheKey, page)
+            val cached = if (cloudFeedRepairMarker(context, uuid).exists()) null
+                else cacheDao.getCache(cacheKey, page)?.takeUnless { it.feedStale }
             if (cached != null) {
                 val decoded = runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull()
-                if (decoded != null) {
+                if (!decoded.isNullOrEmpty()) {
                     cachedList = decoded
                     emit(XdResponse.Success(decoded))
                     emittedCache = true
                 }
             }
-            val response = fetchIndexedFeedPage(uuid, page).threads
+            val accepted = fetchIndexedFeedPage(uuid, page) { it != cachedList }
+                ?: fetchIndexedFeedPage(uuid, page) { it != cachedList }
+                ?: throw java.io.IOException("收藏夹正在更新，请重试")
+            val response = accepted.threads
             if (!(emittedCache && cachedList == response)) {
-                cacheDao.insertCache(CacheEntity(cacheKey, page, threadListAdapter.toJson(response)))
                 emit(XdResponse.Success(response))
             }
         } catch (e: Exception) {
@@ -1116,51 +1180,95 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun addFeed(uuid: String, tid: String, title: String?, replyCount: Int): Flow<XdResponse<String>> = flow {
-        try {
-            val interpreted = cloudFeedPageLock.withLock {
-                interpretPlainFeedWrite(apiService.addFeed(uuid, tid).string()).also { result ->
-                    if (result is XdResponse.Success) {
-                        cloudFeedDao.indexPage(uuid, listOf(com.mioo.dao.data.local.CloudFeedThreadEntity(
-                            feedUuid = uuid, threadId = tid, title = title.effectiveTitle(),
-                            replyCount = replyCount, position = -1
-                        )))
-                        cacheDao.deleteCacheByKey("feed_$uuid")
-                        recordCloudFeedMutation(uuid)
-                    }
-                }
-            }
-            emit(interpreted)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val msg = e.localizedMessage ?: "Network error"
-            emit(XdResponse.Error(message = msg, throwable = e))
-        }
-    }.flowOn(Dispatchers.IO)
+    override fun addFeed(uuid: String, tid: String, title: String?, replyCount: Int): Flow<XdResponse<String>> =
+        flow {
+            val entry = CloudFeedThreadEntity(uuid, tid, title = title.effectiveTitle(), replyCount = replyCount, position = -1)
+            emit(writeCloudFeed(uuid, tid, entry))
+        }.flowOn(Dispatchers.IO)
 
     override fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
+        val result = writeCloudFeed(uuid, tid, null)
+        emit(if (result is XdResponse.Error && result.throwable == null && isAbsentSubscription(result.message))
+            XdResponse.Success(result.message) else result)
+    }.flowOn(Dispatchers.IO)
+
+    private suspend fun writeCloudFeed(
+        uuid: String, tid: String, entry: CloudFeedThreadEntity?
+    ): XdResponse<String> {
+        val folder = cloudFolder(uuid)
+        return folder.lock.withLock {
+            val marker = cloudFeedRepairMarker(context, uuid)
+            var newMarker = false
+            val result = try {
+                if (!isConfiguredCloudFolder(uuid)) return@withLock XdResponse.Error(message = "云端收藏夹已移除")
+                newMarker = marker.createNewFile()
+                folder.generation++
+                val response = if (entry == null) apiService.delFeed(uuid, tid) else apiService.addFeed(uuid, tid)
+                interpretPlainFeedWrite(response.string())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@withLock XdResponse.Error(message = e.localizedMessage ?: "Network error", throwable = e)
+            }
+            val absent = entry == null && result is XdResponse.Error && isAbsentSubscription(result.message)
+            if (result is XdResponse.Success || absent) {
+                withContext(NonCancellable) {
+                    folder.pending[tid] = entry
+                    if (tryPersistCloudFeedChanges(uuid, folder)) {
+                        if (newMarker) marker.delete()
+                    } else scheduleCloudFeedRepair(uuid, folder)
+                }
+            }
+            else if (newMarker) marker.delete()
+            result
+        }
+    }
+
+    private suspend fun persistCloudFeedChanges(uuid: String, folder: CloudFolderState) {
+        if (folder.pending.isEmpty()) return
+        database.withTransaction {
+            for ((tid, entry) in folder.pending) {
+                if (entry == null) cloudFeedDao.removeFeedThread(uuid, tid)
+                else cloudFeedDao.indexPage(uuid, listOf(entry))
+            }
+            cacheDao.markFeedPagesStale("feed_$uuid")
+        }
+        folder.pending.clear()
+    }
+
+    private suspend fun tryPersistCloudFeedChanges(uuid: String, folder: CloudFolderState): Boolean =
         try {
-            val interpreted = cloudFeedPageLock.withLock {
-                interpretPlainFeedWrite(apiService.delFeed(uuid, tid).string()).also { result ->
-                    if (result is XdResponse.Success) {
-                        cloudFeedDao.removeFeedThread(uuid, tid)
-                        cacheDao.deleteCacheByKey("feed_$uuid")
-                        recordCloudFeedMutation(uuid)
+            persistCloudFeedChanges(uuid, folder)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("ThreadRepository", "Cloud feed local index update deferred", e)
+            false
+        }
+
+    private fun scheduleCloudFeedRepair(uuid: String, folder: CloudFolderState) {
+        if (folder.retryJob?.isActive == true) return
+        folder.retryJob = preloadScope.launch {
+            for (waitMillis in listOf(1_000L, 5_000L, 30_000L)) {
+                delay(waitMillis)
+                folder.lock.withLock {
+                    if (!isConfiguredCloudFolder(uuid) || tryPersistCloudFeedChanges(uuid, folder)) {
+                        folder.retryJob = null
+                        return@launch
                     }
                 }
             }
-            emit(interpreted)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val msg = e.localizedMessage ?: "Network error"
-            emit(XdResponse.Error(message = msg, throwable = e))
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
-    override fun isInCloudFeed(tid: String): Flow<Boolean> = cloudFeedDao.isMember(tid)
+    override fun isInCloudFeed(tid: String): Flow<Boolean> =
+        observeCloudFolderUuids(tid).map { it.isNotEmpty() }.distinctUntilChanged()
 
     override fun observeCloudFolderUuids(tid: String): Flow<Set<String>> =
-        cloudFeedDao.observeFeedUuidsFor(tid).map { it.toSet() }
+        combine(cloudFeedDao.observeFeedUuidsFor(tid), settingsDataStore.feedFoldersFlow) { indexed, folders ->
+            folders.mapNotNullTo(mutableSetOf()) { it.uuid.takeIf(indexed::contains) }
+        }.distinctUntilChanged()
 
     // --- 发言草稿箱 ---
 
@@ -1181,46 +1289,20 @@ class ThreadRepositoryImpl @Inject constructor(
 
     override suspend fun deletePostDrafts(boardId: String) = draftStorage.deletePostDrafts(boardId)
 
-    override fun removeCloudSubscriptions(tid: String): Flow<XdResponse<Int>> = flow {
+    override fun removeCloudSubscriptions(tid: String, retryFolders: Set<String>?): Flow<XdResponse<CloudRemovalResult>> = flow {
         try {
-            // 本地成员缓存只覆盖浏览过的页（通常第1页）；对排在深页的串，
-            // 必须遍历全部已配置云端收藏夹 + 用户自己的订阅 uuid，否则会静默 no-op。
-            val configured = try {
-                settingsDataStore.feedFoldersFlow.first().map { it.uuid }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                emptyList()
-            }
-            val ownUuid = try {
-                // 归一化 JSON 饼干后再当 uuid 用
-                com.mioo.dao.data.api.CookieInterceptor.extractHash(
-                    settingsDataStore.userHashFlow.first()
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
-            }
-            val uuids = (cloudFeedDao.feedUuidsFor(tid) + configured + listOfNotNull(ownUuid))
-                .filter { it.isNotBlank() }
-                .distinct()
+            val uuids = settingsDataStore.feedFoldersFlow.first().map { it.uuid }.distinct()
             var removed = 0
+            var absent = 0
+            val failed = mutableSetOf<String>()
             for (uuid in uuids) {
-                try {
-                    cloudFeedPageLock.withLock {
-                        if (interpretPlainFeedWrite(apiService.delFeed(uuid, tid).string()) is XdResponse.Success) {
-                            cloudFeedDao.removeFeedThread(uuid, tid)
-                            recordCloudFeedMutation(uuid)
-                            removed++
-                        }
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
+                if (retryFolders != null && uuid !in retryFolders) continue
+                when (val response = writeCloudFeed(uuid, tid, null)) {
+                    is XdResponse.Success -> removed++
+                    is XdResponse.Error -> if (response.throwable == null && isAbsentSubscription(response.message)) absent++ else failed.add(uuid)
                 }
             }
-            emit(XdResponse.Success(removed))
+            emit(XdResponse.Success(CloudRemovalResult(removed, absent, failed)))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             val msg = e.localizedMessage ?: "Network error"
@@ -1243,40 +1325,59 @@ class ThreadRepositoryImpl @Inject constructor(
             }
         }
 
-    override suspend fun getCachedThreadsByIds(
-        feedUuids: List<String>,
-        threadIds: Set<String>
-    ): Map<String, Thread> = withContext(Dispatchers.IO) {
-        val result = HashMap<String, Thread>()
-        val feedKeys = feedUuids.asSequence().filter { it.isNotBlank() }.distinct().map { "feed_$it" }.toList()
-        for (batch in feedKeys.chunked(500)) {
-            runCatching { cacheDao.getCachesByKeys(batch) }.getOrNull().orEmpty().forEach { cache ->
-                val list = runCatching { threadListAdapter.fromJson(cache.jsonResponse) }.getOrNull() ?: return@forEach
-                for (thread in list) {
-                    result.putIfAbsent(thread.idStr, thread)
+    override fun observeCachedFeedPosts(feedUuids: List<String>): Flow<Map<String, CachePostPreview>> =
+        cacheDao.observeFeedPostPreviews(feedUuids, feedUuids.map { "feed_$it" })
+            .onStart { startPostIndexBackfill() }
+            .map { rows ->
+                val result = HashMap<String, CachePostPreview>()
+                rows.forEach { row ->
+                    val existing = result[row.threadId]
+                    if (existing == null || row.cacheKey.startsWith("thread_")) {
+                        result[row.threadId] = row
+                    }
                 }
+                result.toMap()
+            }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.Default)
+
+    private fun startPostIndexBackfill() {
+        preloadScope.launch {
+            if (!postIndexBackfillLock.tryLock()) return@launch
+            try {
+                var rowId = 0L
+                val batch = ArrayList<Pair<CacheEntity, List<CachePostPreview>>>(16)
+                while (true) {
+                    val next = cacheDao.nextUnindexedPostCache(rowId) ?: break
+                    val cache = next.cache
+                    val posts = try {
+                        if (cache.cacheKey.startsWith("feed_")) {
+                            cacheSearchListAdapter.fromJson(cache.jsonResponse).orEmpty()
+                        } else {
+                            listOfNotNull(cacheSearchAdapter.fromJson(cache.jsonResponse))
+                        }
+                    } catch (_: java.io.IOException) {
+                        emptyList()
+                    } catch (_: com.squareup.moshi.JsonDataException) {
+                        emptyList()
+                    }
+                    batch.add(cache to posts.map { it.toPreview(cache) })
+                    rowId = next.rowId
+                    if (batch.size == 16) {
+                        cacheDao.indexExistingCaches(batch)
+                        batch.clear()
+                        delay(25)
+                    }
+                }
+                if (batch.isNotEmpty()) cacheDao.indexExistingCaches(batch)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ThreadRepository", "Failed to index existing post previews", e)
+            } finally {
+                postIndexBackfillLock.unlock()
             }
         }
-        val missingKeys = threadIds.asSequence()
-            .filter { it.isNotBlank() && it !in result }
-            .map { "thread_$it" }
-            .toList()
-        for (batch in missingKeys.chunked(500)) {
-            runCatching { cacheDao.getPage1CachesByKeys(batch) }.getOrNull().orEmpty().forEach { cache ->
-                val preview = runCatching { cacheSearchAdapter.fromJson(cache.jsonResponse) }.getOrNull() ?: return@forEach
-                val tid = preview.id.toString()
-                result.putIfAbsent(
-                    tid,
-                    Thread(
-                        id = preview.id,
-                        title = preview.title,
-                        content = preview.content,
-                        userHash = preview.userHash
-                    )
-                )
-            }
-        }
-        result
     }
 
     override fun clearCache(): Flow<XdResponse<Unit>> = flow {
@@ -1313,7 +1414,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 val tid = bookmark.id
                 try {
                     val fetched = fetchThreadWithRaw(tid, 1)
-                    cacheDao.insertCache(CacheEntity("thread_$tid", 1, fetched.rawJson))
+                    cacheDao.insertIndexedCache(CacheEntity("thread_$tid", 1, fetched.rawJson), listOf(fetched.thread))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -1366,7 +1467,7 @@ class ThreadRepositoryImpl @Inject constructor(
 
                     try {
                         val fetched = fetchThreadWithRaw(tid, 1)
-                        cacheDao.insertCache(CacheEntity("thread_$tid", 1, fetched.rawJson))
+                        cacheDao.insertIndexedCache(CacheEntity("thread_$tid", 1, fetched.rawJson), listOf(fetched.thread))
                         // Longer gap so list fling / image decode keep the network slot
                         delay(750)
                     } catch (e: Exception) {

@@ -84,6 +84,7 @@ data class ThreadChromeUiState(
     val isSubscribed: Boolean = false,
     /** Thread lives in a 云端收藏夹 (cloud feed cache) — icon also lights up for it. */
     val isCloudSubscribed: Boolean = false,
+    val failedRemovalFolders: Set<String> = emptySet(),
     val feedFolders: List<FeedFolder> = emptyList(),
     val isDownloading: Boolean = false,
     /** 本串已离线（offline_threads 有标记）——三点菜单显示「更新离线缓存 (已保存)」。 */
@@ -1161,7 +1162,10 @@ class ThreadViewModel @Inject constructor(
             } else {
                 threadRepository.addFeed(folderUuid, threadId, thread.title, thread.replyCount ?: 0).collect { response ->
                     when (response) {
-                        is XdResponse.Success -> onComplete?.invoke("已保存至云端收藏夹")
+                        is XdResponse.Success -> {
+                            _chromeState.update { it.copy(failedRemovalFolders = emptySet()) }
+                            onComplete?.invoke("已保存至云端收藏夹")
+                        }
                         is XdResponse.Error ->
                             onComplete?.invoke("保存失败: ${response.message.ifBlank { "网络错误" }}")
                     }
@@ -1173,12 +1177,13 @@ class ThreadViewModel @Inject constructor(
     /** Remove this thread from every cloud feed it is cached under. */
     fun removeCloudSubscription(onComplete: ((String) -> Unit)? = null) {
         viewModelScope.launch {
-            threadRepository.removeCloudSubscriptions(threadId).collect { response ->
+            val retry = _chromeState.value.failedRemovalFolders.takeIf { it.isNotEmpty() }
+            threadRepository.removeCloudSubscriptions(threadId, retry).collect { response ->
                 when (response) {
-                    is XdResponse.Success ->
-                        onComplete?.invoke(
-                            if (response.data > 0) "已从云端收藏夹移除" else "云端收藏夹中没有找到该串"
-                        )
+                    is XdResponse.Success -> {
+                        _chromeState.update { it.copy(failedRemovalFolders = response.data.failed) }
+                        onComplete?.invoke(response.data.message())
+                    }
                     is XdResponse.Error -> onComplete?.invoke("移除失败: ${response.message}")
                 }
             }

@@ -41,4 +41,13 @@ class FeedPageAppendTest {
         assertEquals((0 until 2500).toList(), all.map { it.id })
         assertEquals(2500, all.map { it.id }.toSet().size)
     }
+
+    @Test fun networkPageReplacesPreviewEvenWhenIdsAreUnchanged() {
+        val existing = listOf(Item(1, "previous page"), Item(2, "cached"))
+        val network = listOf(Item(1, "overlap"), Item(2, "updated"))
+        assertEquals(
+            listOf(Item(2, "updated")),
+            newFeedPageItems(existing, network, replacing = setOf(2)) { it.id }
+        )
+    }
 }

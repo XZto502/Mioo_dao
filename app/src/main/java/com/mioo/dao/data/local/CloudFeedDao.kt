@@ -75,6 +75,18 @@ interface CloudFeedDao {
     @Query("DELETE FROM cloud_feed_threads WHERE feedUuid = :feedUuid AND threadId = :tid")
     suspend fun removeFeedThread(feedUuid: String, tid: String)
 
+    @Query("DELETE FROM cloud_feed_threads WHERE feedUuid = :uuid")
+    suspend fun deleteFolderEntries(uuid: String)
+
+    @Query("DELETE FROM cloud_feed_sync WHERE feedUuid = :uuid")
+    suspend fun deleteFolderSyncState(uuid: String)
+
+    @Transaction
+    suspend fun clearFolderIndex(uuid: String) {
+        deleteFolderEntries(uuid)
+        deleteFolderSyncState(uuid)
+    }
+
     @Query("SELECT feedUuid FROM cloud_feed_threads WHERE threadId = :tid")
     suspend fun feedUuidsFor(tid: String): List<String>
 

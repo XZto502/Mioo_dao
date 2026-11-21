@@ -48,38 +48,44 @@ internal class OfflineThreadDownloader(
                 dependencies.addBookmark(page1)
             }
 
-            cacheDao.insertCache(CacheEntity("thread_$tid", 1, page1Fetched.rawJson))
+            cacheDao.insertIndexedCache(CacheEntity("thread_$tid", 1, page1Fetched.rawJson), listOf(page1))
 
             val totalReplies = page1.replyCount ?: 0
             val repliesPage1Size = page1.replies?.size ?: 0
             val allPosts = ArrayList<Reply>()
             allPosts.addAll(page1.replies.orEmpty())
 
-            if (totalReplies > repliesPage1Size && repliesPage1Size > 0) {
+            check(totalReplies == 0 || repliesPage1Size > 0) { "第 1 页回复缺失，请重试离线下载" }
+            if (totalReplies > repliesPage1Size) {
                 val pageSize = repliesPage1Size
                 val totalPages = (totalReplies + pageSize - 1) / pageSize
 
                 for (page in 2..totalPages) {
                     try {
+                        val expectedReplies = minOf(pageSize, totalReplies - (page - 1) * pageSize)
                         val cached = if (shouldUseCachedOfflinePage(conservative, page, previousOffline?.replyCount ?: 0, pageSize))
                             cacheDao.getCache("thread_$tid", page)?.jsonResponse?.let {
                                 runCatching { dependencies.parseThreadBody(it) }.getOrNull()
                             } else null
-                        if (cached != null) {
-                            allPosts.addAll(cached.replies.orEmpty())
+                        val cachedReplies = cached?.replies.orEmpty()
+                        if (cachedReplies.size >= expectedReplies) {
+                            allPosts.addAll(cachedReplies)
                             continue
                         }
                         if (conservative) delay(2000)
                         val pageFetched = dependencies.fetchThreadWithRaw(tid, page)
                         val threadPage = pageFetched.thread
+                        check(threadPage.replies.orEmpty().size >= expectedReplies) { "回复数量不足" }
                         cacheDao.insertCache(CacheEntity("thread_$tid", page, pageFetched.rawJson))
                         allPosts.addAll(threadPage.replies.orEmpty())
                         if (!conservative) delay(300)
                     } catch (e: Exception) {
-                        if (e is CancellationException || conservative) throw e
+                        if (e is CancellationException) throw e
+                        throw IllegalStateException("第 ${page} 页下载失败，请重试", e)
                     }
                 }
             }
+            check(allPosts.distinctBy { it.id }.size >= totalReplies) { "回复分页不完整，请重试离线下载" }
 
             // 离线图片：主楼优先的封面 + 各楼配图（缩略图优先，缺缩略图回落原图）
             val imageUrls = LinkedHashSet<String>()

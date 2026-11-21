@@ -1,10 +1,10 @@
 package com.mioo.dao.ui.screens.feed
 
 import com.mioo.dao.data.local.BookmarkEntity
+import com.mioo.dao.data.local.CachePostPreview
 import com.mioo.dao.data.local.CloudFeedThreadEntity
 import com.mioo.dao.data.local.OfflineThreadSummary
 import com.mioo.dao.data.model.FeedFolder
-import com.mioo.dao.data.model.Thread
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -24,7 +24,7 @@ class FeedTitleSearchTest {
             listOf(FeedFolder("日常", "a"), FeedFolder("分享", "b")),
             listOf(offline("100", "Manga 讨论"), offline("101", "离线 Manga")),
             listOf(bookmark("400", "其他标题", "<font color=\"#789922\">Manga 正文</font>"), bookmark("500", "本地 MANGA", "普通内容")),
-            mapOf("600" to Thread(id = 600, title = "无标题", content = "来自缓存的<br/>OP 正文关键字", userHash = "po600"))
+            mapOf("600" to CachePostPreview("thread_600", 1, "600", null, "来自缓存的<br/>OP 正文关键字", "po600", "", null, 0))
         )
         val matches = index.search(" manga ")
 

@@ -139,6 +139,23 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE api_cache ADD COLUMN searchIndexed INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE api_cache ADD COLUMN feedStale INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("""
+                CREATE TABLE cache_post_previews (
+                    cacheKey TEXT NOT NULL, page INTEGER NOT NULL, threadId TEXT NOT NULL,
+                    title TEXT, content TEXT NOT NULL, userHash TEXT NOT NULL, now TEXT NOT NULL,
+                    imageUrl TEXT, replyCount INTEGER NOT NULL,
+                    PRIMARY KEY (cacheKey, page, threadId),
+                    FOREIGN KEY (cacheKey, page) REFERENCES api_cache (cacheKey, page) ON DELETE CASCADE
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX index_cache_post_previews_threadId ON cache_post_previews (threadId)")
+        }
+    }
+
     @Provides
     @Singleton
     fun providePostActionHistoryDao(database: AppDatabase): com.mioo.dao.data.local.PostActionHistoryDao = database.postActionHistoryDao()
@@ -157,7 +174,7 @@ object DatabaseModule {
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
             // 侧载分发下用户可能回滚安装旧版：降级重建好过访问 DB 即崩溃循环
             .fallbackToDestructiveMigrationOnDowngrade()
-            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())

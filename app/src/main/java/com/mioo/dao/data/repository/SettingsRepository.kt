@@ -19,7 +19,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SettingsRepository @Inject constructor(
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val threadRepository: dagger.Lazy<ThreadRepository>
 ) {
     val headerImageSettings = settingsDataStore.headerImageSettings
     suspend fun saveHeaderImagePath(path: String) = settingsDataStore.saveHeaderImagePath(path)
@@ -366,12 +367,14 @@ class SettingsRepository @Inject constructor(
     fun updateFeedFolder(oldUuid: String, folder: com.mioo.dao.data.model.FeedFolder) {
         repositoryScope.launch {
             settingsDataStore.changeFeedFolder(oldUuid, folder)
+            threadRepository.get().clearRemovedCloudFolder(oldUuid)
         }
     }
 
     fun removeFeedFolder(uuid: String) {
         repositoryScope.launch {
             settingsDataStore.changeFeedFolder(uuid, null)
+            threadRepository.get().clearRemovedCloudFolder(uuid)
         }
     }
 

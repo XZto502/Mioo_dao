@@ -442,7 +442,7 @@ fun FeedScreen(
                             }
                         }
                     }
-                    LaunchedEffect(current, remoteItems.size, shouldLoadMore.value) {
+                    LaunchedEffect(current, remoteItems.size, uiState.loadedRemotePage, shouldLoadMore.value) {
                         if (current && shouldLoadMore.value) viewModel.loadMoreRemote()
                     }
 
@@ -572,10 +572,9 @@ private fun FeedTitleSearch(
     onOpenThread: (String) -> Unit,
     onImageClick: (String) -> Unit
 ) {
-    LaunchedEffect(Unit) { viewModel.ensureFeedSearchCache() }
     val cloudIndexSnapshot by viewModel.cloudIndex.collectAsState()
     val fullyIndexedCloudFolders by viewModel.fullyIndexedCloudFolders.collectAsState()
-    val cachedThreads by viewModel.cachedFeedThreads.collectAsState()
+    val cachedThreads by viewModel.cachedFeedPosts.collectAsState()
     val cloudIndex = cloudIndexSnapshot.entries
     val indexingIncomplete = state.feedFolders.any { it.uuid !in fullyIndexedCloudFolders }
     val titleIndex by produceState<FeedTitleIndex?>(

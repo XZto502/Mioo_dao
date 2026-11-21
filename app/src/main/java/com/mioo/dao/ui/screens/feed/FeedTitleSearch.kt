@@ -4,7 +4,7 @@ import com.mioo.dao.data.local.BookmarkEntity
 import com.mioo.dao.data.local.CloudFeedThreadEntity
 import com.mioo.dao.data.local.OfflineThreadSummary
 import com.mioo.dao.data.model.FeedFolder
-import com.mioo.dao.data.model.Thread
+import com.mioo.dao.data.local.CachePostPreview
 import com.mioo.dao.data.model.effectiveTitle
 import com.mioo.dao.ui.components.IslandImage
 import kotlinx.coroutines.currentCoroutineContext
@@ -108,20 +108,21 @@ internal fun buildFeedTitleIndex(
     folders: List<FeedFolder>,
     offline: List<OfflineThreadSummary>,
     bookmarks: List<BookmarkEntity>,
-    cachedThreads: Map<String, Thread> = emptyMap()
+    cachedThreads: Map<String, CachePostPreview> = emptyMap()
 ): FeedTitleIndex {
     val candidates = ArrayList<FeedTitleCandidate>()
     val names = folders.associate { it.uuid to it.name }
     offline.forEach { item ->
         val title = item.title.effectiveTitle()
         val summary = item.contentSummary.trim()
-        if (title == null && summary.isEmpty()) return@forEach
         val cached = cachedThreads[item.threadId]
+        val searchable = stripFeedHtmlForSearch(cached?.content.orEmpty()).ifEmpty { summary }
+        if (title == null && cached?.title.effectiveTitle() == null && searchable.isEmpty()) return@forEach
         candidates.add(
             FeedTitleCandidate(
                 threadId = item.threadId,
                 title = title ?: cached?.title.effectiveTitle(),
-                searchableContent = summary.ifEmpty { stripFeedHtmlForSearch(cached?.content.orEmpty()) },
+                searchableContent = searchable,
                 source = "已离线",
                 userId = item.poUserHash.ifBlank { cached?.userHash.orEmpty() },
                 createdAt = cached?.now.orEmpty(),

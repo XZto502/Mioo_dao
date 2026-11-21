@@ -15,7 +15,6 @@ import com.mioo.dao.ui.components.BookmarkListItem
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.toBookmarkListItems
 import com.mioo.dao.ui.components.toFilteredThreadListItems
-import com.mioo.dao.ui.components.withReplyCounts
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -31,6 +30,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
@@ -53,6 +53,7 @@ data class FeedUiState(
     val feedFolders: List<FeedFolder> = emptyList(),
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
+    val loadedRemotePage: Int = 1,
     val hasMoreRemote: Boolean = false,
     val selectedFolderId: String? = null,
     val selectionReady: Boolean = false,
@@ -90,23 +91,12 @@ class FeedViewModel @Inject constructor(
         .map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    private val _cachedFeedThreads = MutableStateFlow<Map<String, Thread>>(emptyMap())
-    val cachedFeedThreads: StateFlow<Map<String, Thread>> = _cachedFeedThreads
-
-    fun ensureFeedSearchCache() {
-        viewModelScope.launch {
-            val uuids = _uiState.value.feedFolders.map { it.uuid }
-            val cloudIds = cloudIndex.value.entries.mapTo(HashSet()) { it.threadId }
-            val diskCached = threadRepository.getCachedThreadsByIds(uuids, cloudIds)
-            val merged = HashMap<String, Thread>(diskCached.size + 32)
-            merged.putAll(diskCached)
-            remoteFolderCache.values.forEach { folder ->
-                folder.threads.forEach { thread -> merged[thread.idStr] = thread }
-            }
-            _uiState.value.remoteThreads.forEach { thread -> merged[thread.idStr] = thread }
-            _cachedFeedThreads.value = merged
-        }
-    }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val cachedFeedPosts = settingsDataStore.feedFoldersFlow
+        .map { folders -> folders.map { it.uuid }.distinct().sorted() }
+        .distinctUntilChanged()
+        .flatMapLatest(threadRepository::observeCachedFeedPosts)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000, replayExpirationMillis = 0), emptyMap())
 
     /** 一次性错误提示事件（取消订阅失败 / 加载更多失败等），由 FeedScreen 弹 Toast */
     private val _errorEvents = MutableSharedFlow<String>()
@@ -115,6 +105,7 @@ class FeedViewModel @Inject constructor(
     private var remotePage = 1
     private var remoteLoadingMore = false
     private var remoteEndReached = false
+    private val remoteFolderCache = HashMap<String, CachedRemoteFolder>()
 
     init {
         viewModelScope.launch {
@@ -152,6 +143,8 @@ class FeedViewModel @Inject constructor(
             settingsDataStore.feedFoldersFlow
                 .distinctUntilChanged()
                 .collect { folders ->
+                    val activeUuids = folders.mapTo(HashSet()) { it.uuid }
+                    remoteFolderCache.keys.retainAll(activeUuids)
                     _uiState.update { it.copy(feedFolders = folders) }
                     val state = _uiState.value
                     if (state.selectionReady && state.selectedFolderId != null && folders.none { it.uuid == state.selectedFolderId }) {
@@ -182,10 +175,11 @@ class FeedViewModel @Inject constructor(
         val hasMore: Boolean
     )
 
-    private val remoteFolderCache = HashMap<String, CachedRemoteFolder>()
-
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
     private var remoteLoadMoreJob: kotlinx.coroutines.Job? = null
+    // Each request keeps its own set across suspensions while building display items.
+    private var firstPageRemovals = mutableSetOf<String>()
+    private var nextPageRemovals = mutableSetOf<String>()
     private var remoteGeneration = 0L
 
     fun selectFolder(uuid: String?) {
@@ -204,6 +198,7 @@ class FeedViewModel @Inject constructor(
                     isLoading = false,
                     isLoadingMore = false,
                     hasMoreRemote = cached.hasMore,
+                    loadedRemotePage = cached.page,
                     remoteThreads = cached.threads,
                     remoteDisplayItems = cached.displayItems,
                     remoteReplyCounts = cached.replyCounts
@@ -217,6 +212,7 @@ class FeedViewModel @Inject constructor(
                 isLoading = false,
                 isLoadingMore = false,
                 hasMoreRemote = false,
+                loadedRemotePage = 1,
                 // 任何切换都清空旧数据：留着会在新文件夹标题下展示上一个夹的帖子
                 remoteThreads = emptyList(),
                 remoteDisplayItems = emptyList(),
@@ -235,19 +231,22 @@ class FeedViewModel @Inject constructor(
         remotePage = 1
         remoteEndReached = false
         remoteFeedJob?.cancel()
+        val removed = mutableSetOf<String>().also { firstPageRemovals = it }
         remoteFeedJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = it.remoteDisplayItems.isEmpty(), isLoadingMore = false) }
             threadRepository.getFeed(uuid, 1).collect { response ->
                 // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
                 if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                 if (response is XdResponse.Success) {
-                    val threads = withContext(Dispatchers.Default) {
+                    val received = withContext(Dispatchers.Default) {
                         newFeedPageItems(emptyList(), response.data) { it.idStr }
                     }
                     val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
-                    val items = buildRemoteItems(threads, knownCounts)
+                    val display = buildRemoteItems(received, knownCounts)
                     if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
-                    val hasMore = threads.isNotEmpty()
+                    val threads = if (removed.isEmpty()) received else received.filterNot { it.idStr in removed }
+                    val items = if (removed.isEmpty()) display else display.filterNot { it.idStr in removed }
+                    val hasMore = received.isNotEmpty()
                     remoteEndReached = !hasMore
                     remoteFolderCache[uuid] = CachedRemoteFolder(
                         threads = threads,
@@ -263,6 +262,7 @@ class FeedViewModel @Inject constructor(
                             remoteReplyCounts = knownCounts,
                             remoteDisplayItems = items,
                             isLoading = false,
+                            loadedRemotePage = 1,
                             hasMoreRemote = hasMore
                         )
                     }
@@ -306,6 +306,10 @@ class FeedViewModel @Inject constructor(
             threadRepository.delFeed(uuid, threadId).collect { response ->
                 when (response) {
                     is XdResponse.Success -> {
+                        if (_uiState.value.selectedFolderId == uuid) {
+                            if (remoteFeedJob?.isActive == true) firstPageRemovals.add(threadId)
+                            if (remoteLoadMoreJob?.isActive == true) nextPageRemovals.add(threadId)
+                        }
                         remoteFolderCache[uuid]?.let { cached ->
                             remoteFolderCache[uuid] = cached.copy(
                                 threads = cached.threads.filterNot { it.idStr == threadId },
@@ -333,47 +337,56 @@ class FeedViewModel @Inject constructor(
         _uiState.update { it.copy(isLoadingMore = true) }
         val page = remotePage + 1
         val generation = remoteGeneration
+        val removed = mutableSetOf<String>().also { nextPageRemovals = it }
         remoteLoadMoreJob = viewModelScope.launch {
             try {
+                remoteFeedJob?.join()
+                if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid || remoteEndReached) return@launch
+                var previewIds = emptySet<String>()
+                var lastPageEmpty: Boolean? = null
                 threadRepository.getFeed(uuid, page).collect { response ->
                     if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                     if (response is XdResponse.Success) {
                         val fresh = response.data
-                        if (fresh.isEmpty()) {
-                            remoteEndReached = true
-                            _uiState.update { it.copy(hasMoreRemote = false) }
-                            return@collect
-                        }
                         val state = _uiState.value
-                        val added = withContext(Dispatchers.Default) {
-                            newFeedPageItems(state.remoteThreads, fresh) { it.idStr }
+                        val received = withContext(Dispatchers.Default) {
+                            newFeedPageItems(state.remoteThreads, fresh, replacing = previewIds) { it.idStr }
                         }
-                        val items = buildRemoteItems(added, state.remoteReplyCounts)
+                        val display = buildRemoteItems(received, state.remoteReplyCounts)
                         if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
-                        if (added.isEmpty()) remoteEndReached = true
-                        remotePage = page
-                        val nextThreads = state.remoteThreads + added
-                        val nextItems = state.remoteDisplayItems + items.withReplyCounts(state.remoteReplyCounts)
-                        val hasMore = !remoteEndReached
-                        remoteFolderCache[uuid] = CachedRemoteFolder(
-                            threads = nextThreads,
-                            displayItems = nextItems,
-                            replyCounts = state.remoteReplyCounts,
-                            page = remotePage,
-                            endReached = remoteEndReached,
-                            hasMore = hasMore
-                        )
+                        val added = if (removed.isEmpty()) received else received.filterNot { it.idStr in removed }
+                        val items = if (removed.isEmpty()) display else display.filterNot { it.idStr in removed }
                         _uiState.update {
                             it.copy(
-                                remoteThreads = nextThreads,
-                                remoteDisplayItems = nextItems,
-                                hasMoreRemote = hasMore
+                                remoteThreads = it.remoteThreads.filterNot { thread -> thread.idStr in previewIds } + added,
+                                remoteDisplayItems = it.remoteDisplayItems.filterNot { item -> item.idStr in previewIds } + items
                             )
                         }
+                        previewIds = added.mapTo(HashSet()) { it.idStr }
+                        lastPageEmpty = fresh.isEmpty()
                     } else {
                         // 失败回退页码，让用户下拉重试
                         _errorEvents.tryEmit("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")
                     }
+                }
+                if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@launch
+                lastPageEmpty?.let { empty ->
+                    remoteEndReached = empty
+                    if (!empty) remotePage = page
+                    val state = _uiState.updateAndGet {
+                        it.copy(
+                            hasMoreRemote = !empty,
+                            loadedRemotePage = if (previewIds.isNotEmpty()) remotePage else it.loadedRemotePage
+                        )
+                    }
+                    remoteFolderCache[uuid] = CachedRemoteFolder(
+                        threads = state.remoteThreads,
+                        displayItems = state.remoteDisplayItems,
+                        replyCounts = state.remoteReplyCounts,
+                        page = remotePage,
+                        endReached = empty,
+                        hasMore = !empty
+                    )
                 }
             } finally {
                 if (remoteGeneration == generation) {
