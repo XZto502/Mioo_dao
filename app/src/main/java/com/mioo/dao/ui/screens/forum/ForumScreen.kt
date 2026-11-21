@@ -1078,15 +1078,15 @@ private fun ForumThreadListPane(
 
     val previewDicePreset = com.mioo.dao.ui.components.LocalDicePreset.current
     LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, previewDicePreset, warmEnabled, displayItems) {
-        if (!warmEnabled) return@LaunchedEffect
+        if (!warmEnabled || displayItems.isEmpty()) return@LaunchedEffect
         snapshotFlow {
             // Advance in four-row batches without subscribing to layoutInfo every pixel.
             listState.firstVisibleItemIndex / 4
         }
             .distinctUntilChanged()
             .collectLatest { batch ->
-                val start = (batch * 4 - 4).coerceAtLeast(0)
-                val end = (batch * 4 + 14).coerceAtMost(displayItems.size)
+                val start = (batch * 4 - 2).coerceAtLeast(0)
+                val end = (batch * 4 + 24).coerceAtMost(displayItems.size)
                 if (start >= end) return@collectLatest
                 withContext(Dispatchers.Default) {
                     for (index in start until end) {

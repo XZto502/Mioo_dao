@@ -447,16 +447,19 @@ object HtmlParseCache {
             value.variants.filterNotNull().sumOf { textCost(it) } + 256L).coerceAtLeast(1L)
     private var totalBytes = 0L
     private val cache = LinkedHashMap<HtmlCacheKey, SizedEntry>(128, 0.75f, true)
+    private val fastRead = java.util.concurrent.ConcurrentHashMap<HtmlCacheKey, Entry>(128)
     private val lock = Any()
     private fun putEntry(key: HtmlCacheKey, entry: Entry) {
         cache.remove(key)?.let { totalBytes -= it.bytes }
         val cost = entryCost(key, entry)
         cache[key] = SizedEntry(entry, cost)
+        fastRead[key] = entry
         totalBytes += cost
         val it = cache.entries.iterator()
         while (it.hasNext() && (cache.size > MAX_ENTRIES || totalBytes > MAX_BYTES)) {
             val eldest = it.next()
             totalBytes -= eldest.value.bytes
+            fastRead.remove(eldest.key)
             it.remove()
         }
     }
@@ -469,6 +472,7 @@ object HtmlParseCache {
     ): ParsedContent {
         val colorArgb = quoteLinkColor.toArgb()
         val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
+        fastRead[key]?.let { return it.parsed }
         synchronized(lock) {
             cache[key]?.entry?.let { return it.parsed }
         }
@@ -488,6 +492,7 @@ object HtmlParseCache {
         if (!compact && !trim) return parsed.annotated
         val key = HtmlCacheKey(html, color.toArgb(), darkTheme, dicePreset?.name ?: "")
         val index = (if (compact) 1 else 0) + (if (trim) 2 else 0)
+        fastRead[key]?.variants?.get(index)?.let { return it }
         synchronized(lock) {
             cache[key]?.entry?.variants?.get(index)?.let { return it }
         }
@@ -522,7 +527,7 @@ object HtmlParseCache {
         for (html in htmlList) {
             if (html.isBlank()) continue
             val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
-            val existingEntry = synchronized(lock) { cache[key]?.entry }
+            val existingEntry = fastRead[key] ?: synchronized(lock) { cache[key]?.entry }
             if (existingEntry != null) {
                 if (!needVariant || existingEntry.variants[variantIndex] != null) continue
                 val variant = prepareHtmlPreview(existingEntry.parsed.annotated, compactBlankLines, trimOuterWhitespace)

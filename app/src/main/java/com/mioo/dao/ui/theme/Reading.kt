@@ -3,6 +3,7 @@ package com.mioo.dao.ui.theme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
@@ -20,20 +21,61 @@ fun readingTextStyle(size: Float, height: Float, weight: FontWeight = FontWeight
 }
 
 @Composable
-fun readingBodyStyle() = readingTextStyle(15f, 23.5f).copy(
-    letterSpacing = 0.25.sp,
-    color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
-        Color(0xFFE3E6EA) else Color(0xFF242629))
+fun readingBodyStyle(): TextStyle {
+    val base = MaterialTheme.typography.bodyMedium
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return remember(base, dark) {
+        base.copy(
+            fontSize = (15f * base.fontSize.value / 14f).sp,
+            lineHeight = (23.5f * base.lineHeight.value / 20f).sp,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = 0.25.sp,
+            color = if (dark) Color(0xFFE3E6EA) else Color(0xFF242629)
+        )
+    }
+}
 
 @Composable
-fun readingQuoteStyle() = readingTextStyle(13.5f, 19.5f).copy(
-    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+fun readingQuoteStyle(): TextStyle {
+    val base = MaterialTheme.typography.bodyMedium
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    return remember(base, onSurface) {
+        base.copy(
+            fontSize = (13.5f * base.fontSize.value / 14f).sp,
+            lineHeight = (19.5f * base.lineHeight.value / 20f).sp,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = 0.sp,
+            color = onSurface.copy(alpha = 0.75f)
+        )
+    }
+}
 
 @Composable
-fun readingMetaStyle() = readingTextStyle(11.5f, 16f).copy(fontFeatureSettings = "tnum")
+fun readingMetaStyle(): TextStyle {
+    val base = MaterialTheme.typography.bodyMedium
+    return remember(base) {
+        base.copy(
+            fontSize = (11.5f * base.fontSize.value / 14f).sp,
+            lineHeight = (16f * base.lineHeight.value / 20f).sp,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = 0.sp,
+            fontFeatureSettings = "tnum"
+        )
+    }
+}
 
 @Composable
-fun readingTitleStyle() = readingTextStyle(16.5f, 23f, FontWeight.SemiBold)
+fun readingTitleStyle(): TextStyle {
+    val base = MaterialTheme.typography.bodyMedium
+    return remember(base) {
+        base.copy(
+            fontSize = (16.5f * base.fontSize.value / 14f).sp,
+            lineHeight = (23f * base.lineHeight.value / 20f).sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.sp
+        )
+    }
+}
 
 @Composable
 fun readingBackground(): Color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f)
@@ -51,8 +93,12 @@ fun readingCardColor(): Color = when {
 }
 
 @Composable
-fun readingCardBorder(): BorderStroke? = if (MaterialTheme.colorScheme.background.luminance() >= 0.5f)
-    BorderStroke(0.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)) else null
+fun readingCardBorder(): BorderStroke? {
+    val light = MaterialTheme.colorScheme.background.luminance() >= 0.5f
+    if (!light) return null
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    return remember(onSurface) { BorderStroke(0.5.dp, onSurface.copy(alpha = 0.06f)) }
+}
 
 @Composable
 fun readingTopBarColor(): Color = readingBackground()

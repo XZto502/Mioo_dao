@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -27,6 +26,8 @@ import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.readingMetaStyle
 import com.mioo.dao.ui.theme.readingTextStyle
 import com.mioo.dao.ui.theme.readingTitleStyle
+
+private val PoBadgeShape = RoundedCornerShape(4.dp)
 
 @Composable
 internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
@@ -66,7 +67,7 @@ internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
                 style = poBadgeStyle,
                 maxLines = 1, softWrap = false,
                 modifier = Modifier.padding(start = 4.dp)
-                    .background(colors.secondaryContainer, RoundedCornerShape(4.dp))
+                    .background(colors.secondaryContainer, PoBadgeShape)
                     .padding(horizontal = 4.5.dp, vertical = 1.dp)
             )
         }
@@ -91,9 +92,18 @@ fun ReadingPill(
     content: Color = MaterialTheme.colorScheme.primary,
     maxWidth: Int = 92
 ) {
-    Surface(modifier = modifier, shape = MaterialTheme.shapes.extraSmall, color = container) {
+    val baseBodyMedium = MaterialTheme.typography.bodyMedium
+    val pillStyle = remember(baseBodyMedium) {
+        baseBodyMedium.copy(
+            fontSize = (10.5f * baseBodyMedium.fontSize.value / 14f).sp,
+            lineHeight = (14f * baseBodyMedium.lineHeight.value / 20f).sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.sp
+        )
+    }
+    Box(modifier = modifier.background(container, MaterialTheme.shapes.extraSmall)) {
         Text(text, Modifier.widthIn(max = maxWidth.dp).padding(horizontal = 6.dp, vertical = 2.dp),
-            style = readingTextStyle(10.5f, 14f, FontWeight.Bold), color = content,
+            style = pillStyle, color = content,
             maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -140,11 +150,11 @@ internal fun ReadingPostSubject(post: PostData) {
 @Composable
 internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = null, forumName: String? = null) {
     val colors = MaterialTheme.colorScheme
-    val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
     val quoteOnClick = onNumberClick
     val numberModifier = if (quoteOnClick != null) {
+        val clipboard = LocalClipboardManager.current
+        val context = LocalContext.current
+        val haptics = LocalHapticFeedback.current
         Modifier.combinedClickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,

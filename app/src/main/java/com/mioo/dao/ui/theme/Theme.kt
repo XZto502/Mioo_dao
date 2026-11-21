@@ -34,7 +34,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Comment
 import androidx.compose.material3.ColorScheme
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import com.mioo.dao.ui.components.LocalThreadCommentPainter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalContext
@@ -317,10 +321,12 @@ fun MiooDaoTheme(
         }
     }
 
+    val commentIconPainter = rememberVectorPainter(Icons.AutoMirrored.Outlined.Comment)
     CompositionLocalProvider(
         LocalDaoCustomColors provides customColors,
         LocalGlassEffectEnabled provides glassEffectEnabled,
-        LocalDataSaverEnabled provides dataSaverEnabled
+        LocalDataSaverEnabled provides dataSaverEnabled,
+        LocalThreadCommentPainter provides commentIconPainter
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

@@ -18,7 +18,10 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNode
+import androidx.compose.ui.node.DelegatingNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.platform.InspectorInfo
 
 val LocalScrollTouchGuardEnabled = staticCompositionLocalOf { false }
 
@@ -111,29 +114,56 @@ internal fun scaleResponsiveFlingVelocity(initialVelocity: Float, density: Float
 
 /** A settled-looking fling should not require a separate tap just to stop it. */
 fun Modifier.slowFlingClick(fling: ResponsiveListFling, onClick: () -> Unit): Modifier =
-    pointerInput(fling, onClick) {
-        awaitEachGesture {
-            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-            // Keep fast-fling tap-to-stop and ordinary drag arbitration intact.
-            val allowClick = fling.running && abs(fling.currentVelocity) <= 80.dp.toPx()
-            if (!allowClick) return@awaitEachGesture
-            var moved = false
-            while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop ||
-                    event.changes.size > 1) moved = true
-                if (!change.pressed) {
-                    if (!moved && !change.isConsumed &&
-                        change.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
-                        change.consume()
-                        onClick()
+    this then SlowFlingClickElement(fling, onClick)
+
+private data class SlowFlingClickElement(
+    val fling: ResponsiveListFling,
+    val onClick: () -> Unit
+) : ModifierNodeElement<SlowFlingClickNode>() {
+    override fun create() = SlowFlingClickNode(fling, onClick)
+
+    override fun update(node: SlowFlingClickNode) {
+        node.fling = fling
+        node.onClick = onClick
+    }
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "slowFlingClick"
+    }
+}
+
+private class SlowFlingClickNode(
+    var fling: ResponsiveListFling,
+    var onClick: () -> Unit
+) : DelegatingNode() {
+    init {
+        delegate(
+            SuspendingPointerInputModifierNode {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    // Keep fast-fling tap-to-stop and ordinary drag arbitration intact.
+                    val allowClick = fling.running && abs(fling.currentVelocity) <= 80.dp.toPx()
+                    if (!allowClick) return@awaitEachGesture
+                    var moved = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Final)
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop ||
+                            event.changes.size > 1) moved = true
+                        if (!change.pressed) {
+                            if (!moved && !change.isConsumed &&
+                                change.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                                change.consume()
+                                onClick()
+                            }
+                            break
+                        }
                     }
-                    break
                 }
             }
-        }
+        )
     }
+}
 
 @Composable
 fun ReadingTouchGuard(content: @Composable () -> Unit) {

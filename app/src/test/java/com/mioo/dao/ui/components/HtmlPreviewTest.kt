@@ -32,4 +32,18 @@ class HtmlPreviewTest {
         assertSame(source, prepareHtmlPreview(source, compact = true, trim = false))
         assertEquals("", prepareHtmlPreview(AnnotatedString(" \n\t"), true, true).text)
     }
+
+    @Test fun htmlParseCachePrewarmSupportsConcurrentReadsAndVariants() {
+        val color = androidx.compose.ui.graphics.Color(0xFF336699)
+        val samples = (0 until 40).map { "line1-$it<br><br><br>line2-$it &gt;&gt;123456" }
+        HtmlParseCache.prewarm(samples, color, darkTheme = false, compactBlankLines = true)
+        for (i in samples.indices) {
+            val parsed = HtmlParseCache.getOrParse(samples[i], color, darkTheme = false)
+            assertTrue(parsed.annotated.text.contains("line1-$i"))
+            val compact = HtmlParseCache.displayText(
+                samples[i], color, darkTheme = false, dicePreset = null, compact = true, trim = false
+            )
+            assertEquals("line1-$i\nline2-$i >>123456", compact.text)
+        }
+    }
 }

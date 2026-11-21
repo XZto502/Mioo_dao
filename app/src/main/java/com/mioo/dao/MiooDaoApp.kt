@@ -116,6 +116,13 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
     }
 
     private fun deferNonCriticalWarm() {
+        appScope.launch(Dispatchers.Default) {
+            kotlinx.coroutines.delay(350)
+            runCatching {
+                android.text.TextPaint().apply { textSize = 42f }
+                    .measureText("ﾟ∀´дつ⊂彡☆╬∇Дεω≡・ゝー。ᗜᗢəʃΣΩ♪★●○▲△▼▽◆◇□■")
+            }
+        }
         appScope.launch(Dispatchers.IO) {
             var first = true
             SettingsDataStore(this@MiooDaoApp).feedFoldersFlow
