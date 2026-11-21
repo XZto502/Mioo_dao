@@ -10,6 +10,7 @@ import com.mioo.dao.data.model.FeedFolder
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.SettingsRepository
+import com.mioo.dao.data.repository.CloudFeedChange
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.components.BookmarkListItem
 import com.mioo.dao.ui.components.ThreadListItem
@@ -108,6 +109,9 @@ class FeedViewModel @Inject constructor(
     private val remoteFolderCache = HashMap<String, CachedRemoteFolder>()
 
     init {
+        viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            threadRepository.cloudFeedChanges.collect(::applyCloudFeedChange)
+        }
         viewModelScope.launch {
             val saved = settingsDataStore.lastFeedFolderFlow.first().ifBlank { null }
             val folders = settingsDataStore.feedFoldersFlow.first()
@@ -178,8 +182,8 @@ class FeedViewModel @Inject constructor(
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
     private var remoteLoadMoreJob: kotlinx.coroutines.Job? = null
     // Each request keeps its own set across suspensions while building display items.
-    private var firstPageRemovals = mutableSetOf<String>()
-    private var nextPageRemovals = mutableSetOf<String>()
+    private var firstPageChanges = mutableSetOf<String>()
+    private var nextPageChanges = mutableSetOf<String>()
     private var remoteGeneration = 0L
 
     fun selectFolder(uuid: String?) {
@@ -231,7 +235,7 @@ class FeedViewModel @Inject constructor(
         remotePage = 1
         remoteEndReached = false
         remoteFeedJob?.cancel()
-        val removed = mutableSetOf<String>().also { firstPageRemovals = it }
+        val changed = mutableSetOf<String>().also { firstPageChanges = it }
         remoteFeedJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = it.remoteDisplayItems.isEmpty(), isLoadingMore = false) }
             threadRepository.getFeed(uuid, 1).collect { response ->
@@ -244,8 +248,9 @@ class FeedViewModel @Inject constructor(
                     val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
                     val display = buildRemoteItems(received, knownCounts)
                     if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
-                    val threads = if (removed.isEmpty()) received else received.filterNot { it.idStr in removed }
-                    val items = if (removed.isEmpty()) display else display.filterNot { it.idStr in removed }
+                    val state = _uiState.value
+                    val threads = mergeChangedFirstPage(state.remoteThreads, received, changed) { it.idStr }
+                    val items = mergeChangedFirstPage(state.remoteDisplayItems, display, changed) { it.idStr }
                     val hasMore = received.isNotEmpty()
                     remoteEndReached = !hasMore
                     remoteFolderCache[uuid] = CachedRemoteFolder(
@@ -301,29 +306,41 @@ class FeedViewModel @Inject constructor(
         )
     }
 
+    private fun applyCloudFeedChange(change: CloudFeedChange) {
+        val (uuid, threadId, added) = change
+        if (_uiState.value.feedFolders.none { it.uuid == uuid }) return
+        val selected = _uiState.value.selectedFolderId == uuid
+        val cached = remoteFolderCache[uuid]
+        if (!selected && cached == null) return
+
+        // Transform just the changed card. The in-flight pages still determine pagination.
+        val item = added?.let {
+            listOf(it).toFilteredThreadListItems(emptySet(), emptySet(), emptyList()).single()
+        }
+        if (selected) {
+            if (remoteFeedJob?.isActive == true) firstPageChanges.add(threadId)
+            if (remoteLoadMoreJob?.isActive == true) nextPageChanges.add(threadId)
+            _uiState.update {
+                it.copy(
+                    remoteThreads = applyFeedChange(it.remoteThreads, threadId, added) { row -> row.idStr },
+                    remoteDisplayItems = applyFeedChange(it.remoteDisplayItems, threadId, item) { row -> row.idStr }
+                )
+            }
+        }
+        if (cached != null) {
+            val state = _uiState.value
+            remoteFolderCache[uuid] = cached.copy(
+                threads = if (selected) state.remoteThreads else applyFeedChange(cached.threads, threadId, added) { it.idStr },
+                displayItems = if (selected) state.remoteDisplayItems else applyFeedChange(cached.displayItems, threadId, item) { it.idStr }
+            )
+        }
+    }
+
     fun unsubscribeRemote(uuid: String, threadId: String) {
         viewModelScope.launch {
             threadRepository.delFeed(uuid, threadId).collect { response ->
-                when (response) {
-                    is XdResponse.Success -> {
-                        if (_uiState.value.selectedFolderId == uuid) {
-                            if (remoteFeedJob?.isActive == true) firstPageRemovals.add(threadId)
-                            if (remoteLoadMoreJob?.isActive == true) nextPageRemovals.add(threadId)
-                        }
-                        remoteFolderCache[uuid]?.let { cached ->
-                            remoteFolderCache[uuid] = cached.copy(
-                                threads = cached.threads.filterNot { it.idStr == threadId },
-                                displayItems = cached.displayItems.filterNot { it.idStr == threadId }
-                            )
-                        }
-                        _uiState.update { state ->
-                            if (state.selectedFolderId != uuid) state else state.copy(
-                                remoteThreads = state.remoteThreads.filterNot { it.idStr == threadId },
-                                remoteDisplayItems = state.remoteDisplayItems.filterNot { it.idStr == threadId }
-                            )
-                        }
-                    }
-                    is XdResponse.Error -> _errorEvents.tryEmit("取消订阅失败：${response.message}")
+                if (response is XdResponse.Error) {
+                    _errorEvents.tryEmit("取消订阅失败：${response.message}")
                 }
             }
         }
@@ -337,7 +354,7 @@ class FeedViewModel @Inject constructor(
         _uiState.update { it.copy(isLoadingMore = true) }
         val page = remotePage + 1
         val generation = remoteGeneration
-        val removed = mutableSetOf<String>().also { nextPageRemovals = it }
+        val changed = mutableSetOf<String>().also { nextPageChanges = it }
         remoteLoadMoreJob = viewModelScope.launch {
             try {
                 remoteFeedJob?.join()
@@ -354,12 +371,13 @@ class FeedViewModel @Inject constructor(
                         }
                         val display = buildRemoteItems(received, state.remoteReplyCounts)
                         if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
-                        val added = if (removed.isEmpty()) received else received.filterNot { it.idStr in removed }
-                        val items = if (removed.isEmpty()) display else display.filterNot { it.idStr in removed }
+                        val added = if (changed.isEmpty()) received else received.filterNot { it.idStr in changed }
+                        val items = if (changed.isEmpty()) display else display.filterNot { it.idStr in changed }
+                        val replaced = if (changed.isEmpty()) previewIds else previewIds - changed
                         _uiState.update {
                             it.copy(
-                                remoteThreads = it.remoteThreads.filterNot { thread -> thread.idStr in previewIds } + added,
-                                remoteDisplayItems = it.remoteDisplayItems.filterNot { item -> item.idStr in previewIds } + items
+                                remoteThreads = it.remoteThreads.filterNot { thread -> thread.idStr in replaced } + added,
+                                remoteDisplayItems = it.remoteDisplayItems.filterNot { item -> item.idStr in replaced } + items
                             )
                         }
                         previewIds = added.mapTo(HashSet()) { it.idStr }

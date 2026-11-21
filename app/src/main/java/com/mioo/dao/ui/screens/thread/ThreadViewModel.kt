@@ -1160,7 +1160,7 @@ class ThreadViewModel @Inject constructor(
                     threadRepository.addBookmark(thread)
                 }
             } else {
-                threadRepository.addFeed(folderUuid, threadId, thread.title, thread.replyCount ?: 0).collect { response ->
+                threadRepository.addFeed(folderUuid, thread).collect { response ->
                     when (response) {
                         is XdResponse.Success -> {
                             _chromeState.update { it.copy(failedRemovalFolders = emptySet()) }
@@ -1193,7 +1193,7 @@ class ThreadViewModel @Inject constructor(
     fun saveToFolder(folderUuid: String, onComplete: () -> Unit) {
         viewModelScope.launch {
             val thread = _listState.value.thread ?: return@launch
-            threadRepository.addFeed(folderUuid, threadId, thread.title, thread.replyCount ?: 0).collect {
+            threadRepository.addFeed(folderUuid, thread).collect {
                 onComplete()
             }
         }

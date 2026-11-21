@@ -1,5 +1,21 @@
 package com.mioo.dao.ui.screens.feed
 
+internal fun <T> applyFeedChange(rows: List<T>, id: String, added: T?, key: (T) -> String): List<T> {
+    val exists = rows.any { key(it) == id }
+    return when {
+        added == null && exists -> rows.filterNot { key(it) == id }
+        added != null && !exists -> listOf(added) + rows
+        else -> rows
+    }
+}
+
+internal fun <T> mergeChangedFirstPage(
+    current: List<T>, received: List<T>, changed: Set<String>, key: (T) -> String
+): List<T> {
+    if (changed.isEmpty()) return received
+    return current.filter { key(it) in changed } + received.filterNot { key(it) in changed }
+}
+
 /** Match first-occurrence paging semantics without rebuilding existing display rows. */
 internal fun <T, K> newFeedPageItems(
     existing: List<T>,

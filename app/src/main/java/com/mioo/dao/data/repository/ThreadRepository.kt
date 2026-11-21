@@ -7,7 +7,6 @@ import com.mioo.dao.data.api.XdApiService
 import com.mioo.dao.data.api.CookieInterceptor
 
 import com.mioo.dao.data.api.extractQuotedJsonString
-import com.mioo.dao.data.api.isXdBusinessPlainString
 import com.mioo.dao.data.model.GithubRelease
 import com.mioo.dao.data.local.BookmarkEntity
 import com.mioo.dao.data.local.CacheDao
@@ -47,6 +46,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -141,7 +142,8 @@ interface ThreadRepository {
 
     // Remote Feed operations
     fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>>
-    fun addFeed(uuid: String, tid: String, title: String? = null, replyCount: Int = 0): Flow<XdResponse<String>>
+    fun addFeed(uuid: String, thread: Thread): Flow<XdResponse<String>>
+    val cloudFeedChanges: Flow<CloudFeedChange>
     fun observeCloudFeedIndex(uuids: List<String>): Flow<List<com.mioo.dao.data.local.CloudFeedThreadEntity>>
     fun observeFullyIndexedCloudFolders(): Flow<List<String>>
     suspend fun syncCloudFeedIndex(uuid: String)
@@ -1170,11 +1172,11 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun addFeed(uuid: String, tid: String, title: String?, replyCount: Int): Flow<XdResponse<String>> =
-        flow {
-            val entry = CloudFeedThreadEntity(uuid, tid, title = title.effectiveTitle(), replyCount = replyCount, position = -1)
-            emit(writeCloudFeed(uuid, tid, entry))
-        }.flowOn(Dispatchers.IO)
+    private val _cloudFeedChanges = MutableSharedFlow<CloudFeedChange>(extraBufferCapacity = 32)
+    override val cloudFeedChanges = _cloudFeedChanges.asSharedFlow()
+
+    override fun addFeed(uuid: String, thread: Thread): Flow<XdResponse<String>> =
+        flow { emit(writeCloudFeed(uuid, thread.idStr, thread.copy(replies = emptyList()))) }.flowOn(Dispatchers.IO)
 
     override fun delFeed(uuid: String, tid: String): Flow<XdResponse<String>> = flow {
         val result = writeCloudFeed(uuid, tid, null)
@@ -1183,8 +1185,11 @@ class ThreadRepositoryImpl @Inject constructor(
     }.flowOn(Dispatchers.IO)
 
     private suspend fun writeCloudFeed(
-        uuid: String, tid: String, entry: CloudFeedThreadEntity?
+        uuid: String, tid: String, added: Thread?
     ): XdResponse<String> {
+        val entry = added?.let {
+            CloudFeedThreadEntity(uuid, tid, title = it.title.effectiveTitle(), replyCount = it.replyCount ?: 0, position = -1)
+        }
         val folder = cloudFolder(uuid)
         return folder.lock.withLock {
             val marker = cloudFeedRepairMarker(context, uuid)
@@ -1207,6 +1212,7 @@ class ThreadRepositoryImpl @Inject constructor(
                     if (tryPersistCloudFeedChanges(uuid, folder)) {
                         if (newMarker) marker.delete()
                     } else scheduleCloudFeedRepair(uuid, folder)
+                    _cloudFeedChanges.emit(CloudFeedChange(uuid, tid, added))
                 }
             }
             else if (newMarker && result is XdResponse.Error && result.throwable == null) marker.delete()

@@ -2,10 +2,13 @@ package com.mioo.dao.data.repository
 
 import android.content.Context
 import com.mioo.dao.data.api.extractQuotedJsonString
+import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+
+data class CloudFeedChange(val uuid: String, val threadId: String, val added: Thread?)
 
 // Each folder has its own crash marker. It contains no cookie or subscription identifier.
 internal fun cloudFeedRepairMarker(context: Context, uuid: String): File {
