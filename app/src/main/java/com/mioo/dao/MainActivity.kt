@@ -413,6 +413,8 @@ class MainActivity : ComponentActivity() {
         clipboardThreadCandidate.value = null
     }
 
+    private var clipboardReadJob: kotlinx.coroutines.Job? = null
+
     private fun checkClipboardForThreadId() {
         if (isFinishing || isDestroyed) return
         // Already showing a prompt
@@ -422,13 +424,18 @@ class MainActivity : ComponentActivity() {
         // Need focus — Android blocks clipboard reads otherwise (returns empty / null)
         if (!hasWindowFocus()) return
 
-        val text = readClipboardText() ?: return
-        if (text.isBlank()) return
-        // Same clip content already handled
-        if (text.hashCode() == lastPromptedClipboardHash) return
-
-        val threadId = ThreadLinkParser.parseEightDigitThreadId(text) ?: return
-        clipboardThreadCandidate.value = threadId
+        if (clipboardReadJob?.isActive == true) return
+        clipboardReadJob = lifecycleScope.launch {
+            val candidate = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val text = readClipboardText() ?: return@withContext null
+                ThreadLinkParser.parseEightDigitThreadId(text)?.let { text.hashCode() to it }
+            } ?: return@launch
+            if (hasWindowFocus() && !isFinishing && !isDestroyed &&
+                pendingThreadIdState.value == null && clipboardThreadCandidate.value == null &&
+                candidate.first != lastPromptedClipboardHash) {
+                clipboardThreadCandidate.value = candidate.second
+            }
+        }
     }
 
     private fun readClipboardText(): String? {
