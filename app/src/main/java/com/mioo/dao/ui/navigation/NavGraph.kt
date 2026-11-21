@@ -21,6 +21,9 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.layout.layout
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
@@ -248,8 +251,7 @@ fun MiooDaoNavGraph(
     var isComposerOpen by remember { mutableStateOf(false) }
     // Scroll the feed downward (finger up) and the tab capsule slides off the bottom.
     // A short reverse drag, or hitting the top, brings it back.
-    var bottomBarVisible by remember { mutableStateOf(true) }
-    var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    val bottomBarVisibleFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(true) }
     val bottomBarSlide = remember { Animatable(0f) }
     val hideAfterPx = with(density) { 36.dp.toPx() }
     val showAfterPx = with(density) { 16.dp.toPx() }
@@ -257,7 +259,7 @@ fun MiooDaoNavGraph(
     val bottomBarScrollAway = remember { floatArrayOf(0f) }
     LaunchedEffect(isComposerOpen) {
         bottomBarScrollAway[0] = 0f
-        bottomBarVisible = true
+        bottomBarVisibleFlow.value = true
     }
     val bottomBarScroll = remember(hideAfterPx, showAfterPx) {
         object : NestedScrollConnection {
@@ -275,7 +277,7 @@ fun MiooDaoNavGraph(
                 // Overscroll at the top: the list did not consume a downward drag.
                 if (available.y > 0f && consumed.y == 0f) {
                     bottomBarScrollAway[0] = 0f
-                    bottomBarVisible = true
+                    bottomBarVisibleFlow.value = true
                     return Offset.Zero
                 }
                 val dy = consumed.y
@@ -284,14 +286,14 @@ fun MiooDaoNavGraph(
                     bottomBarScrollAway[0] += -dy
                     if (bottomBarScrollAway[0] >= hideAfterPx) {
                         bottomBarScrollAway[0] = 0f
-                        bottomBarVisible = false
+                        bottomBarVisibleFlow.value = false
                     }
                 } else if (dy > 0f) {
                     if (bottomBarScrollAway[0] > 0f) bottomBarScrollAway[0] = 0f
                     bottomBarScrollAway[0] -= dy
                     if (-bottomBarScrollAway[0] >= showAfterPx) {
                         bottomBarScrollAway[0] = 0f
-                        bottomBarVisible = true
+                        bottomBarVisibleFlow.value = true
                     }
                 }
                 return Offset.Zero
@@ -299,19 +301,21 @@ fun MiooDaoNavGraph(
         }
     }
     LaunchedEffect(currentTabIndex) {
-        bottomBarVisible = true
+        bottomBarVisibleFlow.value = true
     }
     // 260ms EaseOut dumped the travel into the first frames. 560ms felt slow.
     // 340ms FastOutSlowIn keeps the slide visible without dragging.
     val bottomBarSlideSpec = remember {
         MiooMotion.bottomBarTween<Float>()
     }
-    LaunchedEffect(bottomBarVisible, reducedMotion) {
-        val target = if (bottomBarVisible) 0f else 1f
-        if (reducedMotion) {
-            bottomBarSlide.snapTo(target)
-        } else {
-            bottomBarSlide.animateTo(target, bottomBarSlideSpec)
+    LaunchedEffect(bottomBarVisibleFlow, reducedMotion) {
+        bottomBarVisibleFlow.collectLatest { visible ->
+            val target = if (visible) 0f else 1f
+            if (reducedMotion) {
+                bottomBarSlide.snapTo(target)
+            } else {
+                bottomBarSlide.animateTo(target, bottomBarSlideSpec)
+            }
         }
     }
 
@@ -422,62 +426,18 @@ fun MiooDaoNavGraph(
                         }
                     )
                     // Keep the dock on the home layer so incoming destinations cover it.
-                    AnimatedVisibility(
+                    FloatingBottomDock(
                         modifier = Modifier.align(Alignment.BottomCenter),
                         visible = !isImageViewerOpen && !isComposerOpen,
-                        enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
-                        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
-                    ) {
-                        // Outer box draws into the gesture nav area so the 小白条 is immersive;
-                        // capsule itself stays above the system inset.
-                        // offset (not graphicsLayer) moves the touch target with the slide.
-                        val slidePx = bottomBarHeightPx + with(density) { 12.dp.roundToPx() }
-                        val pageBgColor = readingBackground()
-                        Box(
-                            modifier = Modifier
-                                .onSizeChanged { bottomBarHeightPx = it.height }
-                                .offset { IntOffset(0, (slidePx * bottomBarSlide.value).toInt()) }
-                                .fillMaxWidth()
-                                .background(Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor)))
-                                .navigationBarsPadding()
-                                .padding(horizontal = 16.dp, vertical = 12.dp)
-                        ) {
-                            NavigationBar(
-                                windowInsets = WindowInsets(0, 0, 0, 0),
-                                containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
-                                tonalElevation = 0.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-                                    .border(
-                                        width = 0.5.dp,
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-                                    )
-                            ) {
-                                bottomBarItems.forEach { (index, icon, label) ->
-                                    NavigationBarItem(
-                                        icon = {
-                                            val displayIcon = if (currentTabIndex == index) icon else when (index) {
-                                                0 -> Icons.Outlined.Home
-                                                1 -> Icons.Outlined.BookmarkBorder
-                                                3 -> Icons.Outlined.Settings
-                                                else -> icon
-                                            }
-                                            Icon(displayIcon, contentDescription = label)
-                                        },
-                                        label = { Text(label) },
-                                        selected = currentTabIndex == index,
-                                        onClick = {
-                                            if (index == 2) historyOpenGeneration++
-                                            if (currentTabIndex == index) return@NavigationBarItem
-                                            currentTabIndex = index
-                                        }
-                                    )
-                                }
-                            }
+                        reducedMotion = reducedMotion,
+                        bottomBarSlide = { bottomBarSlide.value },
+                        bottomBarItems = bottomBarItems,
+                        currentTabIndex = currentTabIndex,
+                        onTabSelect = { index ->
+                            if (index == 2) historyOpenGeneration++
+                            if (currentTabIndex != index) currentTabIndex = index
                         }
-                    }
+                    )
                 }
             }
 
@@ -559,6 +519,87 @@ fun MiooDaoNavGraph(
     }
 }
 
+@Composable
+private fun FloatingBottomDock(
+    modifier: Modifier = Modifier,
+    visible: Boolean,
+    reducedMotion: Boolean,
+    bottomBarSlide: () -> Float,
+    bottomBarItems: List<Triple<Int, androidx.compose.ui.graphics.vector.ImageVector, String>>,
+    currentTabIndex: Int,
+    onTabSelect: (Int) -> Unit
+) {
+    val density = LocalDensity.current
+    var bottomBarHeightPx by remember { mutableIntStateOf(0) }
+    val slideExtraPx = with(density) { 12.dp.roundToPx() }
+    val pageBgColor = readingBackground()
+    val backdropBrush = remember(pageBgColor) {
+        Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor))
+    }
+    val dockOffscreen by remember(bottomBarSlide) {
+        derivedStateOf { bottomBarSlide() >= 0.995f }
+    }
+    AnimatedVisibility(
+        modifier = modifier,
+        visible = visible,
+        enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
+        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
+    ) {
+        // Outer box draws into the gesture nav area so the 小白条 is immersive;
+        // capsule itself stays above the system inset.
+        // Translate on the render layer during motion, then park off-screen once settled.
+        val slidePx = bottomBarHeightPx + slideExtraPx
+        Box(
+            modifier = Modifier
+                .onSizeChanged { bottomBarHeightPx = it.height }
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    layout(placeable.width, placeable.height) {
+                        placeable.place(0, if (dockOffscreen) slidePx else 0)
+                    }
+                }
+                .graphicsLayer {
+                    translationY = if (dockOffscreen) 0f else slidePx * bottomBarSlide()
+                }
+                .fillMaxWidth()
+                .background(backdropBrush)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            NavigationBar(
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
+                tonalElevation = 0.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                    .border(
+                        width = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                    )
+            ) {
+                bottomBarItems.forEach { (index, icon, label) ->
+                    NavigationBarItem(
+                        icon = {
+                            val displayIcon = if (currentTabIndex == index) icon else when (index) {
+                                0 -> Icons.Outlined.Home
+                                1 -> Icons.Outlined.BookmarkBorder
+                                3 -> Icons.Outlined.Settings
+                                else -> icon
+                            }
+                            Icon(displayIcon, contentDescription = label)
+                        },
+                        label = { Text(label) },
+                        selected = currentTabIndex == index,
+                        onClick = { onTabSelect(index) }
+                    )
+                }
+            }
+        }
+    }
+}
+
 private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
     var progress by mutableFloatStateOf(if (initiallyOpen) 1f else 0f)
     val firstLayout = CompletableDeferred<Unit>()
@@ -616,8 +657,11 @@ private fun ParallaxPageHost(
             ) {}
         }
     }
-    controller.setViewModelStore(storeOwner.viewModelStore)
-    controller.graph = graph
+    remember(controller, storeOwner, graph) {
+        controller.setViewModelStore(storeOwner.viewModelStore)
+        controller.graph = graph
+        Unit
+    }
     val navigator = remember(controller) { controller.navigatorProvider.getNavigator(ComposeNavigator::class.java) }
     DisposableEffect(controller, lifecycleOwner) {
         controller.setLifecycleOwner(lifecycleOwner)

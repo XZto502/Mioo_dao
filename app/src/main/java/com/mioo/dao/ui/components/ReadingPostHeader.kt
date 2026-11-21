@@ -31,11 +31,29 @@ import com.mioo.dao.ui.theme.readingTitleStyle
 @Composable
 internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
+    val baseBodyMedium = MaterialTheme.typography.bodyMedium
+    val isBoldIdentity = post.isPo || post.isAdmin
+    val identityStyle = remember(baseBodyMedium, isBoldIdentity) {
+        val weight = if (isBoldIdentity) FontWeight.Bold else FontWeight.Medium
+        baseBodyMedium.copy(
+            fontSize = (12f * baseBodyMedium.fontSize.value / 14f).sp,
+            lineHeight = (16f * baseBodyMedium.lineHeight.value / 20f).sp,
+            fontWeight = weight,
+            letterSpacing = 0.3.sp
+        )
+    }
+    val poBadgeStyle = remember(baseBodyMedium) {
+        baseBodyMedium.copy(
+            fontSize = 11.sp,
+            lineHeight = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.sp,
+            platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
+        )
+    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(post.userId,
-            style = readingTextStyle(12f, 16f,
-                if (post.isPo || post.isAdmin) FontWeight.Bold else FontWeight.Medium)
-                .copy(letterSpacing = 0.3.sp),
+            style = identityStyle,
             color = when {
                 post.isAdmin -> DaoTheme.colors.admin
                 post.isPo -> colors.onSurface
@@ -45,11 +63,7 @@ internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
             Text(
                 text = "PO",
                 color = colors.onSecondaryContainer,
-                style = readingTextStyle(11f, 11f, FontWeight.Bold).copy(
-                    fontSize = 11.sp,
-                    lineHeight = 11.sp,
-                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
-                ),
+                style = poBadgeStyle,
                 maxLines = 1, softWrap = false,
                 modifier = Modifier.padding(start = 4.dp)
                     .background(colors.secondaryContainer, RoundedCornerShape(4.dp))

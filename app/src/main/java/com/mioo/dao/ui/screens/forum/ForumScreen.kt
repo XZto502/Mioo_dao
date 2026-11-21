@@ -81,6 +81,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -314,8 +315,13 @@ fun ForumScreen(
 
     // Paging via snapshotFlow — does not recompose the whole screen on every scroll frame
     // (derivedStateOf + LaunchedEffect(.value) used to restart the effect on flag churn).
+    val latestItemCount = rememberUpdatedState(uiState.displayItems.size)
     LaunchedEffect(listState, currentForumId, uiState.isLoading, uiState.isRefreshing, uiState.isLastPage) {
         snapshotFlow {
+            val count = latestItemCount.value
+            if (count <= 0 || listState.firstVisibleItemIndex + 10 < count) {
+                return@snapshotFlow false
+            }
             val info = listState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false
             // The stable footer occupies one slot even while idle.
@@ -564,6 +570,11 @@ fun ForumScreen(
             ) {
                 // Single list instance — pass only list fields so chrome/drawer flags
                 // do not force every row to recompose.
+                val onContinuePastBlocks = remember(viewModel) { { viewModel.continuePastBlockedPages() } }
+                val onImageClick = remember { { url: String -> activeImageUrl = url } }
+                val onBlockThread = remember(settingsViewModel) { { id: String -> settingsViewModel.addBlockedThread(id) } }
+                val onBlockUser = remember(settingsViewModel) { { id: String -> settingsViewModel.addBlockedUser(id) } }
+                val onFreeCopy = remember { { text: String -> freeCopyText = text } }
                 key(currentForumId) {
                     val timelineForumNames = rememberTimelineForumNames(currentForumId, viewModel)
                     ForumThreadListPane(
@@ -575,14 +586,14 @@ fun ForumScreen(
                         isRefreshing = uiState.isRefreshing,
                         isLastPage = uiState.isLastPage,
                         emptyHint = uiState.emptyHint,
-                        onContinuePastBlocks = { viewModel.continuePastBlockedPages() },
+                        onContinuePastBlocks = onContinuePastBlocks,
                         listState = listState,
                         emptyStringLambda = emptyStringLambda,
                         onNavigateToThread = onNavigateToThread,
-                        onImageClick = { activeImageUrl = it },
-                        onBlockThread = { settingsViewModel.addBlockedThread(it) },
-                        onBlockUser = { settingsViewModel.addBlockedUser(it) },
-                        onFreeCopy = { freeCopyText = it },
+                        onImageClick = onImageClick,
+                        onBlockThread = onBlockThread,
+                        onBlockUser = onBlockUser,
+                        onFreeCopy = onFreeCopy,
                         warmEnabled = allowBackgroundWarm,
                         onFirstScreenReady = notifyColdStartReady
                     )
@@ -606,12 +617,10 @@ fun ForumScreen(
                 }
 
                 // Unified loading indicator: only the top pull-to-refresh circle.
-                if (pullToRefreshState.isRefreshing || pullToRefreshState.progress > 0f) {
-                    PullToRefreshContainer(
-                        state = pullToRefreshState,
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    )
-                }
+                ForumPullRefreshOverlay(
+                    state = pullToRefreshState,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
             }
         }
 
@@ -723,6 +732,20 @@ fun ForumScreen(
             onDismiss = { activeImageUrl = null }
         )
     }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ForumPullRefreshOverlay(
+    state: PullToRefreshState,
+    modifier: Modifier = Modifier
+) {
+    if (state.isRefreshing || state.progress > 0f) {
+        PullToRefreshContainer(
+            state = state,
+            modifier = modifier
+        )
     }
 }
 
@@ -1057,15 +1080,13 @@ private fun ForumThreadListPane(
     LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, previewDicePreset, warmEnabled, displayItems) {
         if (!warmEnabled) return@LaunchedEffect
         snapshotFlow {
-            val info = listState.layoutInfo
-            // Advance in four-row batches. A continuous fling can cross several
-            // batches before the list is ever idle.
-            (info.visibleItemsInfo.lastOrNull()?.index ?: 0) / 4
+            // Advance in four-row batches without subscribing to layoutInfo every pixel.
+            listState.firstVisibleItemIndex / 4
         }
             .distinctUntilChanged()
             .collectLatest { batch ->
                 val start = (batch * 4 - 4).coerceAtLeast(0)
-                val end = (batch * 4 + 12).coerceAtMost(displayItems.size)
+                val end = (batch * 4 + 14).coerceAtMost(displayItems.size)
                 if (start >= end) return@collectLatest
                 withContext(Dispatchers.Default) {
                     for (index in start until end) {
@@ -1125,6 +1146,12 @@ private fun ForumThreadListPane(
     // fling at the top. The refresh indicator owns this edge interaction instead.
     val responsiveConfiguration = rememberResponsiveListConfiguration()
     val responsiveFling = rememberResponsiveListFling()
+    val onItemLongClick = remember(haptics) {
+        { item: ThreadListItem ->
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            blockTarget = item
+        }
+    }
     CompositionLocalProvider(LocalOverscrollConfiguration provides null, LocalViewConfiguration provides responsiveConfiguration) {
     // Always keep a LazyColumn so pull-to-refresh has a scrollable child.
     LazyColumn(
@@ -1192,10 +1219,7 @@ private fun ForumThreadListPane(
                 emptyStringLambda = emptyStringLambda,
                 onNavigateToThread = onNavigateToThread,
                 onImageClick = onImageClick,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    blockTarget = item
-                }
+                onItemLongClick = onItemLongClick
             )
         }
 
@@ -1262,13 +1286,16 @@ private fun ForumThreadRow(
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
     onImageClick: (String) -> Unit,
-    onLongClick: () -> Unit
+    onItemLongClick: (ThreadListItem) -> Unit
 ) {
     val onThreadClick = remember(item.idStr, onNavigateToThread) {
         { onNavigateToThread(item.idStr) }
     }
     val onImageClickRemembered = remember(onImageClick) {
         { url: String -> onImageClick(url) }
+    }
+    val onLongClick = remember(item, onItemLongClick) {
+        { onItemLongClick(item) }
     }
     ThreadCard(
         modifier = Modifier.slowFlingClick(fling, onThreadClick),

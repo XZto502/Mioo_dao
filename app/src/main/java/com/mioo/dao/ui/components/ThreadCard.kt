@@ -175,16 +175,20 @@ fun ThreadCard(
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.5.dp))
-                    Text(
-                        text = "$replyCount replies",
-                        modifier = Modifier.offset(y = (-0.5).dp),
-                        style = MaterialTheme.typography.labelMedium.copy(
+                    val baseLabelMedium = MaterialTheme.typography.labelMedium
+                    val replyBadgeStyle = remember(baseLabelMedium) {
+                        baseLabelMedium.copy(
                             fontSize = 11.5.sp,
                             lineHeight = 11.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFeatureSettings = "tnum",
                             platformStyle = PlatformTextStyle(includeFontPadding = false)
-                        ),
+                        )
+                    }
+                    Text(
+                        text = "$replyCount replies",
+                        modifier = Modifier.offset(y = (-0.5).dp),
+                        style = replyBadgeStyle,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
