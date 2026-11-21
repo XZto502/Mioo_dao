@@ -398,6 +398,16 @@ fun FeedScreen(
                         }
                     }
                 }
+                uiState.remoteLoadFailed && remoteItems.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("收藏夹加载失败", style = MaterialTheme.typography.titleMedium)
+                            TextButton(onClick = { viewModel.refreshRemote() }, enabled = current) {
+                                Text("重试")
+                            }
+                        }
+                    }
+                }
                 uiState.selectedFolderId != null && !uiState.isLoading && remoteItems.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),

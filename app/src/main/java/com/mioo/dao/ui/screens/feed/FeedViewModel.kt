@@ -18,13 +18,12 @@ import com.mioo.dao.ui.components.toBookmarkListItems
 import com.mioo.dao.ui.components.toFilteredThreadListItems
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -53,6 +52,7 @@ data class FeedUiState(
     val remoteReplyCounts: Map<String, Int> = emptyMap(),
     val feedFolders: List<FeedFolder> = emptyList(),
     val isLoading: Boolean = false,
+    val remoteLoadFailed: Boolean = false,
     val isLoadingMore: Boolean = false,
     val loadedRemotePage: Int = 1,
     val hasMoreRemote: Boolean = false,
@@ -100,8 +100,8 @@ class FeedViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000, replayExpirationMillis = 0), emptyMap())
 
     /** 一次性错误提示事件（取消订阅失败 / 加载更多失败等），由 FeedScreen 弹 Toast */
-    private val _errorEvents = MutableSharedFlow<String>()
-    val errorEvents: SharedFlow<String> = _errorEvents.asSharedFlow()
+    private val _errorEvents = Channel<String>(Channel.BUFFERED)
+    val errorEvents = _errorEvents.receiveAsFlow()
 
     private var remotePage = 1
     private var remoteLoadingMore = false
@@ -200,6 +200,7 @@ class FeedViewModel @Inject constructor(
                 it.copy(
                     selectedFolderId = uuid,
                     isLoading = false,
+                    remoteLoadFailed = false,
                     isLoadingMore = false,
                     hasMoreRemote = cached.hasMore,
                     loadedRemotePage = cached.page,
@@ -214,6 +215,7 @@ class FeedViewModel @Inject constructor(
             it.copy(
                 selectedFolderId = uuid,
                 isLoading = false,
+                remoteLoadFailed = false,
                 isLoadingMore = false,
                 hasMoreRemote = false,
                 loadedRemotePage = 1,
@@ -237,7 +239,9 @@ class FeedViewModel @Inject constructor(
         remoteFeedJob?.cancel()
         val changed = mutableSetOf<String>().also { firstPageChanges = it }
         remoteFeedJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = it.remoteDisplayItems.isEmpty(), isLoadingMore = false) }
+            _uiState.update {
+                it.copy(isLoading = it.remoteDisplayItems.isEmpty(), isLoadingMore = false, remoteLoadFailed = false)
+            }
             threadRepository.getFeed(uuid, 1).collect { response ->
                 // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
                 if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
@@ -272,17 +276,10 @@ class FeedViewModel @Inject constructor(
                         )
                     }
                 } else {
-                    if (_uiState.value.remoteDisplayItems.isEmpty()) {
-                        _uiState.update {
-                            it.copy(
-                                remoteThreads = emptyList(),
-                                remoteDisplayItems = emptyList(),
-                                remoteReplyCounts = emptyMap(),
-                                isLoading = false
-                            )
-                        }
-                    } else {
-                        _uiState.update { it.copy(isLoading = false) }
+                    val showRetry = _uiState.value.remoteDisplayItems.isEmpty()
+                    _uiState.update { it.copy(isLoading = false, remoteLoadFailed = showRetry) }
+                    if (!showRetry && response is XdResponse.Error) {
+                        _errorEvents.send("刷新收藏夹失败：${response.message}")
                     }
                 }
             }
@@ -340,7 +337,7 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch {
             threadRepository.delFeed(uuid, threadId).collect { response ->
                 if (response is XdResponse.Error) {
-                    _errorEvents.tryEmit("取消订阅失败：${response.message}")
+                    _errorEvents.send("取消订阅未完成：${response.message}")
                 }
             }
         }
@@ -384,7 +381,7 @@ class FeedViewModel @Inject constructor(
                         lastPageEmpty = fresh.isEmpty()
                     } else {
                         // 失败回退页码，让用户下拉重试
-                        _errorEvents.tryEmit("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")
+                        _errorEvents.send("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")
                     }
                 }
                 if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@launch
