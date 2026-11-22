@@ -39,8 +39,11 @@ import androidx.compose.ui.zIndex
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import kotlinx.coroutines.flow.first
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInHorizontally
@@ -151,9 +154,9 @@ fun MiooDaoNavGraph(
     val navController = rememberNavController()
     val threadLeaveHandlers = remember { mutableMapOf<String, () -> Unit>() }
     var requestPageBack by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var flushPendingBack by remember { mutableStateOf<(() -> Unit)?>(null) }
     var committingPageBack by remember { mutableStateOf(false) }
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    val isHomeRoute = remember(navController) { mutableStateOf(initialThreadId.isNullOrBlank()) }
     val hostActivity = LocalContext.current as? android.app.Activity
 
     LaunchedEffect(initialThreadId) {
@@ -174,6 +177,7 @@ fun MiooDaoNavGraph(
     val navigateToThread: (String) -> Unit = remember(navController, keyboardController, focusManager) {
         { id: String ->
             if (id.isNotBlank()) {
+                flushPendingBack?.invoke()
                 val now = android.os.SystemClock.uptimeMillis()
                 val top = navController.currentBackStackEntry
                 val topIsThread = top?.destination?.route == Screen.Thread.route
@@ -189,17 +193,12 @@ fun MiooDaoNavGraph(
             }
         }
     }
-    // 离开详情页即清零：返回列表后立刻重点同一串（快速预览习惯）不被 400ms 窗口吞掉
-    LaunchedEffect(currentRoute) {
-        if (currentRoute != Screen.Thread.route) {
-            lastThreadTapAt.longValue = 0L
-        }
-    }
 
     var instantThreadTarget by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(pendingThreadId) {
         val id = pendingThreadId ?: return@LaunchedEffect
         if (id.isNotBlank()) {
+            flushPendingBack?.invoke()
             // Plain push (see navigateToThread): singleTop breaks thread→thread.
             // 与 navigateToThread 相同的去重：同一串已在栈顶时不重复入栈（连点通知场景）
             val top = navController.currentBackStackEntry
@@ -220,15 +219,8 @@ fun MiooDaoNavGraph(
 
     val density = LocalDensity.current
     var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
+    val latestTabIndex = rememberUpdatedState(currentTabIndex)
     var historyOpenGeneration by remember { mutableIntStateOf(0) }
-    var previousRoute by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(currentRoute) {
-        if (currentRoute == Screen.Home.route && previousRoute == Screen.Thread.route &&
-            currentTabIndex == 2) {
-            historyOpenGeneration++
-        }
-        previousRoute = currentRoute
-    }
 
     val bottomBarItems = remember {
         listOf(
@@ -244,9 +236,23 @@ fun MiooDaoNavGraph(
     val boardDrawerSlot = remember { BoardDrawerSlot() }
     val drawerBackProgress = remember { Animatable(0f) }
     val drawerScope = rememberCoroutineScope()
-    LaunchedEffect(currentRoute) {
-        if (currentRoute != Screen.Home.route && boardDrawerState.currentValue != DrawerValue.Closed) {
-            boardDrawerState.close()
+    LaunchedEffect(navController) {
+        var prevRoute: String? = null
+        navController.currentBackStackEntryFlow.collect { entry ->
+            val route = entry.destination.route
+            isHomeRoute.value = route == Screen.Home.route
+            // 离开详情页即清零：返回列表后立刻重点同一串（快速预览习惯）不被 400ms 窗口吞掉
+            if (route != Screen.Thread.route) {
+                lastThreadTapAt.longValue = 0L
+            }
+            if (route == Screen.Home.route && prevRoute == Screen.Thread.route &&
+                latestTabIndex.value == 2) {
+                historyOpenGeneration++
+            }
+            if (route != Screen.Home.route && boardDrawerState.currentValue != DrawerValue.Closed) {
+                boardDrawerState.close()
+            }
+            prevRoute = route
         }
     }
     // 大图查看器打开时收起悬浮 dock：不遮查看器底部药丸、不拦点击
@@ -322,6 +328,17 @@ fun MiooDaoNavGraph(
         }
     }
 
+    val homeBusyFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(false) }
+    val homeScrolling = remember { BooleanArray(1) }
+    val homeTouching = remember { BooleanArray(1) }
+    val updateHomeBusy = remember(homeBusyFlow, homeScrolling, homeTouching) {
+        { scrolling: Boolean?, touching: Boolean? ->
+            scrolling?.let { homeScrolling[0] = it }
+            touching?.let { homeTouching[0] = it }
+            homeBusyFlow.value = homeScrolling[0] || homeTouching[0]
+        }
+    }
+
     ModalNavigationDrawer(
         modifier = modifier,
         drawerState = boardDrawerState,
@@ -330,11 +347,13 @@ fun MiooDaoNavGraph(
         gesturesEnabled = (boardDrawerState.currentValue == DrawerValue.Open ||
             boardDrawerState.targetValue == DrawerValue.Open) &&
             boardDrawerSlot.gesturesEnabled &&
-            currentRoute == Screen.Home.route &&
+            isHomeRoute.value &&
             currentTabIndex == 0 &&
             !isImageViewerOpen &&
             !isComposerOpen,
-        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f * (1f - drawerBackProgress.value)),
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(
+            alpha = 0.42f * (1f - drawerBackProgress.value)
+        ),
         drawerContent = {
             Box(Modifier.graphicsLayer { translationX = -drawerBackProgress.value * size.width }) {
                 boardDrawerSlot.content()
@@ -372,6 +391,7 @@ fun MiooDaoNavGraph(
             navController,
             reducedMotion,
             predictiveBackEnabled,
+            homeBusyFlow = homeBusyFlow,
             initialThreadId = initialThreadId,
             consumeInstantOpen = { entry ->
                 val target = instantThreadTarget
@@ -382,6 +402,7 @@ fun MiooDaoNavGraph(
                 match
             },
             registerBackRequest = { requestPageBack = it },
+            registerFlushPendingBack = { flushPendingBack = it },
             onCommitBack = { entry ->
                 committingPageBack = true
                 try {
@@ -402,11 +423,26 @@ fun MiooDaoNavGraph(
         ) { entry ->
             when (entry.destination.route) {
             Screen.Home.route -> {
-                BackHandler(enabled = currentRoute == Screen.Home.route && currentTabIndex != 0 &&
+                BackHandler(enabled = isHomeRoute.value && currentTabIndex != 0 &&
                     boardDrawerState.currentValue == DrawerValue.Closed && !isImageViewerOpen && !isComposerOpen) {
                     currentTabIndex = 0
                 }
-                Box(Modifier.fillMaxSize().nestedScroll(bottomBarScroll)) {
+                DisposableEffect(updateHomeBusy) {
+                    onDispose { updateHomeBusy(false, false) }
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(updateHomeBusy) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    updateHomeBusy(null, event.changes.any { it.pressed })
+                                }
+                            }
+                        }
+                        .nestedScroll(bottomBarScroll)
+                ) {
                     MainTabs(
                         currentTabIndex = currentTabIndex,
                         reducedMotion = reducedMotion,
@@ -416,15 +452,21 @@ fun MiooDaoNavGraph(
                         dockSinkFraction = { bottomBarSlide.value },
                         drawerState = boardDrawerState,
                         boardDrawerSlot = boardDrawerSlot,
+                        onForumScrollInProgressChange = remember(updateHomeBusy) {
+                            { scrolling -> updateHomeBusy(scrolling, null) }
+                        },
                         onImageViewerOpenChange = { isImageViewerOpen = it },
                         onComposerOpenChange = { isComposerOpen = it },
                         onNavigateToSettings = {
+                            flushPendingBack?.invoke()
                             navController.navigate(Screen.SettingsDetail.route)
                         },
                         onNavigateToDrafts = {
+                            flushPendingBack?.invoke()
                             navController.navigate(Screen.DraftBox.route)
                         },
                         onNavigateToSearch = {
+                            flushPendingBack?.invoke()
                             navController.navigate(Screen.Search.route)
                         }
                     )
@@ -437,6 +479,7 @@ fun MiooDaoNavGraph(
                         bottomBarItems = bottomBarItems,
                         currentTabIndex = currentTabIndex,
                         onTabSelect = { index ->
+                            flushPendingBack?.invoke()
                             if (index == 2) historyOpenGeneration++
                             if (currentTabIndex != index) currentTabIndex = index
                         }
@@ -511,7 +554,7 @@ fun MiooDaoNavGraph(
                     val viewModel: ThreadViewModel = hiltViewModel(entry)
                     val isRootExternalThread = !initialThreadId.isNullOrBlank() &&
                         navController.previousBackStackEntry == null &&
-                        navBackStackEntry?.id == entry.id
+                        navController.currentBackStackEntry?.id == entry.id
                     ThreadScreen(
                         viewModel = viewModel,
                         onBackClick = {
@@ -622,9 +665,18 @@ private fun FloatingBottomDock(
 
 val LocalPageTransitionSettled = androidx.compose.runtime.staticCompositionLocalOf<() -> Boolean> { { true } }
 
+internal fun predictiveBackFinishDurationMs(progress: Float): Int =
+    (220f * progress.coerceIn(0f, 1f)).toInt().coerceIn(65, 220)
+
+internal fun computePredictiveLayerProgress(startProgress: Float, gestureProgress: Float): Float =
+    (startProgress.coerceIn(0f, 1f) * (1f - 0.9f * gestureProgress.coerceIn(0f, 1f))).coerceIn(0f, 1f)
+
 private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
     var progress by mutableFloatStateOf(if (initiallyOpen) 1f else 0f)
     var settled by mutableStateOf(initiallyOpen)
+    var coverLayer by mutableStateOf<PageLayer?>(null)
+    var pendingRetirement by mutableStateOf(false)
+    var committed = false
     val firstLayout = CompletableDeferred<Unit>()
     var animation: kotlinx.coroutines.Job? = null
 
@@ -640,9 +692,16 @@ private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
 
 private class PageBackGesture(val layer: PageLayer, val predictive: Boolean) {
     var finishing = false
+    private var startProgress: Float? = null
+    val hasMoved: Boolean get() = startProgress != null
 
     fun update(progress: Float) {
-        layer.progress = (1f - 0.9f * progress.coerceIn(0f, 1f)).coerceIn(0f, 1f)
+        if (!predictive || finishing || (progress <= 0f && !hasMoved)) return
+        val start = startProgress ?: layer.progress.also {
+            layer.animation?.cancel()
+            startProgress = it
+        }
+        layer.progress = computePredictiveLayerProgress(start, progress)
     }
 }
 @Composable
@@ -650,9 +709,11 @@ private fun ParallaxPageHost(
     controller: NavHostController,
     reducedMotion: Boolean,
     predictiveBackEnabled: Boolean,
+    homeBusyFlow: kotlinx.coroutines.flow.StateFlow<Boolean>,
     initialThreadId: String? = null,
     consumeInstantOpen: (NavBackStackEntry) -> Boolean = { false },
     registerBackRequest: ((() -> Unit)?) -> Unit,
+    registerFlushPendingBack: ((() -> Unit)?) -> Unit,
     onCommitBack: (NavBackStackEntry) -> Boolean,
     content: @Composable (NavBackStackEntry) -> Unit
 ) {
@@ -710,6 +771,46 @@ private fun ParallaxPageHost(
         controller.visibleEntries.value.forEach { navigator.onTransitionComplete(it) }
     }
 
+    fun syncCoverLayers() {
+        for (i in layers.indices) {
+            var nextActive: PageLayer? = null
+            for (j in i + 1 until layers.size) {
+                if (!layers[j].pendingRetirement) {
+                    nextActive = layers[j]
+                    break
+                }
+            }
+            layers[i].coverLayer = nextActive
+        }
+    }
+
+    fun commitRetiredLayer(layer: PageLayer): Boolean {
+        if (layer.committed) return true
+        if (controller.currentBackStackEntry?.id != layer.entry.id) {
+            layers.remove(layer)
+            syncCoverLayers()
+            if (gesture?.layer === layer) gesture = null
+            return true
+        }
+        val ok = latestCommitBack.value(layer.entry)
+        if (ok) {
+            layer.committed = true
+            layers.remove(layer)
+            syncCoverLayers()
+            if (gesture?.layer === layer) gesture = null
+        }
+        return ok
+    }
+
+    fun flushPendingRetirements() {
+        val pending = layers.filter { it.pendingRetirement }
+        if (pending.isEmpty()) return
+        for (layer in pending) {
+            layer.animation?.cancel()
+            commitRetiredLayer(layer)
+        }
+    }
+
     LaunchedEffect(entries) {
         val activeIds = entries.map { it.id }.toSet()
         entries.forEachIndexed { index, entry ->
@@ -733,6 +834,7 @@ private fun ParallaxPageHost(
             layer.animation?.cancel()
             layers.remove(layer)
         }
+        syncCoverLayers()
         gesture?.takeIf { it.layer in removed }?.let {
             gesture = null
         }
@@ -740,19 +842,21 @@ private fun ParallaxPageHost(
     }
 
     fun beginBack(predictive: Boolean): PageBackGesture? {
+        flushPendingRetirements()
         val stack = latestEntries.value
         if (stack.size < 2 || gesture?.finishing == true) return null
-        val layer = layers.lastOrNull { it.entry.id == stack.last().id } ?: return null
-        layer.animation?.cancel()
+        val layer = layers.lastOrNull { it.entry.id == stack.last().id && !it.pendingRetirement } ?: return null
+        if (!predictive) layer.animation?.cancel()
         return PageBackGesture(layer, predictive && !latestReducedMotion.value).also { gesture = it }
     }
 
     fun finishBack(active: PageBackGesture) {
         if (active.finishing) return
         active.finishing = true
-        scope.launch {
+        active.layer.animation?.cancel()
+        active.layer.animation = scope.launch {
             if (active.predictive) {
-                val duration = (300 * active.layer.progress.coerceIn(0f, 1f)).toInt().coerceIn(150, 300)
+                val duration = predictiveBackFinishDurationMs(active.layer.progress)
                 active.layer.animateTo(
                     0f,
                     tween(duration, easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f))
@@ -760,14 +864,19 @@ private fun ParallaxPageHost(
             } else {
                 active.layer.animateTo(0f, tween(if (latestReducedMotion.value) 0 else 340, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
             }
-            if (controller.currentBackStackEntry?.id == active.layer.entry.id) {
-                if (latestCommitBack.value(active.layer.entry)) {
-                    // Pop and retire the hit-test layer in the same frame. The back stack
-                    // collector still reconciles entries and completes their lifecycles.
-                    layers.remove(active.layer)
-                    if (gesture === active) gesture = null
-                    return@launch
+            if (homeBusyFlow.value) {
+                // Defer teardown + ViewModel disposal + Compose tree disposal until active
+                // touch/fling on Home settles, keeping the exposed board list at 120Hz.
+                active.layer.pendingRetirement = true
+                syncCoverLayers()
+                if (gesture === active) gesture = null
+                kotlinx.coroutines.withTimeoutOrNull(4000L) {
+                    homeBusyFlow.first { !it }
                 }
+            }
+            if (!commitRetiredLayer(active.layer)) {
+                active.layer.pendingRetirement = false
+                syncCoverLayers()
                 active.layer.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
                 finishTransitions()
             }
@@ -777,6 +886,7 @@ private fun ParallaxPageHost(
 
     val latestBeginBack = rememberUpdatedState<(Boolean) -> PageBackGesture?> { beginBack(it) }
     val latestFinishBack = rememberUpdatedState<(PageBackGesture) -> Unit> { finishBack(it) }
+    val latestFlushPending = rememberUpdatedState { flushPendingRetirements() }
     val callback = remember(controller, scope) {
         object : OnBackPressedCallback(false) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
@@ -791,13 +901,14 @@ private fun ParallaxPageHost(
             override fun handleOnBackCancelled() {
                 val active = gesture ?: return
                 if (active.finishing) return
+                gesture = null
+                if (!active.hasMoved) return
                 active.layer.animation = scope.launch {
                     active.layer.animateTo(
                         1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 800f)
                     )
                     active.layer.settled = true
                     finishTransitions()
-                    if (gesture === active) gesture = null
                 }
             }
 
@@ -811,22 +922,22 @@ private fun ParallaxPageHost(
         backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
         onDispose { callback.remove() }
     }
-    SideEffect { callback.isEnabled = entries.size > 1 }
+    SideEffect { callback.isEnabled = layers.count { !it.pendingRetirement } > 1 }
     val requestBack = remember {
         { latestBeginBack.value(false)?.let { latestFinishBack.value(it) }; Unit }
     }
+    val flushBack = remember { { latestFlushPending.value() } }
     DisposableEffect(registerBackRequest, requestBack) {
         registerBackRequest(requestBack)
         onDispose { registerBackRequest(null) }
     }
+    DisposableEffect(registerFlushPendingBack, flushBack) {
+        registerFlushPendingBack(flushBack)
+        onDispose { registerFlushPendingBack(null) }
+    }
 
-    val edgeShadowWidthPx = with(LocalDensity.current) { 12.dp.toPx() }
-    val edgeShadowBrush = remember(edgeShadowWidthPx) {
-        Brush.horizontalGradient(
-            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.14f)),
-            startX = -edgeShadowWidthPx,
-            endX = 0f
-        )
+    val edgeShadowBrush = remember {
+        Brush.horizontalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.14f)))
     }
 
     Box(
@@ -835,35 +946,20 @@ private fun ParallaxPageHost(
     ) {
         layers.forEachIndexed { index, layer ->
             key(layer.entry.id) {
-                val next = layers.getOrNull(index + 1)
                 val isSettled = remember(layer) { { layer.settled } }
                 Box(Modifier.fillMaxSize().zIndex(index.toFloat()).onSizeChanged {
                     if (it.width > 0 && it.height > 0) layer.firstLayout.complete(Unit)
                 }.graphicsLayer {
-                    val currentProgress = layer.progress.coerceIn(0f, 1f)
-                    val coverProgress = next?.progress?.coerceIn(0f, 1f) ?: 0f
+                    val currentProgress = if (layer.pendingRetirement) 0f else layer.progress.coerceIn(0f, 1f)
+                    val coverProgress = layer.coverLayer?.progress?.coerceIn(0f, 1f) ?: 0f
                     translationY = 0f
                     scaleX = 1f
                     scaleY = 1f
                     shape = androidx.compose.ui.graphics.RectangleShape
                     clip = false
                     translationX = kotlin.math.round(size.width * (1f - currentProgress - 0.25f * coverProgress))
-                    alpha = 1f
-                }.drawWithContent {
-                    val coverProgress = next?.progress?.coerceIn(0f, 1f) ?: 0f
-                    if (coverProgress >= 0.999f) return@drawWithContent
-                    drawContent()
-                    if (coverProgress > 0.001f) {
-                        drawRect(Color.Black.copy(alpha = 0.12f * coverProgress))
-                    }
-                    val currentProgress = layer.progress.coerceIn(0f, 1f)
-                    if (index > 0 && currentProgress > 0.001f && currentProgress < 0.999f) {
-                        drawRect(
-                            brush = edgeShadowBrush,
-                            topLeft = Offset(-edgeShadowWidthPx, 0f),
-                            size = androidx.compose.ui.geometry.Size(edgeShadowWidthPx, size.height)
-                        )
-                    }
+                    // Keep Home's display list cached behind opaque layers instead of dropping drawContent().
+                    alpha = if (coverProgress >= 0.999f || layer.pendingRetirement || (index > 0 && currentProgress <= 0.001f)) 0f else 1f
                 }.pointerInput(Unit) {
                     // This modifier must be inside the translated layer so its hit area
                     // follows the page instead of covering the revealed destination.
@@ -875,6 +971,17 @@ private fun ParallaxPageHost(
                         LocalPageTransitionSettled provides isSettled
                     ) {
                         layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
+                    }
+                    Box(Modifier.matchParentSize().graphicsLayer {
+                        val c = layer.coverLayer?.progress?.coerceIn(0f, 1f) ?: 0f
+                        alpha = if (c > 0.001f && c < 0.999f) 0.12f * c else 0f
+                    }.background(Color.Black))
+                    if (index > 0) {
+                        Box(Modifier.fillMaxHeight().width(12.dp).graphicsLayer {
+                            translationX = -size.width
+                            val p = if (layer.pendingRetirement) 0f else layer.progress.coerceIn(0f, 1f)
+                            alpha = if (p > 0.001f && p < 0.999f) 1f else 0f
+                        }.background(edgeShadowBrush))
                     }
                 }
             }
@@ -892,6 +999,7 @@ private fun MainTabs(
     dockSinkFraction: () -> Float = { 0f },
     drawerState: androidx.compose.material3.DrawerState,
     boardDrawerSlot: BoardDrawerSlot,
+    onForumScrollInProgressChange: (Boolean) -> Unit = {},
     onImageViewerOpenChange: (Boolean) -> Unit = {},
     onComposerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
@@ -1047,6 +1155,7 @@ private fun MainTabs(
                         boardHeaderMod = boardHeaderMod,
                         boardBodyMod = boardBodyMod,
                         isPageActive = isPageActive,
+                        onForumScrollInProgressChange = onForumScrollInProgressChange,
                         onNavigateToSettings = onNavigateToSettings,
                         onNavigateToDrafts = onNavigateToDrafts,
                         onNavigateToSearch = onNavigateToSearch
@@ -1074,6 +1183,7 @@ private fun TabPageContent(
     boardHeaderMod: Modifier,
     boardBodyMod: Modifier,
     isPageActive: () -> Boolean,
+    onForumScrollInProgressChange: (Boolean) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToDrafts: () -> Unit,
     onNavigateToSearch: () -> Unit
@@ -1089,6 +1199,7 @@ private fun TabPageContent(
                     dockSinkFraction = dockSinkFraction,
                     drawerState = drawerState,
                     boardDrawerSlot = boardDrawerSlot,
+                    onScrollInProgressChange = onForumScrollInProgressChange,
                     onImageViewerOpenChange = onImageViewerOpenChange,
                     onComposerOpenChange = onComposerOpenChange,
                     headerBitmap = boardHeader,
