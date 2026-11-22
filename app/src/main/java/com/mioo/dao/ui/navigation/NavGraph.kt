@@ -116,6 +116,8 @@ import com.mioo.dao.ui.screens.forum.ForumScreen
 import com.mioo.dao.ui.screens.forum.ForumViewModel
 import com.mioo.dao.ui.screens.search.SearchScreen
 import com.mioo.dao.ui.screens.search.SearchViewModel
+import com.mioo.dao.ui.screens.settings.NetworkDiagnosticsScreen
+import com.mioo.dao.ui.screens.settings.NetworkDiagnosticsViewModel
 import com.mioo.dao.ui.screens.settings.SettingsScreen
 import com.mioo.dao.ui.screens.settings.SettingsViewModel
 import com.mioo.dao.ui.screens.settings.MoreScreen
@@ -127,6 +129,7 @@ import com.mioo.dao.ui.screens.thread.ThreadViewModel
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object SettingsDetail : Screen("settings_detail")
+    object NetworkDiagnostics : Screen("network_diagnostics")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
     object Thread : Screen("thread/{threadId}?replyDraftId={replyDraftId}") {
@@ -459,6 +462,23 @@ fun MiooDaoNavGraph(
                         viewModel = viewModel,
                         onBackClick = {
                             requestPageBack?.invoke()
+                        },
+                        onOpenNetworkDiagnostics = {
+                            if (navController.currentBackStackEntry?.destination?.route == Screen.SettingsDetail.route) {
+                                navController.navigate(Screen.NetworkDiagnostics.route)
+                            }
+                        }
+                    )
+                }
+            }
+
+            Screen.NetworkDiagnostics.route -> {
+                PageBackdrop {
+                    val viewModel: NetworkDiagnosticsViewModel = hiltViewModel(entry)
+                    NetworkDiagnosticsScreen(
+                        viewModel = viewModel,
+                        onBackClick = {
+                            requestPageBack?.invoke()
                         }
                     )
                 }
@@ -641,6 +661,7 @@ private fun ParallaxPageHost(
             composable(Screen.Home.route) {}
             composable(Screen.Search.route) {}
             composable(Screen.SettingsDetail.route) {}
+            composable(Screen.NetworkDiagnostics.route) {}
             composable(Screen.DraftBox.route) {}
             composable(
                 Screen.Thread.route,

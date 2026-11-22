@@ -88,6 +88,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -117,6 +119,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBackClick: () -> Unit,
+    onOpenNetworkDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
@@ -1374,6 +1377,33 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.updateNetworkCompatibility(it) }
                     )
                 }
+            }
+        }
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenNetworkDiagnostics)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SettingsHeaderIcon(Icons.Default.NetworkCheck, contentDescription = "X 岛通信诊断")
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("X 岛通信诊断", style = settingsItemStyle())
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        "检测 API、图床、网页域名连通性、阻塞环节与延迟",
+                        style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
             }
         }
         // 省流量模式开关
