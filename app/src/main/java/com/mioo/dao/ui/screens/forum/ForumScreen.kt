@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.forum
 
+import com.mioo.dao.ui.components.useUnbufferedFlingGrab
+
 import android.widget.Toast
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -1170,7 +1172,7 @@ private fun ForumThreadListPane(
         flingBehavior = responsiveFling,
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().useUnbufferedFlingGrab(responsiveFling),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             start = 12.dp,

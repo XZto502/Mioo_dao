@@ -1,5 +1,10 @@
 package com.mioo.dao.ui.components
 
+import android.os.Build
+import android.view.InputDevice
+import android.view.MotionEvent
+import android.view.View
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.exponentialDecay
@@ -23,6 +28,59 @@ import androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNode
 import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.composed
+import androidx.compose.ui.input.pointer.pointerInput
+
+/** Delivers the first move promptly when a touch interrupts a running fling. */
+@OptIn(ExperimentalComposeUiApi::class)
+fun Modifier.useUnbufferedFlingGrab(fling: ResponsiveListFling): Modifier = composed {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return@composed Modifier
+    val rootView = LocalView.current.rootView
+
+    val dispatch = remember(rootView, fling) { FlingGrabDispatch(rootView) }
+    Modifier.pointerInteropFilter { event ->
+        // Observe the platform down before Compose stops the in-flight animation.
+        if (event.actionMasked == MotionEvent.ACTION_DOWN &&
+            event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) && fling.running
+        ) {
+            dispatch.start()
+        }
+        false
+    }.pointerInput(dispatch) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            try {
+                while (dispatch.active) {
+                    val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                        .firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed || change.position.y != change.previousPosition.y) break
+                }
+            } finally {
+                // Resume normal input batching for the rest of the drag and on cancellation.
+                dispatch.finish()
+            }
+        }
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.R)
+private class FlingGrabDispatch(private val view: View) {
+    var active = false
+        private set
+
+    fun start() {
+        active = true
+        view.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER)
+    }
+
+    fun finish() {
+        if (!active) return
+        active = false
+        view.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_NONE)
+    }
+}
 
 val LocalScrollTouchGuardEnabled = staticCompositionLocalOf { false }
 

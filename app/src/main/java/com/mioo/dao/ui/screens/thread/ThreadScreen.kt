@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.thread
 
+import com.mioo.dao.ui.components.useUnbufferedFlingGrab
+
 import com.mioo.dao.ui.components.DoodlePadSheet
 
 import androidx.compose.animation.AnimatedVisibility
@@ -819,7 +821,8 @@ fun ThreadScreen(
                 LazyColumn(
                     state = listState,
                     flingBehavior = responsiveFling,
-                    modifier = Modifier.fillMaxSize().nestedScroll(edgePaging),
+                    modifier = Modifier.fillMaxSize().nestedScroll(edgePaging)
+                        .useUnbufferedFlingGrab(responsiveFling),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(
                         start = 12.dp,
