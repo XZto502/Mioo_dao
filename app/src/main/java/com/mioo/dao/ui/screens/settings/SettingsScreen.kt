@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.settings
 
+import com.mioo.dao.ui.screens.search.openAppDefaultLinksSettings
+
 import androidx.compose.foundation.layout.heightIn
 
 import android.app.Activity
@@ -1315,6 +1317,22 @@ fun SettingsScreen(
             )
         }
         Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { openAppDefaultLinksSettings(context) }
+                    .padding(16.dp)
+            ) {
+                Text("默认打开", style = settingsItemStyle())
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "在系统设置中允许喵岛打开 X 岛链接",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),

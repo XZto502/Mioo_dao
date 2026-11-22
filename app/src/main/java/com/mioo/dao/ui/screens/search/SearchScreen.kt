@@ -5,6 +5,7 @@ import com.mioo.dao.LocalThirdPartyServicesAllowed
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,6 +68,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -158,17 +160,14 @@ fun SearchScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = if (allowThirdParty) {
-                    "全站搜索将调用 Chrome 套件检索 X 岛；在系统“默认打开”中授权 X 岛域名后，点搜索串结果可直达本应用。下方同时显示本地结果。"
-                } else {
-                    "在本地历史、收藏和缓存中搜索，也可直接输入串号。"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (!allowThirdParty) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "在本地历史、收藏和缓存中搜索，也可直接输入串号。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             if (allowThirdParty) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -275,7 +274,11 @@ fun SearchScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(enabled = uiState.query.isNotBlank()) {
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    role = Role.Button
+                                ) {
                                     focusManager.clearFocus(force = true)
                                     keyboardController?.hide()
                                     val url = viewModel.prepareSiteSearchUrl() ?: return@clickable
@@ -308,7 +311,7 @@ fun SearchScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Chrome 套件 · site:nmbxd.com OR site:nmbxd1.com ${uiState.query.trim()}",
+                                    text = "site:nmbxd.com OR site:nmbxd1.com ${uiState.query.trim()}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 2,
