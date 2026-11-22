@@ -29,4 +29,15 @@ class ViewerPagingTest {
         assertFalse(shouldLoadPreviousViewerPage(0, 3, 7, false, true, 8))
     }
 
+    @Test fun longImagesDefaultToFillWidthAtTopWhileNormalImagesStayFit() {
+        val container = androidx.compose.ui.unit.IntSize(1080, 2400)
+        // Normal 4:3 image -> null (stays 1f Fit)
+        assertNull(computeStripFillPose(container, androidx.compose.ui.unit.IntSize(1200, 900)))
+        // Long strip image (1080 x 4320, ratio = 4.0 > 2.2) -> fills width (zoom = 1.8) aligned to top (maxY > 0)
+        val pose = computeStripFillPose(container, androidx.compose.ui.unit.IntSize(1080, 4320))
+        assertNotNull(pose)
+        assertEquals(1.8f, pose!!.first, 0.01f)
+        assertTrue(pose.second > 900f)
+    }
+
 }

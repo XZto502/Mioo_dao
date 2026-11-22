@@ -255,6 +255,25 @@ private fun contentFitWidth(containerSize: IntSize, intrinsicSize: IntSize): Flo
     return if (containerAspect > imgAspect) ch * imgAspect else cw
 }
 
+internal fun computeStripFillPose(
+    containerSize: IntSize,
+    intrinsicSize: IntSize,
+    normalizedAngle: Int = 0
+): Pair<Float, Float>? {
+    if (containerSize.width <= 0 || containerSize.height <= 0 ||
+        intrinsicSize.width <= 0 || intrinsicSize.height <= 0
+    ) return null
+    val ratio = intrinsicSize.height.toFloat() / intrinsicSize.width.toFloat()
+    if (ratio <= StripRatioThreshold) return null
+    val fitW = contentFitWidth(containerSize, intrinsicSize) ?: return null
+    if (fitW <= 0f) return null
+    val cw = containerSize.width.toFloat()
+    val z = (cw / fitW).coerceIn(1f, 5f)
+    val fit = fitRotationScaleOf(containerSize, intrinsicSize, normalizedAngle)
+    val (_, maxY) = calculateBounds(containerSize, intrinsicSize, z, normalizedAngle, fit)
+    return z to maxY
+}
+
 /** 90\u00B0/270\u00B0 时把旋转后的 Fit 矩形缩回容器内；0\u00B0/180\u00B0 为 1。 */
 private fun fitRotationScaleOf(
     containerSize: IntSize,
@@ -488,6 +507,12 @@ fun ImageViewer(
                         isClosing = isClosing,
                         onZoomed = { if (pagerState.currentPage == pageIndex) zoomed = it },
                         onRatio = { if (pagerState.currentPage == pageIndex) currentRatio = it },
+                        onStripAutoEnabled = {
+                            if (pagerState.currentPage == pageIndex) {
+                                stripMode = true
+                                zoomed = true
+                            }
+                        },
                         onStripBroken = { if (stripMode) stripMode = false },
                         onToggleChrome = {
                             if (panelOpen) {
@@ -784,6 +809,7 @@ private fun ZoomablePage(
     isClosing: Boolean,
     onZoomed: (Boolean) -> Unit,
     onRatio: (Float) -> Unit,
+    onStripAutoEnabled: () -> Unit,
     onStripBroken: () -> Unit,
     onToggleChrome: () -> Unit,
     onDismiss: () -> Unit
@@ -809,6 +835,19 @@ private fun ZoomablePage(
     }
     var loading by remember(imageUrl) { mutableStateOf(true) }
     var failed by remember(imageUrl) { mutableStateOf(false) }
+    var autoStripAppliedForVisit by remember(imageUrl) { mutableStateOf(false) }
+    var userTouchedForVisit by remember(imageUrl) { mutableStateOf(false) }
+
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            autoStripAppliedForVisit = false
+            userTouchedForVisit = false
+            motionJob.value?.cancel()
+            zoom.floatValue = 1f
+            offsetX.floatValue = 0f
+            offsetY.floatValue = 0f
+        }
+    }
 
     val reducedMotion = isReducedMotionEnabled()
     val motion = if (reducedMotion) snap<Float>() else tween<Float>(220)
@@ -828,11 +867,33 @@ private fun ZoomablePage(
             fit = fitRotationScale,
             isActive = isActive,
             onZoomed = onZoomed,
+            onStripAutoEnabled = onStripAutoEnabled,
             onStripBroken = onStripBroken,
             onToggleChrome = onToggleChrome,
             onDismiss = onDismiss
         )
     )
+
+    // Long images default to fill-width aligned to top as soon as container & image dimensions are ready.
+    LaunchedEffect(isActive, containerSize.value, intrinsicSize.value) {
+        if (!isActive) return@LaunchedEffect
+        val intrinsic = intrinsicSize.value
+        if (intrinsic.width <= 0 || intrinsic.height <= 0) return@LaunchedEffect
+        val ratio = intrinsic.height.toFloat() / intrinsic.width.toFloat()
+        onRatio(ratio)
+        val container = containerSize.value
+        if (container.width <= 0 || container.height <= 0) return@LaunchedEffect
+        if (!userTouchedForVisit && (!autoStripAppliedForVisit || stripMode)) {
+            val (z, maxY) = computeStripFillPose(container, intrinsic, transform.normalizedAngle)
+                ?: return@LaunchedEffect
+            zoom.floatValue = z
+            offsetX.floatValue = 0f
+            offsetY.floatValue = maxY
+            autoStripAppliedForVisit = true
+            latest.value.onStripAutoEnabled()
+            latest.value.onZoomed(z > 1.01f)
+        }
+    }
 
     LaunchedEffect(transform.normalizedAngle, containerSize.value, intrinsicSize.value) {
         if (zoom.value <= 1.01f) {
@@ -874,6 +935,7 @@ private fun ZoomablePage(
 
     LaunchedEffect(resetTick) {
         if (resetTick == 0 || !latest.value.isActive) return@LaunchedEffect
+        userTouchedForVisit = true
         coroutineScope {
             launch { zoom.animateTo(1f, spring()) }
             launch { offsetX.animateTo(0f, spring()) }
@@ -915,6 +977,7 @@ private fun ZoomablePage(
                         latest.value.onToggleChrome()
                     },
                     onDoubleTap = { tap ->
+                        userTouchedForVisit = true
                         val inputs = latest.value
                         inputs.onStripBroken()
                         val s0 = zoom.value.coerceAtLeast(0.01f)
@@ -968,8 +1031,14 @@ private fun ZoomablePage(
                     intrinsicSize = { intrinsicSize.value },
                     angle = { latest.value.angle },
                     fitScale = { latest.value.fit },
-                    onZoomed = { latest.value.onZoomed(it) },
-                    onStripBroken = { latest.value.onStripBroken() },
+                    onZoomed = {
+                        userTouchedForVisit = true
+                        latest.value.onZoomed(it)
+                    },
+                    onStripBroken = {
+                        userTouchedForVisit = true
+                        latest.value.onStripBroken()
+                    },
                     onDismiss = {
                         closingFromDrag = true
                         latest.value.onDismiss()
@@ -1017,6 +1086,14 @@ private fun ZoomablePage(
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
                         alignment = Alignment.Center,
+                        onSuccess = { state ->
+                            if (intrinsicSize.value == IntSize.Zero) {
+                                val drawable = state.result.drawable
+                                if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                                    intrinsicSize.value = IntSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -1066,6 +1143,7 @@ private data class PageInputs(
     val fit: Float,
     val isActive: Boolean,
     val onZoomed: (Boolean) -> Unit,
+    val onStripAutoEnabled: () -> Unit,
     val onStripBroken: () -> Unit,
     val onToggleChrome: () -> Unit,
     val onDismiss: () -> Unit
