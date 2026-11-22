@@ -175,13 +175,19 @@ fun ForumScreen(
         LazyListState()
     }
     val latestScrollChange = rememberUpdatedState(onScrollInProgressChange)
-    LaunchedEffect(listState) {
+    LaunchedEffect(listState, viewModel) {
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
-            .collect { latestScrollChange.value(it) }
+            .collect { scrolling ->
+                viewModel.setUserScrolling(scrolling)
+                latestScrollChange.value(scrolling)
+            }
     }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { latestScrollChange.value(false) }
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose {
+            viewModel.setUserScrolling(false)
+            latestScrollChange.value(false)
+        }
     }
     val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }

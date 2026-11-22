@@ -620,8 +620,11 @@ private fun FloatingBottomDock(
     }
 }
 
+val LocalPageTransitionSettled = androidx.compose.runtime.staticCompositionLocalOf<() -> Boolean> { { true } }
+
 private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
     var progress by mutableFloatStateOf(if (initiallyOpen) 1f else 0f)
+    var settled by mutableStateOf(initiallyOpen)
     val firstLayout = CompletableDeferred<Unit>()
     var animation: kotlinx.coroutines.Job? = null
 
@@ -719,6 +722,7 @@ private fun ParallaxPageHost(
                         layer.firstLayout.await()
                         withFrameNanos { }
                         layer.animateTo(1f, tween(380, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
+                        layer.settled = true
                         finishTransitions()
                     }
                 }
@@ -791,6 +795,7 @@ private fun ParallaxPageHost(
                     active.layer.animateTo(
                         1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 800f)
                     )
+                    active.layer.settled = true
                     finishTransitions()
                     if (gesture === active) gesture = null
                 }
@@ -815,6 +820,15 @@ private fun ParallaxPageHost(
         onDispose { registerBackRequest(null) }
     }
 
+    val edgeShadowWidthPx = with(LocalDensity.current) { 12.dp.toPx() }
+    val edgeShadowBrush = remember(edgeShadowWidthPx) {
+        Brush.horizontalGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.14f)),
+            startX = -edgeShadowWidthPx,
+            endX = 0f
+        )
+    }
+
     Box(
         modifier = Modifier.fillMaxSize().clip(androidx.compose.ui.graphics.RectangleShape).background(readingBackground()),
         contentAlignment = Alignment.TopStart
@@ -822,6 +836,7 @@ private fun ParallaxPageHost(
         layers.forEachIndexed { index, layer ->
             key(layer.entry.id) {
                 val next = layers.getOrNull(index + 1)
+                val isSettled = remember(layer) { { layer.settled } }
                 Box(Modifier.fillMaxSize().zIndex(index.toFloat()).onSizeChanged {
                     if (it.width > 0 && it.height > 0) layer.firstLayout.complete(Unit)
                 }.graphicsLayer {
@@ -834,7 +849,21 @@ private fun ParallaxPageHost(
                     clip = false
                     translationX = kotlin.math.round(size.width * (1f - currentProgress - 0.25f * coverProgress))
                     alpha = 1f
-                    shadowElevation = if (currentProgress > 0.001f && currentProgress < 0.999f) 12.dp.toPx() else 0f
+                }.drawWithContent {
+                    val coverProgress = next?.progress?.coerceIn(0f, 1f) ?: 0f
+                    if (coverProgress >= 0.999f) return@drawWithContent
+                    drawContent()
+                    if (coverProgress > 0.001f) {
+                        drawRect(Color.Black.copy(alpha = 0.12f * coverProgress))
+                    }
+                    val currentProgress = layer.progress.coerceIn(0f, 1f)
+                    if (index > 0 && currentProgress > 0.001f && currentProgress < 0.999f) {
+                        drawRect(
+                            brush = edgeShadowBrush,
+                            topLeft = Offset(-edgeShadowWidthPx, 0f),
+                            size = androidx.compose.ui.geometry.Size(edgeShadowWidthPx, size.height)
+                        )
+                    }
                 }.pointerInput(Unit) {
                     // This modifier must be inside the translated layer so its hit area
                     // follows the page instead of covering the revealed destination.
@@ -842,7 +871,11 @@ private fun ParallaxPageHost(
                         while (true) awaitPointerEvent()
                     }
                 }) {
-                    layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        LocalPageTransitionSettled provides isSettled
+                    ) {
+                        layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
+                    }
                 }
             }
         }

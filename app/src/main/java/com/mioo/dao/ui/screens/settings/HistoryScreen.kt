@@ -61,6 +61,9 @@ import com.mioo.dao.ui.components.slowFlingClick
 import com.mioo.dao.ui.theme.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -185,20 +188,39 @@ fun HistoryScreen(
                 ) {
                 HorizontalPager(state = pager, beyondBoundsPageCount = 0, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
-                    val records by viewModel.items(category).collectAsState()
                     val quoteColor = MaterialTheme.colorScheme.primary
                     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                     val dicePreset = LocalDicePreset.current
-                    val readyRecords by produceState(initialValue = emptyList<HistoryItem>(), records, quoteColor, dark, dicePreset) {
-                        if (category == HistoryType.BROWSE && records.isNotEmpty()) {
-                            // Parsing HTML in the first list composition can stall the
-                            // dock transition while it passes over this page.
-                            withContext(Dispatchers.Default) {
-                                HtmlParseCache.prewarm(records.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                    val historyPageState by produceState(
+                        initialValue = false to emptyList<HistoryItem>(),
+                        category, quoteColor, dark, dicePreset
+                    ) {
+                        snapshotFlow { isActiveTab() }
+                            .distinctUntilChanged()
+                            .collectLatest { active ->
+                                if (!active) {
+                                    if (value.first) return@collectLatest
+                                    val initial = viewModel.items(category).first { it.isNotEmpty() }
+                                    if (category == HistoryType.BROWSE) {
+                                        withContext(Dispatchers.Default) {
+                                            HtmlParseCache.prewarm(initial.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                                        }
+                                    }
+                                    value = true to initial
+                                } else {
+                                    viewModel.items(category).collect { latest ->
+                                        if (category == HistoryType.BROWSE && latest.isNotEmpty() && value.second.isEmpty()) {
+                                            withContext(Dispatchers.Default) {
+                                                HtmlParseCache.prewarm(latest.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                                            }
+                                        }
+                                        value = true to latest
+                                    }
+                                }
                             }
-                        }
-                        value = records
                     }
+                    val recordsLoaded = historyPageState.first
+                    val readyRecords = historyPageState.second
                     val categoryQuery by viewModel.query(category).collectAsState()
                     // A fresh state also clears LazyColumn's remembered item key, so an
                     // updated/reordered history cannot restore the old reading position.
@@ -207,7 +229,7 @@ fun HistoryScreen(
                     LaunchedEffect(categoryQuery) {
                         if (previousQuery != categoryQuery) { list.scrollToItem(0); previousQuery = categoryQuery }
                     }
-                    if (records.isEmpty()) {
+                    if (recordsLoaded && readyRecords.isEmpty()) {
                         Box(Modifier.fillMaxSize().padding(bottom = 104.dp), contentAlignment = Alignment.Center) {
                             Text(if (categoryQuery.isBlank()) "暂无${category.label}" else "没有匹配的记录",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

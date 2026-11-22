@@ -438,7 +438,8 @@ fun FeedScreen(
                         listState = listState,
                         sizePx = ListThumbImage.SIZE_PX,
                         ahead = 5,
-                        initialDelayMs = 400
+                        initialDelayMs = 400,
+                        enabled = current && isActiveTab()
                     )
 
                     // 触底加载更多（本地收藏为全量数据，loadMoreRemote 在 VM 里对 null 夹直接返回）

@@ -18,4 +18,12 @@ class ResponsiveListMotionTest {
         assertEquals(16000f, scaleResponsiveFlingVelocity(20000f, density), 0.01f)
         assertEquals(-16000f, scaleResponsiveFlingVelocity(-20000f, density), 0.01f)
     }
+
+    @Test
+    fun velocityThresholdPreventsSubPixelTailSteppingAcrossRefreshRates() {
+        assertEquals(126f, responsiveFlingVelocityThresholdPx(density = 3.25f, refreshRateHz = 120f), 0.01f)
+        assertEquals(94.5f, responsiveFlingVelocityThresholdPx(density = 2.0f, refreshRateHz = 90f), 0.01f)
+        assertEquals(63f, responsiveFlingVelocityThresholdPx(density = 2.0f, refreshRateHz = 60f), 0.01f)
+        assertEquals(72f, responsiveFlingVelocityThresholdPx(density = 6.0f, refreshRateHz = 60f), 0.01f)
+    }
 }

@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -65,6 +66,11 @@ class ForumViewModel @Inject constructor(
 
     private val _forumGroups = MutableStateFlow<List<ForumGroup>>(emptyList())
     val forumGroups: StateFlow<List<ForumGroup>> = _forumGroups.asStateFlow()
+
+    private val userScrolling = MutableStateFlow(false)
+    fun setUserScrolling(scrolling: Boolean) {
+        userScrolling.value = scrolling
+    }
 
     private var currentPage = 1
     private var listJob: Job? = null
@@ -124,10 +130,19 @@ class ForumViewModel @Inject constructor(
                 }
         }
 
-        // Board drawer catalog after cold start + first scroll window — never share CPU/bandwidth with cold list.
+        // Seed cached board catalog immediately so timeline pills don't pop mid-fling at t=2.8s.
+        viewModelScope.launch {
+            val cachedGroups = runCatching { forumRepository.getCachedForumList() }.getOrNull()
+            if (!cachedGroups.isNullOrEmpty() && _forumGroups.value.isEmpty()) {
+                _forumGroups.value = cachedGroups
+            }
+        }
+
+        // Network fallback only when disk cache was empty, and never emit mid-scroll.
         viewModelScope.launch {
             delay(2800)
             if (_forumGroups.value.isEmpty()) {
+                userScrolling.first { !it }
                 loadForumGroupsSync()
             }
         }
@@ -151,6 +166,9 @@ class ForumViewModel @Inject constructor(
         if (threads.isEmpty()) return
         preloadJob = viewModelScope.launch {
             delay(delayMs)
+            userScrolling.first { !it }
+            delay(400)
+            userScrolling.first { !it }
             // Cap here too so settings preloadCount cannot stampede
             threadRepository.smartPreloadThreads(threads.take(6))
         }

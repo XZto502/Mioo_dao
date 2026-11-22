@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import kotlin.math.abs
@@ -51,10 +52,26 @@ fun rememberResponsiveListConfiguration(): ViewConfiguration {
     }
 }
 
+internal fun responsiveFlingVelocityThresholdPx(density: Float, refreshRateHz: Float): Float {
+    val safeDensity = density.coerceAtLeast(1f)
+    val safeRefresh = refreshRateHz.coerceIn(60f, 144f)
+    // LazyListState rounds scroll deltas to integer pixels; below ~1 px/frame
+    // frames produce 0-px VSync skips (60Hz/40Hz stepping) at the fling tail.
+    return maxOf(12f * safeDensity, safeRefresh * 1.05f)
+}
+
 @Composable
 fun rememberResponsiveListFling(): ResponsiveListFling {
     val density = LocalDensity.current
-    val velocityThresholdPx = with(density) { 12.dp.toPx() }
+    val view = LocalView.current
+    val refreshRateHz = remember(view) {
+        val display = view.display
+        val rate = display?.mode?.refreshRate ?: display?.refreshRate ?: 60f
+        if (rate.isFinite() && rate >= 30f) rate else 60f
+    }
+    val velocityThresholdPx = remember(density.density, refreshRateHz) {
+        responsiveFlingVelocityThresholdPx(density.density, refreshRateHz)
+    }
     val decay = remember(velocityThresholdPx) {
         exponentialDecay<Float>(
             frictionMultiplier = 0.52f,

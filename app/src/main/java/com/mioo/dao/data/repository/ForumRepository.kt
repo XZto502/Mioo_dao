@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -18,6 +19,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 interface ForumRepository {
+    suspend fun getCachedForumList(): List<ForumGroup>? = null
     fun getForumList(): Flow<XdResponse<List<ForumGroup>>>
     fun getTimelineList(): Flow<XdResponse<List<ForumGroup>>>
 }
@@ -31,6 +33,19 @@ class ForumRepositoryImpl @Inject constructor(
     private val listAdapter = moshi.adapter<List<ForumGroup>>(Types.newParameterizedType(List::class.java, ForumGroup::class.java))
     private val mutex = Mutex()
     private var memory: Pair<Long, List<ForumGroup>>? = null
+
+    override suspend fun getCachedForumList(): List<ForumGroup>? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        memory?.takeIf { now - it.first in 0..21_600_000L }?.let { return@withContext it.second }
+        val disk = cacheDao.getCache("forum_list", 1) ?: return@withContext null
+        val cached = runCatching { listAdapter.fromJson(disk.jsonResponse) }.getOrNull()
+        if (!cached.isNullOrEmpty()) {
+            memory = disk.cachedAt to cached
+            cached
+        } else {
+            null
+        }
+    }
 
     override fun getForumList(): Flow<XdResponse<List<ForumGroup>>> = flow {
         try {

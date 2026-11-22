@@ -299,9 +299,14 @@ fun ThreadScreen(
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     // Keep the opening frame light while the detail page enters.
     val reducedMotion = isReducedMotionEnabled()
-    var allowHeavyList by remember { mutableStateOf(reducedMotion) }
-    LaunchedEffect(reducedMotion) {
-        if (!reducedMotion) delay(MiooMotion.PageDurationMillis.toLong() + 32L)
+    val pageTransitionSettled = com.mioo.dao.ui.navigation.LocalPageTransitionSettled.current
+    var allowHeavyList by remember { mutableStateOf(reducedMotion || pageTransitionSettled()) }
+    LaunchedEffect(reducedMotion, pageTransitionSettled) {
+        if (allowHeavyList) return@LaunchedEffect
+        if (!reducedMotion) {
+            snapshotFlow { pageTransitionSettled() }.first { it }
+            androidx.compose.runtime.withFrameNanos { }
+        }
         allowHeavyList = true
     }
     var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
