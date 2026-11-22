@@ -263,6 +263,10 @@ class ForumViewModel @Inject constructor(
             var rawNonEmpty = false
             var addedVisible = false
             var failed = false
+            var settledThreads: List<Thread>? = null
+            var settledDisplayItems: List<ThreadListItem>? = null
+            var settledIsLastPage: Boolean? = null
+            var settledError: String? = null
             try {
                 var gotPage = false
                 flow.settledForumPage().collect { response ->
@@ -291,25 +295,14 @@ class ForumViewModel @Inject constructor(
                             }
                             if (newThreads.isNotEmpty()) rawNonEmpty = true
                             if (addedVisibleOnPage) addedVisible = true
-                            _uiState.update { state ->
-                                state.copy(
-                                    threads = combinedList,
-                                    displayItems = displayItems,
-                                    isLoading = true,
-                                    isLastPage = newThreads.isEmpty() && !gotPage,
-                                    errorMessage = null,
-                                    emptyHint = null
-                                )
-                            }
+                            settledThreads = combinedList
+                            settledDisplayItems = displayItems
+                            settledIsLastPage = newThreads.isEmpty() && !gotPage
+                            settledError = null
                         }
                         is XdResponse.Error -> {
                             failed = true
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    errorMessage = "加载串列表失败: ${response.message}"
-                                )
-                            }
+                            settledError = "加载串列表失败: ${response.message}"
                         }
                     }
                 }
@@ -317,24 +310,45 @@ class ForumViewModel @Inject constructor(
                 throw e
             } finally {
                 if (forumId == requestForumId && listGeneration == requestGeneration) {
+                    val finalIsLastPage = settledIsLastPage ?: _uiState.value.isLastPage
+                    val finalDisplayItems = settledDisplayItems ?: _uiState.value.displayItems
+                    val finalThreads = settledThreads ?: _uiState.value.threads
                     val canChain = !failed && rawNonEmpty && !addedVisible &&
-                        !_uiState.value.isLastPage &&
+                        !finalIsLastPage &&
                         blockedPageSkips < MAX_BLOCKED_PAGE_SKIPS
                     if (canChain) {
                         blockedPageSkips++
-                        _uiState.update { it.copy(isLoading = false, emptyHint = null) }
+                        _uiState.update { state ->
+                            state.copy(
+                                threads = finalThreads,
+                                displayItems = finalDisplayItems,
+                                isLoading = false,
+                                isLastPage = finalIsLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
+                                emptyHint = null
+                            )
+                        }
                         loadNextPage(fromAutoSkip = true)
                     } else {
                         if (addedVisible) blockedPageSkips = 0
                         val hint = when {
-                            _uiState.value.displayItems.isNotEmpty() -> null
-                            _uiState.value.threads.isNotEmpty() &&
+                            finalDisplayItems.isNotEmpty() -> null
+                            finalThreads.isNotEmpty() &&
                                 blockedPageSkips >= MAX_BLOCKED_PAGE_SKIPS ->
                                 "连续多页都被屏蔽规则挡住了"
-                            _uiState.value.threads.isNotEmpty() -> "这些串都被屏蔽规则挡住了"
+                            finalThreads.isNotEmpty() -> "这些串都被屏蔽规则挡住了"
                             else -> null
                         }
-                        _uiState.update { it.copy(isLoading = false, emptyHint = hint) }
+                        _uiState.update { state ->
+                            state.copy(
+                                threads = finalThreads,
+                                displayItems = finalDisplayItems,
+                                isLoading = false,
+                                isLastPage = finalIsLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
+                                emptyHint = hint
+                            )
+                        }
                     }
                 }
             }
@@ -377,6 +391,11 @@ class ForumViewModel @Inject constructor(
 
             var handoffBlocked = false
             var refreshed = false
+            var settledThreads: List<Thread>? = null
+            var settledDisplayItems: List<ThreadListItem>? = null
+            var settledIsLastPage: Boolean? = null
+            var settledError: String? = null
+            var settledEmptyHint: String? = null
             try {
                 var lastNonEmpty = false
                 flow.settledForumPage().collect { response ->
@@ -393,59 +412,59 @@ class ForumViewModel @Inject constructor(
                             if (forumId != requestForumId || listGeneration != requestGeneration) return@collect
                             refreshed = true
                             currentPage = if (freshThreads.isEmpty()) 1 else 2
-                            // Update list; keep isRefreshing until flow ends
-                            _uiState.update { state ->
-                                state.copy(
-                                    threads = freshThreads,
-                                    displayItems = displayItems,
-                                    isLoading = false,
-                                    isLastPage = freshThreads.isEmpty(),
-                                    errorMessage = null
-                                )
-                            }
+                            settledThreads = freshThreads
+                            settledDisplayItems = displayItems
+                            settledIsLastPage = freshThreads.isEmpty()
+                            settledError = null
                         }
                         is XdResponse.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    errorMessage = "刷新失败: ${response.message}"
-                                )
-                            }
+                            settledError = "刷新失败: ${response.message}"
                         }
                     }
                 }
                 if (forumId == requestForumId && listGeneration == requestGeneration) {
                     // Next page to request after a full page-1 refresh.
-                    val visible = _uiState.value.displayItems.isNotEmpty()
+                    val visibleItems = settledDisplayItems ?: _uiState.value.displayItems
+                    val visible = visibleItems.isNotEmpty()
+                    val lastPageNow = settledIsLastPage ?: _uiState.value.isLastPage
                     if (lastNonEmpty && visible) {
                         // Well after cold list + first fling
-                        scheduleSmartPreload(_uiState.value.threads, delayMs = 3200L)
+                        scheduleSmartPreload(settledThreads ?: _uiState.value.threads, delayMs = 3200L)
                     }
-                    handoffBlocked = lastNonEmpty && !visible && !_uiState.value.isLastPage
-                    if (lastNonEmpty && !visible && _uiState.value.isLastPage) {
-                        _uiState.update { it.copy(emptyHint = "这些串都被屏蔽规则挡住了") }
+                    handoffBlocked = lastNonEmpty && !visible && !lastPageNow
+                    if (lastNonEmpty && !visible && lastPageNow) {
+                        settledEmptyHint = "这些串都被屏蔽规则挡住了"
                     }
                 }
             } finally {
                 if (forumId == requestForumId && listGeneration == requestGeneration) {
                     if (handoffBlocked) {
                         blockedPageSkips = 1
-                        _uiState.update {
-                            it.copy(
+                        _uiState.update { state ->
+                            state.copy(
+                                threads = settledThreads ?: state.threads,
+                                displayItems = settledDisplayItems ?: state.displayItems,
                                 isRefreshing = false,
                                 isLoading = false,
+                                isLastPage = settledIsLastPage ?: state.isLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
                                 emptyHint = null,
-                                completedRefreshGeneration = if (refreshed) refreshToken else it.completedRefreshGeneration,
+                                completedRefreshGeneration = if (refreshed) refreshToken else state.completedRefreshGeneration,
                                 completedRefreshForumId = requestForumId
                             )
                         }
                         loadNextPage(fromAutoSkip = true)
                     } else {
-                        _uiState.update {
-                            it.copy(
+                        _uiState.update { state ->
+                            state.copy(
+                                threads = settledThreads ?: state.threads,
+                                displayItems = settledDisplayItems ?: state.displayItems,
                                 isRefreshing = false,
                                 isLoading = false,
-                                completedRefreshGeneration = if (refreshed) refreshToken else it.completedRefreshGeneration,
+                                isLastPage = settledIsLastPage ?: state.isLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
+                                emptyHint = settledEmptyHint ?: state.emptyHint,
+                                completedRefreshGeneration = if (refreshed) refreshToken else state.completedRefreshGeneration,
                                 completedRefreshForumId = requestForumId
                             )
                         }

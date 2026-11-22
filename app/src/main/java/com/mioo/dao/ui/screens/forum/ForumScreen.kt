@@ -99,6 +99,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -322,20 +324,20 @@ fun ForumScreen(
     // Paging via snapshotFlow — does not recompose the whole screen on every scroll frame
     // (derivedStateOf + LaunchedEffect(.value) used to restart the effect on flag churn).
     val latestItemCount = rememberUpdatedState(uiState.displayItems.size)
-    LaunchedEffect(listState, currentForumId, uiState.isLoading, uiState.isRefreshing, uiState.isLastPage) {
+    LaunchedEffect(listState, currentForumId) {
         snapshotFlow {
             val count = latestItemCount.value
             if (count <= 0 || listState.firstVisibleItemIndex + 10 < count) {
-                return@snapshotFlow false
+                return@snapshotFlow -1
             }
             val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow -1
             // The stable footer occupies one slot even while idle.
-            last >= info.totalItemsCount - 3
+            if (last >= info.totalItemsCount - 3) count else -1
         }
             .distinctUntilChanged()
-            .collect { nearEnd ->
-                if (!nearEnd) return@collect
+            .collect { triggerCount ->
+                if (triggerCount <= 0) return@collect
                 val s = viewModel.uiState.value
                 if (!s.isLoading && !s.isRefreshing && !s.isLastPage) {
                     viewModel.loadNextPage()
@@ -373,15 +375,10 @@ fun ForumScreen(
     val allowBackgroundWarm = !drawerBlocksMainList && !boardSwitchQuiet
     val drawerWarmedState = remember { mutableStateOf(false) }
     val drawerVisibleState = rememberUpdatedState(drawerBlocksMainList)
-    LaunchedEffect(listState, drawerBlocksMainList) {
+    LaunchedEffect(drawerBlocksMainList) {
         if (drawerBlocksMainList) {
             drawerWarmedState.value = true
-            return@LaunchedEffect
         }
-        if (drawerWarmedState.value) return@LaunchedEffect
-        viewModel.forumGroups.first { it.isNotEmpty() }
-        awaitContinuousIdle(snapshotFlow { listState.isScrollInProgress }, 1200L)
-        drawerWarmedState.value = true
     }
 
     val selectBoard = remember(viewModel, drawerState, scope, switchingBoardState) {
@@ -842,6 +839,8 @@ private fun ForumBoardDrawerList(
     }
     val drawerConfiguration = rememberResponsiveListConfiguration()
     val drawerFling = rememberResponsiveListFling()
+    val starPainter = rememberVectorPainter(Icons.Default.Star)
+    val expandMorePainter = rememberVectorPainter(Icons.Default.ExpandMore)
     CompositionLocalProvider(LocalViewConfiguration provides drawerConfiguration) {
     LazyColumn(
         state = drawerListState,
@@ -872,6 +871,7 @@ private fun ForumBoardDrawerList(
                     name = forum.name,
                     isSelected = forum.id == viewModel.forumId,
                     showStar = true,
+                    starPainter = starPainter,
                     starTint = MaterialTheme.colorScheme.primary,
                     onClick = { onSelectBoard(forum.id, forum.name) },
                     onLongClick = {
@@ -924,7 +924,7 @@ private fun ForumBoardDrawerList(
                             label = "drawerChevron"
                         )
                         Icon(
-                            imageVector = Icons.Default.ExpandMore,
+                            painter = expandMorePainter,
                             contentDescription = if (groupExpanded) "收起分类" else "展开分类",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
@@ -953,6 +953,7 @@ private fun ForumBoardDrawerList(
                                     name = forum.name,
                                     isSelected = forum.id == viewModel.forumId,
                                     showStar = isPinned,
+                                    starPainter = starPainter,
                                     starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                                     onClick = { onSelectBoard(forum.id, forum.name) },
                                     onLongClick = {
@@ -980,6 +981,7 @@ private fun ForumDrawerItem(
     name: String,
     isSelected: Boolean,
     showStar: Boolean,
+    starPainter: Painter,
     starTint: Color,
     onClick: () -> Unit,
     onLongClick: () -> Unit
@@ -1012,7 +1014,7 @@ private fun ForumDrawerItem(
         ) {
             if (showStar) {
                 Icon(
-                    imageVector = Icons.Default.Star,
+                    painter = starPainter,
                     contentDescription = "已置顶",
                     tint = starTint,
                     modifier = Modifier.size(14.dp)
@@ -1083,22 +1085,25 @@ private fun ForumThreadListPane(
     }
 
     val previewDicePreset = com.mioo.dao.ui.components.LocalDicePreset.current
-    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, previewDicePreset, warmEnabled, displayItems) {
-        if (!warmEnabled || displayItems.isEmpty()) return@LaunchedEffect
+    val latestDisplayItems = rememberUpdatedState(displayItems)
+    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, previewDicePreset, warmEnabled) {
+        if (!warmEnabled) return@LaunchedEffect
         snapshotFlow {
-            // Advance in four-row batches without subscribing to layoutInfo every pixel.
-            listState.firstVisibleItemIndex / 4
+            val size = latestDisplayItems.value.size
+            if (size == 0) null else (listState.firstVisibleItemIndex / 4) to size
         }
             .distinctUntilChanged()
-            .collectLatest { batch ->
+            .collectLatest { state ->
+                val (batch, _) = state ?: return@collectLatest
+                val items = latestDisplayItems.value
                 val start = (batch * 4 - 2).coerceAtLeast(0)
-                val end = (batch * 4 + 24).coerceAtMost(displayItems.size)
+                val end = (batch * 4 + 24).coerceAtMost(items.size)
                 if (start >= end) return@collectLatest
                 withContext(Dispatchers.Default) {
                     for (index in start until end) {
                         kotlinx.coroutines.yield()
                         com.mioo.dao.ui.components.HtmlParseCache.prewarm(
-                            listOf(displayItems[index].postData.content), quoteLinkColor,
+                            listOf(items[index].postData.content), quoteLinkColor,
                             prewarmDarkTheme, previewDicePreset, compactBlankLines = true
                         )
                     }

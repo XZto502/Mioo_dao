@@ -63,7 +63,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -198,24 +197,14 @@ fun HistoryScreen(
                         snapshotFlow { isActiveTab() }
                             .distinctUntilChanged()
                             .collectLatest { active ->
-                                if (!active) {
-                                    if (value.first) return@collectLatest
-                                    val initial = viewModel.items(category).first { it.isNotEmpty() }
-                                    if (category == HistoryType.BROWSE) {
+                                if (!active) return@collectLatest
+                                viewModel.items(category).collect { latest ->
+                                    if (category == HistoryType.BROWSE && latest.isNotEmpty() && value.second.isEmpty()) {
                                         withContext(Dispatchers.Default) {
-                                            HtmlParseCache.prewarm(initial.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                                            HtmlParseCache.prewarm(latest.take(8).map { it.content }, quoteColor, dark, dicePreset)
                                         }
                                     }
-                                    value = true to initial
-                                } else {
-                                    viewModel.items(category).collect { latest ->
-                                        if (category == HistoryType.BROWSE && latest.isNotEmpty() && value.second.isEmpty()) {
-                                            withContext(Dispatchers.Default) {
-                                                HtmlParseCache.prewarm(latest.take(8).map { it.content }, quoteColor, dark, dicePreset)
-                                            }
-                                        }
-                                        value = true to latest
-                                    }
+                                    value = true to latest
                                 }
                             }
                     }
