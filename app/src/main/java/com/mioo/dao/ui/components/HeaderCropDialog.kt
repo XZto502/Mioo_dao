@@ -11,13 +11,16 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,19 +30,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
-import coil.compose.rememberAsyncImagePainter
-import coil.request.ImageRequest
-import coil.size.Size as CoilSize
 import com.mioo.dao.data.local.HeaderImageSettings
 import com.mioo.dao.data.local.SettingsDataStore
 import kotlinx.coroutines.*
@@ -48,11 +48,39 @@ import kotlin.math.*
 
 private const val HEADER_RATIO = 3.8f
 
+private data class HeaderCropRect(
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int
+)
+
+private fun computeHeaderCropRect(
+    imageWidth: Int,
+    imageHeight: Int,
+    frameWidth: Float,
+    zoom: Float,
+    offset: Offset
+): HeaderCropRect? {
+    if (imageWidth <= 0 || imageHeight <= 0 || frameWidth <= 0f || zoom <= 0f) return null
+    val factor = max(frameWidth / imageWidth, frameWidth / HEADER_RATIO / imageHeight) * zoom
+    val cropWidth = (frameWidth / factor).roundToInt().coerceIn(1, imageWidth)
+    val cropHeight = (frameWidth / HEADER_RATIO / factor).roundToInt().coerceIn(1, imageHeight)
+    val left = ((imageWidth - cropWidth) / 2f - offset.x / factor)
+        .roundToInt()
+        .coerceIn(0, imageWidth - cropWidth)
+    val top = ((imageHeight - cropHeight) / 2f - offset.y / factor)
+        .roundToInt()
+        .coerceIn(0, imageHeight - cropHeight)
+    return HeaderCropRect(left = left, top = top, width = cropWidth, height = cropHeight)
+}
+
 @Composable
 fun HeaderImageSettingsContent() {
     val context = LocalContext.current
     val store = remember(context) { SettingsDataStore(context.applicationContext) }
-    val settings by store.headerImageSettings.collectAsState(HeaderImageSettings())
+    val headerData = rememberCustomHeaderData(thread = false)
+    val settings = headerData.settings
     val scope = rememberCoroutineScope()
     var cropUri by remember { mutableStateOf<Uri?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { cropUri = it }
@@ -60,11 +88,10 @@ fun HeaderImageSettingsContent() {
     if (settings.path.isBlank()) {
         FilledTonalButton(onClick = { choose() }) { Text("选择图片并裁切") }
     } else {
-        AsyncImage(
-            model = File(settings.path),
-            contentDescription = "顶栏背景预览",
-            modifier = Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(12.dp)).clickable { choose() },
-            contentScale = ContentScale.Crop
+        HeaderPreviewCard(
+            path = settings.path,
+            luminanceMap = headerData.luminanceMap,
+            onClick = { choose() }
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilledTonalButton(onClick = { choose() }) { Text("更换图片") }
@@ -83,11 +110,124 @@ fun HeaderImageSettingsContent() {
         }
     }
     cropUri?.let { uri ->
-        HeaderCropDialog(uri, onDismiss = { cropUri = null }, onConfirm = { path ->
-            store.saveHeaderImagePath(path)
-            withContext(Dispatchers.IO) { cleanOldHeaders(context.filesDir, path) }
-            cropUri = null
-        })
+        HeaderCropDialog(
+            uri = uri,
+            onDismiss = { cropUri = null },
+            onConfirm = { path ->
+                store.saveHeaderImagePath(path)
+                withContext(Dispatchers.IO) { cleanOldHeaders(context.filesDir, path) }
+                cropUri = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun HeaderPreviewCard(
+    path: String,
+    luminanceMap: HeaderLuminanceMap?,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val density = LocalDensity.current
+    var cardSize by remember { mutableStateOf(IntSize.Zero) }
+    val style = resolveHeaderBarStyle(
+        enabled = true,
+        luminanceMap = luminanceMap,
+        colorScheme = MaterialTheme.colorScheme,
+        containerWidthPx = cardSize.width.toFloat(),
+        containerHeightPx = cardSize.height.toFloat(),
+        statusBarHeightPx = cardSize.height * 0.34f,
+        barWidthDp = if (cardSize.width > 0) with(density) { cardSize.width.toDp().value } else 360f
+    )
+    val refreshColors = style.trailingActionAt(0)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(92.dp)
+            .onSizeChanged { cardSize = it }
+            .clip(shape)
+            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), shape)
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = File(path),
+            contentDescription = "顶栏背景预览",
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Crop
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "12:30",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = style.statusBarContentColor,
+                    fontWeight = FontWeight.Medium
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wifi,
+                        contentDescription = null,
+                        tint = style.statusBarContentColor,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.BatteryFull,
+                        contentDescription = null,
+                        tint = style.statusBarContentColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = null,
+                    tint = style.navigationContentColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 12.dp)
+                ) {
+                    Text(
+                        text = "综合版1",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = style.titleContentColor,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "X岛 · nmbxd.com",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = style.subtitleContentColor,
+                        maxLines = 1
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    tint = refreshColors.contentColor,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
     }
 }
 
@@ -97,7 +237,11 @@ private fun cleanOldHeaders(directory: File, keep: String) {
 }
 
 @Composable
-fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: () -> Unit) {
+fun HeaderCropDialog(
+    uri: Uri,
+    onConfirm: suspend (String) -> Unit,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var bitmap by remember(uri) { mutableStateOf<Bitmap?>(null) }
@@ -145,6 +289,35 @@ fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: (
                     val image = bitmap
                     if (image != null) {
                         val imageBitmap = remember(image) { image.asImageBitmap() }
+                        val density = LocalDensity.current
+                        val previewLuminanceMap = remember(image, canvasSize, zoom, offset) {
+                            val rect = computeHeaderCropRect(
+                                imageWidth = image.width,
+                                imageHeight = image.height,
+                                frameWidth = canvasSize.width.toFloat(),
+                                zoom = zoom,
+                                offset = offset
+                            )
+                            if (rect != null) {
+                                computeCropRegionLuminanceMap(image, rect.left, rect.top, rect.width, rect.height)
+                            } else {
+                                null
+                            }
+                        }
+                        val frameHeightPx = if (canvasSize.width > 0) canvasSize.width / HEADER_RATIO else 0f
+                        val previewStyle = resolveHeaderBarStyle(
+                            enabled = true,
+                            luminanceMap = previewLuminanceMap,
+                            colorScheme = MaterialTheme.colorScheme,
+                            containerWidthPx = canvasSize.width.toFloat(),
+                            containerHeightPx = frameHeightPx,
+                            statusBarHeightPx = frameHeightPx * 0.34f,
+                            barWidthDp = if (canvasSize.width > 0) with(density) { canvasSize.width.toDp().value } else 360f
+                        )
+                        val refreshColors = previewStyle.trailingActionAt(0)
+                        val frameHeightDp = with(density) {
+                            if (canvasSize.width > 0) (canvasSize.width / HEADER_RATIO).toDp() else 92.dp
+                        }
                         Canvas(Modifier.fillMaxWidth().aspectRatio(1.1f).onSizeChanged { canvasSize = it }.pointerInput(image, saving) {
                             if (!saving) detectTransformGestures { centroid, pan, scale, _ ->
                                 val width = size.width.toFloat()
@@ -162,14 +335,61 @@ fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: (
                             val base = max(size.width / image.width, frameHeight / image.height)
                             val width = image.width * base * zoom
                             val height = image.height * base * zoom
-                            drawImage(imageBitmap, dstOffset = IntOffset(((size.width - width) / 2 + offset.x).roundToInt(), ((size.height - height) / 2 + offset.y).roundToInt()), dstSize = IntSize(width.roundToInt(), height.roundToInt()))
+                            drawImage(
+                                imageBitmap,
+                                dstOffset = IntOffset(((size.width - width) / 2 + offset.x).roundToInt(), ((size.height - height) / 2 + offset.y).roundToInt()),
+                                dstSize = IntSize(width.roundToInt(), height.roundToInt())
+                            )
                             val top = (size.height - frameHeight) / 2
-                            drawRect(Color.White, Offset(1f, top), Size(size.width - 2, frameHeight), style = Stroke(1.dp.toPx()))
+                            drawRect(
+                                color = previewStyle.titleContentColor.copy(alpha = 0.85f),
+                                topLeft = Offset(1f, top),
+                                size = Size(size.width - 2, frameHeight),
+                                style = Stroke(1.dp.toPx())
+                            )
                         }
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Menu, null, tint = Color.White)
-                            Text("综合版1", Modifier.weight(1f).padding(start = 8.dp), color = Color.White)
-                            Icon(Icons.Default.Refresh, null, tint = Color.White)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(frameHeightDp)
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "12:30",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = previewStyle.statusBarContentColor,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(Icons.Default.Wifi, null, tint = previewStyle.statusBarContentColor, modifier = Modifier.size(13.dp))
+                                    Icon(Icons.Default.BatteryFull, null, tint = previewStyle.statusBarContentColor, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Menu, null, tint = previewStyle.navigationContentColor)
+                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                    Text(
+                                        text = "综合版1",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = previewStyle.titleContentColor,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = "X岛 · nmbxd.com",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = previewStyle.subtitleContentColor,
+                                        maxLines = 1
+                                    )
+                                }
+                                Icon(Icons.Default.Refresh, null, tint = refreshColors.contentColor)
+                            }
                         }
                     } else if (error != null) Text(error!!) else CircularProgressIndicator()
                 }
@@ -185,14 +405,15 @@ fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: (
                             var file: File? = null
                             try {
                                 file = withContext(Dispatchers.IO) {
-                                    val frameWidth = size.width.toFloat()
-                                    val factor = max(frameWidth / image.width, frameWidth / HEADER_RATIO / image.height) * savedZoom
-                                    val cropWidth = (frameWidth / factor).roundToInt().coerceIn(1, image.width)
-                                    val cropHeight = (frameWidth / HEADER_RATIO / factor).roundToInt().coerceIn(1, image.height)
-                                    val left = ((image.width - cropWidth) / 2f - savedOffset.x / factor).roundToInt().coerceIn(0, image.width - cropWidth)
-                                    val top = ((image.height - cropHeight) / 2f - savedOffset.y / factor).roundToInt().coerceIn(0, image.height - cropHeight)
-                                    val cropped = Bitmap.createBitmap(image, left, top, cropWidth, cropHeight)
-                                    val outWidth = min(1440, cropWidth)
+                                    val rect = computeHeaderCropRect(
+                                        imageWidth = image.width,
+                                        imageHeight = image.height,
+                                        frameWidth = size.width.toFloat(),
+                                        zoom = savedZoom,
+                                        offset = savedOffset
+                                    ) ?: throw IllegalStateException("无效裁切区域")
+                                    val cropped = Bitmap.createBitmap(image, rect.left, rect.top, rect.width, rect.height)
+                                    val outWidth = min(1440, rect.width)
                                     val output = Bitmap.createScaledBitmap(cropped, outWidth, (outWidth / HEADER_RATIO).roundToInt().coerceAtLeast(1), true)
                                     try {
                                         File(context.filesDir, "custom_header_${System.currentTimeMillis()}.jpg").also { result ->
@@ -218,67 +439,90 @@ fun HeaderCropDialog(uri: Uri, onConfirm: suspend (String) -> Unit, onDismiss: (
     }
 }
 
+private data class CachedDecodedHeader(
+    val path: String,
+    val bitmap: ImageBitmap,
+    val luminanceMap: HeaderLuminanceMap?
+)
+
 @Volatile private var cachedHeaderSettings = HeaderImageSettings()
-@Volatile private var cachedHeaderBitmap: Pair<String, ImageBitmap>? = null
+@Volatile private var cachedHeaderDecoded: CachedDecodedHeader? = null
+
+private fun decodeHeaderBitmapWithLuminance(path: String): CachedDecodedHeader? {
+    val file = File(path)
+    if (!file.isFile) return null
+    val raw = BitmapFactory.decodeFile(path) ?: return null
+    val luminanceMap = computeBitmapHeaderLuminanceMap(raw)
+    return CachedDecodedHeader(path = path, bitmap = raw.asImageBitmap(), luminanceMap = luminanceMap).also {
+        cachedHeaderDecoded = it
+    }
+}
 
 @Composable
-internal fun rememberCustomHeaderBitmap(thread: Boolean = false): ImageBitmap? {
+internal fun rememberCustomHeaderData(thread: Boolean = false): CustomHeaderData {
     val context = LocalContext.current
     val store = remember(context) { SettingsDataStore(context.applicationContext) }
     val settings by store.headerImageSettings.collectAsState(cachedHeaderSettings)
     SideEffect { cachedHeaderSettings = settings }
     val path = settings.path.takeIf { it.isNotBlank() && (!thread || settings.applyToThread) }
-        ?: return null
-    var imageBitmap by remember(path) {
+        ?: return CustomHeaderData(bitmap = null, settings = settings, luminanceMap = null)
+    var decoded by remember(path) {
         mutableStateOf(
-            cachedHeaderBitmap?.takeIf { it.first == path }?.second ?: run {
-                val file = File(path)
-                if (file.isFile) {
-                    BitmapFactory.decodeFile(path)?.asImageBitmap()?.also {
-                        cachedHeaderBitmap = path to it
-                    }
-                } else null
-            }
+            cachedHeaderDecoded?.takeIf { it.path == path } ?: decodeHeaderBitmapWithLuminance(path)
         )
     }
     LaunchedEffect(path) {
-        if (imageBitmap == null) {
-            imageBitmap = withContext(Dispatchers.IO) {
-                val file = File(path)
-                if (file.isFile) {
-                    BitmapFactory.decodeFile(path)?.asImageBitmap()?.also {
-                        cachedHeaderBitmap = path to it
-                    }
-                } else null
-            }
+        if (decoded == null) {
+            decoded = withContext(Dispatchers.IO) { decodeHeaderBitmapWithLuminance(path) }
         }
     }
-    return imageBitmap
+    return CustomHeaderData(
+        bitmap = decoded?.bitmap,
+        settings = settings,
+        luminanceMap = decoded?.luminanceMap
+    )
 }
 
 @Composable
 fun CustomHeaderBar(
     thread: Boolean,
     modifier: Modifier = Modifier,
-    content: @Composable (Boolean, Shadow) -> Unit
+    content: @Composable (HeaderBarStyle) -> Unit
 ) {
-    CustomHeaderBar(rememberCustomHeaderBitmap(thread), modifier, content)
+    CustomHeaderBar(rememberCustomHeaderData(thread), modifier, content)
 }
 
-/** The image shares the app bar's measured bounds, including its status-bar inset. */
+/**
+ * The image shares the app bar's measured bounds, including its status-bar inset,
+ * rendered cleanly without any scrim or gradient while foreground elements adapt per region.
+ */
 @Composable
 internal fun CustomHeaderBar(
-    bitmap: ImageBitmap?,
+    headerData: CustomHeaderData,
     modifier: Modifier = Modifier,
-    content: @Composable (Boolean, Shadow) -> Unit
+    content: @Composable (HeaderBarStyle) -> Unit
 ) {
-    val background = MaterialTheme.colorScheme.background
-    val bleedPx = with(LocalDensity.current) { 24.dp.roundToPx() }
+    val bitmap = headerData.bitmap
+    val density = LocalDensity.current
+    val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
+    var barSize by remember { mutableStateOf(IntSize.Zero) }
+    val style = resolveHeaderBarStyle(
+        enabled = bitmap != null,
+        luminanceMap = headerData.luminanceMap,
+        colorScheme = MaterialTheme.colorScheme,
+        containerWidthPx = barSize.width.toFloat(),
+        containerHeightPx = barSize.height.toFloat(),
+        statusBarHeightPx = statusBarHeightPx,
+        barWidthDp = if (barSize.width > 0) with(density) { barSize.width.toDp().value } else 411f
+    )
+    val bleedPx = with(density) { 24.dp.roundToPx() }
     Box(
-        modifier.then(
-            if (bitmap == null) Modifier.background(com.mioo.dao.ui.theme.readingTopBarColor())
-            else Modifier
-        )
+        modifier
+            .onSizeChanged { barSize = it }
+            .then(
+                if (bitmap == null) Modifier.background(com.mioo.dao.ui.theme.readingTopBarColor())
+                else Modifier
+            )
     ) {
         if (bitmap != null) {
             Canvas(Modifier.matchParentSize()) {
@@ -314,7 +558,7 @@ internal fun CustomHeaderBar(
                 }
             }
         }
-        content(bitmap != null, if (bitmap != null) Shadow(background.copy(alpha = 0.85f), blurRadius = 6f) else Shadow.None)
+        content(style)
     }
 }
 

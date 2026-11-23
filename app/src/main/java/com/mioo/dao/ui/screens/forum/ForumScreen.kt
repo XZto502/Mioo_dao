@@ -71,6 +71,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -163,7 +164,7 @@ fun ForumScreen(
     onScrollInProgressChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 
-    headerBitmap: androidx.compose.ui.graphics.ImageBitmap? = null,
+    headerData: com.mioo.dao.ui.components.CustomHeaderData = com.mioo.dao.ui.components.CustomHeaderData(),
     headerModifier: Modifier = Modifier,
     bodyModifier: Modifier = Modifier,
 
@@ -424,7 +425,16 @@ fun ForumScreen(
     Box(Modifier.fillMaxSize()) {
             Scaffold(
             topBar = {
-                com.mioo.dao.ui.components.CustomHeaderBar(headerBitmap, headerModifier) { headerEnabled, headerShadow ->
+                com.mioo.dao.ui.components.CustomHeaderBar(headerData, headerModifier) { headerStyle ->
+                val navButtonColors = IconButtonDefaults.iconButtonColors(
+                    contentColor = headerStyle.navigationContentColor,
+                    disabledContentColor = headerStyle.navigationDisabledColor
+                )
+                val refreshColors = headerStyle.trailingActionAt(0)
+                val refreshButtonColors = IconButtonDefaults.iconButtonColors(
+                    contentColor = refreshColors.contentColor,
+                    disabledContentColor = refreshColors.disabledContentColor
+                )
                 TopAppBar(
 
                     title = {
@@ -432,14 +442,19 @@ fun ForumScreen(
                             // Instant title swap — no AnimatedContent tax on board change
                             Text(
                                 text = uiState.currentForumName,
-                                style = MaterialTheme.typography.titleMedium.copy(shadow = headerShadow),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = headerStyle.titleContentColor,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                 maxLines = 1
                             )
                             Text(
                                 text = "X岛 · nmbxd.com",
-                                style = MaterialTheme.typography.labelSmall.copy(shadow = headerShadow),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (headerStyle.enabled) {
+                                    headerStyle.subtitleContentColor
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                }
                             )
                         }
                     },
@@ -459,7 +474,8 @@ fun ForumScreen(
                                         drawerState.close()
                                     }
                                 }
-                            }
+                            },
+                            colors = navButtonColors
                         ) {
                             Icon(Icons.Default.Menu, contentDescription = "切换板块")
                         }
@@ -471,14 +487,18 @@ fun ForumScreen(
                             onClick = {
                                 scope.launch { refreshFromTop() }
                             },
-                            enabled = !uiState.isRefreshing
+                            enabled = !uiState.isRefreshing,
+                            colors = refreshButtonColors
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = "刷新")
                         }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = if (headerEnabled) Color.Transparent else readingTopBarColor()
+                        containerColor = if (headerStyle.enabled) Color.Transparent else readingTopBarColor(),
+                        titleContentColor = headerStyle.titleContentColor,
+                        navigationIconContentColor = headerStyle.navigationContentColor,
+                        actionIconContentColor = refreshColors.contentColor
                     )
                 )
                 }
@@ -518,7 +538,7 @@ fun ForumScreen(
             },
             modifier = modifier,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = if (headerBitmap != null) Color.Transparent else readingBackground()
+            containerColor = if (headerData.enabled) Color.Transparent else readingBackground()
         ) { paddingValues ->
             Box(
                 modifier = Modifier

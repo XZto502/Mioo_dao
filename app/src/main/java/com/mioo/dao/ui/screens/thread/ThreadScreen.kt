@@ -556,7 +556,13 @@ fun ThreadScreen(
     Box(Modifier.fillMaxSize().graphicsLayer { clip = true }.background(readingBackground())) {
     Scaffold(
         topBar = {
-            com.mioo.dao.ui.components.CustomHeaderBar(thread = true) { headerEnabled, headerShadow ->
+            com.mioo.dao.ui.components.CustomHeaderBar(thread = true) { headerStyle ->
+            val navIconButtonColors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
+                contentColor = headerStyle.navigationContentColor,
+                disabledContentColor = headerStyle.navigationDisabledColor
+            )
+            val closeActionColors = headerStyle.trailingActionAt(0)
+            val searchActionColors = headerStyle.trailingActionAt(if (totalPages > 1) 4 else 3)
             TopAppBar(
                 title = {
                     if (isSearchMode) {
@@ -565,17 +571,28 @@ fun ThreadScreen(
                             onValueChange = { query ->
                                 searchFieldText = query
                             },
-                            placeholder = { Text("搜索文本或ID...", style = MaterialTheme.typography.bodyMedium) },
+                            placeholder = {
+                                Text(
+                                    "搜索文本或ID...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = headerStyle.subtitleContentColor
+                                )
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             colors = androidx.compose.material3.TextFieldDefaults.colors(
+                                focusedTextColor = headerStyle.titleContentColor,
+                                unfocusedTextColor = headerStyle.titleContentColor,
+                                cursorColor = headerStyle.titleContentColor,
+                                focusedPlaceholderColor = headerStyle.subtitleContentColor,
+                                unfocusedPlaceholderColor = headerStyle.subtitleContentColor,
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,
                                 disabledContainerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent,
                                 unfocusedIndicatorColor = Color.Transparent
                             ),
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = headerStyle.titleContentColor)
                         )
                     } else {
                     // 上下双行：页码放副标题行，不再与主标题争抢横向宽度
@@ -583,9 +600,9 @@ fun ThreadScreen(
                         Text(
                             text = listUi.thread?.title.effectiveTitle() ?: "详情",
                             style = readingTextStyle(16.5f, 22f, FontWeight.SemiBold).copy(
-                                shadow = headerShadow,
                                 platformStyle = PlatformTextStyle(includeFontPadding = false)
                             ),
+                            color = headerStyle.titleContentColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -613,11 +630,10 @@ fun ThreadScreen(
                                 Text(
                                     text = "第 $page / $total 页",
                                     style = readingTextStyle(10f, 11f).copy(
-                                        shadow = headerShadow,
                                         fontFeatureSettings = "tnum",
                                         platformStyle = PlatformTextStyle(includeFontPadding = false)
                                     ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = headerStyle.subtitleContentColor,
                                     maxLines = 1
                                 )
                             }
@@ -628,15 +644,18 @@ fun ThreadScreen(
                 navigationIcon = {
                     com.mioo.dao.ui.components.HeaderActionRow {
                     if (isSearchMode) {
-                        IconButton(onClick = {
-                            isSearchMode = false
-                            searchFieldText = ""
-                            viewModel.updateSearchQuery("")
-                        }) {
+                        IconButton(
+                            onClick = {
+                                isSearchMode = false
+                                searchFieldText = ""
+                                viewModel.updateSearchQuery("")
+                            },
+                            colors = navIconButtonColors
+                        ) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
                     } else {
-                        IconButton(onClick = leaveThread) {
+                        IconButton(onClick = leaveThread, colors = navIconButtonColors) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
                     }
@@ -646,10 +665,16 @@ fun ThreadScreen(
                     com.mioo.dao.ui.components.HeaderActionRow {
                     if (isSearchMode) {
                         if (searchFieldText.isNotEmpty()) {
-                            IconButton(onClick = {
-                                searchFieldText = ""
-                                viewModel.updateSearchQuery("")
-                            }) {
+                            IconButton(
+                                onClick = {
+                                    searchFieldText = ""
+                                    viewModel.updateSearchQuery("")
+                                },
+                                colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
+                                    contentColor = closeActionColors.contentColor,
+                                    disabledContentColor = closeActionColors.disabledContentColor
+                                )
+                            ) {
                                 Icon(Icons.Default.Close, contentDescription = "清除搜索")
                             }
                         }
@@ -659,7 +684,11 @@ fun ThreadScreen(
                                 isSearchMode = true
                                 searchFieldText = listUi.searchQuery
                             },
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(40.dp),
+                            colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
+                                contentColor = searchActionColors.contentColor,
+                                disabledContentColor = searchActionColors.disabledContentColor
+                            )
                         ) {
                             Icon(Icons.Default.Search, contentDescription = "串内搜索")
                         }
@@ -673,7 +702,8 @@ fun ThreadScreen(
                                 onOpenInputDialog = {
                                     showJumpBubble = false
                                     showPageJumpDialog = true
-                                }
+                                },
+                                actionColors = headerStyle.trailingActionAt(3)
                             )
                         }
                         // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
@@ -694,18 +724,22 @@ fun ThreadScreen(
                             showBookmarkMenu = showBookmarkMenu,
                             onShowBookmarkMenuChange = { showBookmarkMenu = it },
                             showOverflowMenu = showOverflowMenu,
-                            onShowOverflowMenuChange = { showOverflowMenu = it }
+                            onShowOverflowMenuChange = { showOverflowMenu = it },
+                            headerStyle = headerStyle
                         )
                     }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = if (headerEnabled) Color.Transparent else MaterialTheme.colorScheme.surface.copy(
+                    containerColor = if (headerStyle.enabled) Color.Transparent else MaterialTheme.colorScheme.surface.copy(
                         alpha = if (com.mioo.dao.ui.theme.LocalGlassEffectEnabled.current) 0.98f else 1f
                     ),
-                    scrolledContainerColor = if (headerEnabled) Color.Transparent else MaterialTheme.colorScheme.surface.copy(
+                    scrolledContainerColor = if (headerStyle.enabled) Color.Transparent else MaterialTheme.colorScheme.surface.copy(
                         alpha = if (com.mioo.dao.ui.theme.LocalGlassEffectEnabled.current) 0.98f else 1f
-                    )
+                    ),
+                    titleContentColor = headerStyle.titleContentColor,
+                    navigationIconContentColor = headerStyle.navigationContentColor,
+                    actionIconContentColor = closeActionColors.contentColor
                 )
             )
             }
@@ -1374,7 +1408,8 @@ private fun ThreadChromeActions(
     showBookmarkMenu: Boolean,
     onShowBookmarkMenuChange: (Boolean) -> Unit,
     showOverflowMenu: Boolean,
-    onShowOverflowMenuChange: (Boolean) -> Unit
+    onShowOverflowMenuChange: (Boolean) -> Unit,
+    headerStyle: com.mioo.dao.ui.components.HeaderBarStyle
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
     val transfers by viewModel.offlineTransfers.collectAsState()
@@ -1383,6 +1418,10 @@ private fun ThreadChromeActions(
     val context = LocalContext.current
     // 「删除离线缓存」二次确认（三点菜单触发）
     var showRemoveOffline by remember { mutableStateOf(false) }
+
+    val poActionColors = headerStyle.trailingActionAt(2)
+    val bookmarkActionColors = headerStyle.trailingActionAt(1)
+    val overflowActionColors = headerStyle.trailingActionAt(0)
 
     // 只看 Po：[HD]/[CC] 式线性徽章；高亮色只代表已激活的过滤/收藏状态
     IconButton(
@@ -1395,13 +1434,13 @@ private fun ThreadChromeActions(
                 .then(
                     if (showPoOnly) {
                         Modifier.background(
-                            MaterialTheme.colorScheme.primary,
+                            poActionColors.activeBadgeContainerColor,
                             RoundedCornerShape(4.dp)
                         )
                     } else {
                         Modifier.border(
                             1.8.dp,
-                            MaterialTheme.colorScheme.onSurfaceVariant,
+                            poActionColors.secondaryContentColor,
                             RoundedCornerShape(4.dp)
                         )
                     }
@@ -1411,9 +1450,9 @@ private fun ThreadChromeActions(
             Text(
                 text = "PO",
                 color = if (showPoOnly) {
-                    MaterialTheme.colorScheme.onPrimary
+                    poActionColors.activeBadgeContentColor
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    poActionColors.secondaryContentColor
                 },
                 textAlign = TextAlign.Center,
                 style = readingTextStyle(9.5f, 9.5f, FontWeight.Bold).copy(
@@ -1454,9 +1493,9 @@ private fun ThreadChromeActions(
                 imageVector = if (bookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                 contentDescription = if (chrome.isOfflineSaved) "已离线收藏" else "离线下载本串",
                 tint = if (bookmarked) {
-                    MaterialTheme.colorScheme.primary
+                    bookmarkActionColors.activeAccentColor
                 } else {
-                    MaterialTheme.colorScheme.onSurface
+                    bookmarkActionColors.contentColor
                 }
             )
         }
@@ -1500,7 +1539,11 @@ private fun ThreadChromeActions(
             onClick = { onShowOverflowMenuChange(true) },
             modifier = Modifier.size(40.dp)
         ) {
-            Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "更多选项",
+                tint = overflowActionColors.contentColor
+            )
         }
 
         Md3DropdownMenu(
@@ -1643,7 +1686,8 @@ private fun ThreadPageJumpButton(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onJumpToPage: (Int) -> Unit,
-    onOpenInputDialog: () -> Unit
+    onOpenInputDialog: () -> Unit,
+    actionColors: com.mioo.dao.ui.components.HeaderActionColors
 ) {
     // 拖动预览页码；每次打开气泡时重置为当前页
     var sliderPage by remember { mutableStateOf(1f) }
@@ -1672,7 +1716,7 @@ private fun ThreadPageJumpButton(
                 imageVector = Icons.Outlined.AutoStories,
                 contentDescription = "跳转页码",
                 modifier = Modifier.size(24.dp),
-                tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                tint = if (expanded) actionColors.activeAccentColor else actionColors.contentColor
             )
         }
 

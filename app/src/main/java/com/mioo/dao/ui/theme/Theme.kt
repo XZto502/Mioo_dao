@@ -314,7 +314,7 @@ fun MiooDaoTheme(
             }
             WindowCompat.setDecorFitsSystemWindows(window, false)
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightStatusBars = activeLightStatusBarsOverride ?: !darkTheme
                 // Light icons on dark theme so the gesture pill stays visible on glow/content.
                 isAppearanceLightNavigationBars = !darkTheme
             }

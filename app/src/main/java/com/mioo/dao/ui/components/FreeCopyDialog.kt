@@ -78,8 +78,9 @@ fun FreeCopyDialog(text: String, onDismiss: () -> Unit, postId: String = "") {
         controller?.isAppearanceLightStatusBars = !dark
         controller?.isAppearanceLightNavigationBars = !dark
         onDispose {
-            if (oldStatus != null) controller.isAppearanceLightStatusBars = oldStatus
-            if (oldNavigation != null) controller.isAppearanceLightNavigationBars = oldNavigation
+            val restoredStatus = com.mioo.dao.ui.theme.activeLightStatusBarsOverride ?: oldStatus
+            if (restoredStatus != null) controller?.isAppearanceLightStatusBars = restoredStatus
+            if (oldNavigation != null) controller?.isAppearanceLightNavigationBars = oldNavigation
         }
     }
     fun close() {

@@ -749,7 +749,7 @@ private fun ViewerBarsEffect(lightCanvas: Boolean) {
                 window.navigationBarDividerColor = originalDivider
             }
             WindowCompat.getInsetsController(window, window.decorView).apply {
-                isAppearanceLightStatusBars = originalLightStatus
+                isAppearanceLightStatusBars = com.mioo.dao.ui.theme.activeLightStatusBarsOverride ?: originalLightStatus
                 isAppearanceLightNavigationBars = originalLightNav
             }
         }

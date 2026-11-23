@@ -58,6 +58,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -100,11 +101,13 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.MiooMotion
+import com.mioo.dao.ui.theme.findActivity
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
@@ -159,6 +162,9 @@ fun MiooDaoNavGraph(
     var requestPageBack by remember { mutableStateOf<(() -> Unit)?>(null) }
     var flushPendingBack by remember { mutableStateOf<(() -> Unit)?>(null) }
     val isHomeRoute = remember(navController) { mutableStateOf(initialThreadId.isNullOrBlank()) }
+    val visibleTopRoute = remember(navController) {
+        mutableStateOf<String?>(if (!initialThreadId.isNullOrBlank()) Screen.Thread.route else Screen.Home.route)
+    }
     val hostActivity = LocalContext.current as? android.app.Activity
 
     LaunchedEffect(initialThreadId) {
@@ -339,6 +345,15 @@ fun MiooDaoNavGraph(
         }
     }
 
+    val boardHeaderData = com.mioo.dao.ui.components.rememberCustomHeaderData()
+    SyncCustomHeaderStatusBar(
+        visibleTopRoute = { visibleTopRoute.value },
+        currentTabIndex = currentTabIndex,
+        drawerState = boardDrawerState,
+        isOverlayOpen = isImageViewerOpen || isComposerOpen,
+        headerData = boardHeaderData
+    )
+
     ModalNavigationDrawer(
         modifier = modifier,
         drawerState = boardDrawerState,
@@ -406,6 +421,9 @@ fun MiooDaoNavGraph(
             onPrepareBack = { entry -> threadLeaveHandlers[entry.id]?.invoke() },
             onCommitBack = { entry ->
                 navController.currentBackStackEntry != entry || navController.popBackStack()
+            },
+            onVisibleRouteChange = { route ->
+                if (route != null) visibleTopRoute.value = route
             }
         ) { entry ->
             when (entry.destination.route) {
@@ -434,6 +452,7 @@ fun MiooDaoNavGraph(
                         currentTabIndex = currentTabIndex,
                         reducedMotion = reducedMotion,
                         historyOpenGeneration = historyOpenGeneration,
+                        boardHeader = boardHeaderData,
                         onNavigateToThread = navigateToThread,
                         onNavigateToOfflineThread = navigateToOfflineThread,
                         onColdStartContentReady = onColdStartContentReady,
@@ -705,6 +724,7 @@ private fun ParallaxPageHost(
     registerFlushPendingBack: ((() -> Unit)?) -> Unit,
     onPrepareBack: (NavBackStackEntry) -> Unit,
     onCommitBack: (NavBackStackEntry) -> Boolean,
+    onVisibleRouteChange: (String?) -> Unit = {},
     content: @Composable (NavBackStackEntry) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -753,6 +773,14 @@ private fun ParallaxPageHost(
     val latestEntries = rememberUpdatedState(entries)
     val stateHolder = rememberSaveableStateHolder()
     val layers = remember { androidx.compose.runtime.mutableStateListOf<PageLayer>() }
+    val topVisibleRoute by remember {
+        derivedStateOf {
+            layers.lastOrNull { !it.pendingRetirement }?.entry?.destination?.route
+        }
+    }
+    LaunchedEffect(topVisibleRoute) {
+        onVisibleRouteChange(topVisibleRoute)
+    }
     val scope = rememberCoroutineScope()
     val latestReducedMotion = rememberUpdatedState(reducedMotion)
     val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
@@ -995,12 +1023,85 @@ private fun ParallaxPageHost(
         }
     }
 }
+@Composable
+private fun SyncCustomHeaderStatusBar(
+    visibleTopRoute: () -> String?,
+    currentTabIndex: Int,
+    drawerState: androidx.compose.material3.DrawerState,
+    isOverlayOpen: Boolean,
+    headerData: com.mioo.dao.ui.components.CustomHeaderData
+) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val context = LocalContext.current
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val isDrawerClosed by remember(drawerState) {
+        derivedStateOf {
+            drawerState.currentValue == DrawerValue.Closed &&
+                drawerState.targetValue == DrawerValue.Closed
+        }
+    }
+    val route = visibleTopRoute()
+    val isHome = route == Screen.Home.route
+    val isThread = route == Screen.Thread.route
+    val hasHeader = headerData.enabled
+    val density = LocalDensity.current
+    val screenWidthPx = with(density) { androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp.toPx() }
+    val statusBarHeightPx = WindowInsets.statusBars.getTop(density).toFloat()
+    val estimatedBarHeightPx = statusBarHeightPx + with(density) { 64.dp.toPx() }
+    val applyToThread = headerData.settings.applyToThread
+    val useLightStatusBarIcons = headerData.useLightStatusBarIcons(
+        containerWidthPx = screenWidthPx,
+        containerHeightPx = estimatedBarHeightPx,
+        statusBarHeightPx = statusBarHeightPx
+    )
+    val customHeaderVisible = hasHeader && when {
+        isHome -> currentTabIndex == 0 && isDrawerClosed
+        isThread -> applyToThread
+        else -> false
+    }
+    val effectiveLightStatusBars = com.mioo.dao.ui.components.resolveEffectiveLightStatusBars(
+        darkTheme = darkTheme,
+        isHomeRoute = isHome,
+        isThreadRoute = isThread,
+        currentTabIndex = currentTabIndex,
+        isDrawerClosed = isDrawerClosed,
+        isOverlayOpen = false,
+        hasCustomHeaderImage = hasHeader,
+        applyHeaderToThread = applyToThread,
+        useLightStatusBarIcons = useLightStatusBarIcons
+    )
+    val overrideValue: Boolean? = if (customHeaderVisible) effectiveLightStatusBars else null
+    val lastApplied = remember { arrayOfNulls<Boolean>(1) }
+
+    DisposableEffect(view, context, overrideValue, effectiveLightStatusBars, isOverlayOpen) {
+        com.mioo.dao.ui.theme.activeLightStatusBarsOverride = overrideValue
+        // Only write to WindowInsetsController when custom header is active or when clearing a
+        // previously applied custom-header polarity override (avoids redundant IPC on overlay close).
+        val shouldSyncWindow = overrideValue != null || lastApplied[0] != null
+        if (shouldSyncWindow && !isOverlayOpen && !com.mioo.dao.ui.theme.isActivitySystemBarsOverridden) {
+            val window = context.findActivity()?.window
+            if (window != null) {
+                androidx.core.view.WindowCompat.getInsetsController(window, view)
+                    .isAppearanceLightStatusBars = effectiveLightStatusBars
+                lastApplied[0] = overrideValue
+            }
+        }
+        onDispose { }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            com.mioo.dao.ui.theme.activeLightStatusBarsOverride = null
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainTabs(
     currentTabIndex: Int,
     reducedMotion: Boolean,
     historyOpenGeneration: Int,
+    boardHeader: com.mioo.dao.ui.components.CustomHeaderData,
     onNavigateToThread: (String) -> Unit,
     onNavigateToOfflineThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
@@ -1016,7 +1117,6 @@ private fun MainTabs(
 ) {
     val tabState = rememberSaveableStateHolder()
     val slidePx = with(LocalDensity.current) { 20.dp.roundToPx() }
-    val boardHeader = com.mioo.dao.ui.components.rememberCustomHeaderBitmap()
     var mountedTabs by remember { mutableStateOf(setOf(currentTabIndex)) }
     var activeTab by remember { mutableIntStateOf(currentTabIndex) }
     var outgoingTab by remember { mutableStateOf<Int?>(null) }
@@ -1035,7 +1135,7 @@ private fun MainTabs(
         Modifier.graphicsLayer {
             val splitEnter = activeTabState.value == 0 &&
                 outgoingTabState.value != null &&
-                boardHeaderState.value != null &&
+                boardHeaderState.value.enabled &&
                 !reducedMotionState.value
             translationX = if (splitEnter) -slidePx * (1f - enterProgress.value) else 0f
         }
@@ -1044,7 +1144,7 @@ private fun MainTabs(
         Modifier.graphicsLayer {
             val splitEnter = activeTabState.value == 0 &&
                 outgoingTabState.value != null &&
-                boardHeaderState.value != null &&
+                boardHeaderState.value.enabled &&
                 !reducedMotionState.value
             if (splitEnter) {
                 val p = enterProgress.value
@@ -1075,7 +1175,7 @@ private fun MainTabs(
             activeTab = currentTabIndex
             enterProgress.snapTo(0f)
             exitAlpha.snapTo(1f)
-            val enterEasing = if (activeTab == 0 && boardHeader != null) {
+            val enterEasing = if (activeTab == 0 && boardHeader.enabled) {
                 androidx.compose.animation.core.LinearOutSlowInEasing
             } else {
                 FastOutSlowInEasing
@@ -1096,7 +1196,7 @@ private fun MainTabs(
                 val isOutgoing = page == outgoingTab && outgoingTab != activeTab
                 val isVisible = isActive || isOutgoing
                 val isTransitioning = outgoingTab != null
-                val splitBoardEnter = isActive && isTransitioning && page == 0 && boardHeader != null && !reducedMotion
+                val splitBoardEnter = isActive && isTransitioning && page == 0 && boardHeader.enabled && !reducedMotion
                 val isPageActive = remember(page) { { activeTabState.value == page } }
                 Box(
                     Modifier
@@ -1189,7 +1289,7 @@ private fun TabPageContent(
     onImageViewerOpenChange: (Boolean) -> Unit,
     onComposerOpenChange: (Boolean) -> Unit,
     reducedMotion: Boolean,
-    boardHeader: androidx.compose.ui.graphics.ImageBitmap?,
+    boardHeader: com.mioo.dao.ui.components.CustomHeaderData,
     boardHeaderMod: Modifier,
     boardBodyMod: Modifier,
     isPageActive: () -> Boolean,
@@ -1212,7 +1312,7 @@ private fun TabPageContent(
                     onScrollInProgressChange = onForumScrollInProgressChange,
                     onImageViewerOpenChange = onImageViewerOpenChange,
                     onComposerOpenChange = onComposerOpenChange,
-                    headerBitmap = boardHeader,
+                    headerData = boardHeader,
                     headerModifier = boardHeaderMod,
                     bodyModifier = boardBodyMod
                 )
@@ -1222,6 +1322,7 @@ private fun TabPageContent(
                 FeedScreen(
                     viewModel = viewModel,
                     onNavigateToThread = onNavigateToThread,
+                    onNavigateToOfflineThread = onNavigateToOfflineThread,
                     onImageViewerOpenChange = onImageViewerOpenChange,
                     isActiveTab = isPageActive
                 )
@@ -1229,7 +1330,6 @@ private fun TabPageContent(
             2 -> PageBackdrop {
                 HistoryScreen(
                     onNavigateToThread = onNavigateToThread,
-                    onNavigateToOfflineThread = onNavigateToOfflineThread,
                     onImageViewerOpenChange = onImageViewerOpenChange,
                     openGeneration = historyOpenGeneration,
                     isActiveTab = isPageActive,

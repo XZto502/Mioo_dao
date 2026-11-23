@@ -179,7 +179,10 @@ class MainActivity : ComponentActivity() {
             // Keep system bars immersive when app theme changes (not only system UI mode).
             SideEffect {
                 if (!isActivitySystemBarsOverridden) {
-                    applyImmersiveSystemBars(darkTheme)
+                    applyImmersiveSystemBars(
+                        darkTheme = darkTheme,
+                        lightStatusBars = com.mioo.dao.ui.theme.activeLightStatusBarsOverride ?: !darkTheme
+                    )
                 }
             }
 
@@ -471,10 +474,13 @@ private data class ThemeConfig(
  * gesture indicator (dark
  * ) and 3-button nav area.
  */
-private fun ComponentActivity.applyImmersiveSystemBars(darkTheme: Boolean) {
+private fun ComponentActivity.applyImmersiveSystemBars(
+    darkTheme: Boolean,
+    lightStatusBars: Boolean = !darkTheme
+) {
     val transparent = android.graphics.Color.TRANSPARENT
     enableEdgeToEdge(
-        statusBarStyle = if (darkTheme) {
+        statusBarStyle = if (!lightStatusBars) {
             SystemBarStyle.dark(transparent)
         } else {
             SystemBarStyle.light(transparent, transparent)
