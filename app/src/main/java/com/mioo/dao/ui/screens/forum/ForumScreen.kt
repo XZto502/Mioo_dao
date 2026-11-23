@@ -848,7 +848,6 @@ private fun ForumBoardDrawerList(
     LazyColumn(
         state = drawerListState,
         flingBehavior = drawerFling,
-        userScrollEnabled = initialViewport.ready,
         modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
         // 抽屉盖住底栏后，只留系统导航条安全区，滚到底仍能看全板块
         contentPadding = PaddingValues(
@@ -1150,7 +1149,6 @@ private fun ForumThreadListPane(
     LazyColumn(
         state = listState,
         flingBehavior = responsiveFling,
-        userScrollEnabled = !listReady || viewportReady,
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize()
