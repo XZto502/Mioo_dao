@@ -15,8 +15,14 @@ class HeaderContrastTest {
         assertEquals(0f, argbRelativeLuminance(0xFF000000.toInt()), 0.0001f)
         assertEquals(1f, argbRelativeLuminance(0xFFFFFFFF.toInt()), 0.0001f)
         assertTrue(argbRelativeLuminance(0xFF00FF00.toInt()) > argbRelativeLuminance(0xFF0000FF.toInt()))
-        assertTrue(argbRelativeLuminance(0xFF202020.toInt()) < HEADER_LIGHT_CONTENT_THRESHOLD)
-        assertTrue(argbRelativeLuminance(0xFFEAEAEA.toInt()) > HEADER_LIGHT_CONTENT_THRESHOLD)
+        assertTrue(useLightForegroundForLuminance(argbRelativeLuminance(0xFF202020.toInt())))
+        assertFalse(useLightForegroundForLuminance(argbRelativeLuminance(0xFFEAEAEA.toInt())))
+    }
+
+    @Test
+    fun middleLuminanceChoosesTheMoreLegibleForeground() {
+        assertTrue(useLightForegroundForLuminance(0.15f))
+        assertFalse(useLightForegroundForLuminance(0.31f))
     }
 
     @Test
@@ -67,7 +73,7 @@ class HeaderContrastTest {
 
         // Subtitle lower band is dark -> white subtitle ink
         assertTrue(style.subtitleUseLight)
-        assertEquals(LightHeaderInk.copy(alpha = 0.90f), style.subtitleContentColor)
+        assertEquals(LightHeaderInk, style.subtitleContentColor)
 
         // Rightmost icon slot (slot 0) is dark -> white ink
         val rightmost = style.trailingActionAt(0)

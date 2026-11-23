@@ -16,13 +16,6 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-/**
- * WCAG relative luminance split point for switching custom header foregrounds without a scrim.
- * Regions darker than 0.32 use crisp white ink; regions >= 0.32 use dark charcoal ink
- * so both sides maintain strong legibility directly on top of the unmasked original image.
- */
-internal const val HEADER_LIGHT_CONTENT_THRESHOLD = 0.32f
-
 private const val SAMPLE_WIDTH = 48
 private const val SAMPLE_HEIGHT = 16
 private const val CROP_PREVIEW_SAMPLE_COLS = 32
@@ -34,6 +27,10 @@ private const val ACTION_RIGHT_INSET_DP = 4f
 
 internal val LightHeaderInk = Color.White
 internal val DarkHeaderInk = Color(0xFF1A1C1E)
+private val DarkHeaderInkLuminance = DarkHeaderInk.luminance()
+
+private fun contrastRatio(first: Float, second: Float): Float =
+    (max(first, second) + 0.05f) / (min(first, second) + 0.05f)
 
 internal fun srgbChannelToLinear(channel: Float): Float {
     val c = channel.coerceIn(0f, 1f)
@@ -231,7 +228,9 @@ internal fun computeCropRegionLuminanceMap(
 internal fun useLightForegroundForLuminance(
     luminance: Float?,
     fallbackLightContent: Boolean = true
-): Boolean = luminance?.let { it < HEADER_LIGHT_CONTENT_THRESHOLD } ?: fallbackLightContent
+): Boolean = luminance?.let {
+    contrastRatio(1f, it) >= contrastRatio(DarkHeaderInkLuminance, it)
+} ?: fallbackLightContent
 
 @Immutable
 data class HeaderActionColors(
@@ -247,7 +246,8 @@ data class HeaderActionColors(
 private fun resolveActionColorsForTone(
     enabled: Boolean,
     useLightContent: Boolean,
-    colorScheme: ColorScheme
+    colorScheme: ColorScheme,
+    backgroundLuminance: Float? = null
 ): HeaderActionColors {
     val isDarkTheme = colorScheme.background.luminance() < 0.5f
     if (!enabled) {
@@ -271,9 +271,11 @@ private fun resolveActionColorsForTone(
         HeaderActionColors(
             useLightContent = true,
             contentColor = LightHeaderInk,
-            secondaryContentColor = LightHeaderInk.copy(alpha = 0.90f),
+            secondaryContentColor = LightHeaderInk,
             disabledContentColor = LightHeaderInk.copy(alpha = 0.45f),
-            activeAccentColor = brightAccent,
+            activeAccentColor = if (backgroundLuminance != null &&
+                contrastRatio(brightAccent.luminance(), backgroundLuminance) < 4.5f
+            ) LightHeaderInk else brightAccent,
             activeBadgeContainerColor = LightHeaderInk.copy(alpha = 0.94f),
             activeBadgeContentColor = DarkHeaderInk
         )
@@ -287,9 +289,11 @@ private fun resolveActionColorsForTone(
         HeaderActionColors(
             useLightContent = false,
             contentColor = DarkHeaderInk,
-            secondaryContentColor = DarkHeaderInk.copy(alpha = 0.82f),
+            secondaryContentColor = DarkHeaderInk,
             disabledContentColor = DarkHeaderInk.copy(alpha = 0.40f),
-            activeAccentColor = deepAccent,
+            activeAccentColor = if (backgroundLuminance != null &&
+                contrastRatio(deepAccent.luminance(), backgroundLuminance) < 4.5f
+            ) DarkHeaderInk else deepAccent,
             activeBadgeContainerColor = DarkHeaderInk.copy(alpha = 0.90f),
             activeBadgeContentColor = LightHeaderInk
         )
@@ -337,7 +341,8 @@ data class HeaderBarStyle(
         return resolveActionColorsForTone(
             enabled = true,
             useLightContent = useLightForegroundForLuminance(lum),
-            colorScheme = colorScheme
+            colorScheme = colorScheme,
+            backgroundLuminance = lum
         )
     }
 }
@@ -417,7 +422,7 @@ internal fun resolveHeaderBarStyle(
     val navColors = resolveActionColorsForTone(true, navUseLight, colorScheme)
     val titleColors = resolveActionColorsForTone(true, titleUseLight, colorScheme)
     val subtitleColors = resolveActionColorsForTone(true, subtitleUseLight, colorScheme)
-    val trailingColors = resolveActionColorsForTone(true, rightActionUseLight, colorScheme)
+    val trailingColors = resolveActionColorsForTone(true, rightActionUseLight, colorScheme, rightActionLum)
 
     return HeaderBarStyle(
         enabled = true,
