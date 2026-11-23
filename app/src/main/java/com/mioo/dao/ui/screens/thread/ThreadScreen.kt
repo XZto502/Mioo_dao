@@ -318,7 +318,9 @@ fun ThreadScreen(
     }
     val initialViewport = rememberInitialListViewport(
         hasContent = allowHeavyList && listUi.thread != null,
-        resetKey = listUi.contentRevision
+        resetKey = listUi.contentRevision,
+        steps = 5,
+        deferFirstRow = true
     )
     val readingListReady = allowHeavyList && initialViewport.ready
     var topActionsReady by remember { mutableStateOf(reducedMotion) }

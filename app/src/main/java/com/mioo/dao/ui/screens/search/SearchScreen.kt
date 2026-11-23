@@ -361,7 +361,8 @@ private fun SearchResultsSection(
     val initialViewport = rememberInitialListViewport(
         hasContent = hasResults,
         resetKey = resultResetKey,
-        steps = 5
+        steps = 5,
+        deferFirstRow = true
     )
     val cardBg = secondaryCardBackground()
     androidx.compose.runtime.CompositionLocalProvider(

@@ -37,4 +37,13 @@ class InitialListViewportTest {
         assertTrue(viewport.active)
         assertEquals(500, viewport.viewportHeightForStage(2000))
     }
+
+    @Test
+    fun defaultViewportUsesThreeNonDeferredSteps() {
+        val viewport = InitialListViewport()
+        assertFalse(viewport.ready)
+        assertEquals(800, viewport.viewportHeightForStage(2400))
+        assertEquals(1600, viewport.viewportHeightForStage(2400, 2))
+        assertEquals(2400, viewport.viewportHeightForStage(2400, 3))
+    }
 }

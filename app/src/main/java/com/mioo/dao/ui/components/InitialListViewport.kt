@@ -25,7 +25,7 @@ import kotlinx.coroutines.CompletableDeferred
  */
 internal class InitialListViewport(
     private val steps: Int = DEFAULT_STEPS,
-    private val deferFirstRow: Boolean = true,
+    private val deferFirstRow: Boolean = false,
     initialActive: Boolean = false
 ) {
     internal var active by mutableStateOf(initialActive)
@@ -71,7 +71,7 @@ internal class InitialListViewport(
     }
 
     companion object {
-        const val DEFAULT_STEPS = 6
+        const val DEFAULT_STEPS = 3
     }
 }
 
@@ -80,7 +80,7 @@ internal fun rememberInitialListViewport(
     hasContent: Boolean,
     resetKey: Any? = Unit,
     steps: Int = InitialListViewport.DEFAULT_STEPS,
-    deferFirstRow: Boolean = true
+    deferFirstRow: Boolean = false
 ): InitialListViewport {
     val viewport = remember(resetKey, steps, deferFirstRow) {
         InitialListViewport(

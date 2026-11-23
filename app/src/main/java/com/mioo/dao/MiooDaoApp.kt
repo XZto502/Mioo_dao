@@ -123,7 +123,9 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
     private fun deferNonCriticalWarm() {
         appScope.launch(Dispatchers.Default) {
-            kotlinx.coroutines.delay(250)
+            // Wait until after cold-start splash dismissal and first board frame settle
+            // so background warm-up never contends with initial cache load or layout.
+            kotlinx.coroutines.delay(800)
             runCatching {
                 android.text.TextPaint().apply { textSize = 42f }
                     .measureText("ﾟ∀´дつ⊂彡☆╬∇Дεω≡・ゝー。ᗜᗢəʃΣΩ♪★●○▲△▼▽◆◇□■综合版时间线回复串号无名氏今天昨天0123456789No.replies")

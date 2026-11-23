@@ -864,7 +864,8 @@ private fun ForumBoardDrawerList(
     val context = LocalContext.current
     val initialViewport = rememberInitialListViewport(
         hasContent = forumGroups.isNotEmpty(),
-        steps = 10
+        steps = 10,
+        deferFirstRow = true
     )
     val pinnedForumsList = remember(forumGroups, forumSettings.pinnedForums) {
         forumGroups.flatMap { it.forums }
@@ -1086,7 +1087,17 @@ private fun ForumThreadListPane(
     val isEmptyIdle = displayItems.isEmpty() && !isLoading && !isRefreshing
 
     val listReady = displayItems.isNotEmpty()
-    val initialViewport = rememberInitialListViewport(listReady, resetKey = forumKey)
+    // Cold start measures behind the system splash window (keep 3 fast slices so splash
+    // never times out); subsequent board switches run visibly and use finer deferred slices.
+    // Latch per-forumKey so completing cold start never resets the active board's viewport.
+    var coldStartDone by remember { mutableStateOf(false) }
+    val isColdStartBoard = remember(forumKey) { !coldStartDone }
+    val initialViewport = rememberInitialListViewport(
+        hasContent = listReady,
+        resetKey = forumKey,
+        steps = if (isColdStartBoard) 3 else 6,
+        deferFirstRow = !isColdStartBoard
+    )
     val viewportReady = initialViewport.ready
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
@@ -1095,6 +1106,7 @@ private fun ForumThreadListPane(
     LaunchedEffect(forumKey, listReady, viewportReady) {
         if (!listReady || !viewportReady || firstScreenNotified) return@LaunchedEffect
         firstScreenNotified = true
+        coldStartDone = true
         // Drop splash on next frame — no artificial 16ms wait
         onFirstScreenReady()
     }
