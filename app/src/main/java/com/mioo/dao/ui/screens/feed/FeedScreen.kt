@@ -158,7 +158,6 @@ fun FeedScreen(
     }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    val searchQuery = query.trim()
     val searchFocus = remember { FocusRequester() }
     var requestSearchFocus by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -306,6 +305,7 @@ fun FeedScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            val searchQuery = query.trim()
             if (searchQuery.isNotEmpty()) {
                 FeedTitleSearch(
                     query = searchQuery,
