@@ -320,7 +320,8 @@ fun ThreadScreen(
     }
     var leavingThread by remember(viewModel) { mutableStateOf(false) }
     fun saveVisibleProgress() {
-        if (leavingThread) return
+        val state = viewModel.listUiState.value
+        if (leavingThread || !readingListReady || state.isReplacing || state.pendingScrollIndex != null) return
         val anchor = listState.layoutInfo.visibleItemsInfo
             .firstOrNull { it.index == listState.firstVisibleItemIndex }
         val position = anchor?.let { it.key to listState.firstVisibleItemScrollOffset }
