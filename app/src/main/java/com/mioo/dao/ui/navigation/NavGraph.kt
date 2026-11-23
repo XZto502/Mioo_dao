@@ -905,13 +905,15 @@ private fun ParallaxPageHost(
                 com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
                 if (active.layer.entry.destination.route == Screen.Thread.route) {
                     latestPrepareBack.value(active.layer.entry)
-                    // Spread off-screen reply card disposal across 3 idle frames so no
-                    // single release frame breaches a 90Hz/120Hz frame deadline.
+                    // Spread off-screen composer + reply card disposal across 4 idle frames so
+                    // no single release frame breaches a 90Hz/120Hz frame deadline.
                     active.layer.readingListRetireStage = 1
                     withFrameNanos { }
                     active.layer.readingListRetireStage = 2
                     withFrameNanos { }
                     active.layer.readingListRetireStage = 3
+                    withFrameNanos { }
+                    active.layer.readingListRetireStage = 4
                     withFrameNanos { }
                     withFrameNanos { }
                     if (homeBusyFlow.value) {

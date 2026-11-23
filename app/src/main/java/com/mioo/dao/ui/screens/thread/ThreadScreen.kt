@@ -821,7 +821,7 @@ fun ThreadScreen(
                 .fillMaxSize()
         ) {
             val retireListRemoved by remember(retireReadingListStage) {
-                derivedStateOf { retireReadingListStage() >= 3 }
+                derivedStateOf { retireReadingListStage() >= 4 }
             }
             if (retireListRemoved) {
                 // The off-screen list is released before its navigation entry.
@@ -990,7 +990,7 @@ fun ThreadScreen(
                     // 向上翻回第 1 页时串首卡片随 startPage==1 重新出现
                     if (mainThread != null && mainPostDataPo != null && listUi.startPage <= 1) {
                         item(key = "main_${mainThread.id}", contentType = "main_thread") {
-                            if (retireReadingListStage() >= 2) return@item
+                            if (retireReadingListStage() >= 3) return@item
                             var showBlockDialog by remember { mutableStateOf(false) }
 
                             if (showBlockDialog) {
@@ -2052,7 +2052,11 @@ private fun ThreadReplyRow(
     onShareCard: (String) -> Unit,
     retireStage: () -> Int
 ) {
-    val retireThreshold = if ((item.id and 1L) == 0L) 1 else 2
+    val retireThreshold = when (Math.floorMod(item.id, 3L).toInt()) {
+        0 -> 2
+        1 -> 3
+        else -> 4
+    }
     if (retireStage() >= retireThreshold) return
     // 每个引用从首帧就拥有同样的预览槽位；缓存命中只替换槽位内容。
     val quoteSlots = remember(item.quoteIds, inlineQuotesEnabled, resolveQuotePost) {

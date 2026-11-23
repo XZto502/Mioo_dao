@@ -706,19 +706,19 @@ class ThreadViewModel @Inject constructor(
                         // Publishing a scroll request here cancels each new drag/fling.
                         val prependAnchor: Pair<Int, Int>? = null
                         seedLocalQuotes(newPosts, threadData)
-                        // Only prewarm synchronously for pagination appends/prepends where the
-                        // list is already live; initial/resume REPLACE must publish immediately.
-                        if (mode != LoadMode.REPLACE) {
-                            withContext(Dispatchers.Default) {
-                                com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmThreadWindow(
-                                    mainContent = mainPostData.content,
-                                    items = displayItems,
-                                    anchorIndex = if (mode == LoadMode.PREPEND) 0 else (displayItems.size - newPosts.size).coerceAtLeast(0),
-                                    windowSize = 10
-                                )
-                            }
-                            if (gen != loadGeneration) return@collect
+                        withContext(Dispatchers.Default) {
+                            com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmThreadWindow(
+                                mainContent = mainPostData.content,
+                                items = displayItems,
+                                anchorIndex = when (mode) {
+                                    LoadMode.REPLACE -> seedPending ?: 0
+                                    LoadMode.PREPEND -> 0
+                                    LoadMode.APPEND -> (displayItems.size - newPosts.size).coerceAtLeast(0)
+                                },
+                                windowSize = 10
+                            )
                         }
+                        if (gen != loadGeneration) return@collect
                         _listState.update { state ->
                             state.copy(
                                 thread = threadData,
