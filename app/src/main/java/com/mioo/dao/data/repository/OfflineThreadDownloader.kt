@@ -38,9 +38,9 @@ internal class OfflineThreadDownloader(
     )
 
     fun download(tid: String, conservative: Boolean, dependencies: Dependencies, onProgress: (OfflineTransfer) -> Unit = {}): Flow<XdResponse<Unit>> = flow {
-        val meter = OfflineTransferMeter(onProgress)
+        val meter = OfflineTransferMeter(publish = onProgress)
         try {
-            meter.start("读取串信息", 0)
+            meter.start("下载正文", 0)
             val previousOffline = if (conservative) offlineThreadDao.get(tid) else null
             val page1Fetched = dependencies.fetchThreadWithRaw(tid, 1)
             val page1 = page1Fetched.thread
@@ -54,7 +54,7 @@ internal class OfflineThreadDownloader(
 
             check(totalReplies == 0 || repliesPage1Size > 0) { "第 1 页回复缺失，请重试离线下载" }
             val pageCount = if (totalReplies == 0) 1 else (totalReplies - 1) / repliesPage1Size + 1
-            meter.start("下载正文", pageCount)
+            meter.setTotal(pageCount)
             meter.received(page1Fetched.rawJson.toByteArray(Charsets.UTF_8).size.toLong())
             meter.completeUnit()
             if (totalReplies > repliesPage1Size) {

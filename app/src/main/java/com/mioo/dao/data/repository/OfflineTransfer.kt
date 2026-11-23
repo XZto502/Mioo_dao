@@ -11,22 +11,29 @@ data class OfflineTransfer(
     val error: String? = null
 )
 
-internal class OfflineTransferMeter(private val publish: (OfflineTransfer) -> Unit) {
+internal class OfflineTransferMeter(
+    private val nowMs: () -> Long = SystemClock::elapsedRealtime,
+    private val publish: (OfflineTransfer) -> Unit
+) {
     private var started = 0L
     private var lastPublished = 0L
     private var bytes = 0L
     private var state = OfflineTransfer()
 
     fun start(stage: String, total: Int) {
-        started = SystemClock.elapsedRealtime()
+        started = nowMs()
         bytes = 0
         state = OfflineTransfer(stage = stage, total = total)
         update()
     }
 
+    fun setTotal(total: Int) {
+        state = state.copy(total = total)
+    }
+
     fun received(count: Long) {
         bytes += count
-        if (SystemClock.elapsedRealtime() - lastPublished >= 500) update()
+        if (nowMs() - lastPublished >= 500) update()
     }
 
     fun completeUnit() {
@@ -35,7 +42,7 @@ internal class OfflineTransferMeter(private val publish: (OfflineTransfer) -> Un
     }
 
     private fun update() {
-        val now = SystemClock.elapsedRealtime()
+        val now = nowMs()
         val elapsed = now - started
         lastPublished = now
         val rateReady = elapsed >= 500
