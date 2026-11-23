@@ -864,14 +864,18 @@ private fun ParallaxPageHost(
             } else {
                 active.layer.animateTo(0f, tween(if (latestReducedMotion.value) 0 else 340, easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)))
             }
-            if (homeBusyFlow.value) {
-                // Defer teardown + ViewModel disposal + Compose tree disposal until active
-                // touch/fling on Home settles, keeping the exposed board list at 120Hz.
-                active.layer.pendingRetirement = true
-                syncCoverLayers()
-                if (gesture === active) gesture = null
-                kotlinx.coroutines.withTimeoutOrNull(4000L) {
+            // Reveal the destination immediately. Give the next touch time to
+            // arrive before releasing the off-screen composition.
+            active.layer.pendingRetirement = true
+            syncCoverLayers()
+            if (gesture === active) gesture = null
+            kotlinx.coroutines.withTimeoutOrNull(4000L) {
+                while (true) {
                     homeBusyFlow.first { !it }
+                    val resumed = kotlinx.coroutines.withTimeoutOrNull(180L) {
+                        homeBusyFlow.first { it }
+                    }
+                    if (resumed == null && !homeBusyFlow.value) break
                 }
             }
             if (!commitRetiredLayer(active.layer)) {
