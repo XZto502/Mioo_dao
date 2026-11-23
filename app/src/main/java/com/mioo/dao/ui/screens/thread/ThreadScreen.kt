@@ -198,6 +198,7 @@ import com.mioo.dao.data.model.XdWebSearch
 import com.mioo.dao.ui.components.HtmlParseCache
 import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.PrefetchListImages
+import com.mioo.dao.ui.components.rememberInitialListViewport
 import com.mioo.dao.ui.components.ReplyDisplayItem
 import com.mioo.dao.ui.components.StablePostList
 import com.mioo.dao.ui.components.ReplyCard
@@ -312,6 +313,8 @@ fun ThreadScreen(
         allowHeavyList = true
     }
     var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
+    val initialViewport = rememberInitialListViewport(listUi.thread != null)
+    val readingListReady = allowHeavyList && initialViewport.ready
         mutableStateOf<Pair<Any, Int>?>(null)
     }
     var leavingThread by remember(viewModel) { mutableStateOf(false) }
@@ -395,8 +398,8 @@ fun ThreadScreen(
         }
     }
     // 像素偏移也参与保存；加载与恢复期间不采集临时占位位置。
-    LaunchedEffect(listState, listUi.isReplacing, listUi.pendingScrollIndex) {
-        if (listUi.isReplacing || listUi.pendingScrollIndex != null) return@LaunchedEffect
+    LaunchedEffect(listState, listUi.isReplacing, listUi.pendingScrollIndex, readingListReady) {
+        if (!readingListReady || listUi.isReplacing || listUi.pendingScrollIndex != null) return@LaunchedEffect
         snapshotFlow {
             Triple(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset,
                 listState.layoutInfo.visibleItemsInfo.firstOrNull {
@@ -425,9 +428,9 @@ fun ThreadScreen(
 
     // 等实际布局就绪再恢复，不能在入场动画仍隐藏列表时把目标钳制成第 0 项。
     LaunchedEffect(listUi.pendingScrollIndex, listUi.displayItems.size, listUi.isLoading, listUi.isReplacing,
-        listState, allowHeavyList, userMovedDuringRestore) {
+        listState, readingListReady, userMovedDuringRestore) {
         val index = listUi.pendingScrollIndex ?: return@LaunchedEffect
-        if (listUi.isReplacing || listUi.thread == null || !allowHeavyList) return@LaunchedEffect
+        if (listUi.isReplacing || listUi.thread == null || !readingListReady) return@LaunchedEffect
         if (userMovedDuringRestore) {
             viewModel.consumePendingScrollIndex()
             return@LaunchedEffect
@@ -493,12 +496,12 @@ fun ThreadScreen(
             if (listState.isScrollInProgress) null else listState.firstVisibleItemIndex
         }
             .distinctUntilChanged()
-            .collect { focus ->
-                if (focus == null) return@collect
+            .collectLatest { focus ->
+                if (focus == null) return@collectLatest
                 val start = (focus - 1).coerceIn(0, listUi.displayItems.size)
                 val end = (start + 10).coerceAtMost(listUi.displayItems.size)
                 val near = listUi.displayItems.subList(start, end).map { it.postData.content }
-                if (near.isEmpty()) return@collect
+                if (near.isEmpty()) return@collectLatest
                 withContext(Dispatchers.Default) {
                     HtmlParseCache.prewarm(near, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset)
                 }
@@ -736,7 +739,7 @@ fun ThreadScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (!allowHeavyList || (listUi.isLoading && listUi.thread == null)) {
+            if (listUi.isLoading && listUi.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -772,13 +775,14 @@ fun ThreadScreen(
                     listState = listState,
                     sizePx = com.mioo.dao.ui.components.ListThumbImage.SIZE_PX,
                     ahead = 5,
-                    initialDelayMs = 500
+                    initialDelayMs = 500,
+                    enabled = readingListReady
                 )
 
                 // 一个观察器协调前后分页，避免恢复定位、加载状态和滚动各自发请求。
                 LaunchedEffect(listState, listUi.isLoading, listUi.pendingScrollIndex,
-                    listUi.startPage, listUi.isLastPage) {
-                    if (listUi.isLoading || listUi.pendingScrollIndex != null) return@LaunchedEffect
+                    listUi.startPage, listUi.isLastPage, readingListReady) {
+                    if (!readingListReady || listUi.isLoading || listUi.pendingScrollIndex != null) return@LaunchedEffect
                     var previousPosition = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
                     snapshotFlow {
                         val info = listState.layoutInfo
@@ -821,7 +825,10 @@ fun ThreadScreen(
                 LazyColumn(
                     state = listState,
                     flingBehavior = responsiveFling,
-                    modifier = Modifier.fillMaxSize().nestedScroll(edgePaging)
+                    userScrollEnabled = readingListReady,
+                    modifier = Modifier.fillMaxSize().then(initialViewport.modifier)
+                        .graphicsLayer { alpha = if (readingListReady) 1f else 0f }
+                        .nestedScroll(edgePaging)
                         .useUnbufferedFlingGrab(responsiveFling),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(
@@ -992,6 +999,9 @@ fun ThreadScreen(
             }
 
             // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）
+                if (!readingListReady && listUi.thread != null) {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
             AnimatedVisibility(
                 visible = showJumpBubble,
                 enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(120)),
