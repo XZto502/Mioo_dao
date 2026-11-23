@@ -901,24 +901,25 @@ private fun ParallaxPageHost(
             active.layer.pendingRetirement = true
             syncCoverLayers()
             if (gesture === active) gesture = null
-            kotlinx.coroutines.withTimeoutOrNull(4000L) {
+            if (active.layer.entry.destination.route == Screen.Thread.route) {
                 com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
-                if (active.layer.entry.destination.route == Screen.Thread.route) {
-                    latestPrepareBack.value(active.layer.entry)
-                    // Spread off-screen composer + reply card disposal across 4 idle frames so
-                    // no single release frame breaches a 90Hz/120Hz frame deadline.
-                    active.layer.readingListRetireStage = 1
-                    withFrameNanos { }
-                    active.layer.readingListRetireStage = 2
-                    withFrameNanos { }
-                    active.layer.readingListRetireStage = 3
-                    withFrameNanos { }
-                    active.layer.readingListRetireStage = 4
-                    withFrameNanos { }
-                    withFrameNanos { }
+                latestPrepareBack.value(active.layer.entry)
+                // The user can start another drag between any two disposal frames.
+                // Keep the hidden page pending until those frames can run on idle.
+                for (stage in 1..4) {
                     if (homeBusyFlow.value) {
                         com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
                     }
+                    active.layer.readingListRetireStage = stage
+                    withFrameNanos { }
+                }
+                withFrameNanos { }
+                if (homeBusyFlow.value) {
+                    com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
+                }
+            } else {
+                kotlinx.coroutines.withTimeoutOrNull(4000L) {
+                    com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
                 }
             }
             if (!commitRetiredLayer(active.layer)) {
