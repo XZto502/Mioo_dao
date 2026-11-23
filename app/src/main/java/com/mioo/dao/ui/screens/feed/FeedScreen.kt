@@ -114,6 +114,7 @@ import kotlinx.coroutines.withContext
 fun FeedScreen(
     viewModel: FeedViewModel,
     onNavigateToThread: (threadId: String) -> Unit,
+    onNavigateToOfflineThread: (String) -> Unit = onNavigateToThread,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
     isActiveTab: () -> Boolean = { true },
     modifier: Modifier = Modifier
@@ -475,7 +476,7 @@ fun FeedScreen(
                     ) {
                         if (uiState.selectedFolderId == null) {
                             items(offlineTransfers.entries.toList(), key = { "transfer_${it.key}" }) { (id, transfer) ->
-                                com.mioo.dao.ui.screens.offline.OfflineTransferRow(id, transfer) { openThread(id) }
+                                com.mioo.dao.ui.screens.offline.OfflineTransferRow(id, transfer) { onNavigateToOfflineThread(id) }
                             }
                             items(
                                 items = offlineItems,
@@ -486,7 +487,7 @@ fun FeedScreen(
                                     summary = summary,
                                     forumName = FALLBACK_FORUM_NAME_REGEX.matchEntire(summary.forumName)?.groupValues?.get(1)?.let { forumNames[it] } ?: summary.forumName,
                                     isUpdating = offlineTransfers[summary.threadId]?.let { it.error == null } == true,
-                                    onNavigateToThread = openThread,
+                                    onNavigateToThread = onNavigateToOfflineThread,
                                     onUpdate = {
                                         viewModel.updateOffline(summary) { msg ->
                                             android.widget.Toast.makeText(

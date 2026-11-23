@@ -88,7 +88,7 @@ interface ThreadRepository {
     suspend fun shareForumName(fid: String?): String
     fun getThreads(fid: String, page: Int): Flow<XdResponse<List<Thread>>>
     fun getTimeline(id: String, page: Int): Flow<XdResponse<List<Thread>>>
-    fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>>
+    fun getThreadDetail(tid: String, page: Int, preferOffline: Boolean = false): Flow<XdResponse<Thread>>
     fun getPoDetail(tid: String, page: Int): Flow<XdResponse<Thread>>
     fun getRefPost(id: String): Flow<XdResponse<Reply>>
 
@@ -441,7 +441,7 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun getThreadDetail(tid: String, page: Int): Flow<XdResponse<Thread>> = flow {
+    override fun getThreadDetail(tid: String, page: Int, preferOffline: Boolean): Flow<XdResponse<Thread>> = flow {
         val cacheKey = "thread_$tid"
         var emittedCache = false
         var cachedThread: Thread? = null
@@ -454,6 +454,7 @@ class ThreadRepositoryImpl @Inject constructor(
                     cachedThread = decoded
                     emit(XdResponse.Success(decoded))
                     emittedCache = true
+                    if (preferOffline && (tid in offlineTransfers.value || offlineThreadDao.get(tid) != null)) return@flow
                 }
             }
             val fetched = fetchThreadWithRaw(tid, page)

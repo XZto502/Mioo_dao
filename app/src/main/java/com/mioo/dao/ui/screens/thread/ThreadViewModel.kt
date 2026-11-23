@@ -122,6 +122,7 @@ class ThreadViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
+    private val fromOfflineList = savedStateHandle.get<Boolean>("offline") == true
     val threadId: String = savedStateHandle.get<String>("threadId")
         ?: throw IllegalArgumentException("threadId is required")
 
@@ -240,7 +241,7 @@ class ThreadViewModel @Inject constructor(
         val poOnly = state.showPoOnly
         previousPrefetch.prepare(page to poOnly) {
             (if (poOnly) threadRepository.getPoDetail(threadId, page)
-             else threadRepository.getThreadDetail(threadId, page)).first()
+             else threadRepository.getThreadDetail(threadId, page, preferOffline = fromOfflineList)).first()
         }
     }
     private var quoteFetchJob: Job? = null
@@ -577,7 +578,7 @@ class ThreadViewModel @Inject constructor(
             val flow = if (_listState.value.showPoOnly) {
                 threadRepository.getPoDetail(threadId, page)
             } else {
-                threadRepository.getThreadDetail(threadId, page)
+                threadRepository.getThreadDetail(threadId, page, preferOffline = fromOfflineList)
             }
 
             // Avoid re-fetching quotes for the same page when SWR emits cache then network
@@ -630,7 +631,7 @@ class ThreadViewModel @Inject constructor(
                                         val result = if (_listState.value.showPoOnly) {
                                             jumpPageContext(threadRepository.getPoDetail(threadId, neighbor))
                                         } else {
-                                            jumpPageContext(threadRepository.getThreadDetail(threadId, neighbor))
+                                            jumpPageContext(threadRepository.getThreadDetail(threadId, neighbor, preferOffline = fromOfflineList))
                                         }
                                         neighbor to (result as? XdResponse.Success)?.data
                                     } }.awaitAll().forEach { (neighbor, data) ->

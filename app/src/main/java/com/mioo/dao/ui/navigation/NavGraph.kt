@@ -135,9 +135,12 @@ sealed class Screen(val route: String) {
     object NetworkDiagnostics : Screen("network_diagnostics")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
-    object Thread : Screen("thread/{threadId}?replyDraftId={replyDraftId}") {
-        fun createRoute(threadId: String, replyDraftId: Long? = null) =
-            if (replyDraftId == null) "thread/$threadId" else "thread/$threadId?replyDraftId=$replyDraftId"
+    object Thread : Screen("thread/{threadId}?replyDraftId={replyDraftId}&offline={offline}") {
+        fun createRoute(threadId: String, replyDraftId: Long? = null, offline: Boolean = false) = when {
+            offline -> "thread/$threadId?offline=true"
+            replyDraftId != null -> "thread/$threadId?replyDraftId=$replyDraftId"
+            else -> "thread/$threadId"
+        }
     }
 }
 
@@ -169,29 +172,28 @@ fun MiooDaoNavGraph(
     // No launchSingleTop here: thread→thread (跳转原串) targets the same route
     // pattern, and singleTop would reuse the top entry instead of stacking a new
     // one — the screen then never leaves the old thread (threadId is read once
-    // in ThreadViewModel). alreadyOpen + the 400ms window cover the dedupe.
-    val lastThreadTapAt = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    // in ThreadViewModel).
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    val navigateToThread: (String) -> Unit = remember(navController, keyboardController, focusManager) {
-        { id: String ->
+    val openThread: (String, Boolean) -> Unit = remember(navController, keyboardController, focusManager) {
+        { id, offline ->
             if (id.isNotBlank()) {
                 flushPendingBack?.invoke()
-                val now = android.os.SystemClock.uptimeMillis()
                 val top = navController.currentBackStackEntry
                 val topIsThread = top?.destination?.route == Screen.Thread.route
                 val topId = top?.arguments?.getString("threadId")
-                val repeatWhileCovered = !topIsThread && now - lastThreadTapAt.longValue < 400L
                 val alreadyOpen = topIsThread && topId == id
-                if (!repeatWhileCovered && !alreadyOpen) {
+                if (!alreadyOpen) {
                     focusManager.clearFocus(force = true)
                     keyboardController?.hide()
-                    lastThreadTapAt.longValue = now
-                    navController.navigate(Screen.Thread.createRoute(id))
+                    navController.navigate(Screen.Thread.createRoute(id, offline = offline))
                 }
             }
         }
     }
+
+    val navigateToThread: (String) -> Unit = remember(openThread) { { openThread(it, false) } }
+    val navigateToOfflineThread: (String) -> Unit = remember(openThread) { { openThread(it, true) } }
 
     var instantThreadTarget by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(pendingThreadId) {
@@ -242,7 +244,6 @@ fun MiooDaoNavGraph(
             isHomeRoute.value = route == Screen.Home.route
             // 离开详情页即清零：返回列表后立刻重点同一串（快速预览习惯）不被 400ms 窗口吞掉
             if (route != Screen.Thread.route) {
-                lastThreadTapAt.longValue = 0L
             }
             if (route == Screen.Home.route && prevRoute == Screen.Thread.route &&
                 latestTabIndex.value == 2) {
@@ -434,6 +435,7 @@ fun MiooDaoNavGraph(
                         reducedMotion = reducedMotion,
                         historyOpenGeneration = historyOpenGeneration,
                         onNavigateToThread = navigateToThread,
+                        onNavigateToOfflineThread = navigateToOfflineThread,
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = { bottomBarSlide.value },
                         drawerState = boardDrawerState,
@@ -725,6 +727,10 @@ private fun ParallaxPageHost(
                     navArgument("replyDraftId") {
                         type = NavType.LongType
                         defaultValue = 0L
+                    },
+                    navArgument("offline") {
+                        type = NavType.BoolType
+                        defaultValue = false
                     }
                 )
             ) {}
@@ -996,6 +1002,7 @@ private fun MainTabs(
     reducedMotion: Boolean,
     historyOpenGeneration: Int,
     onNavigateToThread: (String) -> Unit,
+    onNavigateToOfflineThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float = { 0f },
     drawerState: androidx.compose.material3.DrawerState,
@@ -1145,6 +1152,7 @@ private fun MainTabs(
                         tabState = tabState,
                         historyOpenGeneration = historyOpenGeneration,
                         onNavigateToThread = onNavigateToThread,
+                        onNavigateToOfflineThread = onNavigateToOfflineThread,
                         onColdStartContentReady = onColdStartContentReady,
                         dockSinkFraction = dockSinkFraction,
                         drawerState = drawerState,
@@ -1173,6 +1181,7 @@ private fun TabPageContent(
     tabState: androidx.compose.runtime.saveable.SaveableStateHolder,
     historyOpenGeneration: Int,
     onNavigateToThread: (String) -> Unit,
+    onNavigateToOfflineThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
     dockSinkFraction: () -> Float,
     drawerState: androidx.compose.material3.DrawerState,
@@ -1220,6 +1229,7 @@ private fun TabPageContent(
             2 -> PageBackdrop {
                 HistoryScreen(
                     onNavigateToThread = onNavigateToThread,
+                    onNavigateToOfflineThread = onNavigateToOfflineThread,
                     onImageViewerOpenChange = onImageViewerOpenChange,
                     openGeneration = historyOpenGeneration,
                     isActiveTab = isPageActive,
