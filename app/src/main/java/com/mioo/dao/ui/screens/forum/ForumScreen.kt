@@ -835,6 +835,7 @@ private fun ForumBoardDrawerList(
     val forumGroups by viewModel.forumGroups.collectAsState()
     val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
     val context = LocalContext.current
+    val initialViewport = rememberInitialListViewport(forumGroups.isNotEmpty())
     val pinnedForumsList = remember(forumGroups, forumSettings.pinnedForums) {
         forumGroups.flatMap { it.forums }
             .filter { forumSettings.pinnedForums.contains(it.id) }
@@ -848,7 +849,8 @@ private fun ForumBoardDrawerList(
     LazyColumn(
         state = drawerListState,
         flingBehavior = drawerFling,
-        modifier = Modifier.fillMaxSize(),
+        userScrollEnabled = initialViewport.ready,
+        modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
         // 抽屉盖住底栏后，只留系统导航条安全区，滚到底仍能看全板块
         contentPadding = PaddingValues(
             top = 8.dp,
@@ -1075,10 +1077,10 @@ private fun ForumThreadListPane(
      * showImages uses rememberSaveable so thread detail → back does not flash empty thumbs.
      */
     val listReady = displayItems.isNotEmpty()
-    var showImages by rememberSaveable(forumKey) { mutableStateOf(false) }
-    var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     val initialViewport = rememberInitialListViewport(listReady)
     val viewportReady = initialViewport.ready
+    var showImages by rememberSaveable(forumKey) { mutableStateOf(false) }
+    var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
     val haptics = LocalHapticFeedback.current
 
@@ -1173,9 +1175,9 @@ private fun ForumThreadListPane(
     LazyColumn(
         state = listState,
         flingBehavior = responsiveFling,
+        userScrollEnabled = !listReady || viewportReady,
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
-        userScrollEnabled = !listReady || viewportReady,
         modifier = Modifier.fillMaxSize()
             .then(if (listReady) initialViewport.modifier else Modifier)
             .useUnbufferedFlingGrab(responsiveFling),
