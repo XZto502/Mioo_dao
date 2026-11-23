@@ -236,7 +236,8 @@ fun ThreadScreen(
     onBackClick: () -> Unit,
     onNavigateToThread: (String) -> Unit = {},
     modifier: Modifier = Modifier,
-    registerSystemBack: (((() -> Unit)?) -> Unit)? = null
+    registerSystemBack: (((() -> Unit)?) -> Unit)? = null,
+    retireReadingList: () -> Boolean = { false }
 ) {
     // List-only slice — bookmark / download / ref-popup use separate collectors below
     val listUi by viewModel.listUiState.collectAsState()
@@ -312,9 +313,9 @@ fun ThreadScreen(
         }
         allowHeavyList = true
     }
-    var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
     val initialViewport = rememberInitialListViewport(listUi.thread != null)
     val readingListReady = allowHeavyList && initialViewport.ready
+    var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
         mutableStateOf<Pair<Any, Int>?>(null)
     }
     var leavingThread by remember(viewModel) { mutableStateOf(false) }
@@ -327,17 +328,17 @@ fun ThreadScreen(
         viewModel.saveReadingProgress(position.second, position.first)
     }
     val saveProgressNow by rememberUpdatedState(newValue = { saveVisibleProgress() })
-    val leaveThread = {
+    val prepareToLeave = {
         if (!leavingThread) {
             viewModel.flushReplyDraft()
             saveVisibleProgress()
             // Freeze the exit anchor: an ongoing fling can otherwise overwrite
             // it during the navigation transition after the user pressed Back.
             leavingThread = true
-            onBackClick()
         }
     }
-    val currentLeaveThread by rememberUpdatedState(leaveThread)
+    val leaveThread = { prepareToLeave(); onBackClick() }
+    val currentLeaveThread by rememberUpdatedState(prepareToLeave)
     DisposableEffect(registerSystemBack) {
         registerSystemBack?.invoke { currentLeaveThread() }
         onDispose { registerSystemBack?.invoke(null) }
@@ -739,7 +740,9 @@ fun ThreadScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (listUi.isLoading && listUi.thread == null) {
+            if (retireReadingList()) {
+                // The off-screen list is released before its navigation entry.
+            } else if (listUi.isLoading && listUi.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -996,12 +999,12 @@ fun ThreadScreen(
 
                 }
                 }
-            }
-
-            // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）
                 if (!readingListReady && listUi.thread != null) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
+            }
+
+            // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）
             AnimatedVisibility(
                 visible = showJumpBubble,
                 enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(120)),

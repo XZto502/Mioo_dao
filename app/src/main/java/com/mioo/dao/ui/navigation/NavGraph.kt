@@ -155,7 +155,6 @@ fun MiooDaoNavGraph(
     val threadLeaveHandlers = remember { mutableMapOf<String, () -> Unit>() }
     var requestPageBack by remember { mutableStateOf<(() -> Unit)?>(null) }
     var flushPendingBack by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var committingPageBack by remember { mutableStateOf(false) }
     val isHomeRoute = remember(navController) { mutableStateOf(initialThreadId.isNullOrBlank()) }
     val hostActivity = LocalContext.current as? android.app.Activity
 
@@ -403,22 +402,9 @@ fun MiooDaoNavGraph(
             },
             registerBackRequest = { requestPageBack = it },
             registerFlushPendingBack = { flushPendingBack = it },
+            onPrepareBack = { entry -> threadLeaveHandlers[entry.id]?.invoke() },
             onCommitBack = { entry ->
-                committingPageBack = true
-                try {
-                    val leave = threadLeaveHandlers[entry.id]
-                    if (leave != null) {
-                        leave()
-                        // A toolbar back request may already have saved the thread and
-                        // marked it as leaving before the exit animation started.
-                        // In that case the handler is deliberately a no-op here.
-                        navController.currentBackStackEntry != entry || navController.popBackStack()
-                    } else {
-                        navController.popBackStack()
-                    }
-                } finally {
-                    committingPageBack = false
-                }
+                navController.currentBackStackEntry != entry || navController.popBackStack()
             }
         ) { entry ->
             when (entry.destination.route) {
@@ -560,8 +546,6 @@ fun MiooDaoNavGraph(
                         onBackClick = {
                             if (navController.previousBackStackEntry == null) {
                                 hostActivity?.finish()
-                            } else if (committingPageBack) {
-                                navController.popBackStack()
                             } else {
                                 requestPageBack?.invoke()
                             }
@@ -573,7 +557,8 @@ fun MiooDaoNavGraph(
                                 else threadLeaveHandlers[entry.id] = handler
                                 Unit
                             }
-                        }
+                        },
+                        retireReadingList = LocalRetireReadingList.current
                     )
                 }
             }
@@ -664,6 +649,7 @@ private fun FloatingBottomDock(
 }
 
 val LocalPageTransitionSettled = androidx.compose.runtime.staticCompositionLocalOf<() -> Boolean> { { true } }
+private val LocalRetireReadingList = androidx.compose.runtime.staticCompositionLocalOf<() -> Boolean> { { false } }
 
 internal fun predictiveBackFinishDurationMs(progress: Float): Int =
     (220f * progress.coerceIn(0f, 1f)).toInt().coerceIn(65, 220)
@@ -676,6 +662,7 @@ private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
     var settled by mutableStateOf(initiallyOpen)
     var coverLayer by mutableStateOf<PageLayer?>(null)
     var pendingRetirement by mutableStateOf(false)
+    var readingListRetired by mutableStateOf(false)
     var committed = false
     val firstLayout = CompletableDeferred<Unit>()
     var animation: kotlinx.coroutines.Job? = null
@@ -714,6 +701,7 @@ private fun ParallaxPageHost(
     consumeInstantOpen: (NavBackStackEntry) -> Boolean = { false },
     registerBackRequest: ((() -> Unit)?) -> Unit,
     registerFlushPendingBack: ((() -> Unit)?) -> Unit,
+    onPrepareBack: (NavBackStackEntry) -> Unit,
     onCommitBack: (NavBackStackEntry) -> Boolean,
     content: @Composable (NavBackStackEntry) -> Unit
 ) {
@@ -763,6 +751,7 @@ private fun ParallaxPageHost(
     val latestReducedMotion = rememberUpdatedState(reducedMotion)
     val latestPredictiveBack = rememberUpdatedState(predictiveBackEnabled)
     val latestCommitBack = rememberUpdatedState(onCommitBack)
+    val latestPrepareBack = rememberUpdatedState(onPrepareBack)
 
     var gesture by remember { mutableStateOf<PageBackGesture?>(null) }
     val backOwner = LocalOnBackPressedDispatcherOwner.current
@@ -792,6 +781,7 @@ private fun ParallaxPageHost(
             if (gesture?.layer === layer) gesture = null
             return true
         }
+        latestPrepareBack.value(layer.entry)
         val ok = latestCommitBack.value(layer.entry)
         if (ok) {
             layer.committed = true
@@ -870,15 +860,20 @@ private fun ParallaxPageHost(
             syncCoverLayers()
             if (gesture === active) gesture = null
             kotlinx.coroutines.withTimeoutOrNull(4000L) {
-                while (true) {
-                    homeBusyFlow.first { !it }
-                    val resumed = kotlinx.coroutines.withTimeoutOrNull(180L) {
-                        homeBusyFlow.first { it }
+                com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
+                if (active.layer.entry.destination.route == Screen.Thread.route) {
+                    latestPrepareBack.value(active.layer.entry)
+                    active.layer.readingListRetired = true
+                    // Give Compose a frame to release the list before dropping its owners.
+                    withFrameNanos { }
+                    withFrameNanos { }
+                    if (homeBusyFlow.value) {
+                        com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
                     }
-                    if (resumed == null && !homeBusyFlow.value) break
                 }
             }
             if (!commitRetiredLayer(active.layer)) {
+                active.layer.readingListRetired = false
                 active.layer.pendingRetirement = false
                 syncCoverLayers()
                 active.layer.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
@@ -951,6 +946,7 @@ private fun ParallaxPageHost(
         layers.forEachIndexed { index, layer ->
             key(layer.entry.id) {
                 val isSettled = remember(layer) { { layer.settled } }
+                val retireReadingList = remember(layer) { { layer.readingListRetired } }
                 Box(Modifier.fillMaxSize().zIndex(index.toFloat()).onSizeChanged {
                     if (it.width > 0 && it.height > 0) layer.firstLayout.complete(Unit)
                 }.graphicsLayer {
@@ -972,7 +968,8 @@ private fun ParallaxPageHost(
                     }
                 }) {
                     androidx.compose.runtime.CompositionLocalProvider(
-                        LocalPageTransitionSettled provides isSettled
+                        LocalPageTransitionSettled provides isSettled,
+                        LocalRetireReadingList provides retireReadingList
                     ) {
                         layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
                     }

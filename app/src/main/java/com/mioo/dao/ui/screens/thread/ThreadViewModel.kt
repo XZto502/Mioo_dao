@@ -1530,8 +1530,18 @@ class ThreadViewModel @Inject constructor(
         // stable reading anchor and its page assignment changes after a merge.
         if (postId == "9999999") return
         val actualPage = if (postId == threadId) 1 else replyPages[postId] ?: return
-        val pageItems = state.displayItems.filter { replyPages[it.idStr] == actualPage }
-        val localIndex = if (postId == threadId) 0 else pageItems.indexOfFirst { it.idStr == postId } + 1
+        var localIndex = 0
+        if (postId != threadId) {
+            var pageIndex = 0
+            for (item in state.displayItems) {
+                if (replyPages[item.idStr] != actualPage) continue
+                pageIndex++
+                if (item.idStr == postId) {
+                    localIndex = pageIndex
+                    break
+                }
+            }
+        }
         val writeVersion = ++progressWriteVersion
         // 离开页面会清理 ViewModel；已经采集到的位置仍须完成这次短数据库写入。
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
