@@ -183,7 +183,9 @@ class ForumViewModel @Inject constructor(
             }
             val matcher = keywordMatcher
             val items = withContext(Dispatchers.Default) {
-                threads.toFilteredThreadListItems(blockedThreads, blockedUsers, matcher)
+                threads.toFilteredThreadListItems(blockedThreads, blockedUsers, matcher).also { built ->
+                    com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmForumPreview(built)
+                }
             }
             // 过滤计算是挂起点：期间 loadNextPage 可能已追加新页（threads 引用变化）。
             // 旧快照的 items 覆盖回去会吞掉整页，且 currentPage 已推进无法自愈 → 放弃本次结果。
@@ -282,7 +284,15 @@ class ForumViewModel @Inject constructor(
                             val displayItems = withContext(Dispatchers.Default) {
                                 combinedList.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
-                                )
+                                ).also { built ->
+                                    val newlyAddedStart = existing.size.coerceAtMost(built.size)
+                                    if (newlyAddedStart < built.size) {
+                                        com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmForumPreview(
+                                            built.subList(newlyAddedStart, built.size),
+                                            limit = 8
+                                        )
+                                    }
+                                }
                             }
                             if (forumId != requestForumId || listGeneration != requestGeneration) return@collect
                             val existingIds = existing.mapTo(HashSet()) { it.id }
@@ -407,7 +417,9 @@ class ForumViewModel @Inject constructor(
                             val displayItems = withContext(Dispatchers.Default) {
                                 freshThreads.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
-                                )
+                                ).also { built ->
+                                    com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmForumPreview(built, limit = 12)
+                                }
                             }
                             if (forumId != requestForumId || listGeneration != requestGeneration) return@collect
                             refreshed = true

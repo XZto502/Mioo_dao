@@ -78,11 +78,14 @@ fun ThreadCard(
     forumName: String? = null,
     showReplyCount: Boolean = true
 ) {
-    val border = readingCardBorder()
-    val cardBg = readingCardColor()
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val border = sharedStyles?.cardBorder ?: readingCardBorder()
+    val cardBg = sharedStyles?.cardColor ?: readingCardColor()
     val cardShape = shape
-    val baseBodyStyle = readingBodyStyle()
-    val bodyStyle = remember(baseBodyStyle) { baseBodyStyle.copy(fontWeight = FontWeight.Medium) }
+    val bodyStyle = sharedStyles?.bodyMediumStyle ?: run {
+        val baseBodyStyle = readingBodyStyle()
+        remember(baseBodyStyle) { baseBodyStyle.copy(fontWeight = FontWeight.Medium) }
+    }
     val interactionSource = remember { MutableInteractionSource() }
     val styledModifier = modifier
         .fillMaxWidth()
@@ -184,15 +187,17 @@ fun ThreadCard(
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.5.dp))
-                    val baseLabelMedium = MaterialTheme.typography.labelMedium
-                    val replyBadgeStyle = remember(baseLabelMedium) {
-                        baseLabelMedium.copy(
-                            fontSize = 11.5.sp,
-                            lineHeight = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFeatureSettings = "tnum",
-                            platformStyle = PlatformTextStyle(includeFontPadding = false)
-                        )
+                    val replyBadgeStyle = sharedStyles?.replyBadgeStyle ?: run {
+                        val baseLabelMedium = MaterialTheme.typography.labelMedium
+                        remember(baseLabelMedium) {
+                            baseLabelMedium.copy(
+                                fontSize = 11.5.sp,
+                                lineHeight = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFeatureSettings = "tnum",
+                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                            )
+                        }
                     }
                     Text(
                         text = "$replyCount replies",

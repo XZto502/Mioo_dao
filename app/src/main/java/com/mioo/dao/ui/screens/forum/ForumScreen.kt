@@ -99,6 +99,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -766,7 +767,14 @@ private fun ForumPullRefreshOverlay(
     state: PullToRefreshState,
     modifier: Modifier = Modifier
 ) {
-    if (state.isRefreshing || state.progress > 0f) {
+    // Defer initial cold-start spinner by one frame so the first window draw
+    // does not compile PullToRefresh shadow/arc shaders alongside root chrome.
+    var settledFirstFrame by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        settledFirstFrame = true
+    }
+    if (settledFirstFrame && (state.isRefreshing || state.progress > 0f)) {
         PullToRefreshContainer(
             state = state,
             modifier = modifier
@@ -854,7 +862,10 @@ private fun ForumBoardDrawerList(
     val forumGroups by viewModel.forumGroups.collectAsState()
     val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
     val context = LocalContext.current
-    val initialViewport = rememberInitialListViewport(forumGroups.isNotEmpty())
+    val initialViewport = rememberInitialListViewport(
+        hasContent = forumGroups.isNotEmpty(),
+        steps = 10
+    )
     val pinnedForumsList = remember(forumGroups, forumSettings.pinnedForums) {
         forumGroups.flatMap { it.forums }
             .filter { forumSettings.pinnedForums.contains(it.id) }
@@ -916,87 +927,72 @@ private fun ForumBoardDrawerList(
             }
         }
 
-        // Normal Forum Groups — 每组一个 item，展开/收起整体做手风琴动画
+        // Normal Forum Groups — flatten expanded forums as lazy rows so initial drawer
+        // measurement only measures visible rows instead of a full nested Column.
         forumGroups.forEach { group ->
             val groupExpanded = forumSettings.expandedForumGroups.contains(group.id)
             item(key = "group_${group.id}", contentType = "drawer_group") {
-                Column {
-                    Row(
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = group.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${group.forums.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                    Icon(
+                        painter = expandMorePainter,
+                        contentDescription = if (groupExpanded) "收起分类" else "展开分类",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = group.name,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "${group.forums.size}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
-                        val chevronRotation by animateFloatAsState(
-                            targetValue = if (groupExpanded) 180f else 0f,
-                            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                            label = "drawerChevron"
-                        )
-                        Icon(
-                            painter = expandMorePainter,
-                            contentDescription = if (groupExpanded) "收起分类" else "展开分类",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .rotate(chevronRotation)
-                        )
-                    }
-                    // 收起时 AnimatedVisibility 不组合内容，抽屉的懒加载不受影响
-                    AnimatedVisibility(
-                        visible = groupExpanded,
-                        enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                            expandVertically(
-                                animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                expandFrom = Alignment.Top
-                            ),
-                        exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
-                            shrinkVertically(
-                                animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                shrinkTowards = Alignment.Top
-                            )
-                    ) {
-                        Column {
-                            group.forums.forEach { forum ->
-                                val isPinned = forumSettings.pinnedForums.contains(forum.id)
-                                ForumDrawerItem(
-                                    name = forum.name,
-                                    isSelected = forum.id == viewModel.forumId,
-                                    showStar = isPinned,
-                                    starPainter = starPainter,
-                                    starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                    onClick = { onSelectBoard(forum.id, forum.name) },
-                                    onLongClick = {
-                                        settingsViewModel.togglePinForum(forum.id)
-                                        Toast.makeText(
-                                            context,
-                                            if (isPinned) "已取消置顶" else "已将版块置顶",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                )
-                            }
+                            .size(18.dp)
+                            .graphicsLayer { rotationZ = if (groupExpanded) 180f else 0f }
+                    )
+                }
+            }
+            if (groupExpanded) {
+                items(
+                    items = group.forums,
+                    key = { forum -> "group_${group.id}_forum_${forum.id}" },
+                    contentType = { "drawer_forum" }
+                ) { forum ->
+                    val isPinned = forumSettings.pinnedForums.contains(forum.id)
+                    ForumDrawerItem(
+                        name = forum.name,
+                        isSelected = forum.id == viewModel.forumId,
+                        showStar = isPinned,
+                        starPainter = starPainter,
+                        starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                        onClick = { onSelectBoard(forum.id, forum.name) },
+                        onLongClick = {
+                            settingsViewModel.togglePinForum(forum.id)
+                            Toast.makeText(
+                                context,
+                                if (isPinned) "已取消置顶" else "已将版块置顶",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
-                    }
+                    )
                 }
             }
         }
     }
     }
 }
+
+private val DrawerItemShape = RoundedCornerShape(10.dp)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1009,7 +1005,7 @@ private fun ForumDrawerItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    // Instant selection colors — no per-item animateColorAsState during drawer swipe
+    // Instant selection colors — no per-item animateColorAsState or Surface wrapper overhead
     val containerColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -1021,40 +1017,44 @@ private fun ForumDrawerItem(
         MaterialTheme.colorScheme.onSurface
     }
 
-    Surface(
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isSelected) {
+                    Modifier
+                        .clip(DrawerItemShape)
+                        .background(containerColor)
+                } else {
+                    Modifier
+                }
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
-            ),
-        color = containerColor,
-        shape = RoundedCornerShape(10.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp)
-        ) {
-            if (showStar) {
-                Icon(
-                    painter = starPainter,
-                    contentDescription = "已置顶",
-                    tint = starTint,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            Text(
-                text = name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (isSelected) {
-                    androidx.compose.ui.text.font.FontWeight.Bold
-                } else {
-                    androidx.compose.ui.text.font.FontWeight.Normal
-                },
-                color = contentColor
             )
+            .padding(horizontal = 16.dp, vertical = 11.dp)
+    ) {
+        if (showStar) {
+            Icon(
+                painter = starPainter,
+                contentDescription = "已置顶",
+                tint = starTint,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
         }
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (isSelected) {
+                androidx.compose.ui.text.font.FontWeight.Bold
+            } else {
+                androidx.compose.ui.text.font.FontWeight.Normal
+            },
+            color = contentColor
+        )
     }
 }
 
@@ -1086,7 +1086,7 @@ private fun ForumThreadListPane(
     val isEmptyIdle = displayItems.isEmpty() && !isLoading && !isRefreshing
 
     val listReady = displayItems.isNotEmpty()
-    val initialViewport = rememberInitialListViewport(listReady)
+    val initialViewport = rememberInitialListViewport(listReady, resetKey = forumKey)
     val viewportReady = initialViewport.ready
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
@@ -1172,7 +1172,7 @@ private fun ForumThreadListPane(
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize()
-            .then(if (listReady) initialViewport.modifier else Modifier)
+            .then(initialViewport.modifier)
             .useUnbufferedFlingGrab(responsiveFling),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
@@ -1302,9 +1302,6 @@ private fun ForumThreadRow(
     val onThreadClick = remember(item.idStr, onNavigateToThread) {
         { onNavigateToThread(item.idStr) }
     }
-    val onImageClickRemembered = remember(onImageClick) {
-        { url: String -> onImageClick(url) }
-    }
     val onLongClick = remember(item, onItemLongClick) {
         { onItemLongClick(item) }
     }
@@ -1315,7 +1312,7 @@ private fun ForumThreadRow(
         replyCount = item.replyCount,
         onThreadClick = onThreadClick,
         onQuoteClick = emptyStringLambda,
-        onImageClick = onImageClickRemembered,
+        onImageClick = onImageClick,
         onLongClick = onLongClick,
         contentMaxLines = previewMaxLines,
         compactPreviewBlankLines = true

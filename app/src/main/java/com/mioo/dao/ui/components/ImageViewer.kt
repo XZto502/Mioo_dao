@@ -399,14 +399,27 @@ fun ImageViewer(
     val dismissProgress = remember { Animatable(0f) }
     var swipeDirection by remember { mutableIntStateOf(1) }
     var isClosing by remember { mutableStateOf(false) }
-    var chromeReady by remember { mutableStateOf(reducedMotion) }
+    var contentDetached by remember { mutableStateOf(false) }
+    // Stage viewer startup across frames while openProgress fades the scrim immediately:
+    // 0: backdrop only, 1: HorizontalPager + ZoomablePage, 2: ViewerBarsEffect, 3: top/bottom chrome
+    // (controlsAlpha stays 0f until openProgress > 0.25 at frame ~5, so staging is visually invisible).
+    var mountStage by remember { mutableIntStateOf(if (reducedMotion) 3 else 0) }
+    val chromeReady = mountStage >= 3
     val dismissCallback by rememberUpdatedState(onDismiss)
     LaunchedEffect(Unit) {
         openProgress.animateTo(1f, if (reducedMotion) snap() else tween(230, easing = FastOutSlowInEasing))
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reducedMotion) {
+        if (reducedMotion) {
+            mountStage = 3
+            return@LaunchedEffect
+        }
         withFrameNanos { }
-        chromeReady = true
+        mountStage = 1
+        withFrameNanos { }
+        mountStage = 2
+        withFrameNanos { }
+        mountStage = 3
     }
     LaunchedEffect(currentUrl, isClosing) {
         if (isClosing || currentUrl.isBlank() || qrTexts.containsKey(currentUrl)) return@LaunchedEffect
@@ -422,7 +435,11 @@ fun ImageViewer(
         isClosing = true
         scope.launch {
             openProgress.animateTo(0f, if (reducedMotion) snap() else tween(180, easing = FastOutLinearInEasing))
-            if (!reducedMotion) withFrameNanos { }
+            if (!reducedMotion) {
+                // Release pager/chrome nodes one frame before dismissing & restoring bars.
+                contentDetached = true
+                withFrameNanos { }
+            }
             dismissCallback()
             afterClose()
         }
@@ -458,7 +475,9 @@ fun ImageViewer(
         backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
         onDispose { callback.remove() }
     }
-    ViewerBarsEffect(lightCanvas = lightCanvas)
+    if (mountStage >= 2) {
+        ViewerBarsEffect(lightCanvas = lightCanvas)
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -473,13 +492,14 @@ fun ImageViewer(
             }
 
     ) {
+        if (!contentDetached) {
             ViewerCanvas(
                 color = palette.canvas,
                 alpha = backgroundAlpha,
                 openProgress = openProgress.asState(),
                 dismissProgress = dismissProgress.asState()
             )
-            HorizontalPager(
+            if (mountStage >= 1) HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize().graphicsLayer {
                     val scale = 1f - dismissProgress.value * 0.16f
@@ -678,6 +698,7 @@ fun ImageViewer(
                 }
             }
 
+        }
         }
     }
 

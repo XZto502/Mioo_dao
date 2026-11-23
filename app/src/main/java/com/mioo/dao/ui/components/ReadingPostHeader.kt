@@ -32,25 +32,33 @@ private val PoBadgeShape = RoundedCornerShape(4.dp)
 @Composable
 internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
-    val baseBodyMedium = MaterialTheme.typography.bodyMedium
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
     val isBoldIdentity = post.isPo || post.isAdmin
-    val identityStyle = remember(baseBodyMedium, isBoldIdentity) {
-        val weight = if (isBoldIdentity) FontWeight.Bold else FontWeight.Medium
-        baseBodyMedium.copy(
-            fontSize = (12f * baseBodyMedium.fontSize.value / 14f).sp,
-            lineHeight = (16f * baseBodyMedium.lineHeight.value / 20f).sp,
-            fontWeight = weight,
-            letterSpacing = 0.3.sp
-        )
+    val identityStyle = if (sharedStyles != null) {
+        if (isBoldIdentity) sharedStyles.identityBoldStyle else sharedStyles.identityNormalStyle
+    } else {
+        val baseBodyMedium = MaterialTheme.typography.bodyMedium
+        remember(baseBodyMedium, isBoldIdentity) {
+            val weight = if (isBoldIdentity) FontWeight.Bold else FontWeight.Medium
+            baseBodyMedium.copy(
+                fontSize = (12f * baseBodyMedium.fontSize.value / 14f).sp,
+                lineHeight = (16f * baseBodyMedium.lineHeight.value / 20f).sp,
+                fontWeight = weight,
+                letterSpacing = 0.3.sp
+            )
+        }
     }
-    val poBadgeStyle = remember(baseBodyMedium) {
-        baseBodyMedium.copy(
-            fontSize = 11.sp,
-            lineHeight = 11.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.sp,
-            platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
-        )
+    val poBadgeStyle = sharedStyles?.poBadgeStyle ?: run {
+        val baseBodyMedium = MaterialTheme.typography.bodyMedium
+        remember(baseBodyMedium) {
+            baseBodyMedium.copy(
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
+            )
+        }
     }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(post.userId,
@@ -92,14 +100,17 @@ fun ReadingPill(
     content: Color = MaterialTheme.colorScheme.primary,
     maxWidth: Int = 92
 ) {
-    val baseBodyMedium = MaterialTheme.typography.bodyMedium
-    val pillStyle = remember(baseBodyMedium) {
-        baseBodyMedium.copy(
-            fontSize = (10.5f * baseBodyMedium.fontSize.value / 14f).sp,
-            lineHeight = (14f * baseBodyMedium.lineHeight.value / 20f).sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.sp
-        )
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val pillStyle = sharedStyles?.pillStyle ?: run {
+        val baseBodyMedium = MaterialTheme.typography.bodyMedium
+        remember(baseBodyMedium) {
+            baseBodyMedium.copy(
+                fontSize = (10.5f * baseBodyMedium.fontSize.value / 14f).sp,
+                lineHeight = (14f * baseBodyMedium.lineHeight.value / 20f).sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp
+            )
+        }
     }
     Box(modifier = modifier.background(container, MaterialTheme.shapes.extraSmall)) {
         Text(text, Modifier.widthIn(max = maxWidth.dp).padding(horizontal = 6.dp, vertical = 2.dp),
@@ -177,8 +188,11 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
             Spacer(Modifier.width(6.dp))
             ReadingPill(forumName)
         }
-        val baseMetaStyle = readingMetaStyle()
-        val metaClockStyle = remember(baseMetaStyle) { baseMetaStyle.copy(fontWeight = FontWeight.Normal) }
+        val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+        val metaClockStyle = sharedStyles?.metaStyle ?: run {
+            val baseMetaStyle = readingMetaStyle()
+            remember(baseMetaStyle) { baseMetaStyle.copy(fontWeight = FontWeight.Normal) }
+        }
         val formattedTime = remember(post.createdAt) { formatReadingTime(post.createdAt) }
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(" · $formattedTime", style = metaClockStyle,
@@ -186,7 +200,7 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
         }
-        Text("No.${post.id}", modifier = numberModifier, style = baseMetaStyle,
+        Text("No.${post.id}", modifier = numberModifier, style = metaClockStyle,
             color = colors.onSurfaceVariant.copy(alpha = 0.75f),
             maxLines = 1, softWrap = false)
     }

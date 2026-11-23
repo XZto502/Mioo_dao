@@ -706,6 +706,15 @@ class ThreadViewModel @Inject constructor(
                         // Publishing a scroll request here cancels each new drag/fling.
                         val prependAnchor: Pair<Int, Int>? = null
                         seedLocalQuotes(newPosts, threadData)
+                        withContext(Dispatchers.Default) {
+                            com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmThreadWindow(
+                                mainContent = mainPostData.content,
+                                items = displayItems,
+                                anchorIndex = seedPending ?: 0,
+                                windowSize = 14
+                            )
+                        }
+                        if (gen != loadGeneration) return@collect
                         _listState.update { state ->
                             state.copy(
                                 thread = threadData,
@@ -714,7 +723,14 @@ class ThreadViewModel @Inject constructor(
                                 // Cache is an interim result. Keep the request busy until
                                 // its network emission completes, or a new page can discard it.
                                 isLoading = true,
-                                contentRevision = state.contentRevision + if (mode == LoadMode.REPLACE) 1 else 0,
+                                // Only bump contentRevision on a REPLACE load that needs a freshly seeded
+                                // LazyListState (saved-anchor resume or replacing an already-loaded page);
+                                // initial top-of-thread load already has a fresh (0, 0) LazyListState, and
+                                // SWR network re-emission must keep the live scroll anchor.
+                                contentRevision = state.contentRevision + if (
+                                    mode == LoadMode.REPLACE && !sawSuccess &&
+                                        (seedPending != null || state.thread != null)
+                                ) 1 else 0,
                                 errorMessage = null,
                                 nextPageError = null,
                                 previousPageError = null,

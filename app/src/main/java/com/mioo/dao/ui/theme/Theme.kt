@@ -322,11 +322,21 @@ fun MiooDaoTheme(
     }
 
     val commentIconPainter = rememberVectorPainter(Icons.AutoMirrored.Outlined.Comment)
+    val readingCardStyles = remember(colorScheme, scaledTypography, darkTheme) {
+        buildReadingCardStyles(colorScheme, scaledTypography, darkTheme)
+    }
+    SideEffect {
+        com.mioo.dao.ui.components.HtmlPrewarmBridge.updateTheme(
+            quoteLinkColor = colorScheme.primary,
+            darkTheme = darkTheme
+        )
+    }
     CompositionLocalProvider(
         LocalDaoCustomColors provides customColors,
         LocalGlassEffectEnabled provides glassEffectEnabled,
         LocalDataSaverEnabled provides dataSaverEnabled,
-        LocalThreadCommentPainter provides commentIconPainter
+        LocalThreadCommentPainter provides commentIconPainter,
+        LocalReadingCardStyles provides readingCardStyles
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

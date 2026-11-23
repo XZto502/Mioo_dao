@@ -478,6 +478,8 @@ fun MiooDaoNavGraph(
                         }
                     )
                     // Keep the dock on the home layer so incoming destinations cover it.
+                    // FloatingBottomDock stays mounted and hides via render-layer slide/fade
+                    // so ImageViewer / Composer open-close never tears down & rebuilds NavigationBar.
                     FloatingBottomDock(
                         modifier = Modifier.align(Alignment.BottomCenter),
                         visible = !isImageViewerOpen && !isComposerOpen,
@@ -579,7 +581,7 @@ fun MiooDaoNavGraph(
                                 Unit
                             }
                         },
-                        retireReadingList = LocalRetireReadingList.current
+                        retireReadingListStage = LocalRetireReadingListStage.current
                     )
                 }
             }
@@ -605,72 +607,78 @@ private fun FloatingBottomDock(
     val backdropBrush = remember(pageBgColor) {
         Brush.verticalGradient(listOf(pageBgColor.copy(alpha = 0f), pageBgColor.copy(alpha = 0.94f), pageBgColor))
     }
-    val dockOffscreen by remember(bottomBarSlide) {
-        derivedStateOf { bottomBarSlide() >= 0.995f }
+    val overlayHide = remember { Animatable(if (visible) 0f else 1f) }
+    val overlaySpec = remember { tween<Float>(durationMillis = 200, easing = FastOutSlowInEasing) }
+    LaunchedEffect(visible, reducedMotion) {
+        val target = if (visible) 0f else 1f
+        if (reducedMotion) {
+            overlayHide.snapTo(target)
+        } else {
+            overlayHide.animateTo(target, overlaySpec)
+        }
     }
-    AnimatedVisibility(
-        modifier = modifier,
-        visible = visible,
-        enter = if (reducedMotion) EnterTransition.None else slideInVertically { it } + fadeIn(),
-        exit = if (reducedMotion) ExitTransition.None else slideOutVertically { it } + fadeOut()
+    val dockOffscreen by remember(bottomBarSlide, overlayHide) {
+        derivedStateOf { maxOf(bottomBarSlide(), overlayHide.value) >= 0.995f }
+    }
+    // Outer box draws into the gesture nav area so the 小白条 is immersive;
+    // capsule itself stays above the system inset.
+    // Translate on the render layer during motion, then park off-screen once settled.
+    // Never unmount NavigationBar on overlay open/close — avoids full Material3 rebuild jank.
+    val slidePx = bottomBarHeightPx + slideExtraPx
+    Box(
+        modifier = modifier
+            .onSizeChanged { bottomBarHeightPx = it.height }
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                layout(placeable.width, placeable.height) {
+                    placeable.place(0, if (dockOffscreen) slidePx else 0)
+                }
+            }
+            .graphicsLayer {
+                val combined = maxOf(bottomBarSlide(), overlayHide.value).coerceIn(0f, 1f)
+                translationY = if (dockOffscreen) 0f else slidePx * combined
+                alpha = (1f - overlayHide.value).coerceIn(0f, 1f)
+            }
+            .fillMaxWidth()
+            .background(backdropBrush)
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // Outer box draws into the gesture nav area so the 小白条 is immersive;
-        // capsule itself stays above the system inset.
-        // Translate on the render layer during motion, then park off-screen once settled.
-        val slidePx = bottomBarHeightPx + slideExtraPx
-        Box(
+        NavigationBar(
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
+            tonalElevation = 0.dp,
             modifier = Modifier
-                .onSizeChanged { bottomBarHeightPx = it.height }
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    layout(placeable.width, placeable.height) {
-                        placeable.place(0, if (dockOffscreen) slidePx else 0)
-                    }
-                }
-                .graphicsLayer {
-                    translationY = if (dockOffscreen) 0f else slidePx * bottomBarSlide()
-                }
                 .fillMaxWidth()
-                .background(backdropBrush)
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+                .border(
+                    width = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                )
         ) {
-            NavigationBar(
-                windowInsets = WindowInsets(0, 0, 0, 0),
-                containerColor = DaoTheme.colors.glassNavBar.copy(alpha = 0.96f),
-                tonalElevation = 0.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
-                    .border(
-                        width = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-                    )
-            ) {
-                bottomBarItems.forEach { (index, icon, label) ->
-                    NavigationBarItem(
-                        icon = {
-                            val displayIcon = if (currentTabIndex == index) icon else when (index) {
-                                0 -> Icons.Outlined.Home
-                                1 -> Icons.Outlined.BookmarkBorder
-                                3 -> Icons.Outlined.Settings
-                                else -> icon
-                            }
-                            Icon(displayIcon, contentDescription = label)
-                        },
-                        label = { Text(label) },
-                        selected = currentTabIndex == index,
-                        onClick = { onTabSelect(index) }
-                    )
-                }
+            bottomBarItems.forEach { (index, icon, label) ->
+                NavigationBarItem(
+                    icon = {
+                        val displayIcon = if (currentTabIndex == index) icon else when (index) {
+                            0 -> Icons.Outlined.Home
+                            1 -> Icons.Outlined.BookmarkBorder
+                            3 -> Icons.Outlined.Settings
+                            else -> icon
+                        }
+                        Icon(displayIcon, contentDescription = label)
+                    },
+                    label = { Text(label) },
+                    selected = currentTabIndex == index,
+                    onClick = { onTabSelect(index) }
+                )
             }
         }
     }
 }
 
 val LocalPageTransitionSettled = androidx.compose.runtime.staticCompositionLocalOf<() -> Boolean> { { true } }
-private val LocalRetireReadingList = androidx.compose.runtime.staticCompositionLocalOf<() -> Boolean> { { false } }
+private val LocalRetireReadingListStage = androidx.compose.runtime.staticCompositionLocalOf<() -> Int> { { 0 } }
 
 internal fun predictiveBackFinishDurationMs(progress: Float): Int =
     (220f * progress.coerceIn(0f, 1f)).toInt().coerceIn(65, 220)
@@ -683,7 +691,7 @@ private class PageLayer(val entry: NavBackStackEntry, initiallyOpen: Boolean) {
     var settled by mutableStateOf(initiallyOpen)
     var coverLayer by mutableStateOf<PageLayer?>(null)
     var pendingRetirement by mutableStateOf(false)
-    var readingListRetired by mutableStateOf(false)
+    var readingListRetireStage by mutableIntStateOf(0)
     var committed = false
     val firstLayout = CompletableDeferred<Unit>()
     var animation: kotlinx.coroutines.Job? = null
@@ -897,8 +905,13 @@ private fun ParallaxPageHost(
                 com.mioo.dao.ui.components.awaitContinuousIdle(homeBusyFlow, 180L)
                 if (active.layer.entry.destination.route == Screen.Thread.route) {
                     latestPrepareBack.value(active.layer.entry)
-                    active.layer.readingListRetired = true
-                    // Give Compose a frame to release the list before dropping its owners.
+                    // Spread off-screen reply card disposal across 3 idle frames so no
+                    // single release frame breaches a 90Hz/120Hz frame deadline.
+                    active.layer.readingListRetireStage = 1
+                    withFrameNanos { }
+                    active.layer.readingListRetireStage = 2
+                    withFrameNanos { }
+                    active.layer.readingListRetireStage = 3
                     withFrameNanos { }
                     withFrameNanos { }
                     if (homeBusyFlow.value) {
@@ -907,7 +920,7 @@ private fun ParallaxPageHost(
                 }
             }
             if (!commitRetiredLayer(active.layer)) {
-                active.layer.readingListRetired = false
+                active.layer.readingListRetireStage = 0
                 active.layer.pendingRetirement = false
                 syncCoverLayers()
                 active.layer.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
@@ -980,7 +993,7 @@ private fun ParallaxPageHost(
         layers.forEachIndexed { index, layer ->
             key(layer.entry.id) {
                 val isSettled = remember(layer) { { layer.settled } }
-                val retireReadingList = remember(layer) { { layer.readingListRetired } }
+                val retireReadingListStage = remember(layer) { { layer.readingListRetireStage } }
                 Box(Modifier.fillMaxSize().zIndex(index.toFloat()).onSizeChanged {
                     if (it.width > 0 && it.height > 0) layer.firstLayout.complete(Unit)
                 }.graphicsLayer {
@@ -1003,7 +1016,7 @@ private fun ParallaxPageHost(
                 }) {
                     androidx.compose.runtime.CompositionLocalProvider(
                         LocalPageTransitionSettled provides isSettled,
-                        LocalRetireReadingList provides retireReadingList
+                        LocalRetireReadingListStage provides retireReadingListStage
                     ) {
                         layer.entry.LocalOwnersProvider(stateHolder) { content(layer.entry) }
                     }

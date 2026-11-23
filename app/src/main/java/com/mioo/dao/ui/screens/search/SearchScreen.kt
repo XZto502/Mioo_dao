@@ -4,8 +4,10 @@ import com.mioo.dao.LocalThirdPartyServicesAllowed
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -150,7 +152,6 @@ fun SearchScreen(
         contentColor = MaterialTheme.colorScheme.onSurface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
-        val uiState = state.value
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -158,25 +159,13 @@ fun SearchScreen(
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp)
         ) {
-            OutlinedTextField(
-                shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = secondaryCardBackground(), unfocusedContainerColor = secondaryCardBackground(), focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), unfocusedBorderColor = Color.Transparent),
-                value = uiState.query,
-                onValueChange = viewModel::onQueryChange,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
+            SearchQueryInputBar(
+                state = state,
+                onQueryChange = viewModel::onQueryChange,
+                onSearchSubmit = {
                     focusManager.clearFocus(force = true)
                     keyboardController?.hide()
                     viewModel.searchNow()
-                }),
-                placeholder = { Text("串号 / 关键词") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (uiState.isSearching) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    }
                 }
             )
 
@@ -222,176 +211,279 @@ fun SearchScreen(
             // 全站搜索入口只保留结果区的「用 xx 全站搜索」卡片，避免多个按钮都跳浏览器造成困惑；
             // 本地搜索输入即搜（防抖自动执行），无需独立按钮
 
-            if (uiState.recentQueries.isNotEmpty() && uiState.query.isBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("最近搜索", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(6.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(uiState.recentQueries) { q ->
-                        SuggestionChip(
-                            onClick = { viewModel.applyRecent(q) },
-                            label = { Text(q, maxLines = 1) }
-                        )
-                    }
-                }
-            }
+            SearchRecentQueriesSection(
+                state = state,
+                onSelectRecent = viewModel::applyRecent
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            val responsiveConfiguration = rememberResponsiveListConfiguration()
-            val responsiveFling = rememberResponsiveListFling()
-            val hasResults = uiState.result.directThreadId != null || uiState.result.hits.isNotEmpty()
-            val initialViewport = rememberInitialListViewport(hasResults)
-            androidx.compose.runtime.CompositionLocalProvider(
-                androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
-            ) {
-            LazyColumn(
-                state = listState,
-                flingBehavior = responsiveFling,
-                userScrollEnabled = !hasResults || initialViewport.ready,
-                modifier = Modifier.fillMaxSize().then(if (hasResults) initialViewport.modifier else Modifier),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                uiState.result.directThreadId?.let { tid ->
-                    item(key = "direct_$tid") {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onNavigateToThread(tid) },
-                            shape = RoundedCornerShape(16.dp),
-                            elevation = CardDefaults.cardElevation(0.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = secondaryCardBackground()
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Tag,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "打开串 No.$tid",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "按串号直达（不依赖搜索）",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+            SearchResultsSection(
+                state = state,
+                listState = listState,
+                allowThirdParty = allowThirdParty,
+                preferredEngine = preferredEngine,
+                onNavigateToThread = onNavigateToThread,
+                onLaunchSiteSearch = {
+                    focusManager.clearFocus(force = true)
+                    keyboardController?.hide()
+                    val url = viewModel.prepareSiteSearchUrl() ?: return@SearchResultsSection
+                    val launched = launchCustomTabSearch(
+                        context = context,
+                        url = url,
+                        toolbarColorArgb = customTabToolbarColor,
+                        isDarkTheme = isDarkTheme,
+                        session = customTabsController.getSession(),
+                        preferredPackage = customTabsController.packageName
+                    )
+                    if (!launched) {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                         }
                     }
                 }
+            )
+        }
+    }
+}
 
-                if (allowThirdParty && uiState.query.isNotBlank()) {
-                    item(key = "site_hint") {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    role = Role.Button
-                                ) {
-                                    focusManager.clearFocus(force = true)
-                                    keyboardController?.hide()
-                                    val url = viewModel.prepareSiteSearchUrl() ?: return@clickable
-                                    val launched = launchCustomTabSearch(
-                                        context = context,
-                                        url = url,
-                                        toolbarColorArgb = customTabToolbarColor,
-                                        isDarkTheme = isDarkTheme,
-                                        session = customTabsController.getSession(),
-                                        preferredPackage = customTabsController.packageName
-                                    )
-                                    if (!launched) {
-                                        runCatching {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        }
-                                    }
-                                },
-                            shape = RoundedCornerShape(16.dp),
-                            elevation = CardDefaults.cardElevation(0.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = secondaryCardBackground()
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text(
-                                    text = "用 ${uiState.preferredEngine.label} 全站搜索",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "site:nmbxd.com OR site:nmbxd1.com ${uiState.query.trim()}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
+private val SearchHitCardShape = RoundedCornerShape(16.dp)
+private val SearchSourcePillShape = RoundedCornerShape(8.dp)
+private val SearchHtmlTagRegex = Regex("<[^>]+>")
+private val SearchWhitespaceRegex = Regex("\\s+")
 
-                if (uiState.result.hits.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "本地结果",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(top = 4.dp)
+@Composable
+private fun SearchQueryInputBar(
+    state: androidx.compose.runtime.State<SearchUiState>,
+    onQueryChange: (String) -> Unit,
+    onSearchSubmit: () -> Unit
+) {
+    val query by remember(state) { derivedStateOf { state.value.query } }
+    val isSearching by remember(state) { derivedStateOf { state.value.isSearching } }
+    var showSpinner by remember { mutableStateOf(false) }
+    LaunchedEffect(isSearching) {
+        if (isSearching) {
+            kotlinx.coroutines.delay(160)
+            showSpinner = true
+        } else {
+            showSpinner = false
+        }
+    }
+    OutlinedTextField(
+        shape = SearchHitCardShape,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = secondaryCardBackground(),
+            unfocusedContainerColor = secondaryCardBackground(),
+            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+            unfocusedBorderColor = Color.Transparent
+        ),
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearchSubmit() }),
+        placeholder = { Text("串号 / 关键词") },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        trailingIcon = {
+            if (showSpinner) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+        }
+    )
+}
+
+@Composable
+private fun SearchRecentQueriesSection(
+    state: androidx.compose.runtime.State<SearchUiState>,
+    onSelectRecent: (String) -> Unit
+) {
+    val showRecent by remember(state) {
+        derivedStateOf { state.value.recentQueries.isNotEmpty() && state.value.query.isBlank() }
+    }
+    if (!showRecent) return
+    val recentQueries by remember(state) { derivedStateOf { state.value.recentQueries } }
+    Spacer(modifier = Modifier.height(12.dp))
+    Text("最近搜索", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+    Spacer(modifier = Modifier.height(6.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(recentQueries) { q ->
+            SuggestionChip(
+                onClick = { onSelectRecent(q) },
+                label = { Text(q, maxLines = 1) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchSiteHintQueryText(state: androidx.compose.runtime.State<SearchUiState>) {
+    val trimmedQuery by remember(state) { derivedStateOf { state.value.query.trim() } }
+    Text(
+        text = "site:nmbxd.com OR site:nmbxd1.com $trimmedQuery",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+private fun SearchResultsSection(
+    state: androidx.compose.runtime.State<SearchUiState>,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    allowThirdParty: Boolean,
+    preferredEngine: XdWebSearch.Engine,
+    onNavigateToThread: (String) -> Unit,
+    onLaunchSiteSearch: () -> Unit
+) {
+    val result by remember(state) { derivedStateOf { state.value.result } }
+    val hasNonBlankQuery by remember(state) { derivedStateOf { state.value.query.isNotBlank() } }
+    val isSearching by remember(state) { derivedStateOf { state.value.isSearching } }
+    // Defer mounting the site-search hint card by one frame when transitioning from blank -> non-blank
+    // so character #1 does not stack recent-chip unmount + site-hint card creation in the same frame.
+    var showSiteHint by remember { mutableStateOf(hasNonBlankQuery) }
+    LaunchedEffect(hasNonBlankQuery) {
+        if (!hasNonBlankQuery) {
+            showSiteHint = false
+        } else if (!showSiteHint) {
+            androidx.compose.runtime.withFrameNanos { }
+            showSiteHint = true
+        }
+    }
+
+    val responsiveConfiguration = rememberResponsiveListConfiguration()
+    val responsiveFling = rememberResponsiveListFling()
+    val hasResults = result.directThreadId != null || result.hits.isNotEmpty()
+    val resultResetKey = remember(result.directThreadId, result.hits.size, result.hits.firstOrNull()?.threadId) {
+        "${result.directThreadId}:${result.hits.size}:${result.hits.firstOrNull()?.threadId}"
+    }
+    val initialViewport = rememberInitialListViewport(
+        hasContent = hasResults,
+        resetKey = resultResetKey,
+        steps = 5
+    )
+    val cardBg = secondaryCardBackground()
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
+    ) {
+        LazyColumn(
+            state = listState,
+            flingBehavior = responsiveFling,
+            userScrollEnabled = !hasResults || initialViewport.ready,
+            modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            result.directThreadId?.let { tid ->
+                item(key = "direct_$tid", contentType = "direct") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(SearchHitCardShape)
+                            .background(cardBg)
+                            .clickable { onNavigateToThread(tid) }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Tag,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                    }
-                }
-
-                if (!uiState.isSearching &&
-                    uiState.query.isNotBlank() &&
-                    uiState.result.isEmpty
-                ) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 20.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    "本地没有匹配",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                if (allowThirdParty) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "点上方「全站搜索」检索岛上内容",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "打开串 No.$tid",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "按串号直达（不依赖搜索）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
-                }
-
-                items(uiState.result.hits, key = { "${it.source}_${it.threadId}" }) { hit ->
-                    SearchHitRow(hit = hit, onClick = { onNavigateToThread(hit.threadId) })
                 }
             }
+
+            if (allowThirdParty && showSiteHint) {
+                item(key = "site_hint", contentType = "site_hint") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(SearchHitCardShape)
+                            .background(cardBg)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                role = Role.Button,
+                                onClick = onLaunchSiteSearch
+                            )
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            text = "用 ${preferredEngine.label} 全站搜索",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        SearchSiteHintQueryText(state = state)
+                    }
+                }
+            }
+
+            if (result.hits.isNotEmpty()) {
+                item(key = "local_header", contentType = "header") {
+                    Text(
+                        text = "本地结果",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+
+            if (!isSearching && hasNonBlankQuery && result.isEmpty) {
+                item(key = "local_empty", contentType = "empty") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "本地没有匹配",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (allowThirdParty) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "点上方「全站搜索」检索岛上内容",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            items(
+                items = result.hits,
+                key = { "${it.source}_${it.threadId}" },
+                contentType = { "hit" }
+            ) { hit ->
+                val onHitClick = remember(hit.threadId, onNavigateToThread) {
+                    { onNavigateToThread(hit.threadId) }
+                }
+                SearchHitRow(hit = hit, cardBg = cardBg, onClick = onHitClick)
             }
         }
     }
@@ -400,71 +492,75 @@ fun SearchScreen(
 @Composable
 private fun SearchHitRow(
     hit: LocalSearchHit,
+    cardBg: Color,
     onClick: () -> Unit
 ) {
     val cleanSnippet = remember(hit.snippet) {
         hit.snippet
-            .replace(Regex("<[^>]+>"), " ")
+            .replace(SearchHtmlTagRegex, " ")
             .replace("&nbsp;", " ")
             .replace("&gt;", ">")
             .replace("&lt;", "<")
-            .replace(Regex("\\s+"), " ")
+            .replace(SearchWhitespaceRegex, " ")
             .trim()
     }
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-                            elevation = CardDefaults.cardElevation(0.dp),
-                            colors = CardDefaults.cardColors(
-            containerColor = secondaryCardBackground()
-        )
+            .clip(SearchHitCardShape)
+            .background(cardBg)
+            .clickable(onClick = onClick)
+            .padding(14.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = false,
-                    onClick = {},
-                    label = { Text(hit.source.label) },
-                    enabled = false
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .clip(SearchSourcePillShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = hit.source.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
                 )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "No.${hit.threadId}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            if (hit.newReplyCount > 0) {
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "No.${hit.threadId}",
+                    text = "+${hit.newReplyCount}",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.Bold
                 )
-                if (hit.newReplyCount > 0) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "+${hit.newReplyCount}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
             }
-            hit.title.effectiveTitle()?.let { title ->
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
+        }
+        hit.title.effectiveTitle()?.let { title ->
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = cleanSnippet.ifBlank { "（无摘要）" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = cleanSnippet.ifBlank { "（无摘要）" },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

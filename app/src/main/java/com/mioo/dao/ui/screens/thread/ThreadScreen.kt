@@ -178,6 +178,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import com.mioo.dao.ui.theme.readingTextStyle
 import com.mioo.dao.ui.theme.readingBackground
@@ -239,7 +240,7 @@ fun ThreadScreen(
     onNavigateToThread: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     registerSystemBack: (((() -> Unit)?) -> Unit)? = null,
-    retireReadingList: () -> Boolean = { false }
+    retireReadingListStage: () -> Int = { 0 }
 ) {
     // List-only slice — bookmark / download / ref-popup use separate collectors below
     val listUi by viewModel.listUiState.collectAsState()
@@ -315,8 +316,29 @@ fun ThreadScreen(
         }
         allowHeavyList = true
     }
-    val initialViewport = rememberInitialListViewport(listUi.thread != null)
+    val initialViewport = rememberInitialListViewport(
+        hasContent = allowHeavyList && listUi.thread != null,
+        resetKey = listUi.contentRevision
+    )
     val readingListReady = allowHeavyList && initialViewport.ready
+    var topActionsReady by remember { mutableStateOf(reducedMotion) }
+    LaunchedEffect(reducedMotion) {
+        if (topActionsReady) return@LaunchedEffect
+        androidx.compose.runtime.withFrameNanos { }
+        topActionsReady = true
+    }
+    var bottomBarReady by remember(viewModel) { mutableStateOf(reducedMotion) }
+    LaunchedEffect(readingListReady, reducedMotion) {
+        if (bottomBarReady) return@LaunchedEffect
+        if (reducedMotion) {
+            bottomBarReady = true
+            return@LaunchedEffect
+        }
+        if (readingListReady) {
+            androidx.compose.runtime.withFrameNanos { }
+            bottomBarReady = true
+        }
+    }
     var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
         mutableStateOf<Pair<Any, Int>?>(null)
     }
@@ -478,6 +500,9 @@ fun ThreadScreen(
             "${listUi.displayItems.lastOrNull()?.id}:${listUi.mainPostData?.content?.length ?: 0}"
     }
     val prewarmDicePreset = if (threadSettings.diceBadgesEnabled) dicePreset else null
+    androidx.compose.runtime.SideEffect {
+        com.mioo.dao.ui.components.HtmlPrewarmBridge.updateThreadDicePreset(prewarmDicePreset)
+    }
     LaunchedEffect(threadPrewarmSig, quoteLinkColor, prewarmDarkTheme, prewarmDicePreset) {
         if (listUi.displayItems.isEmpty()) return@LaunchedEffect
         val bodies = listUi.displayItems.take(20).map { it.postData.content }
@@ -526,20 +551,24 @@ fun ThreadScreen(
         viewModel.updateSearchQuery(searchFieldText)
     }
 
-    var creatorOpen by rememberSaveable(viewModel.threadId) {
+    val creatorOpenState = rememberSaveable(viewModel.threadId) {
         mutableStateOf(viewModel.requestedReplyDraftId != null)
     }
     val replyEditor = remember(viewModel) { ReplyEditorState() }
-    fun openReplyEditor() {
-        viewModel.beginReplyEditing()
-        creatorOpen = true
-    }
-    LaunchedEffect(viewModel, creatorOpen) {
-        if (creatorOpen) {
+    val openReplyEditor = remember(viewModel, creatorOpenState) {
+        {
             viewModel.beginReplyEditing()
-        } else {
-            creatorTracker.reset()
-            creatorButtonVisible = true
+            creatorOpenState.value = true
+        }
+    }
+    LaunchedEffect(viewModel, creatorOpenState, creatorTracker) {
+        snapshotFlow { creatorOpenState.value }.distinctUntilChanged().collect { open ->
+            if (open) {
+                viewModel.beginReplyEditing()
+            } else {
+                creatorTracker.reset()
+                creatorButtonVisible = true
+            }
         }
     }
     val selectedReplyCookie = viewModel.threadCookieIndex.collectAsState().value
@@ -692,41 +721,43 @@ fun ThreadScreen(
                         ) {
                             Icon(Icons.Default.Search, contentDescription = "串内搜索")
                         }
-                        if (totalPages > 1) {
-                            ThreadPageJumpButton(
-                                totalPages = totalPages,
-                                currentPage = currentScrollPage.value,
-                                expanded = showJumpBubble,
-                                onExpandedChange = { showJumpBubble = it },
-                                onJumpToPage = { viewModel.jumpToPage(it) },
-                                onOpenInputDialog = {
-                                    showJumpBubble = false
-                                    showPageJumpDialog = true
+                        if (topActionsReady) {
+                            if (totalPages > 1) {
+                                ThreadPageJumpButton(
+                                    totalPages = totalPages,
+                                    currentPage = currentScrollPage.value,
+                                    expanded = showJumpBubble,
+                                    onExpandedChange = { showJumpBubble = it },
+                                    onJumpToPage = { viewModel.jumpToPage(it) },
+                                    onOpenInputDialog = {
+                                        showJumpBubble = false
+                                        showPageJumpDialog = true
+                                    },
+                                    actionColors = headerStyle.trailingActionAt(3)
+                                )
+                            }
+                            // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
+                            ThreadChromeActions(
+                                viewModel = viewModel,
+                                isLoading = listUi.isLoading,
+                                onRefresh = {
+                                    saveVisibleProgress()
+                                    viewModel.refreshThread { message ->
+                                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                    }
                                 },
-                                actionColors = headerStyle.trailingActionAt(3)
+                                showPoOnly = listUi.showPoOnly,
+                                showImagesOnly = listUi.showImagesOnly,
+                                onShare = {
+                                    sharePostId = listUi.thread?.idStr
+                                },
+                                showBookmarkMenu = showBookmarkMenu,
+                                onShowBookmarkMenuChange = { showBookmarkMenu = it },
+                                showOverflowMenu = showOverflowMenu,
+                                onShowOverflowMenuChange = { showOverflowMenu = it },
+                                headerStyle = headerStyle
                             )
                         }
-                        // Chrome (Po filter / bookmark / folders / download) collected inside — not listUi
-                        ThreadChromeActions(
-                            viewModel = viewModel,
-                            isLoading = listUi.isLoading,
-                            onRefresh = {
-                                saveVisibleProgress()
-                                viewModel.refreshThread { message ->
-                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            showPoOnly = listUi.showPoOnly,
-                            showImagesOnly = listUi.showImagesOnly,
-                            onShare = {
-                                sharePostId = listUi.thread?.idStr
-                            },
-                            showBookmarkMenu = showBookmarkMenu,
-                            onShowBookmarkMenuChange = { showBookmarkMenu = it },
-                            showOverflowMenu = showOverflowMenu,
-                            onShowOverflowMenuChange = { showOverflowMenu = it },
-                            headerStyle = headerStyle
-                        )
                     }
                     }
                 },
@@ -745,23 +776,33 @@ fun ThreadScreen(
             }
         },
         bottomBar = {
-            if (!threadSettings.enableCreatorMode) {
+            if (!threadSettings.enableCreatorMode && retireReadingListStage() < 1) {
             val composerColor = readingComposerColor()
             Column {
                 // Feather only the seam above the solid composer, never the input/tools.
                 Box(Modifier.fillMaxWidth().height(10.dp).background(
                     Brush.verticalGradient(listOf(composerColor.copy(alpha = 0f), composerColor))))
-                // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
-                ReplyInputBar(
-                    viewModel = viewModel,
-                    cookies = threadSettings.cookiesList,
-                    confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
-                    cookieNotes = threadSettings.cookieNotes,
-                    selectedCookieIndex = selectedReplyCookie,
-                    onCookieSelect = viewModel::selectThreadCookie,
-                    editor = replyEditor,
-                    onOpen = { openReplyEditor() }
-                )
+                if (bottomBarReady) {
+                    // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
+                    ReplyInputBar(
+                        viewModel = viewModel,
+                        cookies = threadSettings.cookiesList,
+                        confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
+                        cookieNotes = threadSettings.cookieNotes,
+                        selectedCookieIndex = selectedReplyCookie,
+                        onCookieSelect = viewModel::selectThreadCookie,
+                        editor = replyEditor,
+                        onOpen = openReplyEditor
+                    )
+                } else {
+                    Spacer(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(composerColor)
+                            .navigationBarsPadding()
+                            .height(106.dp)
+                    )
+                }
             }
             }
         },
@@ -777,8 +818,20 @@ fun ThreadScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            if (retireReadingList()) {
+            val retireListRemoved by remember(retireReadingListStage) {
+                derivedStateOf { retireReadingListStage() >= 3 }
+            }
+            if (retireListRemoved) {
                 // The off-screen list is released before its navigation entry.
+            } else if (!allowHeavyList) {
+                if (listUi.isLoading && listUi.thread == null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
             } else if (listUi.isLoading && listUi.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -853,6 +906,35 @@ fun ThreadScreen(
                 val onViewThreadClick = remember(onNavigateToThread) {
                     { tid: String -> onNavigateToThread(tid) }
                 }
+                val creatorModeState = rememberUpdatedState(threadSettings.enableCreatorMode)
+                val onRequestQuoteId = remember(viewModel, context, creatorOpenState) {
+                    { postId: String ->
+                        viewModel.setQuotedPost(postId)
+                        if (creatorModeState.value) creatorOpenState.value = true
+                        Toast.makeText(context, "已引用 No.$postId", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                val onBlockCurrentThread = remember(settingsViewModel, viewModel) {
+                    { settingsViewModel.addBlockedThread(viewModel.threadId) }
+                }
+                val onBlockUserHash = remember(settingsViewModel) {
+                    { userHash: String -> settingsViewModel.addBlockedUser(userHash) }
+                }
+                val onFreeCopyPost = remember {
+                    { postId: String, raw: String ->
+                        freeCopyId = postId
+                        freeCopyText = raw
+                    }
+                }
+                val onReportPost = remember {
+                    { postId: String -> reportTargetNo = postId }
+                }
+                val onSharePost = remember {
+                    { postId: String -> sharePostId = postId }
+                }
+                val mainPostDataPo = remember(mainPostData) {
+                    mainPostData?.copy(isPo = true)
+                }
 
                 // The list draws behind the Scaffold bars. The bottom padding must
                 // therefore include the measured bottom bar height exactly once.
@@ -867,6 +949,19 @@ fun ThreadScreen(
                     flingBehavior = responsiveFling,
                     userScrollEnabled = readingListReady,
                     modifier = Modifier.fillMaxSize().then(initialViewport.modifier)
+                        .layout { measurable, constraints ->
+                            // Once off-screen retirement begins (stage >= 1), freeze LazyColumn
+                            // layout so emptying existing card slots never triggers new item
+                            // compositions to fill freed viewport height.
+                            if (retireReadingListStage() >= 1) {
+                                val w = if (constraints.hasBoundedWidth) constraints.maxWidth else constraints.minWidth
+                                val h = if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
+                                layout(w, h) { }
+                            } else {
+                                val child = measurable.measure(constraints)
+                                layout(child.width, child.height) { child.place(0, 0) }
+                            }
+                        }
                         .graphicsLayer { alpha = if (readingListReady) 1f else 0f }
                         .nestedScroll(edgePaging)
                         .useUnbufferedFlingGrab(responsiveFling),
@@ -891,52 +986,44 @@ fun ThreadScreen(
                     }
                     // 跳页/续读落在第 2 页及以上时不再重复展示串首卡片，列表直接以该页回复开头；
                     // 向上翻回第 1 页时串首卡片随 startPage==1 重新出现
-                    if (mainThread != null && mainPostData != null && listUi.startPage <= 1) {
+                    if (mainThread != null && mainPostDataPo != null && listUi.startPage <= 1) {
                         item(key = "main_${mainThread.id}", contentType = "main_thread") {
+                            if (retireReadingListStage() >= 2) return@item
                             var showBlockDialog by remember { mutableStateOf(false) }
 
                             if (showBlockDialog) {
                                 PostActionDialog(
                                     title = "内容操作 No.${mainThread.idStr}",
                                     onDismiss = { showBlockDialog = false },
-                                    onQuote = {
-                                        viewModel.setQuotedPost(mainThread.idStr)
-                                        if (threadSettings.enableCreatorMode) creatorOpen = true
-                                        Toast.makeText(context, "已引用 No.${mainThread.idStr}", Toast.LENGTH_SHORT).show()
-                                    },
-                                    onBlockThread = {
-                                        settingsViewModel.addBlockedThread(mainThread.idStr)
-                                    },
-                                    onBlockUser = {
-                                        settingsViewModel.addBlockedUser(mainThread.userHash)
-                                    },
-                                    onCopy = {
-                                        freeCopyId = mainThread.idStr
-                                        freeCopyText = mainThread.content
-                                    },
+                                    onQuote = { onRequestQuoteId(mainThread.idStr) },
+                                    onBlockThread = { settingsViewModel.addBlockedThread(mainThread.idStr) },
+                                    onBlockUser = { onBlockUserHash(mainThread.userHash) },
+                                    onCopy = { onFreeCopyPost(mainThread.idStr, mainThread.content) },
                                     blockThreadLabel = "屏蔽此串 (No.${mainThread.idStr})",
                                     blockUserLabel = "屏蔽该饼干 (ID: ${mainThread.userHash})",
-                                    onReport = { reportTargetNo = mainThread.idStr },
-                                    onShareCard = {
-                                        sharePostId = mainPostData.id
-                                    }
+                                    onReport = { onReportPost(mainThread.idStr) },
+                                    onShareCard = { onSharePost(mainPostDataPo.id) }
                                 )
                             }
 
                             ThreadCard(
-                                postData = mainPostData.copy(isPo = true),
-                                onNumberClick = {
-                                    viewModel.setQuotedPost(mainThread.idStr)
-                                    if (threadSettings.enableCreatorMode) creatorOpen = true
+                                postData = mainPostDataPo,
+                                onNumberClick = remember(mainThread.idStr, viewModel, creatorOpenState) {
+                                    {
+                                        viewModel.setQuotedPost(mainThread.idStr)
+                                        if (creatorModeState.value) creatorOpenState.value = true
+                                    }
                                 },
                                 replyCount = mainThread.replyCount ?: 0,
                                 showReplyCount = false,
                                 onThreadClick = emptyLambda,
                                 onQuoteClick = onQuoteClick,
                                 onImageClick = onImageClick,
-                                onLongClick = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    showBlockDialog = true
+                                onLongClick = remember(haptics) {
+                                    {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showBlockDialog = true
+                                    }
                                 },
                                 // 详情页主楼：完整正文 + 引用链接可点（列表预览才截断/关手势）
                                 contentMaxLines = Int.MAX_VALUE,
@@ -965,20 +1052,13 @@ fun ThreadScreen(
                             onImageClick = onImageClick,
                             onViewThreadClick = onViewThreadClick,
                             onCardClick = emptyLambda,
-                            onRequestQuote = {
-                                viewModel.setQuotedPost(item.idStr)
-                                if (threadSettings.enableCreatorMode) creatorOpen = true
-                                Toast.makeText(context, "已引用 No.${item.idStr}", Toast.LENGTH_SHORT).show()
-                            },
-                            onBlockThread = {
-                                settingsViewModel.addBlockedThread(viewModel.threadId)
-                            },
-                            onBlockUser = {
-                                settingsViewModel.addBlockedUser(item.userHash)
-                            },
-                            onFreeCopy = { freeCopyId = item.idStr; freeCopyText = item.rawContent },
-                            onReport = { reportTargetNo = item.idStr },
-                            onShareCard = { sharePostId = item.idStr }
+                            onRequestQuote = onRequestQuoteId,
+                            onBlockThread = onBlockCurrentThread,
+                            onBlockUser = onBlockUserHash,
+                            onFreeCopy = onFreeCopyPost,
+                            onReport = onReportPost,
+                            onShareCard = onSharePost,
+                            retireStage = retireReadingListStage
                         )
                     }
 
@@ -1068,41 +1148,31 @@ fun ThreadScreen(
                 },
                 onNavigateToThread = onNavigateToThread
             )
-            if (threadSettings.enableCreatorMode && !creatorOpen) {
-                ReplyCreatorButton(
-                    Modifier.align(Alignment.BottomEnd).zIndex(1f).navigationBarsPadding()
+            if (threadSettings.enableCreatorMode) {
+                ThreadCreatorFabHost(
+                    creatorOpenState = creatorOpenState,
+                    modifier = Modifier.align(Alignment.BottomEnd).zIndex(1f).navigationBarsPadding()
                         .padding(end = 18.dp, bottom = 22.dp)
                         .graphicsLayer {
                             val fraction = creatorSink.coerceIn(0f, 1f)
                             translationY = 120.dp.toPx() * fraction
                         },
                     enabled = creatorButtonVisible,
-                    onOpen = { openReplyEditor() }
+                    onOpen = openReplyEditor
                 )
             }
         }
         }
-        AnimatedVisibility(
-            visible = creatorOpen,
-            modifier = Modifier.fillMaxSize().zIndex(1f),
-            enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(240)) { it / 12 },
-            exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 12 }
-        ) {
-            ReplyInputBar(
-                viewModel = viewModel,
-                cookies = threadSettings.cookiesList,
-                selectedCookieIndex = selectedReplyCookie,
-                confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
-                cookieNotes = threadSettings.cookieNotes,
-                onCookieSelect = viewModel::selectThreadCookie,
-                editor = replyEditor,
-                fullScreen = true,
-                onClose = {
-                    viewModel.flushReplyDraft()
-                    creatorOpen = false
-                }
-            )
-        }
+        ThreadReplyOverlayHost(
+            creatorOpenState = creatorOpenState,
+            reducedMotion = reducedMotion,
+            viewModel = viewModel,
+            cookies = threadSettings.cookiesList,
+            selectedCookieIndex = selectedReplyCookie,
+            confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
+            cookieNotes = threadSettings.cookieNotes,
+            editor = replyEditor
+        )
         if (replyEditor.showDoodlePad.value) DoodlePadSheet(
             baseImageUri = replyEditor.attachment.value,
             onDismiss = { replyEditor.showDoodlePad.value = false },
@@ -1117,36 +1187,38 @@ fun ThreadScreen(
         }
     }
 
-    val viewerImages by remember(listUi.displayItems, listUi.mainPostData, listUi.thread, listUi.startPage) {
-        derivedStateOf {
-            val list = mutableListOf<ViewerImage>()
-            listUi.mainPostData?.imageUrl?.takeIf { listUi.startPage <= 1 }?.let { url ->
-                list.add(
-                    ViewerImage(
-                        url = url,
-                        postId = listUi.thread?.idStr,
-                        snippet = listUi.thread?.content?.let(::plainTextSnippet)
-                    )
-                )
-            }
-            listUi.displayItems.forEach { item ->
-                item.postData.imageUrl?.let { url ->
+    activeImageUrl?.let { imageUrl ->
+        val viewerImages = remember(listUi.displayItems, listUi.mainPostData, listUi.thread, listUi.startPage, referenceImageOpen) {
+            if (referenceImageOpen) {
+                emptyList()
+            } else {
+                val list = mutableListOf<ViewerImage>()
+                listUi.mainPostData?.imageUrl?.takeIf { listUi.startPage <= 1 }?.let { url ->
                     list.add(
                         ViewerImage(
                             url = url,
-                            postId = item.idStr,
-                            snippet = plainTextSnippet(item.rawContent)
+                            postId = listUi.thread?.idStr,
+                            snippet = listUi.thread?.content?.let(::plainTextSnippet)
                         )
                     )
                 }
+                listUi.displayItems.forEach { item ->
+                    item.postData.imageUrl?.let { url ->
+                        list.add(
+                            ViewerImage(
+                                url = url,
+                                postId = item.idStr,
+                                snippet = plainTextSnippet(item.rawContent)
+                            )
+                        )
+                    }
+                }
+                list.distinctBy { it.url }
             }
-            list.distinctBy { it.url }
         }
-    }
-    activeImageUrl?.let { imageUrl ->
         ImageViewer(
             initialImageUrl = imageUrl,
-            imageMeta = if (referenceImageOpen) emptyList() else viewerImages,
+            imageMeta = viewerImages,
             onDismiss = { activeImageUrl = null; referenceImageOpen = false },
             onRequestMorePages = { viewModel.loadNextPage(resetFilterSkip = true) },
             hasMorePages = !referenceImageOpen && !listUi.isLastPage,
@@ -1648,6 +1720,68 @@ private fun ThreadChromeActions(
  * Isolated ref-popup collector — filling / dismissing never touches list composition.
  */
 @Composable
+private fun ThreadCreatorFabHost(
+    creatorOpenState: androidx.compose.runtime.State<Boolean>,
+    modifier: Modifier,
+    enabled: Boolean,
+    onOpen: () -> Unit
+) {
+    if (!creatorOpenState.value) {
+        ReplyCreatorButton(modifier = modifier, enabled = enabled, onOpen = onOpen)
+    }
+}
+
+@Composable
+private fun ThreadReplyOverlayHost(
+    creatorOpenState: androidx.compose.runtime.MutableState<Boolean>,
+    reducedMotion: Boolean,
+    viewModel: ThreadViewModel,
+    cookies: List<String>,
+    selectedCookieIndex: Int,
+    confirmCookieBeforeSend: Boolean,
+    cookieNotes: Map<String, String>,
+    editor: ReplyEditorState
+) {
+    val isOpen = creatorOpenState.value
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val page = if (dark) Color(0xFF0E1015) else Color(0xFFF0F1F4)
+    AnimatedVisibility(
+        visible = isOpen,
+        modifier = Modifier.fillMaxSize().zIndex(1f),
+        enter = if (reducedMotion) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(240)) { it / 12 },
+        exit = if (reducedMotion) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(180)) { it / 12 }
+    ) {
+        // Keep the tap frame to a single solid backdrop; mount the composer tree on the next frame
+        // while the sheet is still fading in so open_reply_editor stays under a 90Hz budget.
+        var contentMounted by remember { mutableStateOf(reducedMotion) }
+        LaunchedEffect(reducedMotion) {
+            if (!contentMounted) {
+                androidx.compose.runtime.withFrameNanos { }
+                contentMounted = true
+            }
+        }
+        if (contentMounted) {
+            ReplyInputBar(
+                viewModel = viewModel,
+                cookies = cookies,
+                selectedCookieIndex = selectedCookieIndex,
+                confirmCookieBeforeSend = confirmCookieBeforeSend,
+                cookieNotes = cookieNotes,
+                onCookieSelect = viewModel::selectThreadCookie,
+                editor = editor,
+                fullScreen = true,
+                onClose = {
+                    viewModel.flushReplyDraft()
+                    creatorOpenState.value = false
+                }
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(page))
+        }
+    }
+}
+
+@Composable
 private fun ThreadRefPopupHost(
     viewModel: ThreadViewModel,
     onImageClick: (String) -> Unit,
@@ -1908,13 +2042,16 @@ private fun ThreadReplyRow(
     onImageClick: (String) -> Unit,
     onViewThreadClick: (String) -> Unit,
     onCardClick: () -> Unit,
-    onRequestQuote: () -> Unit,
+    onRequestQuote: (String) -> Unit,
     onBlockThread: () -> Unit,
-    onBlockUser: () -> Unit,
-    onFreeCopy: () -> Unit,
-    onReport: () -> Unit,
-    onShareCard: () -> Unit
+    onBlockUser: (String) -> Unit,
+    onFreeCopy: (String, String) -> Unit,
+    onReport: (String) -> Unit,
+    onShareCard: (String) -> Unit,
+    retireStage: () -> Int
 ) {
+    val retireThreshold = if ((item.id and 1L) == 0L) 1 else 2
+    if (retireStage() >= retireThreshold) return
     // 每个引用从首帧就拥有同样的预览槽位；缓存命中只替换槽位内容。
     val quoteSlots = remember(item.quoteIds, inlineQuotesEnabled, resolveQuotePost) {
         if (!inlineQuotesEnabled || item.quoteIds.isEmpty()) {
@@ -1937,18 +2074,25 @@ private fun ThreadReplyRow(
 
     val haptics = LocalHapticFeedback.current
     var showReplyBlockDialog by remember { mutableStateOf(false) }
+    val onQuoteThis = remember(item.idStr, onRequestQuote) { { onRequestQuote(item.idStr) } }
+    val onLongClickThis = remember(haptics) {
+        {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            showReplyBlockDialog = true
+        }
+    }
     if (showReplyBlockDialog) {
         PostActionDialog(
             title = "内容操作 No.${item.idStr}",
             onDismiss = { showReplyBlockDialog = false },
-            onQuote = onRequestQuote,
+            onQuote = onQuoteThis,
             onBlockThread = onBlockThread,
-            onBlockUser = onBlockUser,
-            onCopy = onFreeCopy,
+            onBlockUser = { onBlockUser(item.userHash) },
+            onCopy = { onFreeCopy(item.idStr, item.rawContent) },
             blockThreadLabel = "屏蔽此串 (No.$currentThreadId)",
             blockUserLabel = "屏蔽该饼干 (ID: ${item.userHash})",
-            onReport = onReport,
-            onShareCard = onShareCard
+            onReport = { onReport(item.idStr) },
+            onShareCard = { onShareCard(item.idStr) }
         )
     }
 
@@ -1957,11 +2101,8 @@ private fun ThreadReplyRow(
         onQuoteClick = onQuoteClick,
         onImageClick = onImageClick,
         onCardClick = onCardClick,
-        onCardLongClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            showReplyBlockDialog = true
-        },
-        onNumberClick = onRequestQuote,
+        onCardLongClick = onLongClickThis,
+        onNumberClick = onQuoteThis,
         quotedPosts = quotedPostsData,
         onViewThreadClick = onViewThreadClick,
         currentThreadId = currentThreadId

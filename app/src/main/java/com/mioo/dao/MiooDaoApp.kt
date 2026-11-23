@@ -3,6 +3,12 @@ package com.mioo.dao
 import android.app.Application
 import android.os.Build
 import android.os.Looper
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Comment
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.ui.graphics.Color
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -117,10 +123,20 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
     private fun deferNonCriticalWarm() {
         appScope.launch(Dispatchers.Default) {
-            kotlinx.coroutines.delay(350)
+            kotlinx.coroutines.delay(250)
             runCatching {
                 android.text.TextPaint().apply { textSize = 42f }
-                    .measureText("ﾟ∀´дつ⊂彡☆╬∇Дεω≡・ゝー。ᗜᗢəʃΣΩ♪★●○▲△▼▽◆◇□■")
+                    .measureText("ﾟ∀´дつ⊂彡☆╬∇Дεω≡・ゝー。ᗜᗢəʃΣΩ♪★●○▲△▼▽◆◇□■综合版时间线回复串号无名氏今天昨天0123456789No.replies")
+            }
+            runCatching {
+                com.mioo.dao.ui.components.HtmlPrewarmBridge.warmParserRuntime()
+                com.mioo.dao.ui.components.ContentBlockSplitter.split(">>No.12345678\n热身", emptyList())
+                com.mioo.dao.ui.components.ListThumbImage.request(this@MiooDaoApp, "https://image.nmb.best/thumb/warm.jpg")
+                Icons.AutoMirrored.Outlined.Comment
+                Icons.Default.Star
+                Icons.Default.ExpandMore
+                Icons.Default.Close
+                Icons.Default.Send
             }
         }
         appScope.launch(Dispatchers.IO) {

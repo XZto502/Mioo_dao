@@ -81,8 +81,9 @@ fun ReplyCard(
     onNumberClick: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val border = readingCardBorder()
-    val cardBg = readingCardColor()
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val border = sharedStyles?.cardBorder ?: readingCardBorder()
+    val cardBg = sharedStyles?.cardColor ?: readingCardColor()
     val styledModifier = modifier
         .fillMaxWidth()
         .background(cardBg, shape)
@@ -126,8 +127,10 @@ fun ReplyCard(
                 ContentBlockSplitter.split(postData.content, quotedPosts.list)
             }
 
-            val baseBodyStyle = readingBodyStyle()
-            val bodyStyle = remember(baseBodyStyle) { baseBodyStyle.copy(fontWeight = FontWeight.Medium) }
+            val bodyStyle = sharedStyles?.bodyMediumStyle ?: run {
+                val baseBodyStyle = readingBodyStyle()
+                remember(baseBodyStyle) { baseBodyStyle.copy(fontWeight = FontWeight.Medium) }
+            }
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
