@@ -224,13 +224,15 @@ fun HistoryScreen(
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else if (readyRecords.isNotEmpty()) {
+                        val initialViewport = com.mioo.dao.ui.components.rememberInitialListViewport(true)
                         val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
                         val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
                         CompositionLocalProvider(androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration) {
                             LazyColumn(
                                 state = list,
                                 flingBehavior = responsiveFling,
-                                modifier = Modifier.fillMaxSize(),
+                                userScrollEnabled = initialViewport.ready,
+                                modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
                                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
                                     bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -316,7 +318,10 @@ private fun HistoryCard(
             val bodyStyle = readingBodyStyle()
             if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = bodyStyle,
                 maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false, compactBlankLines = true)
-            else Text(item.content.replace(collapseBlankLinesRegex, "\n"), style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
+            else {
+                val preview = remember(item.content) { item.content.replace(collapseBlankLinesRegex, "\n") }
+                Text(preview, style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
+            }
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",
