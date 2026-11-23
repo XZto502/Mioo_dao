@@ -3,6 +3,9 @@ package com.mioo.dao.ui.screens.offline
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.Role
+import com.mioo.dao.data.repository.OfflineTransfer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,12 +79,9 @@ import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReadingIdentity
 import com.mioo.dao.ui.screens.settings.secondaryPageBackground
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -98,9 +98,7 @@ class OfflineThreadsViewModel @Inject constructor(
         threadRepository.getOfflineThreadSummaries()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** 正在重新拉取离线的串号集合——对应卡片转圈、防重复点击。 */
-    private val _updatingIds = MutableStateFlow<Set<String>>(emptySet())
-    val updatingIds: StateFlow<Set<String>> = _updatingIds.asStateFlow()
+    val transfers get() = threadRepository.offlineTransfers
 
     fun delete(summary: OfflineThreadSummary) {
         viewModelScope.launch {
@@ -117,20 +115,15 @@ class OfflineThreadsViewModel @Inject constructor(
     /** 重新拉取最新页（复用 downloadFullThread：已缓存的页/图按 key 覆盖或跳过）。 */
     fun update(summary: OfflineThreadSummary, onResult: (String) -> Unit) {
         val id = summary.threadId
-        if (id in _updatingIds.value) return
-        _updatingIds.update { it + id }
+        if (transfers.value[id]?.let { it.error == null } == true) return
         viewModelScope.launch {
-            try {
-                threadRepository.downloadFullThread(id).collect { response ->
-                    onResult(
-                        when (response) {
-                            is XdResponse.Success -> "离线缓存已更新"
-                            is XdResponse.Error -> "更新失败: ${response.message}"
-                        }
-                    )
-                }
-            } finally {
-                _updatingIds.update { it - id }
+            threadRepository.downloadFullThread(id).collect { response ->
+                onResult(
+                    when (response) {
+                        is XdResponse.Success -> "离线缓存已更新"
+                        is XdResponse.Error -> "更新失败: ${response.message}"
+                    }
+                )
             }
         }
     }
@@ -155,7 +148,7 @@ fun OfflineThreadsScreen(
     modifier: Modifier = Modifier
 ) {
     val summaries by viewModel.summaries.collectAsState()
-    val updatingIds by viewModel.updatingIds.collectAsState()
+    val transfers by viewModel.transfers.collectAsState()
     var showClearAllDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -209,7 +202,7 @@ fun OfflineThreadsScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { paddingValues ->
-        if (summaries.isEmpty()) {
+        if (summaries.isEmpty() && transfers.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -253,13 +246,16 @@ fun OfflineThreadsScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                items(transfers.entries.toList(), key = { "transfer_${it.key}" }) { (id, transfer) ->
+                    OfflineTransferRow(id, transfer) { onNavigateToThread(id) }
+                }
                 items(
                     items = summaries,
                     key = { it.threadId }
                 ) { summary ->
                     OfflineThreadCard(
                         summary = summary,
-                        isUpdating = summary.threadId in updatingIds,
+                        isUpdating = transfers[summary.threadId]?.let { it.error == null } == true,
                         offlineImageDir = remember { File(context.filesDir, "offline_images") },
                         onClick = { onNavigateToThread(summary.threadId) },
                         onUpdate = { viewModel.update(summary) { msg ->
@@ -320,7 +316,7 @@ fun OfflineThreadCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -401,7 +397,7 @@ fun OfflineThreadCard(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    IconButton(onClick = onUpdate, modifier = Modifier.size(32.dp)) {
+                    OfflineQuietButton(onClick = onUpdate, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Outlined.Refresh,
                             contentDescription = "更新离线缓存",
@@ -410,7 +406,7 @@ fun OfflineThreadCard(
                         )
                     }
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                OfflineQuietButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Outlined.DeleteOutline,
                         contentDescription = "删除离线缓存",
@@ -420,5 +416,47 @@ fun OfflineThreadCard(
                 }
             }
         }
+    }
+}
+
+internal fun OfflineTransfer.label(): String {
+    error?.let { return "下载失败：$it" }
+    if (total <= 0) return stage
+    val speed = if (bytesPerSecond > 0) "${formatOfflineBytes(bytesPerSecond)}/s" else "计算速度中"
+    val eta = secondsRemaining?.let {
+        if (it < 60) "约 ${it} 秒" else "约 ${(it + 59) / 60} 分钟"
+    } ?: "估算剩余时间中"
+    return "$stage $completed/$total · $speed · $eta"
+}
+
+@Composable
+internal fun OfflineTransferRow(id: String, transfer: OfflineTransfer, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = readingCardColor(),
+        modifier = Modifier.fillMaxWidth()
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text("No.$id", style = MaterialTheme.typography.titleSmall)
+            Text(transfer.label(), style = MaterialTheme.typography.bodySmall,
+                color = if (transfer.error == null) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+internal fun OfflineQuietButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+            role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
     }
 }

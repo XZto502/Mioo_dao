@@ -35,6 +35,13 @@ import com.squareup.moshi.Types
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -185,6 +192,8 @@ interface ThreadRepository {
     fun getCacheSize(): Flow<String>
     fun preloadBookmarks(onProgress: (Int, Int) -> Unit): Flow<XdResponse<Unit>>
     fun smartPreloadThreads(threads: List<Thread>)
+    val offlineTransfers: StateFlow<Map<String, OfflineTransfer>>
+
     fun downloadFullThread(tid: String, conservative: Boolean = false): Flow<XdResponse<Unit>>
     fun checkLatestRelease(): Flow<XdResponse<GithubRelease>>
 
@@ -1487,17 +1496,75 @@ class ThreadRepositoryImpl @Inject constructor(
      * 最后写 offline_threads 标记。重复调用即「更新离线」——
      * 已有页/图按 key 覆盖或跳过，只补新增。
      */
-    override fun downloadFullThread(tid: String, conservative: Boolean): Flow<XdResponse<Unit>> =
+    private val offlineIoLock = Mutex()
+    private val downloadJobs = mutableMapOf<String, Deferred<XdResponse<Unit>>>()
+    private val transferState = MutableStateFlow<Map<String, OfflineTransfer>>(emptyMap())
+    override val offlineTransfers = transferState.asStateFlow()
+
+    override fun downloadFullThread(tid: String, conservative: Boolean): Flow<XdResponse<Unit>> = flow {
+        val result = if (conservative) {
+            val manual = synchronized(downloadJobs) { downloadJobs[tid] }
+            manual?.await() ?: offlineIoLock.withLock {
+                if (tid in settingsDataStore.offlineExcludedIds.first()) XdResponse.Success(Unit)
+                else downloadOffline(tid, true).first()
+            }
+        } else {
+            getOrStartOfflineDownload(tid).await()
+        }
+        emit(result)
+    }
+
+    private fun getOrStartOfflineDownload(tid: String): Deferred<XdResponse<Unit>> =
+        synchronized(downloadJobs) {
+            downloadJobs[tid]?.let { return@synchronized it }
+            transferState.update { states ->
+                val retained = states.filterValues { it.error == null }.toMutableMap()
+                states.entries.filter { it.value.error != null }.takeLast(19).forEach {
+                    retained[it.key] = it.value
+                }
+                retained + (tid to OfflineTransfer())
+            }
+            val job = preloadScope.async(start = CoroutineStart.LAZY) {
+                try {
+                    val result = offlineIoLock.withLock {
+                        downloadOffline(tid, false) { progress ->
+                            transferState.update { it + (tid to progress) }
+                        }.first()
+                    }
+                    transferState.update {
+                        when (result) {
+                            is XdResponse.Success -> it - tid
+                            is XdResponse.Error -> it + (tid to OfflineTransfer(error = result.message))
+                        }
+                    }
+                    result
+                } finally {
+                    synchronized(downloadJobs) {
+                        if (transferState.value[tid]?.error == null) transferState.update { it - tid }
+                        downloadJobs.remove(tid)
+                    }
+                }
+            }
+            downloadJobs[tid] = job
+            job.start()
+            job
+        }
+
+    private fun downloadOffline(
+        tid: String,
+        conservative: Boolean,
+        onProgress: (OfflineTransfer) -> Unit = {}
+    ): Flow<XdResponse<Unit>> =
         OfflineThreadDownloader(cacheDao, offlineThreadDao, context, stringListAdapter).download(
             tid, conservative, OfflineThreadDownloader.Dependencies(
                 fetchThreadWithRaw = ::fetchThreadWithRaw,
-                saveToHistory = ::saveToHistory,
                 addBookmark = ::addBookmark,
                 parseThreadBody = ::parseThreadBody,
                 plainSummary = { plainSummary(it) },
-                lookupForumName = ::lookupForumName,
+                lookupForumName = { fid -> forumNameCache[fid] ?: fid?.let { "板块 $it" } ?: "板块" },
                 mapThreadException = ::mapThreadException
-            )
+            ),
+            onProgress
         )
 
     // --- 已离线串 ---
@@ -1511,34 +1578,44 @@ class ThreadRepositoryImpl @Inject constructor(
         offlineThreadDao.observeDownloaded(threadId)
 
     override suspend fun deleteOfflineThread(threadId: String) = withContext(Dispatchers.IO) {
-        settingsDataStore.excludeAutomaticOffline(listOf(threadId))
-        val entity = offlineThreadDao.get(threadId)
-        offlineThreadDao.delete(threadId)
-        cacheDao.deleteCacheByKey("thread_$threadId")
-        if (entity != null) {
-            val own = runCatching { stringListAdapter.fromJson(entity.imageFilesJson) }
-                .getOrNull().orEmpty().toSet()
-            val stillReferenced = offlineThreadDao.getAllOnce()
-                .flatMap { other ->
-                    runCatching { stringListAdapter.fromJson(other.imageFilesJson) }
-                        .getOrNull().orEmpty()
-                }
-                .toSet()
-            com.mioo.dao.utils.OfflineImageStore.deleteFiles(
-                com.mioo.dao.utils.OfflineImageStore.dir(context),
-                own - stillReferenced
-            )
+        synchronized(downloadJobs) { downloadJobs[threadId] }?.cancelAndJoin()
+        offlineIoLock.withLock {
+            transferState.update { it - threadId }
+            settingsDataStore.excludeAutomaticOffline(listOf(threadId))
+            val entity = offlineThreadDao.get(threadId)
+            offlineThreadDao.delete(threadId)
+            cacheDao.deleteCacheByKey("thread_$threadId")
+            if (entity != null) {
+                val own = runCatching { stringListAdapter.fromJson(entity.imageFilesJson) }
+                    .getOrNull().orEmpty().toSet()
+                val stillReferenced = offlineThreadDao.getAllOnce()
+                    .flatMap { other ->
+                        runCatching { stringListAdapter.fromJson(other.imageFilesJson) }
+                            .getOrNull().orEmpty()
+                    }
+                    .toSet()
+                com.mioo.dao.utils.OfflineImageStore.deleteFiles(
+                    com.mioo.dao.utils.OfflineImageStore.dir(context),
+                    own - stillReferenced
+                )
+            }
         }
     }
 
     override suspend fun clearAllOfflineThreads() = withContext(Dispatchers.IO) {
-        val offlineIds = offlineThreadDao.getAllOnce().map { it.threadId }
-        settingsDataStore.excludeAutomaticOffline(offlineIds + historyDao.getAllBookmarks().first().map { it.id })
-        offlineThreadDao.clear()
-        offlineIds.forEach { cacheDao.deleteCacheByKey("thread_$it") }
-        com.mioo.dao.utils.OfflineImageStore.deleteAll(
-            com.mioo.dao.utils.OfflineImageStore.dir(context)
-        )
+        val pending = synchronized(downloadJobs) { downloadJobs.toMap() }
+        pending.values.forEach { it.cancel() }
+        pending.values.forEach { it.join() }
+        offlineIoLock.withLock {
+            transferState.update { states -> states.filterValues { it.error == null } }
+            val offlineIds = offlineThreadDao.getAllOnce().map { it.threadId }
+            settingsDataStore.excludeAutomaticOffline(offlineIds + pending.keys + historyDao.getAllBookmarks().first().map { it.id })
+            offlineThreadDao.clear()
+            offlineIds.forEach { cacheDao.deleteCacheByKey("thread_$it") }
+            com.mioo.dao.utils.OfflineImageStore.deleteAll(
+                com.mioo.dao.utils.OfflineImageStore.dir(context)
+            )
+        }
     }
 
     /** 收藏 ⇒ 离线巡检的失败退避：同串失败两次后本轮进程内跳过（已删除/风控串）。 */

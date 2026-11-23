@@ -356,6 +356,7 @@ fun FeedScreen(
                 val listState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
                 SideEffect { listStates[pageKey(folderId)] = listState }
                 val uiState = pageState
+                val offlineTransfers by viewModel.offlineTransfers.collectAsState()
                 val offlineItems = uiState.offlineSummaries
                 val localItems = uiState.localDisplayItems
                 val remoteItems = uiState.remoteDisplayItems
@@ -370,7 +371,7 @@ fun FeedScreen(
                     }
                 }
                 uiState.selectedFolderId == null &&
-                    uiState.offlineSummaries.isEmpty() &&
+                    uiState.offlineSummaries.isEmpty() && offlineTransfers.isEmpty() &&
                     uiState.localDisplayItems.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -473,6 +474,9 @@ fun FeedScreen(
                         )
                     ) {
                         if (uiState.selectedFolderId == null) {
+                            items(offlineTransfers.entries.toList(), key = { "transfer_${it.key}" }) { (id, transfer) ->
+                                com.mioo.dao.ui.screens.offline.OfflineTransferRow(id, transfer) { openThread(id) }
+                            }
                             items(
                                 items = offlineItems,
                                 key = { "o_${it.threadId}" },
@@ -481,7 +485,7 @@ fun FeedScreen(
                                 OfflineFeedRow(
                                     summary = summary,
                                     forumName = FALLBACK_FORUM_NAME_REGEX.matchEntire(summary.forumName)?.groupValues?.get(1)?.let { forumNames[it] } ?: summary.forumName,
-                                    isUpdating = summary.threadId in uiState.offlineUpdatingIds,
+                                    isUpdating = offlineTransfers[summary.threadId]?.let { it.error == null } == true,
                                     onNavigateToThread = openThread,
                                     onUpdate = {
                                         viewModel.updateOffline(summary) { msg ->

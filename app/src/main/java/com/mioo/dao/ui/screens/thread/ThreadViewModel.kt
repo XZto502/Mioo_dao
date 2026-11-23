@@ -1494,16 +1494,21 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    val offlineTransfers get() = threadRepository.offlineTransfers
+
     fun downloadThread(onResult: (String) -> Unit) {
         if (_chromeState.value.isDownloading) return
         _chromeState.update { it.copy(isDownloading = true) }
         viewModelScope.launch {
-            threadRepository.downloadFullThread(threadId).collect { response ->
-                _chromeState.update { it.copy(isDownloading = false) }
-                when (response) {
-                    is XdResponse.Success -> onResult("离线缓存已更新")
-                    is XdResponse.Error -> onResult("下载失败: ${response.message}")
+            try {
+                threadRepository.downloadFullThread(threadId).collect { response ->
+                    when (response) {
+                        is XdResponse.Success -> onResult("离线缓存已更新")
+                        is XdResponse.Error -> onResult("下载失败: ${response.message}")
+                    }
                 }
+            } finally {
+                _chromeState.update { it.copy(isDownloading = false) }
             }
         }
     }

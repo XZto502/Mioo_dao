@@ -70,7 +70,7 @@ object OfflineImageStore {
      * @param imageUrl 展示用 URL（HOST/image/<name> 形态）
      * @return 文件 to 字节数
      */
-    suspend fun ensureDownloaded(root: File, imageUrl: String, bytesPerSecond: Int = 0): Pair<File, Long>? =
+    suspend fun ensureDownloaded(root: File, imageUrl: String, bytesPerSecond: Int = 0, onBytes: (Long) -> Unit = {}): Pair<File, Long>? =
         withContext(Dispatchers.IO) {
             val name = islandImageName(imageUrl) ?: return@withContext null
             val file = File(root, sanitizeFilename(name))
@@ -82,7 +82,7 @@ object OfflineImageStore {
                 val tmp = File(root, "${file.name}.part")
                 body.byteStream().use { input ->
                     tmp.outputStream().use { output ->
-                        if (bytesPerSecond <= 0) input.copyTo(output) else {
+                        run {
                             val buffer = ByteArray(8192)
                             val started = android.os.SystemClock.elapsedRealtime()
                             var total = 0L
@@ -92,9 +92,12 @@ object OfflineImageStore {
                                 if (count < 0) break
                                 output.write(buffer, 0, count)
                                 total += count
-                                val wait = total * 1000L / bytesPerSecond -
-                                    (android.os.SystemClock.elapsedRealtime() - started)
-                                if (wait > 0) kotlinx.coroutines.delay(wait)
+                                onBytes(count.toLong())
+                                if (bytesPerSecond > 0) {
+                                    val wait = total * 1000L / bytesPerSecond -
+                                        (android.os.SystemClock.elapsedRealtime() - started)
+                                    if (wait > 0) kotlinx.coroutines.delay(wait)
+                                }
                             }
                         }
                     }

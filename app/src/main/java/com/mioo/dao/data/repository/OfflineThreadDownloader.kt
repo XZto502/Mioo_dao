@@ -30,7 +30,6 @@ internal class OfflineThreadDownloader(
 ) {
     class Dependencies(
         val fetchThreadWithRaw: suspend (String, Int) -> FetchedThread,
-        val saveToHistory: suspend (Thread) -> Unit,
         val addBookmark: suspend (Thread) -> Unit,
         val parseThreadBody: (String) -> Thread,
         val plainSummary: (String) -> String,
@@ -38,15 +37,13 @@ internal class OfflineThreadDownloader(
         val mapThreadException: (Exception) -> String
     )
 
-    fun download(tid: String, conservative: Boolean, dependencies: Dependencies): Flow<XdResponse<Unit>> = flow {
+    fun download(tid: String, conservative: Boolean, dependencies: Dependencies, onProgress: (OfflineTransfer) -> Unit = {}): Flow<XdResponse<Unit>> = flow {
+        val meter = OfflineTransferMeter(onProgress)
         try {
+            meter.start("读取串信息", 0)
             val previousOffline = if (conservative) offlineThreadDao.get(tid) else null
             val page1Fetched = dependencies.fetchThreadWithRaw(tid, 1)
             val page1 = page1Fetched.thread
-            if (!conservative) {
-                dependencies.saveToHistory(page1)
-                dependencies.addBookmark(page1)
-            }
 
             cacheDao.insertIndexedCache(CacheEntity("thread_$tid", 1, page1Fetched.rawJson), listOf(page1))
 
@@ -56,6 +53,10 @@ internal class OfflineThreadDownloader(
             allPosts.addAll(page1.replies.orEmpty())
 
             check(totalReplies == 0 || repliesPage1Size > 0) { "第 1 页回复缺失，请重试离线下载" }
+            val pageCount = if (totalReplies == 0) 1 else (totalReplies - 1) / repliesPage1Size + 1
+            meter.start("下载正文", pageCount)
+            meter.received(page1Fetched.rawJson.toByteArray(Charsets.UTF_8).size.toLong())
+            meter.completeUnit()
             if (totalReplies > repliesPage1Size) {
                 val pageSize = repliesPage1Size
                 val totalPages = (totalReplies + pageSize - 1) / pageSize
@@ -70,6 +71,7 @@ internal class OfflineThreadDownloader(
                         val cachedReplies = cached?.replies.orEmpty()
                         if (cachedReplies.size >= expectedReplies) {
                             allPosts.addAll(cachedReplies)
+                            meter.completeUnit()
                             continue
                         }
                         if (conservative) delay(2000)
@@ -78,6 +80,8 @@ internal class OfflineThreadDownloader(
                         check(threadPage.replies.orEmpty().size >= expectedReplies) { "回复数量不足" }
                         cacheDao.insertCache(CacheEntity("thread_$tid", page, pageFetched.rawJson))
                         allPosts.addAll(threadPage.replies.orEmpty())
+                        meter.received(pageFetched.rawJson.toByteArray(Charsets.UTF_8).size.toLong())
+                        meter.completeUnit()
                         if (!conservative) delay(300)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
@@ -95,6 +99,7 @@ internal class OfflineThreadDownloader(
             val imageFiles = LinkedHashSet<String>()
             var imageBytes = 0L
             val offlineRoot = com.mioo.dao.utils.OfflineImageStore.dir(context)
+            meter.start("下载图片", minOf(imageUrls.size, com.mioo.dao.utils.OfflineImageStore.MAX_IMAGES_PER_THREAD))
             var processed = 0
             for (url in imageUrls) {
                 currentCoroutineContext().ensureActive()
@@ -102,7 +107,7 @@ internal class OfflineThreadDownloader(
                 processed++
                 val alreadyDownloaded = com.mioo.dao.utils.OfflineImageStore.resolveLocalFile(offlineRoot, url) != null
                 if (conservative && !alreadyDownloaded) delay(1000)
-                val saved = com.mioo.dao.utils.OfflineImageStore.ensureDownloaded(offlineRoot, url, if (conservative) 128 * 1024 else 0)
+                val saved = com.mioo.dao.utils.OfflineImageStore.ensureDownloaded(offlineRoot, url, if (conservative) 128 * 1024 else 0, meter::received)
                 if (saved != null) {
                     imageFiles.add(
                         com.mioo.dao.utils.OfflineImageStore.sanitizeFilename(
@@ -111,6 +116,7 @@ internal class OfflineThreadDownloader(
                     )
                     imageBytes += saved.second
                 }
+                meter.completeUnit()
                 if (!conservative) delay(60)
             }
 
@@ -118,6 +124,7 @@ internal class OfflineThreadDownloader(
                 emit(XdResponse.Success(Unit))
                 return@flow
             }
+            meter.start("保存离线缓存", 0)
             offlineThreadDao.upsert(
                 com.mioo.dao.data.local.OfflineThreadEntity(
                     threadId = tid,
@@ -133,6 +140,15 @@ internal class OfflineThreadDownloader(
                     downloadedAt = System.currentTimeMillis()
                 )
             )
+            if (!conservative) {
+                try {
+                    dependencies.addBookmark(page1)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("OfflineThread", "Could not add the offline thread to bookmarks", e)
+                }
+            }
             emit(XdResponse.Success(Unit))
         } catch (e: Exception) {
             if (e is CancellationException) throw e

@@ -219,6 +219,8 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
 import com.mioo.dao.ui.components.rememberResponsiveListFling
 import androidx.compose.runtime.CompositionLocalProvider
+import com.mioo.dao.ui.screens.offline.OfflineQuietButton
+import com.mioo.dao.ui.screens.offline.label
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -1375,6 +1377,9 @@ private fun ThreadChromeActions(
     onShowOverflowMenuChange: (Boolean) -> Unit
 ) {
     val chrome by viewModel.chromeUiState.collectAsState()
+    val transfers by viewModel.offlineTransfers.collectAsState()
+    val transfer = transfers[viewModel.threadId]
+    val downloading = chrome.isDownloading || (transfer != null && transfer.error == null)
     val context = LocalContext.current
     // 「删除离线缓存」二次确认（三点菜单触发）
     var showRemoveOffline by remember { mutableStateOf(false) }
@@ -1425,10 +1430,10 @@ private fun ThreadChromeActions(
     Box {
         // 星标 = 已离线（本地收藏已并入离线下载）；已离线后星标仅亮着，点击无动作
         val bookmarked = chrome.isSubscribed || chrome.isCloudSubscribed
-        IconButton(
+        OfflineQuietButton(
             onClick = {
                 when {
-                    chrome.isDownloading -> Unit
+                    downloading -> onShowOverflowMenuChange(true)
                     // 配了云端收藏夹 → 菜单（云端操作）
                     chrome.isCloudSubscribed || chrome.feedFolders.isNotEmpty() ->
                         onShowBookmarkMenuChange(true)
@@ -1529,8 +1534,8 @@ private fun ThreadChromeActions(
                 }
             )
             when {
-                chrome.isDownloading -> Md3MenuPillItem(
-                    label = "正在下载…",
+                downloading -> Md3MenuPillItem(
+                    label = transfer?.label() ?: "等待下载",
                     leadingIcon = Icons.Default.Download,
                     enabled = false,
                     onClick = {}

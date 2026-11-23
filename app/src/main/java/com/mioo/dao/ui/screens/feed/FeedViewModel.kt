@@ -59,7 +59,7 @@ data class FeedUiState(
     val selectedFolderId: String? = null,
     val selectionReady: Boolean = false,
     /** 正在重新离线的串号（更新按钮转圈）。 */
-    val offlineUpdatingIds: Set<String> = emptySet()
+
 )
 
 @Immutable
@@ -426,25 +426,22 @@ class FeedViewModel @Inject constructor(
     }
 
     /** 重新拉取最新页（复用整串离线下载，已缓存页/图按 key 覆盖或跳过）。 */
+    val offlineTransfers get() = threadRepository.offlineTransfers
+
     fun updateOffline(
         summary: com.mioo.dao.data.local.OfflineThreadSummary,
         onResult: (String) -> Unit
     ) {
         val id = summary.threadId
-        if (id in _uiState.value.offlineUpdatingIds) return
-        _uiState.update { it.copy(offlineUpdatingIds = it.offlineUpdatingIds + id) }
+        if (offlineTransfers.value[id]?.let { it.error == null } == true) return
         viewModelScope.launch {
-            try {
-                threadRepository.downloadFullThread(id).collect { response ->
-                    onResult(
-                        when (response) {
-                            is XdResponse.Success -> "离线缓存已更新"
-                            is XdResponse.Error -> "更新失败: ${response.message}"
-                        }
-                    )
-                }
-            } finally {
-                _uiState.update { it.copy(offlineUpdatingIds = it.offlineUpdatingIds - id) }
+            threadRepository.downloadFullThread(id).collect { response ->
+                onResult(
+                    when (response) {
+                        is XdResponse.Success -> "离线缓存已更新"
+                        is XdResponse.Error -> "更新失败: ${response.message}"
+                    }
+                )
             }
         }
     }
