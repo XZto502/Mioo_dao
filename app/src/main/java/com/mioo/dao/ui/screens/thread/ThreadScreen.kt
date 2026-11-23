@@ -1369,12 +1369,12 @@ private fun Md3DropdownMenu(
                     // Popup 的约束是全屏：fillMaxWidth 的胶囊项会把菜单撑满屏，
                     // 用 IntrinsicSize.Max 收缩到最宽子项的自然宽度（= 之前 DropdownMenu 的 wrap 尺寸）
                     modifier = modifier
-                        .widthIn(min = 120.dp)
+                        .widthIn(min = 144.dp, max = 304.dp)
                         .width(IntrinsicSize.Max)
                 ) {
                     Column(
                         modifier = Modifier
-                            .padding(horizontal = 6.dp)
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
                             .heightIn(max = 340.dp)
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -1387,11 +1387,10 @@ private fun Md3DropdownMenu(
 }
 
 /**
- * 紧凑胶囊菜单项：selected 填 secondaryContainer 底并加粗 + 尾部对号；destructive 为移除类
- * 警示态（浅 errorContainer 底 + error 前景）；disabled 降透明度并禁点。
+ * 选中项用末尾对号标记，移除操作用警示文字和图标。
  */
 @Composable
-private fun Md3MenuPillItem(
+private fun Md3ThreadMenuItem(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1400,56 +1399,50 @@ private fun Md3MenuPillItem(
     destructive: Boolean = false,
     enabled: Boolean = true
 ) {
-    val containerColor = when {
-        destructive -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-        selected -> MaterialTheme.colorScheme.secondaryContainer
-        else -> Color.Transparent
-    }
-    val contentColor = when {
-        destructive -> MaterialTheme.colorScheme.error
-        selected -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onSurface
-    }
+    val colors = MaterialTheme.colorScheme
+    val contentColor = if (destructive) colors.error else colors.onSurface
     val leadingTint = when {
-        destructive -> MaterialTheme.colorScheme.error
-        selected -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        destructive -> colors.error
+        selected -> colors.primary
+        else -> colors.onSurfaceVariant
     }
     val alpha = if (enabled) 1f else 0.5f
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
-        color = containerColor,
-        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            leadingIcon?.let { icon ->
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(17.dp),
-                    tint = leadingTint.copy(alpha = alpha)
-                )
-            }
-            Text(
-                text = label,
-                style = readingTextStyle(13.5f, 19f, if (selected) FontWeight.Bold else FontWeight.Normal),
-                color = contentColor.copy(alpha = alpha)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
             )
-            if (selected) {
-                Spacer(modifier = Modifier.weight(1f))
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = contentColor.copy(alpha = alpha)
-                )
-            }
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        leadingIcon?.let { icon ->
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = leadingTint.copy(alpha = alpha)
+            )
+        }
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = readingTextStyle(13.5f, 19f, if (selected) FontWeight.Medium else FontWeight.Normal),
+            color = contentColor.copy(alpha = alpha)
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "已选中",
+                modifier = Modifier.size(16.dp),
+                tint = colors.primary.copy(alpha = alpha)
+            )
         }
     }
 }
@@ -1579,7 +1572,7 @@ private fun ThreadChromeActions(
             onDismissRequest = { onShowBookmarkMenuChange(false) }
         ) {
             if (chrome.isCloudSubscribed || chrome.failedRemovalFolders.isNotEmpty()) {
-                Md3MenuPillItem(
+                Md3ThreadMenuItem(
                     label = if (chrome.failedRemovalFolders.isEmpty()) "从云端收藏夹移除" else "重试移除失败的收藏夹",
                     leadingIcon = Icons.Outlined.CloudOff,
                     destructive = true,
@@ -1593,7 +1586,7 @@ private fun ThreadChromeActions(
             }
             chrome.feedFolders.forEach { folder ->
                 val inFolder = folder.uuid in chrome.cloudFolderUuids
-                Md3MenuPillItem(
+                Md3ThreadMenuItem(
                     label = folder.name,
                     leadingIcon = if (inFolder) Icons.Default.Folder else Icons.Outlined.Folder,
                     selected = inFolder,
@@ -1624,7 +1617,7 @@ private fun ThreadChromeActions(
             expanded = showOverflowMenu,
             onDismissRequest = { onShowOverflowMenuChange(false) }
         ) {
-            Md3MenuPillItem(
+            Md3ThreadMenuItem(
                 label = if (isLoading) "正在加载…" else "刷新",
                 leadingIcon = Icons.Default.Refresh,
                 enabled = !isLoading,
@@ -1633,7 +1626,7 @@ private fun ThreadChromeActions(
                     onRefresh()
                 }
             )
-            Md3MenuPillItem(
+            Md3ThreadMenuItem(
                 label = "分享",
                 leadingIcon = Icons.Outlined.Share,
                 onClick = {
@@ -1641,7 +1634,7 @@ private fun ThreadChromeActions(
                     onShare()
                 }
             )
-            Md3MenuPillItem(
+            Md3ThreadMenuItem(
                 label = "只看图片",
                 leadingIcon = Icons.Outlined.Image,
                 selected = showImagesOnly,
@@ -1651,14 +1644,14 @@ private fun ThreadChromeActions(
                 }
             )
             when {
-                downloading -> Md3MenuPillItem(
+                downloading -> Md3ThreadMenuItem(
                     label = transfer?.label() ?: "等待下载",
                     leadingIcon = Icons.Default.Download,
                     enabled = false,
                     onClick = {}
                 )
                 chrome.isOfflineSaved -> {
-                    Md3MenuPillItem(
+                    Md3ThreadMenuItem(
                         label = "更新离线缓存 (已保存)",
                         leadingIcon = Icons.Default.DownloadDone,
                         onClick = {
@@ -1669,7 +1662,7 @@ private fun ThreadChromeActions(
                             }
                         }
                     )
-                    Md3MenuPillItem(
+                    Md3ThreadMenuItem(
                         label = "删除离线缓存",
                         leadingIcon = Icons.Outlined.DeleteOutline,
                         destructive = true,
@@ -1679,7 +1672,7 @@ private fun ThreadChromeActions(
                         }
                     )
                 }
-                else -> Md3MenuPillItem(
+                else -> Md3ThreadMenuItem(
                     label = "离线下载本串",
                     leadingIcon = Icons.Default.Download,
                     onClick = {
