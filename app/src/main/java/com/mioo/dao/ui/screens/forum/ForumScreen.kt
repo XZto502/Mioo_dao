@@ -119,7 +119,6 @@ import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
-import com.mioo.dao.ui.components.awaitContinuousIdle
 import com.mioo.dao.ui.components.rememberInitialListViewport
 import com.mioo.dao.ui.theme.readingBackground
 import com.mioo.dao.ui.components.ThreadCard
@@ -1067,19 +1066,9 @@ private fun ForumThreadListPane(
     val isEmptyLoading = displayItems.isEmpty() && (isLoading || isRefreshing)
     val isEmptyIdle = displayItems.isEmpty() && !isLoading && !isRefreshing
 
-    /**
-     * listReady / showImages gate *images & prefetch only* — never the row set.
-     * Hiding real items behind a 1-row placeholder clamped LazyListState to 0 on back.
-     *
-     * Split prewarm vs image-enable effects: paging appends used to restart a combined
-     * LaunchedEffect and re-delay image enable + re-scan the whole HTML list.
-     *
-     * showImages uses rememberSaveable so thread detail → back does not flash empty thumbs.
-     */
     val listReady = displayItems.isNotEmpty()
     val initialViewport = rememberInitialListViewport(listReady)
     val viewportReady = initialViewport.ready
-    var showImages by rememberSaveable(forumKey) { mutableStateOf(false) }
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
     val haptics = LocalHapticFeedback.current
@@ -1119,24 +1108,10 @@ private fun ForumThreadListPane(
     }
 
 
-    // Thumbnails only enable after continuous scroll idle so they never pop in mid-drag.
-    LaunchedEffect(forumKey, listReady, warmEnabled, viewportReady) {
-        if (!listReady || !warmEnabled || !viewportReady || showImages) return@LaunchedEffect
-        // Commit the first text-only list frames, then enable thumbnails while still idle
-        // (before human touch latency) instead of colliding 650ms into the first drag.
-        withFrameNanos { }
-        withFrameNanos { }
-        if (!listState.isScrollInProgress) {
-            showImages = true
-            return@LaunchedEffect
-        }
-        awaitContinuousIdle(snapshotFlow { listState.isScrollInProgress }, 250L)
-        showImages = true
-    }
-
-    val prefetchUrls = remember(displayItems, showImages) {
-        if (!showImages) emptyList()
-        else displayItems.map { it.postData.imageUrl }
+    // Mount visible thumbnails with each staged row. Enabling the entire viewport
+    // at once after it becomes interactive can overlap the user's first drag.
+    val prefetchUrls = remember(displayItems, viewportReady) {
+        if (viewportReady) displayItems.map { it.postData.imageUrl } else emptyList()
     }
     PrefetchListImages(
         imageUrls = prefetchUrls,
@@ -1145,7 +1120,7 @@ private fun ForumThreadListPane(
         ahead = 2,
         initialDelayMs = 450,
         // Prefetch only when not flinging (see PrefetchListImages)
-        enabled = warmEnabled && showImages && listReady
+        enabled = warmEnabled && viewportReady && listReady
     )
 
     // A single dialog is shared by all visible rows.
@@ -1226,7 +1201,6 @@ private fun ForumThreadListPane(
         items(
             items = displayItems,
             key = { it.id },
-            // contentType must not depend on showImages — flipping it thrashs the item pool mid-scroll
             contentType = { item -> if (item.hasImage) "thread_image" else "thread_text" }
         ) { item ->
             ForumThreadRow(
@@ -1236,7 +1210,6 @@ private fun ForumThreadListPane(
                 } else null,
                 fling = responsiveFling,
                 previewMaxLines = previewMaxLines,
-                showImage = showImages,
                 emptyStringLambda = emptyStringLambda,
                 onNavigateToThread = onNavigateToThread,
                 onImageClick = onImageClick,
@@ -1303,7 +1276,6 @@ private fun ForumThreadRow(
     forumName: String?,
     fling: ResponsiveListFling,
     previewMaxLines: Int,
-    showImage: Boolean,
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
     onImageClick: (String) -> Unit,
@@ -1328,8 +1300,7 @@ private fun ForumThreadRow(
         onImageClick = onImageClickRemembered,
         onLongClick = onLongClick,
         contentMaxLines = previewMaxLines,
-        compactPreviewBlankLines = true,
-        showImage = showImage && item.hasImage
+        compactPreviewBlankLines = true
     )
 }
 
