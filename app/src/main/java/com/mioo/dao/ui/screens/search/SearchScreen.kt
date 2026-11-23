@@ -55,6 +55,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import com.mioo.dao.ui.components.rememberInitialListViewport
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,7 +95,8 @@ fun SearchScreen(
     onNavigateToThread: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val state = viewModel.uiState.collectAsState()
+    val preferredEngine by remember(state) { derivedStateOf { state.value.preferredEngine } }
     val allowThirdParty = LocalThirdPartyServicesAllowed.current
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -99,17 +107,28 @@ fun SearchScreen(
     val customTabToolbarColor = MaterialTheme.colorScheme.surface.toArgb()
     val customTabsController = rememberCustomTabsWarmController(
         enabled = allowThirdParty,
-        preconnectOrigin = engineOriginUrl(uiState.preferredEngine)
+        preconnectOrigin = engineOriginUrl(preferredEngine)
     )
-    var linksApproved by remember(context) { mutableStateOf(areXIslandLinksApproved(context)) }
-    DisposableEffect(lifecycleOwner, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                linksApproved = areXIslandLinksApproved(context)
+    var linksApproved by remember(context) { mutableStateOf<Boolean?>(null) }
+    val scope = rememberCoroutineScope()
+    DisposableEffect(lifecycleOwner, context, allowThirdParty) {
+        var check: Job? = null
+        fun checkLinks() {
+            if (!allowThirdParty) return
+            check?.cancel()
+            check = scope.launch {
+                linksApproved = withContext(Dispatchers.IO) { areXIslandLinksApproved(context) }
             }
         }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) checkLinks()
+        }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) checkLinks()
+        onDispose {
+            check?.cancel()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     Scaffold(
@@ -131,6 +150,7 @@ fun SearchScreen(
         contentColor = MaterialTheme.colorScheme.onSurface,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { padding ->
+        val uiState = state.value
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -178,16 +198,17 @@ fun SearchScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(6.dp))
+                val engines = remember { XdWebSearch.Engine.entries.toList() }
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(XdWebSearch.Engine.entries.toList()) { engine ->
+                    items(engines, key = { it.name }) { engine ->
                         FilterChip(
-                            selected = uiState.preferredEngine == engine,
+                            selected = preferredEngine == engine,
                             onClick = { viewModel.selectEngine(engine) },
                             label = { Text(engine.label) }
                         )
                     }
                 }
-                if (!linksApproved) {
+                if (linksApproved == false) {
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "未授权默认打开 X 岛域名（nmbxd.com / nmbxd1.com），点此授权后点击搜索串结果可直达 ›",
@@ -219,13 +240,16 @@ fun SearchScreen(
 
             val responsiveConfiguration = rememberResponsiveListConfiguration()
             val responsiveFling = rememberResponsiveListFling()
+            val hasResults = uiState.result.directThreadId != null || uiState.result.hits.isNotEmpty()
+            val initialViewport = rememberInitialListViewport(hasResults)
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
             ) {
             LazyColumn(
                 state = listState,
                 flingBehavior = responsiveFling,
-                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !hasResults || initialViewport.ready,
+                modifier = Modifier.fillMaxSize().then(if (hasResults) initialViewport.modifier else Modifier),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {

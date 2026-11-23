@@ -37,12 +37,12 @@ class SearchViewModel @Inject constructor(
     private val recent = ArrayDeque<String>()
 
     fun onQueryChange(query: String) {
-        _uiState.update { it.copy(query = query) }
         searchJob?.cancel()
         if (query.isBlank()) {
-            _uiState.update { it.copy(isSearching = false, result = LocalSearchResult()) }
+            _uiState.update { it.copy(query = query, isSearching = false, result = LocalSearchResult()) }
             return
         }
+        _uiState.update { it.copy(query = query) }
         searchJob = viewModelScope.launch {
             delay(280)
             performSearch(query)
@@ -96,7 +96,6 @@ class SearchViewModel @Inject constructor(
     }
 
     fun applyRecent(query: String) {
-        _uiState.update { it.copy(query = query) }
         onQueryChange(query)
     }
 }
