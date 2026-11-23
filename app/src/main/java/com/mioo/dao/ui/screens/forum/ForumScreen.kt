@@ -120,6 +120,7 @@ import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.awaitContinuousIdle
+import com.mioo.dao.ui.components.rememberInitialListViewport
 import com.mioo.dao.ui.theme.readingBackground
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
@@ -1076,11 +1077,13 @@ private fun ForumThreadListPane(
     val listReady = displayItems.isNotEmpty()
     var showImages by rememberSaveable(forumKey) { mutableStateOf(false) }
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
+    val initialViewport = rememberInitialListViewport(listReady)
+    val viewportReady = initialViewport.ready
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
     val haptics = LocalHapticFeedback.current
 
-    LaunchedEffect(forumKey, listReady) {
-        if (!listReady || firstScreenNotified) return@LaunchedEffect
+    LaunchedEffect(forumKey, listReady, viewportReady) {
+        if (!listReady || !viewportReady || firstScreenNotified) return@LaunchedEffect
         firstScreenNotified = true
         // Drop splash on next frame — no artificial 16ms wait
         onFirstScreenReady()
@@ -1115,8 +1118,8 @@ private fun ForumThreadListPane(
 
 
     // Thumbnails only enable after continuous scroll idle so they never pop in mid-drag.
-    LaunchedEffect(forumKey, listReady, warmEnabled) {
-        if (!listReady || !warmEnabled || showImages) return@LaunchedEffect
+    LaunchedEffect(forumKey, listReady, warmEnabled, viewportReady) {
+        if (!listReady || !warmEnabled || !viewportReady || showImages) return@LaunchedEffect
         // Commit the first text-only list frames, then enable thumbnails while still idle
         // (before human touch latency) instead of colliding 650ms into the first drag.
         withFrameNanos { }
@@ -1172,7 +1175,10 @@ private fun ForumThreadListPane(
         flingBehavior = responsiveFling,
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
-        modifier = Modifier.fillMaxSize().useUnbufferedFlingGrab(responsiveFling),
+        userScrollEnabled = !listReady || viewportReady,
+        modifier = Modifier.fillMaxSize()
+            .then(if (listReady) initialViewport.modifier else Modifier)
+            .useUnbufferedFlingGrab(responsiveFling),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             start = 12.dp,
