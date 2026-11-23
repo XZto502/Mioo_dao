@@ -89,10 +89,10 @@ internal fun rememberInitialListViewport(
             initialActive = hasContent
         )
     }
-    if (viewport.active != hasContent) {
-        viewport.active = hasContent
-    }
     LaunchedEffect(viewport, hasContent) {
+        if (viewport.active != hasContent) {
+            viewport.active = hasContent
+        }
         if (hasContent) viewport.prepare()
     }
     return viewport

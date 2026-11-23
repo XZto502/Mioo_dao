@@ -1184,7 +1184,7 @@ private fun ForumThreadListPane(
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize()
-            .then(initialViewport.modifier)
+            .then(if (listReady) initialViewport.modifier else Modifier)
             .useUnbufferedFlingGrab(responsiveFling),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
