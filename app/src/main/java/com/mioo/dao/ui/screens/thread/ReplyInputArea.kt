@@ -285,6 +285,15 @@ internal fun ReplyInputArea(
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val paper = if (dark) Color(0xFF16181E) else Color.White
     val page = if (dark) Color(0xFF0E1015) else Color(0xFFF0F1F4)
+    var layoutPhase by remember(fullScreen) { mutableStateOf(if (fullScreen) 0 else 2) }
+    LaunchedEffect(fullScreen) {
+        if (fullScreen) {
+            androidx.compose.runtime.withFrameNanos { }
+            layoutPhase = 1
+            androidx.compose.runtime.withFrameNanos { }
+            layoutPhase = 2
+        }
+    }
 
     // 实心底座贴屏幕物理底边，由内容下方的共享槽位把控件顶起来：
     // 无键盘无面板时槽位 = 导航条高度（与现在贴导航条一致）；
@@ -320,7 +329,9 @@ internal fun ReplyInputArea(
                     }
                 }
             }
-            Surface(
+            if (layoutPhase == 0) {
+                Spacer(Modifier.weight(1f))
+            } else Surface(
                 modifier = if (fullScreen) Modifier.weight(1f).fillMaxWidth().padding(12.dp)
                     else Modifier.fillMaxWidth(),
                 color = if (fullScreen) paper else Color.Transparent,
@@ -466,7 +477,7 @@ internal fun ReplyInputArea(
 
             }
             }
-                Row(
+                if (layoutPhase == 2) Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -530,7 +541,9 @@ internal fun ReplyInputArea(
                     }
                 }
 
-            com.mioo.dao.ui.components.ComposerInputPanelSlot(inputPanel, onInsert = ::insertAtCursor)
+            if (layoutPhase == 2) {
+                com.mioo.dao.ui.components.ComposerInputPanelSlot(inputPanel, onInsert = ::insertAtCursor)
+            }
         }
     }
 
