@@ -97,6 +97,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.draw.drawBehind
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -386,14 +388,6 @@ fun ImageViewer(
     val currentMeta = currentImages.getOrNull(pagerState.currentPage)
     val currentUrl = currentMeta?.url.orEmpty()
 
-    LaunchedEffect(currentUrl) {
-        if (currentUrl.isBlank() || qrTexts.containsKey(currentUrl)) return@LaunchedEffect
-        val text = withContext(Dispatchers.IO) {
-            runCatching { QrDetector.detect(context, currentUrl, maxDim = 1280) }.getOrNull()
-        }
-        qrTexts[currentUrl] = text
-    }
-
     val allowThirdParty = LocalThirdPartyServicesAllowed.current
     LaunchedEffect(allowThirdParty) {
         if (!allowThirdParty) showSauceMenu = false
@@ -405,15 +399,30 @@ fun ImageViewer(
     val dismissProgress = remember { Animatable(0f) }
     var swipeDirection by remember { mutableIntStateOf(1) }
     var isClosing by remember { mutableStateOf(false) }
+    var chromeReady by remember { mutableStateOf(reducedMotion) }
     val dismissCallback by rememberUpdatedState(onDismiss)
     LaunchedEffect(Unit) {
         openProgress.animateTo(1f, if (reducedMotion) snap() else tween(230, easing = FastOutSlowInEasing))
+    }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        chromeReady = true
+    }
+    LaunchedEffect(currentUrl, isClosing) {
+        if (isClosing || currentUrl.isBlank() || qrTexts.containsKey(currentUrl)) return@LaunchedEffect
+        snapshotFlow { openProgress.value >= 1f }.first { it }
+        withFrameNanos { }
+        val text = withContext(Dispatchers.IO) {
+            runCatching { QrDetector.detect(context, currentUrl, maxDim = 1280) }.getOrNull()
+        }
+        qrTexts[currentUrl] = text
     }
     fun triggerSmoothClose(afterClose: () -> Unit = {}) {
         if (isClosing) return
         isClosing = true
         scope.launch {
             openProgress.animateTo(0f, if (reducedMotion) snap() else tween(180, easing = FastOutLinearInEasing))
+            if (!reducedMotion) withFrameNanos { }
             dismissCallback()
             afterClose()
         }
@@ -543,7 +552,7 @@ fun ImageViewer(
                     }
             ) {
                 AnimatedVisibility(
-                    visible = showControls,
+                    visible = showControls && chromeReady,
                     enter = fadeIn(chromeFadeIn) + slideInVertically(chromeSlideIn) { -it / 2 },
                     exit = fadeOut(chromeFadeOut) + slideOutVertically(chromeSlideOut) { -it },
                     modifier = Modifier.align(Alignment.TopCenter)
@@ -555,7 +564,7 @@ fun ImageViewer(
                 }
 
                 AnimatedVisibility(
-                    visible = showControls,
+                    visible = showControls && chromeReady,
                     enter = fadeIn(chromeFadeIn) + slideInVertically(chromeSlideIn) { it },
                     exit = fadeOut(chromeFadeOut) + slideOutVertically(chromeSlideOut) { it },
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -679,11 +688,14 @@ private fun ViewerCanvas(
     openProgress: State<Float>,
     dismissProgress: State<Float>
 ) {
-    val fade = (openProgress.value * alpha.floatValue * (1f - dismissProgress.value * 0.65f)).coerceIn(0f, 1f)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(color.copy(alpha = fade))
+            .drawBehind {
+                val fade = (openProgress.value * alpha.floatValue *
+                    (1f - dismissProgress.value * 0.65f)).coerceIn(0f, 1f)
+                drawRect(color.copy(alpha = fade))
+            }
     )
 }
 
