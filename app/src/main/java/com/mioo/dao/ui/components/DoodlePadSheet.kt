@@ -2,6 +2,7 @@ package com.mioo.dao.ui.components
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.widget.Toast
 import android.graphics.Canvas as BitmapCanvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -37,6 +38,9 @@ import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Colorize
+import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material3.Switch
+import com.mioo.dao.utils.ImageDownloader
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -82,6 +86,16 @@ import kotlin.math.PI
 
 private const val BrushWidthKey = "brush_width"
 private const val EraserWidthKey = "eraser_width"
+private const val AutoSaveGalleryKey = "auto_save_gallery"
+
+internal fun shouldAutoSaveDoodleToGallery(
+    autoSaveEnabled: Boolean,
+    hasVisualContent: Boolean,
+    canvasRevision: Int,
+    lastSavedRevision: Int
+): Boolean {
+    return autoSaveEnabled && hasVisualContent && canvasRevision != lastSavedRevision
+}
 private val brushWidthRange = 4f..42f
 
 private val inkColors = listOf(
@@ -166,12 +180,12 @@ private class DoodleRenderer {
     }
 }
 
-private suspend fun exportDoodle(
+private suspend fun renderDoodleJpegFile(
     context: Context,
     board: IntSize,
     base: Bitmap?,
     paths: List<DoodlePath>
-): Uri = withContext(Dispatchers.IO) {
+): File = withContext(Dispatchers.IO) {
     val scale = minOf(1f, 2560f / maxOf(board.width, board.height))
     val width = (board.width * scale).roundToInt().coerceAtLeast(1)
     val height = (board.height * scale).roundToInt().coerceAtLeast(1)
@@ -187,10 +201,59 @@ private suspend fun exportDoodle(
         } finally {
             bitmap.recycle()
         }
-        Uri.fromFile(compressImageUnder2MB(context, Uri.fromFile(file)))
-    } finally {
+        val compressed = compressImageUnder2MB(context, Uri.fromFile(file))
+        if (compressed != file) {
+            file.delete()
+        }
+        compressed
+    } catch (e: Exception) {
         file.delete()
+        throw e
     }
+}
+
+private suspend fun saveDoodleToGallery(
+    context: Context,
+    board: IntSize,
+    base: Bitmap?,
+    paths: List<DoodlePath>
+): Boolean = withContext(Dispatchers.IO) {
+    val rendered = renderDoodleJpegFile(context, board, base, paths)
+    try {
+        ImageDownloader.saveImageFileToGallery(
+            context = context,
+            sourceFile = rendered,
+            filenamePrefix = "mioo_doodle"
+        ) != null
+    } finally {
+        rendered.delete()
+    }
+}
+
+private suspend fun exportDoodle(
+    context: Context,
+    board: IntSize,
+    base: Bitmap?,
+    paths: List<DoodlePath>,
+    saveToGallery: Boolean
+): Pair<Uri, Boolean> = withContext(Dispatchers.IO) {
+    val rendered = renderDoodleJpegFile(context, board, base, paths)
+    val savedToGallery = if (saveToGallery) {
+        try {
+            ImageDownloader.saveImageFileToGallery(
+                context = context,
+                sourceFile = rendered,
+                filenamePrefix = "mioo_doodle"
+            ) != null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+    } else {
+        false
+    }
+    Uri.fromFile(rendered) to savedToGallery
 }
 
 @Composable
@@ -217,13 +280,19 @@ internal fun DoodlePadSheet(
     var board by remember { mutableStateOf(IntSize.Zero) }
     var loading by remember { mutableStateOf(source != null) }
     var exporting by remember { mutableStateOf(false) }
+    var savingToGallery by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     var loadFailed by remember { mutableStateOf(false) }
     var exportFailed by remember { mutableStateOf(false) }
+    var canvasRevision by remember { mutableStateOf(0) }
+    var lastSavedRevision by remember { mutableStateOf(-1) }
     var color by remember { mutableStateOf(inkColors.first().first) }
     var showPalette by remember { mutableStateOf(false) }
     val toolPreferences = remember(context) {
         context.getSharedPreferences("doodle_tools", Context.MODE_PRIVATE)
+    }
+    var autoSaveToGallery by remember {
+        mutableStateOf(toolPreferences.getBoolean(AutoSaveGalleryKey, true))
     }
     var recentColors by remember(toolPreferences) {
         val ordered = toolPreferences.getString("recent_colors_ordered", null)
@@ -250,7 +319,8 @@ internal fun DoodlePadSheet(
     }
     val toolWidth = if (eraser) eraserWidth else brushWidth
     var active by remember { mutableStateOf<DoodlePath?>(null) }
-    val busy = exporting || closing
+    val hasVisualContent = paths.isNotEmpty() || base != null
+    val busy = exporting || savingToGallery || closing
     val canEdit = !busy && !loading && !loadFailed && board != IntSize.Zero
 
     LaunchedEffect(Unit) {
@@ -275,7 +345,7 @@ internal fun DoodlePadSheet(
     }
 
     fun close() {
-        if (closing || exporting) return
+        if (closing || exporting || savingToGallery) return
         closing = true
         scope.launch {
             progress.animateTo(0f, tween(if (reduced) 0 else 180, easing = FastOutSlowInEasing))
@@ -298,22 +368,89 @@ internal fun DoodlePadSheet(
                 Icon(Icons.Default.Close, "关闭")
             }
             Text("涂鸦", Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = scheme.onSurface)
-            IconButton(onClick = { redoPaths.add(paths.removeAt(paths.lastIndex)) }, enabled = canEdit && paths.isNotEmpty()) {
+            IconButton(
+                onClick = {
+                    redoPaths.add(paths.removeAt(paths.lastIndex))
+                    canvasRevision++
+                },
+                enabled = canEdit && paths.isNotEmpty(),
+                modifier = Modifier.size(38.dp)
+            ) {
                 Icon(Icons.AutoMirrored.Outlined.Undo, "撤销")
             }
-            IconButton(onClick = { paths.add(redoPaths.removeAt(redoPaths.lastIndex)) }, enabled = canEdit && redoPaths.isNotEmpty()) {
+            IconButton(
+                onClick = {
+                    paths.add(redoPaths.removeAt(redoPaths.lastIndex))
+                    canvasRevision++
+                },
+                enabled = canEdit && redoPaths.isNotEmpty(),
+                modifier = Modifier.size(38.dp)
+            ) {
                 Icon(Icons.AutoMirrored.Outlined.Redo, "重做")
             }
-            IconButton(onClick = { paths.clear(); redoPaths.clear() }, enabled = canEdit && paths.isNotEmpty()) {
+            IconButton(
+                onClick = {
+                    paths.clear()
+                    redoPaths.clear()
+                    canvasRevision++
+                },
+                enabled = canEdit && paths.isNotEmpty(),
+                modifier = Modifier.size(38.dp)
+            ) {
                 Icon(Icons.Outlined.DeleteOutline, "清空")
+            }
+            IconButton(
+                onClick = {
+                    savingToGallery = true
+                    exportFailed = false
+                    scope.launch {
+                        try {
+                            val saved = saveDoodleToGallery(context, board, base, paths.toList())
+                            if (saved) {
+                                lastSavedRevision = canvasRevision
+                                Toast.makeText(context, "已保存到相册", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "保存到相册失败", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "保存到相册失败", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            savingToGallery = false
+                        }
+                    }
+                },
+                enabled = canEdit && active == null && hasVisualContent,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(Icons.Outlined.SaveAlt, "保存到相册")
             }
             Button(
                 onClick = {
                     exporting = true
                     exportFailed = false
+                    val shouldAutoSave = shouldAutoSaveDoodleToGallery(
+                        autoSaveEnabled = autoSaveToGallery,
+                        hasVisualContent = hasVisualContent,
+                        canvasRevision = canvasRevision,
+                        lastSavedRevision = lastSavedRevision
+                    )
                     scope.launch {
                         try {
-                            val uri = exportDoodle(context, board, base, paths.toList())
+                            val (uri, savedToGallery) = exportDoodle(
+                                context = context,
+                                board = board,
+                                base = base,
+                                paths = paths.toList(),
+                                saveToGallery = shouldAutoSave
+                            )
+                            if (savedToGallery) {
+                                lastSavedRevision = canvasRevision
+                                Toast.makeText(context, "已保存到相册", Toast.LENGTH_SHORT).show()
+                            } else if (shouldAutoSave) {
+                                Toast.makeText(context, "已生成图片，保存到相册失败", Toast.LENGTH_SHORT).show()
+                            }
                             export(uri)
                             exporting = false
                             close()
@@ -384,6 +521,7 @@ internal fun DoodlePadSheet(
                                             stroke.finish()
                                             paths.add(stroke)
                                             redoPaths.clear()
+                                            canvasRevision++
                                             break
                                         }
                                     }
@@ -466,6 +604,25 @@ internal fun DoodlePadSheet(
                             Text(if (useEraser) "橡皮擦" else "画笔", color = tint, fontSize = 13.sp)
                         }
                     }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "完成时自动保存到相册",
+                        fontSize = 13.sp,
+                        color = scheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = autoSaveToGallery,
+                        enabled = canEdit,
+                        onCheckedChange = { checked ->
+                            autoSaveToGallery = checked
+                            toolPreferences.edit().putBoolean(AutoSaveGalleryKey, checked).apply()
+                        }
+                    )
                 }
             }
         }
