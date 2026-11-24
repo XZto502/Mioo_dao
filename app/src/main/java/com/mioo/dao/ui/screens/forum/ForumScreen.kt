@@ -15,8 +15,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -284,24 +284,34 @@ fun ForumScreen(
     val pullToRefreshState = remember(currentForumId, pullThresholdPx, pullActivationSlopPx) {
         ForumPullRefreshState(pullThresholdPx, pullActivationSlopPx)
     }
+    val reducedBoardSwitchMotion = isReducedMotionEnabled()
+    val boardSwitchCoverAlpha = remember { Animatable(0f) }
+    LaunchedEffect(isBoardSwitchPending, displayedForumId, uiState.boardSwitchGeneration, reducedBoardSwitchMotion) {
+        if (isBoardSwitchPending) {
+            boardSwitchCoverAlpha.snapTo(1f)
+        } else if (boardSwitchCoverAlpha.value > 0f) {
+            // Hold the opaque readingBackground cover for one frame while the newly
+            // committed board lays out its prewarmed cards, then reveal smoothly on GPU.
+            withFrameNanos { }
+            if (reducedBoardSwitchMotion) {
+                boardSwitchCoverAlpha.snapTo(0f)
+            } else {
+                boardSwitchCoverAlpha.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(durationMillis = 130, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
     var showDelayedSwitchLoading by remember { mutableStateOf(false) }
-    var dimPendingBoardSwitch by remember { mutableStateOf(false) }
     LaunchedEffect(isBoardSwitchPending, drawerBlocksMainList) {
         if (!isBoardSwitchPending || drawerBlocksMainList) {
             showDelayedSwitchLoading = false
-            dimPendingBoardSwitch = false
             return@LaunchedEffect
         }
-        delay(80)
-        dimPendingBoardSwitch = true
-        delay(80)
+        delay(60)
         showDelayedSwitchLoading = true
     }
-    val switchListAlpha = animateFloatAsState(
-        targetValue = if (dimPendingBoardSwitch) 0.58f else 1f,
-        animationSpec = tween(durationMillis = if (isReducedMotionEnabled()) 0 else 120),
-        label = "board_switch_alpha"
-    )
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
     val showTopLoading = if (isBoardSwitchPending) {
         showDelayedSwitchLoading
@@ -639,7 +649,6 @@ fun ForumScreen(
                     emptyHint = uiState.emptyHint,
                     onContinuePastBlocks = onContinuePastBlocks,
                     listState = listState,
-                    listAlpha = { switchListAlpha.value },
                     emptyStringLambda = emptyStringLambda,
                     onNavigateToThread = onNavigateToThread,
                     onImageClick = onImageClick,
@@ -649,6 +658,31 @@ fun ForumScreen(
                     warmEnabled = allowBackgroundWarm,
                     onFirstScreenReady = notifyColdStartReady
                 )
+
+                if (isBoardSwitchPending || boardSwitchCoverAlpha.value > 0.001f) {
+                    val coverColor = readingBackground()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = if (isBoardSwitchPending) 1f else boardSwitchCoverAlpha.value
+                            }
+                            .background(coverColor)
+                            .then(
+                                if (isBoardSwitchPending) {
+                                    Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                awaitPointerEvent().changes.forEach { it.consume() }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                    )
+                }
 
                 uiState.errorMessage?.let { error ->
                     Card(
@@ -1097,7 +1131,6 @@ private fun ForumThreadListPane(
     emptyHint: String? = null,
     onContinuePastBlocks: () -> Unit = {},
     listState: LazyListState,
-    listAlpha: () -> Float = { 1f },
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
     onImageClick: (String) -> Unit,
@@ -1206,7 +1239,6 @@ private fun ForumThreadListPane(
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize()
-            .graphicsLayer { alpha = listAlpha() }
             .then(if (listReady) initialViewport.modifier else Modifier)
             .useUnbufferedFlingGrab(responsiveFling),
         verticalArrangement = Arrangement.spacedBy(8.dp),
