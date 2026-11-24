@@ -177,7 +177,9 @@ fun ForumScreen(
     val context = LocalContext.current
     // Per-board scroll: rememberSaveable survives navigate→thread→back so position is restored.
     val currentForumId = viewModel.forumId
-    val listState = rememberSaveable(currentForumId, saver = LazyListState.Saver) {
+    val displayedForumId = uiState.displayedForumId
+    val isBoardSwitchPending = displayedForumId != currentForumId && uiState.isRefreshing
+    val listState = rememberSaveable(displayedForumId, uiState.boardSwitchGeneration, saver = LazyListState.Saver) {
         LazyListState()
     }
     val latestScrollChange = rememberUpdatedState(onScrollInProgressChange)
@@ -212,9 +214,9 @@ fun ForumScreen(
     val switchingBoardState = remember { mutableStateOf(false) }
     var switchingBoard by switchingBoardState
     val emptyStringLambda = remember { { _: String -> } }
-    var handledRefreshGeneration by rememberSaveable(currentForumId) { mutableStateOf(0L) }
-    var alignAfterManualRefresh by remember(currentForumId) { mutableStateOf(false) }
-    val refreshScrollObserver = remember(currentForumId, listState, viewModel) {
+    var handledRefreshGeneration by rememberSaveable(displayedForumId) { mutableStateOf(0L) }
+    var alignAfterManualRefresh by remember(displayedForumId) { mutableStateOf(false) }
+    val refreshScrollObserver = remember(displayedForumId, listState, viewModel) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 // Observe only; never consume motion or interrupt the list's fling.
@@ -229,7 +231,7 @@ fun ForumScreen(
         }
     }
 
-    val previousForumId = rememberSaveable { mutableStateOf(currentForumId) }
+    val previousForumId = rememberSaveable { mutableStateOf(displayedForumId) }
     // True for a short window after board switch — pause prefetch/prewarm during swap
     var boardSwitchQuiet by remember { mutableStateOf(false) }
 
@@ -282,9 +284,30 @@ fun ForumScreen(
     val pullToRefreshState = remember(currentForumId, pullThresholdPx, pullActivationSlopPx) {
         ForumPullRefreshState(pullThresholdPx, pullActivationSlopPx)
     }
+    var showDelayedSwitchLoading by remember { mutableStateOf(false) }
+    var dimPendingBoardSwitch by remember { mutableStateOf(false) }
+    LaunchedEffect(isBoardSwitchPending, drawerBlocksMainList) {
+        if (!isBoardSwitchPending || drawerBlocksMainList) {
+            showDelayedSwitchLoading = false
+            dimPendingBoardSwitch = false
+            return@LaunchedEffect
+        }
+        delay(80)
+        dimPendingBoardSwitch = true
+        delay(80)
+        showDelayedSwitchLoading = true
+    }
+    val switchListAlpha = animateFloatAsState(
+        targetValue = if (dimPendingBoardSwitch) 0.58f else 1f,
+        animationSpec = tween(durationMillis = if (isReducedMotionEnabled()) 0 else 120),
+        label = "board_switch_alpha"
+    )
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
-    val showTopLoading = uiState.isRefreshing ||
-        (uiState.isLoading && uiState.threads.isEmpty())
+    val showTopLoading = if (isBoardSwitchPending) {
+        showDelayedSwitchLoading
+    } else {
+        uiState.isRefreshing || (uiState.isLoading && uiState.threads.isEmpty())
+    }
 
     // User pull: fire refresh only when the VM is not already refreshing.
     LaunchedEffect(pullToRefreshState, pullToRefreshState.isRefreshing) {
@@ -311,10 +334,10 @@ fun ForumScreen(
     LaunchedEffect(
         uiState.completedRefreshGeneration,
         uiState.completedRefreshForumId,
-        currentForumId
+        displayedForumId
     ) {
         val generation = uiState.completedRefreshGeneration
-        if (uiState.completedRefreshForumId != currentForumId || generation <= handledRefreshGeneration) {
+        if (uiState.completedRefreshForumId != displayedForumId || generation <= handledRefreshGeneration) {
             return@LaunchedEffect
         }
         withFrameNanos { }
@@ -328,7 +351,7 @@ fun ForumScreen(
     // Paging via snapshotFlow — does not recompose the whole screen on every scroll frame
     // (derivedStateOf + LaunchedEffect(.value) used to restart the effect on flag churn).
     val latestItemCount = rememberUpdatedState(uiState.displayItems.size)
-    LaunchedEffect(listState, currentForumId) {
+    LaunchedEffect(listState, displayedForumId) {
         snapshotFlow {
             val count = latestItemCount.value
             if (count <= 0 || listState.firstVisibleItemIndex + 10 < count) {
@@ -351,11 +374,10 @@ fun ForumScreen(
 
     // Board change: quiet heavy work briefly (no overlapping list transition).
     // Keep short — high-frequency board switches should not feel delayed (Emil: tens/day → reduce).
-    LaunchedEffect(currentForumId) {
-        if (currentForumId != previousForumId.value) {
+    LaunchedEffect(displayedForumId) {
+        if (displayedForumId != previousForumId.value) {
             boardSwitchQuiet = true
-            listState.scrollToItem(0)
-            previousForumId.value = currentForumId
+            previousForumId.value = displayedForumId
             delay(160)
             boardSwitchQuiet = false
         }
@@ -390,12 +412,16 @@ fun ForumScreen(
             if (!switchingBoardState.value) {
                 switchingBoardState.value = true
                 scope.launch {
+                    val drawerClosed = kotlinx.coroutines.CompletableDeferred<Unit>()
                     try {
-                        // Finish dismissing the modal scrim before replacing its underlying list.
-                        // Otherwise a gesture can interrupt close and leave the new board covered.
+                        // Start fetching the new board in parallel with drawer close,
+                        // but gate UI commit until the drawer finishes closing.
+                        if (id != viewModel.forumId) {
+                            viewModel.selectForum(id, name, readyGate = drawerClosed)
+                        }
                         drawerState.close()
-                        if (id != viewModel.forumId) viewModel.selectForum(id, name)
                     } finally {
+                        drawerClosed.complete(Unit)
                         switchingBoardState.value = false
                     }
                 }
@@ -601,29 +627,28 @@ fun ForumScreen(
                 val onBlockThread = remember(settingsViewModel) { { id: String -> settingsViewModel.addBlockedThread(id) } }
                 val onBlockUser = remember(settingsViewModel) { { id: String -> settingsViewModel.addBlockedUser(id) } }
                 val onFreeCopy = remember { { text: String -> freeCopyText = text } }
-                key(currentForumId) {
-                    val timelineForumNames = rememberTimelineForumNames(currentForumId, viewModel)
-                    ForumThreadListPane(
-                        forumKey = currentForumId,
-                        forumNames = timelineForumNames,
-                        previewMaxLines = previewMaxLines,
-                        displayItems = uiState.displayItems,
-                        isLoading = uiState.isLoading,
-                        isRefreshing = uiState.isRefreshing,
-                        isLastPage = uiState.isLastPage,
-                        emptyHint = uiState.emptyHint,
-                        onContinuePastBlocks = onContinuePastBlocks,
-                        listState = listState,
-                        emptyStringLambda = emptyStringLambda,
-                        onNavigateToThread = onNavigateToThread,
-                        onImageClick = onImageClick,
-                        onBlockThread = onBlockThread,
-                        onBlockUser = onBlockUser,
-                        onFreeCopy = onFreeCopy,
-                        warmEnabled = allowBackgroundWarm,
-                        onFirstScreenReady = notifyColdStartReady
-                    )
-                }
+                val timelineForumNames = rememberTimelineForumNames(displayedForumId, viewModel)
+                ForumThreadListPane(
+                    forumKey = displayedForumId,
+                    forumNames = timelineForumNames,
+                    previewMaxLines = previewMaxLines,
+                    displayItems = uiState.displayItems,
+                    isLoading = uiState.isLoading,
+                    isRefreshing = uiState.isRefreshing,
+                    isLastPage = uiState.isLastPage,
+                    emptyHint = uiState.emptyHint,
+                    onContinuePastBlocks = onContinuePastBlocks,
+                    listState = listState,
+                    listAlpha = { switchListAlpha.value },
+                    emptyStringLambda = emptyStringLambda,
+                    onNavigateToThread = onNavigateToThread,
+                    onImageClick = onImageClick,
+                    onBlockThread = onBlockThread,
+                    onBlockUser = onBlockUser,
+                    onFreeCopy = onFreeCopy,
+                    warmEnabled = allowBackgroundWarm,
+                    onFirstScreenReady = notifyColdStartReady
+                )
 
                 uiState.errorMessage?.let { error ->
                     Card(
@@ -1072,6 +1097,7 @@ private fun ForumThreadListPane(
     emptyHint: String? = null,
     onContinuePastBlocks: () -> Unit = {},
     listState: LazyListState,
+    listAlpha: () -> Float = { 1f },
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
     onImageClick: (String) -> Unit,
@@ -1087,16 +1113,13 @@ private fun ForumThreadListPane(
     val isEmptyIdle = displayItems.isEmpty() && !isLoading && !isRefreshing
 
     val listReady = displayItems.isNotEmpty()
-    // Cold start measures behind the system splash window (keep 3 fast slices so splash
-    // never times out); subsequent board switches run visibly and use finer deferred slices.
-    // Latch per-forumKey so completing cold start never resets the active board's viewport.
-    var coldStartDone by remember { mutableStateOf(false) }
-    val isColdStartBoard = remember(forumKey) { !coldStartDone }
+    // Keep a single viewport helper across board switches so LazyColumn reuses its
+    // card slot pool instead of resetting into staged slicing on every board swap.
     val initialViewport = rememberInitialListViewport(
         hasContent = listReady,
-        resetKey = forumKey,
-        steps = if (isColdStartBoard) 3 else 6,
-        deferFirstRow = !isColdStartBoard
+        resetKey = Unit,
+        steps = 3,
+        deferFirstRow = false
     )
     val viewportReady = initialViewport.ready
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
@@ -1106,7 +1129,6 @@ private fun ForumThreadListPane(
     LaunchedEffect(forumKey, listReady, viewportReady) {
         if (!listReady || !viewportReady || firstScreenNotified) return@LaunchedEffect
         firstScreenNotified = true
-        coldStartDone = true
         // Drop splash on next frame — no artificial 16ms wait
         onFirstScreenReady()
     }
@@ -1184,6 +1206,7 @@ private fun ForumThreadListPane(
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize()
+            .graphicsLayer { alpha = listAlpha() }
             .then(if (listReady) initialViewport.modifier else Modifier)
             .useUnbufferedFlingGrab(responsiveFling),
         verticalArrangement = Arrangement.spacedBy(8.dp),

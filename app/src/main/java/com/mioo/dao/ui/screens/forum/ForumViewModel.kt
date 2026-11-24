@@ -39,6 +39,8 @@ import javax.inject.Inject
 data class ForumUiState(
     val threads: List<Thread> = emptyList(),
     val displayItems: List<ThreadListItem> = emptyList(),
+    val displayedForumId: String = "-1",
+    val boardSwitchGeneration: Long = 0L,
     val currentForumName: String = "时间线",
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
@@ -104,7 +106,12 @@ class ForumViewModel @Inject constructor(
             keywordMatcher = KeywordMatcher.build(snap.blockedKeywords)
             appliedBlockFilters = Triple(blockedThreads, blockedUsers, snap.blockedKeywords)
             forumId = snap.lastForumId
-            _uiState.update { it.copy(currentForumName = snap.lastForumName) }
+            _uiState.update {
+                it.copy(
+                    displayedForumId = snap.lastForumId,
+                    currentForumName = snap.lastForumName
+                )
+            }
             // First network/disk slot = timeline/showf (SWR cache paints immediately)
             refresh()
         }
@@ -124,7 +131,7 @@ class ForumViewModel @Inject constructor(
                     blockedThreads = threadSet
                     blockedUsers = userSet
                     keywordMatcher = KeywordMatcher.build(keywords)
-                    if (_uiState.value.threads.isNotEmpty()) {
+                    if (_uiState.value.threads.isNotEmpty() && _uiState.value.displayedForumId == forumId) {
                         rebuildDisplayItems()
                     }
                 }
@@ -211,19 +218,22 @@ class ForumViewModel @Inject constructor(
         }
     }
 
-    fun selectForum(id: String, name: String) {
+    fun selectForum(
+        id: String,
+        name: String,
+        readyGate: kotlinx.coroutines.Deferred<Unit>? = null
+    ) {
         if (forumId == id) return
         forumId = id
         preloadJob?.cancel()
         blockedPageSkips = 0
-        // Clear previous board content so only the center spinner shows while loading.
+        // Keep the current board's list mounted until the new board is ready so switching
+        // never wipes the screen to a blank white void mid-fetch.
         _uiState.update {
             it.copy(
                 currentForumName = name,
-                threads = emptyList(),
-                displayItems = emptyList(),
-                isLoading = true,
-                isRefreshing = false,
+                isLoading = false,
+                isRefreshing = true,
                 isLastPage = false,
                 errorMessage = null,
                 emptyHint = null
@@ -232,7 +242,7 @@ class ForumViewModel @Inject constructor(
         viewModelScope.launch {
             settingsDataStore.saveLastForum(id, name)
         }
-        refresh()
+        refresh(readyGate = readyGate)
     }
 
     fun loadNextPage(fromAutoSkip: Boolean = false) {
@@ -371,8 +381,9 @@ class ForumViewModel @Inject constructor(
         loadNextPage()
     }
 
-    fun refresh() {
+    fun refresh(readyGate: kotlinx.coroutines.Deferred<Unit>? = null) {
         val requestForumId = forumId
+        val isBoardSwitch = _uiState.value.displayedForumId != requestForumId
         val refreshToken = ++refreshGeneration
         val requestGeneration = ++listGeneration
         blockedPageSkips = 0
@@ -415,7 +426,14 @@ class ForumViewModel @Inject constructor(
                             val displayItems = withContext(Dispatchers.Default) {
                                 freshThreads.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
-                                )
+                                ).also { built ->
+                                    if (isBoardSwitch) {
+                                        com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmForumPreview(
+                                            built,
+                                            limit = 6
+                                        )
+                                    }
+                                }
                             }
                             if (forumId != requestForumId || listGeneration != requestGeneration) return@collect
                             refreshed = true
@@ -430,6 +448,8 @@ class ForumViewModel @Inject constructor(
                         }
                     }
                 }
+                readyGate?.await()
+                if (forumId != requestForumId || listGeneration != requestGeneration) return@launch
                 if (forumId == requestForumId && listGeneration == requestGeneration) {
                     // Next page to request after a full page-1 refresh.
                     val visibleItems = settledDisplayItems ?: _uiState.value.displayItems
@@ -449,9 +469,16 @@ class ForumViewModel @Inject constructor(
                     if (handoffBlocked) {
                         blockedPageSkips = 1
                         _uiState.update { state ->
+                            val switchingNow = state.displayedForumId != requestForumId
                             state.copy(
-                                threads = settledThreads ?: state.threads,
-                                displayItems = settledDisplayItems ?: state.displayItems,
+                                displayedForumId = requestForumId,
+                                boardSwitchGeneration = if (switchingNow) {
+                                    state.boardSwitchGeneration + 1
+                                } else {
+                                    state.boardSwitchGeneration
+                                },
+                                threads = settledThreads ?: if (switchingNow) emptyList() else state.threads,
+                                displayItems = settledDisplayItems ?: if (switchingNow) emptyList() else state.displayItems,
                                 isRefreshing = false,
                                 isLoading = false,
                                 isLastPage = settledIsLastPage ?: state.isLastPage,
@@ -464,9 +491,16 @@ class ForumViewModel @Inject constructor(
                         loadNextPage(fromAutoSkip = true)
                     } else {
                         _uiState.update { state ->
+                            val switchingNow = state.displayedForumId != requestForumId
                             state.copy(
-                                threads = settledThreads ?: state.threads,
-                                displayItems = settledDisplayItems ?: state.displayItems,
+                                displayedForumId = requestForumId,
+                                boardSwitchGeneration = if (switchingNow) {
+                                    state.boardSwitchGeneration + 1
+                                } else {
+                                    state.boardSwitchGeneration
+                                },
+                                threads = settledThreads ?: if (switchingNow) emptyList() else state.threads,
+                                displayItems = settledDisplayItems ?: if (switchingNow) emptyList() else state.displayItems,
                                 isRefreshing = false,
                                 isLoading = false,
                                 isLastPage = settledIsLastPage ?: state.isLastPage,
