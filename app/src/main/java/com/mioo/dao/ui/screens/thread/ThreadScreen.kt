@@ -329,18 +329,6 @@ fun ThreadScreen(
         androidx.compose.runtime.withFrameNanos { }
         topActionsReady = true
     }
-    var bottomBarReady by remember(viewModel) { mutableStateOf(reducedMotion) }
-    LaunchedEffect(readingListReady, reducedMotion) {
-        if (bottomBarReady) return@LaunchedEffect
-        if (reducedMotion) {
-            bottomBarReady = true
-            return@LaunchedEffect
-        }
-        if (readingListReady) {
-            androidx.compose.runtime.withFrameNanos { }
-            bottomBarReady = true
-        }
-    }
     var lastVisibleProgress by remember(viewModel, listUi.contentRevision) {
         mutableStateOf<Pair<Any, Int>?>(null)
     }
@@ -784,27 +772,17 @@ fun ThreadScreen(
                 // Feather only the seam above the solid composer, never the input/tools.
                 Box(Modifier.fillMaxWidth().height(10.dp).background(
                     Brush.verticalGradient(listOf(composerColor.copy(alpha = 0f), composerColor))))
-                if (bottomBarReady) {
-                    // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
-                    ReplyInputBar(
-                        viewModel = viewModel,
-                        cookies = threadSettings.cookiesList,
-                        confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
-                        cookieNotes = threadSettings.cookieNotes,
-                        selectedCookieIndex = selectedReplyCookie,
-                        onCookieSelect = viewModel::selectThreadCookie,
-                        editor = replyEditor,
-                        onOpen = openReplyEditor
-                    )
-                } else {
-                    Spacer(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(composerColor)
-                            .navigationBarsPadding()
-                            .height(106.dp)
-                    )
-                }
+                // 底栏自己处理 ime / 导航条间距，避免整页 Scaffold 再垫一次。
+                ReplyInputBar(
+                    viewModel = viewModel,
+                    cookies = threadSettings.cookiesList,
+                    confirmCookieBeforeSend = threadSettings.confirmCookieBeforeSend,
+                    cookieNotes = threadSettings.cookieNotes,
+                    selectedCookieIndex = selectedReplyCookie,
+                    onCookieSelect = viewModel::selectThreadCookie,
+                    editor = replyEditor,
+                    onOpen = openReplyEditor
+                )
             }
             }
         },
@@ -825,22 +803,6 @@ fun ThreadScreen(
             }
             if (retireListRemoved) {
                 // The off-screen list is released before its navigation entry.
-            } else if (!allowHeavyList) {
-                if (listUi.isLoading && listUi.thread == null) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-            } else if (listUi.isLoading && listUi.thread == null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
             } else if (listUi.errorMessage != null && listUi.thread == null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -852,7 +814,7 @@ fun ThreadScreen(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
-            } else {
+            } else if (allowHeavyList && listUi.thread != null) {
                 val displayItems = listUi.displayItems
                 val poUserHash = listUi.thread?.userHash
                 val mainThread = listUi.thread
@@ -1118,9 +1080,16 @@ fun ThreadScreen(
 
                 }
                 }
-                if (!readingListReady && listUi.thread != null) {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                }
+            }
+            if (shouldShowThreadLoadingSpinner(
+                    retireListRemoved = retireListRemoved,
+                    hasThread = listUi.thread != null,
+                    isLoading = listUi.isLoading,
+                    hasError = listUi.errorMessage != null,
+                    readingListReady = readingListReady
+                )
+            ) {
+                CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
 
             // 跳页气泡的空白点击层：点任意处带动画收起（气泡本体在顶栏层，不受影响）
@@ -2207,6 +2176,18 @@ private fun ReportDialog(
  * Owns [ThreadViewModel.composerState] collection so keystrokes never invalidate
  * the parent [ThreadScreen] composition scope / LazyColumn.
  */
+internal fun shouldShowThreadLoadingSpinner(
+    retireListRemoved: Boolean,
+    hasThread: Boolean,
+    isLoading: Boolean,
+    hasError: Boolean,
+    readingListReady: Boolean
+): Boolean {
+    if (retireListRemoved) return false
+    if (!hasThread) return isLoading && !hasError
+    return !readingListReady
+}
+
 @Composable
 private fun ReplyInputBar(
     viewModel: ThreadViewModel,

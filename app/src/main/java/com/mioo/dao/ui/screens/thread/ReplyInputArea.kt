@@ -286,16 +286,11 @@ internal fun ReplyInputArea(
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val paper = if (dark) Color(0xFF16181E) else Color.White
     val page = if (dark) Color(0xFF0E1015) else Color(0xFFF0F1F4)
-    var layoutPhase by remember(fullScreen) { mutableStateOf(if (fullScreen) 0 else 1) }
+    var layoutPhase by remember(fullScreen) { mutableStateOf(if (fullScreen) 0 else 3) }
     LaunchedEffect(fullScreen) {
         if (fullScreen) {
             androidx.compose.runtime.withFrameNanos { }
             layoutPhase = 1
-            androidx.compose.runtime.withFrameNanos { }
-            layoutPhase = 2
-            androidx.compose.runtime.withFrameNanos { }
-            layoutPhase = 3
-        } else {
             androidx.compose.runtime.withFrameNanos { }
             layoutPhase = 2
             androidx.compose.runtime.withFrameNanos { }
