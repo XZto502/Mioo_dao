@@ -26,26 +26,19 @@ class HeaderContrastTest {
     }
 
     @Test
-    fun perRegionSamplingAdaptsStatusBarNavigationTitleSubtitleAndActionsIndependently() {
-        // Construct a 48x16 synthetic header:
+    fun darkMajorityToolbarUsesSingleWhiteColorDespiteBrightHighlight() {
+        // 48x16 header:
         // - Top strip (rows 0..4, status bar): bright white -> dark status bar icons
-        // - Left nav (cols 0..7, rows 5..15): dark navy -> white menu/back icon
-        // - Title band (cols 8..31, rows 5..10): bright sky -> dark title text
-        // - Subtitle band (cols 8..31, rows 11..15): deep forest -> white subtitle text
-        // - Inner-right action (cols 32..39, rows 5..15): bright white -> dark icon
-        // - Far-right action (cols 40..47, rows 5..15): black -> white icon
+        // - Toolbar (rows 5..15): 65% dark gray + 35% pure white (mean lum > 0.35, but dark area > 50%)
         val w = 48
         val h = 16
         val pixels = IntArray(w * h) { idx ->
             val x = idx % w
             val y = idx / w
             when {
-                y < 5 -> 0xFFF8F9FA.toInt() // bright status bar
-                x < 8 -> 0xFF101828.toInt() // dark nav
-                x < 32 && y <= 10 -> 0xFFEDF2F7.toInt() // bright title
-                x < 32 -> 0xFF14281D.toInt() // dark subtitle
-                x < 40 -> 0xFFF4F6F8.toInt() // bright mid-right action
-                else -> 0xFF0B0D10.toInt() // dark rightmost action
+                y < 5 -> 0xFFF8F9FA.toInt()
+                x < 31 -> 0xFF262626.toInt() // ~65% dark area on left/title/subtitle
+                else -> 0xFFFFFFFF.toInt()   // ~35% pure white over trailing actions
             }
         }
         val map = HeaderLuminanceMap.fromPixels(pixels, w, h)
@@ -55,35 +48,148 @@ class HeaderContrastTest {
             colorScheme = lightColorScheme(),
             containerWidthPx = 1080f,
             containerHeightPx = 360f,
-            statusBarHeightPx = 112f,
-            barWidthDp = 411f
+            statusBarHeightPx = 112f
         )
 
-        // Top strip is bright -> dark status bar icons
+        // Status bar remains independent: bright strip -> dark icons
         assertFalse(style.statusBarUseLight)
         assertEquals(DarkHeaderInk, style.statusBarContentColor)
+        assertFalse(
+            CustomHeaderData(luminanceMap = map).useLightStatusBarIcons(
+                containerWidthPx = 1080f,
+                containerHeightPx = 360f,
+                statusBarHeightPx = 112f
+            )
+        )
 
-        // Left nav is dark -> white nav icon
+        // All toolbar elements share unified white ink despite white right-side patch
         assertTrue(style.navigationUseLight)
         assertEquals(LightHeaderInk, style.navigationContentColor)
-
-        // Title upper band is bright -> dark title ink
-        assertFalse(style.titleUseLight)
-        assertEquals(DarkHeaderInk, style.titleContentColor)
-
-        // Subtitle lower band is dark -> white subtitle ink
+        assertTrue(style.titleUseLight)
+        assertEquals(LightHeaderInk, style.titleContentColor)
         assertTrue(style.subtitleUseLight)
         assertEquals(LightHeaderInk, style.subtitleContentColor)
+        assertTrue(style.trailingActionColors.useLightContent)
+        assertEquals(LightHeaderInk, style.trailingActionColors.contentColor)
+        assertEquals(LightHeaderInk, style.trailingActionColors.activeAccentColor)
 
-        // Rightmost icon slot (slot 0) is dark -> white ink
-        val rightmost = style.trailingActionAt(0)
-        assertTrue(rightmost.useLightContent)
-        assertEquals(LightHeaderInk, rightmost.contentColor)
+        for (slot in 0..4) {
+            val action = style.trailingActionAt(slot)
+            assertTrue(action.useLightContent)
+            assertEquals(LightHeaderInk, action.contentColor)
+            assertEquals(LightHeaderInk, action.activeAccentColor)
+        }
+    }
 
-        // Second-from-right icon slot (slot 2, ~cols 32..37) is bright -> dark ink
-        val innerRight = style.trailingActionAt(2)
-        assertFalse(innerRight.useLightContent)
-        assertEquals(DarkHeaderInk, innerRight.contentColor)
+    @Test
+    fun lightMajorityToolbarUsesSingleBlackColorDespiteDarkPatch() {
+        // 48x16 header:
+        // - Top strip (rows 0..4, status bar): dark navy -> white status bar icons
+        // - Toolbar (rows 5..15): 70% bright + 30% pure black
+        val w = 48
+        val h = 16
+        val pixels = IntArray(w * h) { idx ->
+            val x = idx % w
+            val y = idx / w
+            when {
+                y < 5 -> 0xFF101828.toInt()
+                x < 14 -> 0xFF000000.toInt() // ~29% black on left
+                else -> 0xFFF4F6F8.toInt()   // ~71% bright on title & actions
+            }
+        }
+        val map = HeaderLuminanceMap.fromPixels(pixels, w, h)
+        val style = resolveHeaderBarStyle(
+            enabled = true,
+            luminanceMap = map,
+            colorScheme = darkColorScheme(),
+            containerWidthPx = 1080f,
+            containerHeightPx = 360f,
+            statusBarHeightPx = 112f
+        )
+
+        // Status bar remains independent: dark strip -> white icons
+        assertTrue(style.statusBarUseLight)
+        assertEquals(LightHeaderInk, style.statusBarContentColor)
+        assertTrue(
+            CustomHeaderData(luminanceMap = map).useLightStatusBarIcons(
+                containerWidthPx = 1080f,
+                containerHeightPx = 360f,
+                statusBarHeightPx = 112f
+            )
+        )
+
+        // All toolbar elements share unified dark ink
+        assertFalse(style.navigationUseLight)
+        assertEquals(DarkHeaderInk, style.navigationContentColor)
+        assertFalse(style.titleUseLight)
+        assertEquals(DarkHeaderInk, style.titleContentColor)
+        assertFalse(style.subtitleUseLight)
+        assertEquals(DarkHeaderInk, style.subtitleContentColor)
+        assertFalse(style.trailingActionColors.useLightContent)
+        assertEquals(DarkHeaderInk, style.trailingActionColors.contentColor)
+        assertEquals(DarkHeaderInk, style.trailingActionColors.activeAccentColor)
+
+        for (slot in 0..4) {
+            val action = style.trailingActionAt(slot)
+            assertFalse(action.useLightContent)
+            assertEquals(DarkHeaderInk, action.contentColor)
+            assertEquals(DarkHeaderInk, action.activeAccentColor)
+        }
+    }
+
+    @Test
+    fun exactAreaTieBreaksDeterministicallyByMeanLuminance() {
+        val w = 48
+        val h = 16
+        // 50% dark (0xFF202020) + 50% pure white (0xFFFFFFFF) -> high mean lum -> dark ink
+        val brightTiePixels = IntArray(w * h) { idx ->
+            if ((idx % w) < w / 2) 0xFF202020.toInt() else 0xFFFFFFFF.toInt()
+        }
+        val brightTieStyle = resolveHeaderBarStyle(
+            enabled = true,
+            luminanceMap = HeaderLuminanceMap.fromPixels(brightTiePixels, w, h),
+            colorScheme = lightColorScheme()
+        )
+        assertFalse(brightTieStyle.titleUseLight)
+        assertEquals(DarkHeaderInk, brightTieStyle.titleContentColor)
+
+        // 50% pure black (0xFF000000) + 50% mid-light gray (0xFF909090) -> low mean lum -> white ink
+        val darkTiePixels = IntArray(w * h) { idx ->
+            if ((idx % w) < w / 2) 0xFF000000.toInt() else 0xFF909090.toInt()
+        }
+        val darkTieStyle = resolveHeaderBarStyle(
+            enabled = true,
+            luminanceMap = HeaderLuminanceMap.fromPixels(darkTiePixels, w, h),
+            colorScheme = lightColorScheme()
+        )
+        assertTrue(darkTieStyle.titleUseLight)
+        assertEquals(LightHeaderInk, darkTieStyle.titleContentColor)
+    }
+
+    @Test
+    fun centerCropVisibleRectExcludesClippedOuterMarginsFromAreaDecision() {
+        val w = 48
+        val h = 16
+        // Outer 50% (left 25% + right 25%) is bright white; center 50% is dark.
+        // Rendered in a 500x500 container for a 1000x500 source, only cols 12..35 are visible.
+        val pixels = IntArray(w * h) { idx ->
+            val x = idx % w
+            if (x in 12..35) 0xFF181818.toInt() else 0xFFFFFFFF.toInt()
+        }
+        val map = HeaderLuminanceMap.fromPixels(pixels, w, h, sourceWidth = 1000, sourceHeight = 500)
+        val style = resolveHeaderBarStyle(
+            enabled = true,
+            luminanceMap = map,
+            colorScheme = lightColorScheme(),
+            containerWidthPx = 500f,
+            containerHeightPx = 500f,
+            statusBarHeightPx = 150f
+        )
+
+        assertTrue(style.statusBarUseLight)
+        assertTrue(style.titleUseLight)
+        assertEquals(LightHeaderInk, style.titleContentColor)
+        assertEquals(LightHeaderInk, style.trailingActionAt(0).contentColor)
     }
 
     @Test

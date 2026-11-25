@@ -129,7 +129,6 @@ private fun HeaderPreviewCard(
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(14.dp)
-    val density = LocalDensity.current
     var cardSize by remember { mutableStateOf(IntSize.Zero) }
     val style = resolveHeaderBarStyle(
         enabled = true,
@@ -137,8 +136,7 @@ private fun HeaderPreviewCard(
         colorScheme = MaterialTheme.colorScheme,
         containerWidthPx = cardSize.width.toFloat(),
         containerHeightPx = cardSize.height.toFloat(),
-        statusBarHeightPx = cardSize.height * 0.34f,
-        barWidthDp = if (cardSize.width > 0) with(density) { cardSize.width.toDp().value } else 360f
+        statusBarHeightPx = cardSize.height * 0.34f
     )
     val refreshColors = style.trailingActionAt(0)
     Box(
@@ -311,8 +309,7 @@ fun HeaderCropDialog(
                             colorScheme = MaterialTheme.colorScheme,
                             containerWidthPx = canvasSize.width.toFloat(),
                             containerHeightPx = frameHeightPx,
-                            statusBarHeightPx = frameHeightPx * 0.34f,
-                            barWidthDp = if (canvasSize.width > 0) with(density) { canvasSize.width.toDp().value } else 360f
+                            statusBarHeightPx = frameHeightPx * 0.34f
                         )
                         val refreshColors = previewStyle.trailingActionAt(0)
                         val frameHeightDp = with(density) {
@@ -494,7 +491,8 @@ fun CustomHeaderBar(
 
 /**
  * The image shares the app bar's measured bounds, including its status-bar inset,
- * rendered cleanly without any scrim or gradient while foreground elements adapt per region.
+ * rendered cleanly without any scrim or gradient while toolbar foreground elements
+ * use a single area-based monochrome color and status-bar icons adapt independently.
  */
 @Composable
 internal fun CustomHeaderBar(
@@ -512,8 +510,7 @@ internal fun CustomHeaderBar(
         colorScheme = MaterialTheme.colorScheme,
         containerWidthPx = barSize.width.toFloat(),
         containerHeightPx = barSize.height.toFloat(),
-        statusBarHeightPx = statusBarHeightPx,
-        barWidthDp = if (barSize.width > 0) with(density) { barSize.width.toDp().value } else 411f
+        statusBarHeightPx = statusBarHeightPx
     )
     val bleedPx = with(density) { 24.dp.roundToPx() }
     Box(

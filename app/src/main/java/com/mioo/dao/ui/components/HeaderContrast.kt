@@ -6,7 +6,6 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import com.mioo.dao.data.local.HeaderImageSettings
 import kotlin.math.ceil
@@ -21,9 +20,6 @@ private const val SAMPLE_HEIGHT = 16
 private const val CROP_PREVIEW_SAMPLE_COLS = 32
 private const val CROP_PREVIEW_SAMPLE_ROWS = 12
 private const val DEFAULT_STATUS_SPLIT_FRACTION = 0.34f
-private const val DEFAULT_BAR_WIDTH_DP = 411f
-private const val ACTION_SLOT_WIDTH_DP = 44f
-private const val ACTION_RIGHT_INSET_DP = 4f
 
 internal val LightHeaderInk = Color.White
 internal val DarkHeaderInk = Color(0xFF1A1C1E)
@@ -83,10 +79,28 @@ internal fun computeCenterCropVisibleRect(
     )
 }
 
+internal data class RegionToneStats(
+    val darkCount: Int,
+    val totalCount: Int,
+    val luminanceSum: Double
+) {
+    val lightCount: Int get() = (totalCount - darkCount).coerceAtLeast(0)
+    val meanLuminance: Float
+        get() = if (totalCount > 0) (luminanceSum / totalCount).toFloat().coerceIn(0f, 1f) else 0f
+
+    fun useLightForeground(fallbackLightContent: Boolean = true): Boolean {
+        if (totalCount <= 0) return fallbackLightContent
+        return when {
+            darkCount > lightCount -> true
+            darkCount < lightCount -> false
+            else -> useLightForegroundForLuminance(meanLuminance, fallbackLightContent)
+        }
+    }
+}
+
 /**
  * Compact per-cell WCAG relative luminance grid for a custom header image.
- * Enables O(1) per-region brightness sampling for the status bar, navigation icon,
- * title, subtitle, and individual trailing action icon slots.
+ * Enables O(1) area-based dark/light classification for the status bar and toolbar regions.
  */
 @Immutable
 class HeaderLuminanceMap(
@@ -96,14 +110,14 @@ class HeaderLuminanceMap(
     val sourceHeight: Int,
     private val grid: FloatArray
 ) {
-    fun luminanceIn(
+    internal fun analyzeRegionTone(
         leftFrac: Float,
         topFrac: Float,
         rightFrac: Float,
         bottomFrac: Float,
         visibleRect: NormalizedRect = NormalizedRect()
-    ): Float {
-        if (width <= 0 || height <= 0 || grid.isEmpty()) return 0f
+    ): RegionToneStats? {
+        if (width <= 0 || height <= 0 || grid.isEmpty()) return null
         val x0 = (visibleRect.left + visibleRect.width * leftFrac.coerceIn(0f, 1f)).coerceIn(0f, 1f)
         val x1 = (visibleRect.left + visibleRect.width * rightFrac.coerceIn(0f, 1f)).coerceIn(x0, 1f)
         val y0 = (visibleRect.top + visibleRect.height * topFrac.coerceIn(0f, 1f)).coerceIn(0f, 1f)
@@ -114,34 +128,64 @@ class HeaderLuminanceMap(
         val rowStart = floor(y0 * height).toInt().coerceIn(0, height - 1)
         val rowEnd = (ceil(y1 * height).toInt() - 1).coerceIn(rowStart, height - 1)
 
-        var sum = 0.0
-        var count = 0
+        var darkCount = 0
+        var totalCount = 0
+        var luminanceSum = 0.0
         for (row in rowStart..rowEnd) {
             val rowOffset = row * width
             for (col in colStart..colEnd) {
                 val idx = rowOffset + col
                 if (idx in grid.indices) {
-                    sum += grid[idx]
-                    count++
+                    val lum = grid[idx]
+                    if (useLightForegroundForLuminance(lum)) {
+                        darkCount++
+                    }
+                    luminanceSum += lum
+                    totalCount++
                 }
             }
         }
-        return if (count > 0) (sum / count).toFloat().coerceIn(0f, 1f) else 0f
+        return if (totalCount > 0) RegionToneStats(darkCount, totalCount, luminanceSum) else null
     }
 
     /**
-     * Samples the status-bar strip, weighting the left clock and right system status icons
-     * higher than the center cutout area.
+     * Evaluates the status-bar strip by dark vs. light area, weighting the left clock and
+     * right system status icons higher than the center cutout area.
      */
-    fun statusBarLuminance(
+    fun statusBarUseLightForeground(
         statusSplitY: Float = DEFAULT_STATUS_SPLIT_FRACTION,
-        visibleRect: NormalizedRect = NormalizedRect()
-    ): Float {
+        visibleRect: NormalizedRect = NormalizedRect(),
+        fallbackLightContent: Boolean = true
+    ): Boolean {
         val split = statusSplitY.coerceIn(0.18f, 0.50f)
-        val leftClock = luminanceIn(0.02f, 0f, 0.28f, split, visibleRect)
-        val center = luminanceIn(0.28f, 0f, 0.70f, split, visibleRect)
-        val rightIcons = luminanceIn(0.70f, 0f, 0.98f, split, visibleRect)
-        return ((leftClock * 1.5f + center * 0.6f + rightIcons * 1.5f) / 3.6f).coerceIn(0f, 1f)
+        val leftStats = analyzeRegionTone(0.02f, 0f, 0.28f, split, visibleRect)
+        val centerStats = analyzeRegionTone(0.28f, 0f, 0.70f, split, visibleRect)
+        val rightStats = analyzeRegionTone(0.70f, 0f, 0.98f, split, visibleRect)
+
+        var weightedDark = 0.0
+        var weightedLight = 0.0
+        var weightedLum = 0.0
+        var totalWeight = 0.0
+
+        fun accumulate(stats: RegionToneStats?, weight: Double) {
+            if (stats == null || stats.totalCount <= 0) return
+            val darkFraction = stats.darkCount.toDouble() / stats.totalCount
+            weightedDark += darkFraction * weight
+            weightedLight += (1.0 - darkFraction) * weight
+            weightedLum += stats.meanLuminance * weight
+            totalWeight += weight
+        }
+
+        accumulate(leftStats, 1.5)
+        accumulate(centerStats, 0.6)
+        accumulate(rightStats, 1.5)
+
+        if (totalWeight <= 0.0) return fallbackLightContent
+        return when {
+            weightedDark > weightedLight + 1e-6 -> true
+            weightedLight > weightedDark + 1e-6 -> false
+            else -> useLightForegroundForLuminance((weightedLum / totalWeight).toFloat(), fallbackLightContent)
+        }
     }
 
     companion object {
@@ -246,8 +290,7 @@ data class HeaderActionColors(
 private fun resolveActionColorsForTone(
     enabled: Boolean,
     useLightContent: Boolean,
-    colorScheme: ColorScheme,
-    backgroundLuminance: Float? = null
+    colorScheme: ColorScheme
 ): HeaderActionColors {
     val isDarkTheme = colorScheme.background.luminance() < 0.5f
     if (!enabled) {
@@ -262,38 +305,22 @@ private fun resolveActionColorsForTone(
         )
     }
     return if (useLightContent) {
-        val rawAccent = if (isDarkTheme) colorScheme.primary else colorScheme.primaryContainer
-        val brightAccent = if (rawAccent.luminance() < 0.58f) {
-            lerp(rawAccent, LightHeaderInk, 0.55f)
-        } else {
-            rawAccent
-        }
         HeaderActionColors(
             useLightContent = true,
             contentColor = LightHeaderInk,
             secondaryContentColor = LightHeaderInk,
             disabledContentColor = LightHeaderInk.copy(alpha = 0.45f),
-            activeAccentColor = if (backgroundLuminance != null &&
-                contrastRatio(brightAccent.luminance(), backgroundLuminance) < 4.5f
-            ) LightHeaderInk else brightAccent,
+            activeAccentColor = LightHeaderInk,
             activeBadgeContainerColor = LightHeaderInk.copy(alpha = 0.94f),
             activeBadgeContentColor = DarkHeaderInk
         )
     } else {
-        val rawAccent = if (isDarkTheme) colorScheme.onPrimary else colorScheme.primary
-        val deepAccent = if (rawAccent.luminance() > 0.28f) {
-            lerp(rawAccent, DarkHeaderInk, 0.68f)
-        } else {
-            rawAccent
-        }
         HeaderActionColors(
             useLightContent = false,
             contentColor = DarkHeaderInk,
             secondaryContentColor = DarkHeaderInk,
             disabledContentColor = DarkHeaderInk.copy(alpha = 0.40f),
-            activeAccentColor = if (backgroundLuminance != null &&
-                contrastRatio(deepAccent.luminance(), backgroundLuminance) < 4.5f
-            ) DarkHeaderInk else deepAccent,
+            activeAccentColor = DarkHeaderInk,
             activeBadgeContainerColor = DarkHeaderInk.copy(alpha = 0.90f),
             activeBadgeContentColor = LightHeaderInk
         )
@@ -312,39 +339,13 @@ data class HeaderBarStyle(
     val titleContentColor: Color,
     val subtitleUseLight: Boolean,
     val subtitleContentColor: Color,
-    val trailingActionColors: HeaderActionColors,
-    private val luminanceMap: HeaderLuminanceMap? = null,
-    private val visibleRect: NormalizedRect = NormalizedRect(),
-    private val statusSplitY: Float = DEFAULT_STATUS_SPLIT_FRACTION,
-    private val barWidthDp: Float = DEFAULT_BAR_WIDTH_DP,
-    private val colorScheme: ColorScheme? = null
+    val trailingActionColors: HeaderActionColors
 ) {
     /**
-     * Resolves foreground colors for a specific trailing action icon slot counted from the right edge
-     * (0 = rightmost icon, 1 = second from right, ...), sampling the exact image region behind it.
+     * Returns the unified toolbar action colors for any trailing action slot.
      */
-    fun trailingActionAt(indexFromEnd: Int): HeaderActionColors {
-        if (!enabled || luminanceMap == null || colorScheme == null) return trailingActionColors
-        val safeWidth = barWidthDp.coerceAtLeast(240f)
-        val slot = indexFromEnd.coerceAtLeast(0)
-        val rightDp = (safeWidth - ACTION_RIGHT_INSET_DP - slot * ACTION_SLOT_WIDTH_DP).coerceIn(0f, safeWidth)
-        val leftDp = (rightDp - ACTION_SLOT_WIDTH_DP).coerceIn(0f, rightDp)
-        val leftFrac = (leftDp / safeWidth).coerceIn(0f, 1f)
-        val rightFrac = (rightDp / safeWidth).coerceIn(leftFrac, 1f)
-        val lum = luminanceMap.luminanceIn(
-            leftFrac = leftFrac,
-            topFrac = statusSplitY,
-            rightFrac = rightFrac,
-            bottomFrac = 1f,
-            visibleRect = visibleRect
-        )
-        return resolveActionColorsForTone(
-            enabled = true,
-            useLightContent = useLightForegroundForLuminance(lum),
-            colorScheme = colorScheme,
-            backgroundLuminance = lum
-        )
-    }
+    fun trailingActionAt(@Suppress("UNUSED_PARAMETER") indexFromEnd: Int): HeaderActionColors =
+        trailingActionColors
 }
 
 internal fun resolveHeaderBarStyle(
@@ -353,8 +354,7 @@ internal fun resolveHeaderBarStyle(
     colorScheme: ColorScheme,
     containerWidthPx: Float = 0f,
     containerHeightPx: Float = 0f,
-    statusBarHeightPx: Float = 0f,
-    barWidthDp: Float = DEFAULT_BAR_WIDTH_DP
+    statusBarHeightPx: Float = 0f
 ): HeaderBarStyle {
     val isDarkTheme = colorScheme.background.luminance() < 0.5f
     if (!enabled) {
@@ -393,54 +393,31 @@ internal fun resolveHeaderBarStyle(
     } else {
         DEFAULT_STATUS_SPLIT_FRACTION
     }
-    val toolbarBandH = (1f - statusSplitY).coerceAtLeast(0.2f)
 
-    val statusLum = luminanceMap?.statusBarLuminance(statusSplitY, visibleRect)
-    val navLum = luminanceMap?.luminanceIn(0f, statusSplitY, 0.16f, 1f, visibleRect)
-    val titleLum = luminanceMap?.luminanceIn(
-        leftFrac = 0.15f,
-        topFrac = statusSplitY,
-        rightFrac = 0.64f,
-        bottomFrac = (statusSplitY + toolbarBandH * 0.56f).coerceIn(statusSplitY, 1f),
-        visibleRect = visibleRect
+    val statusUseLight = luminanceMap?.statusBarUseLightForeground(statusSplitY, visibleRect) ?: true
+    val toolbarUseLight = luminanceMap
+        ?.analyzeRegionTone(0f, statusSplitY, 1f, 1f, visibleRect)
+        ?.useLightForeground()
+        ?: true
+
+    val toolbarColors = resolveActionColorsForTone(
+        enabled = true,
+        useLightContent = toolbarUseLight,
+        colorScheme = colorScheme
     )
-    val subtitleLum = luminanceMap?.luminanceIn(
-        leftFrac = 0.15f,
-        topFrac = (statusSplitY + toolbarBandH * 0.52f).coerceIn(statusSplitY, 1f),
-        rightFrac = 0.60f,
-        bottomFrac = 1f,
-        visibleRect = visibleRect
-    )
-    val rightActionLum = luminanceMap?.luminanceIn(0.84f, statusSplitY, 1f, 1f, visibleRect)
-
-    val statusUseLight = useLightForegroundForLuminance(statusLum)
-    val navUseLight = useLightForegroundForLuminance(navLum)
-    val titleUseLight = useLightForegroundForLuminance(titleLum)
-    val subtitleUseLight = useLightForegroundForLuminance(subtitleLum)
-    val rightActionUseLight = useLightForegroundForLuminance(rightActionLum)
-
-    val navColors = resolveActionColorsForTone(true, navUseLight, colorScheme)
-    val titleColors = resolveActionColorsForTone(true, titleUseLight, colorScheme)
-    val subtitleColors = resolveActionColorsForTone(true, subtitleUseLight, colorScheme)
-    val trailingColors = resolveActionColorsForTone(true, rightActionUseLight, colorScheme, rightActionLum)
 
     return HeaderBarStyle(
         enabled = true,
         statusBarUseLight = statusUseLight,
         statusBarContentColor = if (statusUseLight) LightHeaderInk else DarkHeaderInk,
-        navigationUseLight = navUseLight,
-        navigationContentColor = navColors.contentColor,
-        navigationDisabledColor = navColors.disabledContentColor,
-        titleUseLight = titleUseLight,
-        titleContentColor = titleColors.contentColor,
-        subtitleUseLight = subtitleUseLight,
-        subtitleContentColor = subtitleColors.secondaryContentColor,
-        trailingActionColors = trailingColors,
-        luminanceMap = luminanceMap,
-        visibleRect = visibleRect,
-        statusSplitY = statusSplitY,
-        barWidthDp = barWidthDp,
-        colorScheme = colorScheme
+        navigationUseLight = toolbarUseLight,
+        navigationContentColor = toolbarColors.contentColor,
+        navigationDisabledColor = toolbarColors.disabledContentColor,
+        titleUseLight = toolbarUseLight,
+        titleContentColor = toolbarColors.contentColor,
+        subtitleUseLight = toolbarUseLight,
+        subtitleContentColor = toolbarColors.secondaryContentColor,
+        trailingActionColors = toolbarColors
     )
 }
 
@@ -477,7 +454,7 @@ data class CustomHeaderData(
         } else {
             DEFAULT_STATUS_SPLIT_FRACTION
         }
-        return useLightForegroundForLuminance(map.statusBarLuminance(statusSplitY, visibleRect))
+        return map.statusBarUseLightForeground(statusSplitY, visibleRect)
     }
 }
 
