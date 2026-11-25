@@ -25,8 +25,8 @@ fun channelVersionCode(versionName: String): Int? {
     return code.takeIf { it in 1..2_100_000_000L }?.toInt()
 }
 
-val appVersionName = "1.1.7"
-val testingVersionSuffix = "-beta.40"
+val appVersionName = "1.1.8"
+val testingVersionSuffix = "-beta.1"
 
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
