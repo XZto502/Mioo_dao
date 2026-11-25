@@ -57,9 +57,21 @@ class SettingsViewModel @Inject constructor(
     private val threadRepository: ThreadRepository,
     private val backupRepository: BackupRepository
 ) : ViewModel() {
+    val offlineUpdatePolicy = settingsRepository.offlineUpdatePolicy
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false to true)
+    fun updateOfflineAutoUpdate(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.saveOfflineUpdateEnabled(enabled) }
+    }
+    fun updateOfflineWifiOnly(wifiOnly: Boolean) {
+        viewModelScope.launch { settingsRepository.saveOfflineUpdateWifiOnly(wifiOnly) }
+    }
 
     val thirdPartyConsent = settingsRepository.thirdPartyConsent
+    val updateChannel = settingsRepository.updateChannel
+    fun setUpdateChannel(channel: com.mioo.dao.utils.UpdateChannel) = settingsRepository.setUpdateChannel(channel)
     val predictiveBackEnabled = settingsRepository.predictiveBackEnabled
+    val scrollTouchGuardEnabled = settingsRepository.scrollTouchGuardEnabled
+    fun setScrollTouchGuardEnabled(enabled: Boolean) = settingsRepository.setScrollTouchGuardEnabled(enabled)
 
     fun setPredictiveBackEnabled(enabled: Boolean) {
         settingsRepository.setPredictiveBackEnabled(enabled)

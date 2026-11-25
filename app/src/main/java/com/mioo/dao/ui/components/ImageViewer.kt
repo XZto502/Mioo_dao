@@ -15,10 +15,12 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -95,6 +97,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.draw.drawBehind
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -253,6 +257,25 @@ private fun contentFitWidth(containerSize: IntSize, intrinsicSize: IntSize): Flo
     return if (containerAspect > imgAspect) ch * imgAspect else cw
 }
 
+internal fun computeStripFillPose(
+    containerSize: IntSize,
+    intrinsicSize: IntSize,
+    normalizedAngle: Int = 0
+): Pair<Float, Float>? {
+    if (containerSize.width <= 0 || containerSize.height <= 0 ||
+        intrinsicSize.width <= 0 || intrinsicSize.height <= 0
+    ) return null
+    val ratio = intrinsicSize.height.toFloat() / intrinsicSize.width.toFloat()
+    if (ratio <= StripRatioThreshold) return null
+    val fitW = contentFitWidth(containerSize, intrinsicSize) ?: return null
+    if (fitW <= 0f) return null
+    val cw = containerSize.width.toFloat()
+    val z = (cw / fitW).coerceIn(1f, 5f)
+    val fit = fitRotationScaleOf(containerSize, intrinsicSize, normalizedAngle)
+    val (_, maxY) = calculateBounds(containerSize, intrinsicSize, z, normalizedAngle, fit)
+    return z to maxY
+}
+
 /** 90\u00B0/270\u00B0 时把旋转后的 Fit 矩形缩回容器内；0\u00B0/180\u00B0 为 1。 */
 private fun fitRotationScaleOf(
     containerSize: IntSize,
@@ -344,10 +367,7 @@ fun ImageViewer(
     }
 
     var transform by remember { mutableStateOf(ViewerTransform()) }
-    var stripMode by remember { mutableStateOf(false) }
-    var stripRequest by remember { mutableIntStateOf(0) }
     var resetTick by remember { mutableIntStateOf(0) }
-    var currentRatio by remember { mutableStateOf(1f) }
     var zoomed by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var showTransformPanel by remember { mutableStateOf(false) }
@@ -357,11 +377,9 @@ fun ImageViewer(
     if (pagerState.currentPage != handledPage) {
         handledPage = pagerState.currentPage
         transform = ViewerTransform()
-        stripMode = false
         zoomed = false
         showTransformPanel = false
         showSauceMenu = false
-        currentRatio = 1f
     }
 
     val palette = viewerPalette(lightCanvas)
@@ -369,14 +387,6 @@ fun ImageViewer(
     val qrTexts = remember { androidx.compose.runtime.mutableStateMapOf<String, String?>() }
     val currentMeta = currentImages.getOrNull(pagerState.currentPage)
     val currentUrl = currentMeta?.url.orEmpty()
-
-    LaunchedEffect(currentUrl) {
-        if (currentUrl.isBlank() || qrTexts.containsKey(currentUrl)) return@LaunchedEffect
-        val text = withContext(Dispatchers.IO) {
-            runCatching { QrDetector.detect(context, currentUrl, maxDim = 1280) }.getOrNull()
-        }
-        qrTexts[currentUrl] = text
-    }
 
     val allowThirdParty = LocalThirdPartyServicesAllowed.current
     LaunchedEffect(allowThirdParty) {
@@ -389,15 +399,47 @@ fun ImageViewer(
     val dismissProgress = remember { Animatable(0f) }
     var swipeDirection by remember { mutableIntStateOf(1) }
     var isClosing by remember { mutableStateOf(false) }
+    var contentDetached by remember { mutableStateOf(false) }
+    // Stage viewer startup across frames while openProgress fades the scrim immediately:
+    // 0: backdrop only, 1: HorizontalPager + ZoomablePage, 2: ViewerBarsEffect, 3: top/bottom chrome
+    // (controlsAlpha stays 0f until openProgress > 0.25 at frame ~5, so staging is visually invisible).
+    var mountStage by remember { mutableIntStateOf(if (reducedMotion) 3 else 0) }
+    val chromeReady = mountStage >= 3
     val dismissCallback by rememberUpdatedState(onDismiss)
     LaunchedEffect(Unit) {
         openProgress.animateTo(1f, if (reducedMotion) snap() else tween(230, easing = FastOutSlowInEasing))
+    }
+    LaunchedEffect(reducedMotion) {
+        if (reducedMotion) {
+            mountStage = 3
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        mountStage = 1
+        withFrameNanos { }
+        mountStage = 2
+        withFrameNanos { }
+        mountStage = 3
+    }
+    LaunchedEffect(currentUrl, isClosing) {
+        if (isClosing || currentUrl.isBlank() || qrTexts.containsKey(currentUrl)) return@LaunchedEffect
+        snapshotFlow { openProgress.value >= 1f }.first { it }
+        withFrameNanos { }
+        val text = withContext(Dispatchers.IO) {
+            runCatching { QrDetector.detect(context, currentUrl, maxDim = 1280) }.getOrNull()
+        }
+        qrTexts[currentUrl] = text
     }
     fun triggerSmoothClose(afterClose: () -> Unit = {}) {
         if (isClosing) return
         isClosing = true
         scope.launch {
             openProgress.animateTo(0f, if (reducedMotion) snap() else tween(180, easing = FastOutLinearInEasing))
+            if (!reducedMotion) {
+                // Release pager/chrome nodes one frame before dismissing & restoring bars.
+                contentDetached = true
+                withFrameNanos { }
+            }
             dismissCallback()
             afterClose()
         }
@@ -433,7 +475,9 @@ fun ImageViewer(
         backOwner?.onBackPressedDispatcher?.addCallback(lifecycleOwner, callback)
         onDispose { callback.remove() }
     }
-    ViewerBarsEffect(lightCanvas = lightCanvas)
+    if (mountStage >= 2) {
+        ViewerBarsEffect(lightCanvas = lightCanvas)
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -448,13 +492,14 @@ fun ImageViewer(
             }
 
     ) {
+        if (!contentDetached) {
             ViewerCanvas(
                 color = palette.canvas,
                 alpha = backgroundAlpha,
                 openProgress = openProgress.asState(),
                 dismissProgress = dismissProgress.asState()
             )
-            HorizontalPager(
+            if (mountStage >= 1) HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize().graphicsLayer {
                     val scale = 1f - dismissProgress.value * 0.16f
@@ -476,8 +521,6 @@ fun ImageViewer(
                     ZoomablePage(
                         imageUrl = page.url,
                         transform = transform,
-                        stripMode = stripMode,
-                        stripRequest = stripRequest,
                         resetTick = resetTick,
                         isActive = pagerState.currentPage == pageIndex,
                         scrimColor = palette.icon,
@@ -485,8 +528,6 @@ fun ImageViewer(
                         openProgress = openProgress.asState(),
                         isClosing = isClosing,
                         onZoomed = { if (pagerState.currentPage == pageIndex) zoomed = it },
-                        onRatio = { if (pagerState.currentPage == pageIndex) currentRatio = it },
-                        onStripBroken = { if (stripMode) stripMode = false },
                         onToggleChrome = {
                             if (panelOpen) {
                                 showTransformPanel = false
@@ -531,7 +572,7 @@ fun ImageViewer(
                     }
             ) {
                 AnimatedVisibility(
-                    visible = showControls,
+                    visible = showControls && chromeReady,
                     enter = fadeIn(chromeFadeIn) + slideInVertically(chromeSlideIn) { -it / 2 },
                     exit = fadeOut(chromeFadeOut) + slideOutVertically(chromeSlideOut) { -it },
                     modifier = Modifier.align(Alignment.TopCenter)
@@ -543,7 +584,7 @@ fun ImageViewer(
                 }
 
                 AnimatedVisibility(
-                    visible = showControls,
+                    visible = showControls && chromeReady,
                     enter = fadeIn(chromeFadeIn) + slideInVertically(chromeSlideIn) { it },
                     exit = fadeOut(chromeFadeOut) + slideOutVertically(chromeSlideOut) { it },
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -571,41 +612,6 @@ fun ImageViewer(
                                 text = "[识别图中二维码]",
                                 style = MaterialTheme.typography.labelMedium,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                            )
-                        }
-                    }
-                    if (currentRatio > StripRatioThreshold && !showTransformPanel) {
-                        Surface(
-                            onClick = {
-                                if (stripMode) {
-                                    stripMode = false
-                                    resetTick++
-                                } else {
-                                    stripMode = true
-                                    stripRequest++
-                                }
-                            },
-                            shape = CircleShape,
-                            color = if (stripMode) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                palette.dockBg
-                            },
-                            contentColor = if (stripMode) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                palette.icon
-                            },
-                            tonalElevation = 0.dp,
-                            shadowElevation = 0.dp,
-                            border = BorderStroke(1.dp, palette.border),
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        ) {
-                            Text(
-                                text = "长图撑满",
-                                fontSize = 12.5.sp,
-                                fontWeight = if (stripMode) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             )
                         }
                     }
@@ -642,7 +648,6 @@ fun ImageViewer(
                                 onFlipV = { transform = transform.copy(flippedV = !transform.flippedV) },
                                 onReset = {
                                     transform = ViewerTransform()
-                                    stripMode = false
                                     resetTick++
                                 }
                             )
@@ -694,6 +699,7 @@ fun ImageViewer(
             }
 
         }
+        }
     }
 
 @Composable
@@ -703,11 +709,14 @@ private fun ViewerCanvas(
     openProgress: State<Float>,
     dismissProgress: State<Float>
 ) {
-    val fade = (openProgress.value * alpha.floatValue * (1f - dismissProgress.value * 0.65f)).coerceIn(0f, 1f)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(color.copy(alpha = fade))
+            .drawBehind {
+                val fade = (openProgress.value * alpha.floatValue *
+                    (1f - dismissProgress.value * 0.65f)).coerceIn(0f, 1f)
+                drawRect(color.copy(alpha = fade))
+            }
     )
 }
 
@@ -761,7 +770,7 @@ private fun ViewerBarsEffect(lightCanvas: Boolean) {
                 window.navigationBarDividerColor = originalDivider
             }
             WindowCompat.getInsetsController(window, window.decorView).apply {
-                isAppearanceLightStatusBars = originalLightStatus
+                isAppearanceLightStatusBars = com.mioo.dao.ui.theme.activeLightStatusBarsOverride ?: originalLightStatus
                 isAppearanceLightNavigationBars = originalLightNav
             }
         }
@@ -772,8 +781,6 @@ private fun ViewerBarsEffect(lightCanvas: Boolean) {
 private fun ZoomablePage(
     imageUrl: String,
     transform: ViewerTransform,
-    stripMode: Boolean,
-    stripRequest: Int,
     resetTick: Int,
     isActive: Boolean,
     scrimColor: Color,
@@ -781,8 +788,6 @@ private fun ZoomablePage(
     openProgress: State<Float>,
     isClosing: Boolean,
     onZoomed: (Boolean) -> Unit,
-    onRatio: (Float) -> Unit,
-    onStripBroken: () -> Unit,
     onToggleChrome: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -807,6 +812,19 @@ private fun ZoomablePage(
     }
     var loading by remember(imageUrl) { mutableStateOf(true) }
     var failed by remember(imageUrl) { mutableStateOf(false) }
+    var autoStripAppliedForVisit by remember(imageUrl) { mutableStateOf(false) }
+    var userTouchedForVisit by remember(imageUrl) { mutableStateOf(false) }
+
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            autoStripAppliedForVisit = false
+            userTouchedForVisit = false
+            motionJob.value?.cancel()
+            zoom.floatValue = 1f
+            offsetX.floatValue = 0f
+            offsetY.floatValue = 0f
+        }
+    }
 
     val reducedMotion = isReducedMotionEnabled()
     val motion = if (reducedMotion) snap<Float>() else tween<Float>(220)
@@ -826,13 +844,35 @@ private fun ZoomablePage(
             fit = fitRotationScale,
             isActive = isActive,
             onZoomed = onZoomed,
-            onStripBroken = onStripBroken,
             onToggleChrome = onToggleChrome,
             onDismiss = onDismiss
         )
     )
 
+    // Long images forcibly fill width aligned to top as soon as container & image dimensions are ready.
+    LaunchedEffect(isActive, containerSize.value, intrinsicSize.value) {
+        if (!isActive) return@LaunchedEffect
+        val intrinsic = intrinsicSize.value
+        if (intrinsic.width <= 0 || intrinsic.height <= 0) return@LaunchedEffect
+        val container = containerSize.value
+        if (container.width <= 0 || container.height <= 0) return@LaunchedEffect
+        if (!userTouchedForVisit && !autoStripAppliedForVisit) {
+            val (z, maxY) = computeStripFillPose(container, intrinsic, transform.normalizedAngle)
+                ?: return@LaunchedEffect
+            zoom.floatValue = z
+            offsetX.floatValue = 0f
+            offsetY.floatValue = maxY
+            autoStripAppliedForVisit = true
+            latest.value.onZoomed(false)
+        }
+    }
+
     LaunchedEffect(transform.normalizedAngle, containerSize.value, intrinsicSize.value) {
+        val stripPose = computeStripFillPose(containerSize.value, intrinsicSize.value, transform.normalizedAngle)
+        val minZoom = stripPose?.first ?: 1f
+        if (zoom.value < minZoom) {
+            zoom.value = minZoom
+        }
         if (zoom.value <= 1.01f) {
             offsetX.value = 0f
             offsetY.value = 0f
@@ -850,32 +890,16 @@ private fun ZoomablePage(
         offsetY.value = offsetY.value.coerceIn(-maxY, maxY)
     }
 
-    LaunchedEffect(stripRequest, stripMode) {
-        if (!latest.value.isActive || stripRequest == 0 || !stripMode) return@LaunchedEffect
-        while (containerSize.value.width == 0 || intrinsicSize.value.width == 0) {
-            withFrameNanos { }
-        }
-        if (!stripMode || !latest.value.isActive) return@LaunchedEffect
-        val fitW = contentFitWidth(containerSize.value, intrinsicSize.value) ?: return@LaunchedEffect
-        if (fitW <= 0f) return@LaunchedEffect
-        val cw = containerSize.value.width.toFloat()
-        val z = (cw / fitW).coerceIn(1f, 5f)
-        val fit = fitRotationScaleOf(containerSize.value, intrinsicSize.value, latest.value.angle)
-        val (_, maxY) = calculateBounds(containerSize.value, intrinsicSize.value, z, latest.value.angle, fit)
-        coroutineScope {
-            launch { zoom.animateTo(z, spring()) }
-            launch { offsetX.animateTo(0f, spring()) }
-            launch { offsetY.animateTo(maxY, spring()) }
-        }
-        latest.value.onZoomed(z > 1.01f)
-    }
-
     LaunchedEffect(resetTick) {
         if (resetTick == 0 || !latest.value.isActive) return@LaunchedEffect
+        userTouchedForVisit = true
+        val stripPose = computeStripFillPose(containerSize.value, intrinsicSize.value, 0)
+        val targetZoom = stripPose?.first ?: 1f
+        val targetY = stripPose?.second ?: 0f
         coroutineScope {
-            launch { zoom.animateTo(1f, spring()) }
+            launch { zoom.animateTo(targetZoom, spring()) }
             launch { offsetX.animateTo(0f, spring()) }
-            launch { offsetY.animateTo(0f, spring()) }
+            launch { offsetY.animateTo(targetY, spring()) }
         }
         latest.value.onZoomed(false)
     }
@@ -913,20 +937,28 @@ private fun ZoomablePage(
                         latest.value.onToggleChrome()
                     },
                     onDoubleTap = { tap ->
+                        userTouchedForVisit = true
                         val inputs = latest.value
-                        inputs.onStripBroken()
+                        val stripPose = computeStripFillPose(containerSize.value, intrinsicSize.value, inputs.angle)
+                        val baseZoom = stripPose?.first ?: 1f
                         val s0 = zoom.value.coerceAtLeast(0.01f)
-                        if (s0 > 1.05f) {
+                        if (s0 > baseZoom * 1.05f) {
+                            val targetY = if (stripPose != null) {
+                                offsetY.value.coerceIn(-stripPose.second, stripPose.second)
+                            } else {
+                                0f
+                            }
                             spawnMotion {
                                 coroutineScope {
-                                    launch { zoom.animateTo(1f, spring()) }
+                                    launch { zoom.animateTo(baseZoom, spring()) }
                                     launch { offsetX.animateTo(0f, spring()) }
-                                    launch { offsetY.animateTo(0f, spring()) }
+                                    launch { offsetY.animateTo(targetY, spring()) }
                                 }
-                                inputs.onZoomed(false)
+                                inputs.onZoomed(stripPose != null && abs(targetY - stripPose.second) > 2f)
                             }
                         } else {
-                            val s1 = 2.5f
+                            val maxZoom = maxOf(5f, baseZoom * 2f)
+                            val s1 = maxOf(2.5f, baseZoom * 1.8f).coerceAtMost(maxZoom)
                             val ratio = s1 / s0
                             val cx = size.width / 2f
                             val cy = size.height / 2f
@@ -966,8 +998,10 @@ private fun ZoomablePage(
                     intrinsicSize = { intrinsicSize.value },
                     angle = { latest.value.angle },
                     fitScale = { latest.value.fit },
-                    onZoomed = { latest.value.onZoomed(it) },
-                    onStripBroken = { latest.value.onStripBroken() },
+                    onZoomed = {
+                        userTouchedForVisit = true
+                        latest.value.onZoomed(it)
+                    },
                     onDismiss = {
                         closingFromDrag = true
                         latest.value.onDismiss()
@@ -1015,6 +1049,14 @@ private fun ZoomablePage(
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
                         alignment = Alignment.Center,
+                        onSuccess = { state ->
+                            if (intrinsicSize.value == IntSize.Zero) {
+                                val drawable = state.result.drawable
+                                if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
+                                    intrinsicSize.value = IntSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -1029,9 +1071,6 @@ private fun ZoomablePage(
                         val drawable = state.result.drawable
                         if (drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0) {
                             intrinsicSize.value = IntSize(drawable.intrinsicWidth, drawable.intrinsicHeight)
-                            if (latest.value.isActive) {
-                                onRatio(drawable.intrinsicHeight.toFloat() / drawable.intrinsicWidth.toFloat())
-                            }
                         }
                     },
                     onLoading = { loading = true },
@@ -1064,7 +1103,6 @@ private data class PageInputs(
     val fit: Float,
     val isActive: Boolean,
     val onZoomed: (Boolean) -> Unit,
-    val onStripBroken: () -> Unit,
     val onToggleChrome: () -> Unit,
     val onDismiss: () -> Unit
 )
@@ -1082,6 +1120,23 @@ private suspend fun MutableFloatState.animateTo(
     }
 }
 
+private suspend fun MutableFloatState.animateDecayClamped(
+    initialVelocity: Float,
+    maxAbs: Float,
+    decay: DecayAnimationSpec<Float>
+) {
+    if (!initialVelocity.isFinite() || abs(initialVelocity) <= 1f || maxAbs <= 0f) return
+    val state = this
+    val start = state.floatValue.coerceIn(-maxAbs, maxAbs)
+    state.floatValue = start
+    if ((start <= -maxAbs && initialVelocity < 0f) || (start >= maxAbs && initialVelocity > 0f)) return
+    val anim = Animatable(start)
+    anim.updateBounds(lowerBound = -maxAbs, upperBound = maxAbs)
+    anim.animateDecay(initialVelocity, decay) {
+        state.floatValue = value
+    }
+}
+
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectViewerGestures(
     zoom: MutableFloatState,
     offsetX: MutableFloatState,
@@ -1094,7 +1149,6 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
     angle: () -> Int,
     fitScale: () -> Float,
     onZoomed: (Boolean) -> Unit,
-    onStripBroken: () -> Unit,
     onDismiss: () -> Unit,
     hapticView: View,
     animScope: CoroutineScope,
@@ -1104,6 +1158,7 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
     val touchSlop = viewConfiguration.touchSlop
     val fling = android.view.ViewConfiguration.get(hapticView.context).scaledMinimumFlingVelocity.toFloat()
     val dismissThreshold = 120.dp.toPx()
+    val panDecay = exponentialDecay<Float>(frictionMultiplier = 0.72f, absVelocityThreshold = 15.dp.toPx())
     awaitEachGesture {
         // Wait for the next real touch before cancelling a return/zoom animation.
         // Cancelling before awaitFirstDown also cancels the animation just started on up.
@@ -1127,8 +1182,9 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
             }
             if (pressed >= 2) {
                 mode = 4
-                onStripBroken()
-                val next = (zoom.value * zoomChange).coerceIn(1f, 5f)
+                val minZoom = computeStripFillPose(containerSize(), intrinsicSize(), angle())?.first ?: 1f
+                val maxZoom = maxOf(5f, minZoom * 2f)
+                val next = (zoom.value * zoomChange).coerceIn(minZoom, maxZoom)
                 zoom.value = next
                 if (next > 1.01f) {
                     offsetX.value += pan.x
@@ -1209,15 +1265,37 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectVi
                     })
                 }
             }
-            4 -> {
-                if (zoom.value < 1.02f) {
+            3 -> {
+                val (maxX, maxY) = calculateBounds(
+                    containerSize(), intrinsicSize(), zoom.value, angle(), fitScale()
+                )
+                val vx = if (abs(velocity.x) > fling && maxX > 0f) velocity.x.coerceIn(-12000f, 12000f) else 0f
+                val vy = if (abs(velocity.y) > fling && maxY > 0f) velocity.y.coerceIn(-12000f, 12000f) else 0f
+                if (vx != 0f || vy != 0f) {
                     onMotionStarted(animScope.launch {
                         coroutineScope {
-                            launch { zoom.animateTo(1f, spring()) }
-                            launch { offsetX.animateTo(0f, spring()) }
-                            launch { offsetY.animateTo(0f, spring()) }
+                            if (vx != 0f) launch { offsetX.animateDecayClamped(vx, maxX, panDecay) }
+                            if (vy != 0f) launch { offsetY.animateDecayClamped(vy, maxY, panDecay) }
                         }
-                        onZoomed(false)
+                    })
+                }
+            }
+            4 -> {
+                val stripPose = computeStripFillPose(containerSize(), intrinsicSize(), angle())
+                val minZoom = stripPose?.first ?: 1f
+                if (zoom.value < minZoom * 1.02f) {
+                    val targetY = if (stripPose != null) {
+                        offsetY.value.coerceIn(-stripPose.second, stripPose.second)
+                    } else {
+                        0f
+                    }
+                    onMotionStarted(animScope.launch {
+                        coroutineScope {
+                            launch { zoom.animateTo(minZoom, spring()) }
+                            launch { offsetX.animateTo(0f, spring()) }
+                            launch { offsetY.animateTo(targetY, spring()) }
+                        }
+                        onZoomed(stripPose != null && abs(targetY - stripPose.second) > 2f)
                     })
                 }
             }
@@ -1235,6 +1313,11 @@ private fun clampZoomOffsets(
     fitScale: () -> Float,
     onZoomed: (Boolean) -> Unit,
 ) {
+    val stripPose = computeStripFillPose(containerSize(), intrinsicSize(), angle())
+    val minZoom = stripPose?.first ?: 1f
+    if (zoom.value < minZoom) {
+        zoom.value = minZoom
+    }
     val z = zoom.value
     if (z <= 1.01f) {
         offsetX.value = 0f
@@ -1245,7 +1328,10 @@ private fun clampZoomOffsets(
     val (maxX, maxY) = calculateBounds(containerSize(), intrinsicSize(), z, angle(), fitScale())
     offsetX.value = offsetX.value.coerceIn(-maxX, maxX)
     offsetY.value = offsetY.value.coerceIn(-maxY, maxY)
-    onZoomed(true)
+    val atDefaultStripPose = stripPose != null &&
+        abs(z - stripPose.first) <= 0.02f &&
+        abs(offsetY.value - stripPose.second) <= 2f
+    onZoomed(!atDefaultStripPose)
 }
 
 @Composable

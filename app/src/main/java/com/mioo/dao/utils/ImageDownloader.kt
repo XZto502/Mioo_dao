@@ -316,6 +316,22 @@ object ImageDownloader {
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
     }
 
+    fun saveImageFileToGallery(
+        context: Context,
+        sourceFile: java.io.File,
+        filenamePrefix: String = "mioo_image",
+        extension: String = "jpg",
+        mimeType: String = "image/jpeg"
+    ): Uri? {
+        if (!sourceFile.exists() || !sourceFile.isFile) return null
+        val filename = "${filenamePrefix}_${System.currentTimeMillis()}.$extension"
+        return writeGallery(context, filename, mimeType) { output ->
+            sourceFile.inputStream().use { input ->
+                input.copyTo(output)
+            }
+        }
+    }
+
     private fun saveBytes(context: Context, bytes: ByteArray, filename: String, mime: String): Uri? {
         return writeGallery(context, filename, mime) { output ->
             output.write(bytes)

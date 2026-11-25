@@ -30,6 +30,8 @@ class SubscriptionCheckWorker @AssistedInject constructor(
                 notifier.notifyNewReplies(updates)
             }
             Result.success()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
             Result.retry()
         }

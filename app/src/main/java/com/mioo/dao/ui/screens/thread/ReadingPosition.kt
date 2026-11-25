@@ -1,5 +1,28 @@
 package com.mioo.dao.ui.screens.thread
 
+/** Preserve a visible real floor, not the promotional floor repeated on every API page. */
+internal fun resolvePrependReadingAnchor(
+    visible: List<Pair<String, Int>>, newIds: List<String>, threadId: String, hasMain: Boolean
+): Pair<Int, Int>? {
+    for ((key, offset) in visible) {
+        if (key == "9999999") continue
+        if (hasMain && key == "main_$threadId") return 0 to -offset
+        val index = newIds.indexOf(key)
+        if (index >= 0) return (index + 1) to -offset
+    }
+    return null
+}
+
+/** Existing rows can be targeted during append/refresh, but not during replacement. */
+internal inline fun loadedPageJumpIndex(
+    page: Int, startPage: Int, isReplacing: Boolean, findFirstReplyIndex: () -> Int
+): Int? {
+    if (isReplacing) return null
+    if (page == 1 && startPage == 1) return 0
+    val index = findFirstReplyIndex()
+    return if (index >= 0) index + 1 else null
+}
+
 /** 存储索引保留 0=主楼，后续页的 LazyColumn 则不含主楼。 */
 internal fun readingLazyIndex(savedIndex: Int, hasMainPost: Boolean): Int =
     (savedIndex - if (hasMainPost) 0 else 1).coerceAtLeast(0)
@@ -31,4 +54,39 @@ internal fun resolveWindowReadingIndex(
         ?: targetPageIds.firstOrNull { it != "9999999" }
         ?: targetPageIds.lastOrNull()
     return resolveReadingIndex(anchor, threadId, windowIds, 0)
+}
+
+/** Tracks vertical drag intent for the thread creator button, including short non-scrollable pages. */
+internal class CreatorButtonScrollTracker(
+    private val hideDistancePx: Float,
+    private val showDistancePx: Float
+) {
+    private var directionDistance = 0f
+
+    fun onDrag(deltaY: Float, currentVisible: Boolean, atTop: Boolean = false): Boolean {
+        if (deltaY == 0f) return currentVisible
+        if (atTop && deltaY > 0f) {
+            directionDistance = 0f
+            return true
+        }
+        if (directionDistance * deltaY < 0f) {
+            directionDistance = 0f
+        }
+        directionDistance += deltaY
+        return when {
+            directionDistance <= -hideDistancePx -> {
+                directionDistance = 0f
+                false
+            }
+            directionDistance >= showDistancePx -> {
+                directionDistance = 0f
+                true
+            }
+            else -> currentVisible
+        }
+    }
+
+    fun reset() {
+        directionDistance = 0f
+    }
 }

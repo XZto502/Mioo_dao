@@ -102,7 +102,8 @@ fun CreateThreadEditor(
         controller?.isAppearanceLightStatusBars = !isDark
         controller?.isAppearanceLightNavigationBars = !isDark
         onDispose {
-            if (oldStatus != null) controller?.isAppearanceLightStatusBars = oldStatus
+            val restoredStatus = com.mioo.dao.ui.theme.activeLightStatusBarsOverride ?: oldStatus
+            if (restoredStatus != null) controller?.isAppearanceLightStatusBars = restoredStatus
             if (oldNavigation != null) controller?.isAppearanceLightNavigationBars = oldNavigation
         }
     }

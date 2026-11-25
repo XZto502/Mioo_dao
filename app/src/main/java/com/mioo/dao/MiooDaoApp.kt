@@ -3,6 +3,12 @@ package com.mioo.dao
 import android.app.Application
 import android.os.Build
 import android.os.Looper
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Comment
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.ui.graphics.Color
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -82,10 +88,17 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
         // Read the image-cache cap before the first picture. DataStore only — no Hilt graph.
         appScope.launch(Dispatchers.IO) {
+            var warmedLoader = false
             runCatching {
                 SettingsDataStore(this@MiooDaoApp).cacheLimitMbFlow
                     .distinctUntilChanged()
-                    .collect { applyImageCacheLimit(it) }
+                    .collect {
+                        applyImageCacheLimit(it)
+                        if (!warmedLoader) {
+                            warmedLoader = true
+                            Coil.imageLoader(this@MiooDaoApp).memoryCache
+                        }
+                    }
             }
         }
 
@@ -109,23 +122,44 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
     }
 
     private fun deferNonCriticalWarm() {
-        appScope.launch {
-            // After cold list + splash typically done
-            kotlinx.coroutines.delay(1800)
+        appScope.launch(Dispatchers.Default) {
+            // Wait until after cold-start splash dismissal and first board frame settle
+            // so background warm-up never contends with initial cache load or layout.
+            kotlinx.coroutines.delay(800)
             runCatching {
-                val loader = coil.Coil.imageLoader(this@MiooDaoApp)
-                loader.memoryCache
+                android.text.TextPaint().apply { textSize = 42f }
+                    .measureText("ﾟ∀´дつ⊂彡☆╬∇Дεω≡・ゝー。ᗜᗢəʃΣΩ♪★●○▲△▼▽◆◇□■综合版时间线回复串号无名氏今天昨天0123456789No.replies")
             }
-            kotlinx.coroutines.delay(400)
             runCatching {
-                HtmlParseCache.prewarm(
-                    listOf(
-                        "预热<br>测试&gt;&gt;No.1",
-                        "<font color=\"#789922\">&gt;&gt;No.2</font> hello"
-                    ),
-                    Color(0xFF6750A4)
-                )
+                com.mioo.dao.ui.components.HtmlPrewarmBridge.warmParserRuntime()
+                com.mioo.dao.ui.components.ContentBlockSplitter.split(">>No.12345678\n热身", emptyList())
+                com.mioo.dao.ui.components.ListThumbImage.request(this@MiooDaoApp, "https://image.nmb.best/thumb/warm.jpg")
+                Icons.AutoMirrored.Outlined.Comment
+                Icons.Default.Star
+                Icons.Default.ExpandMore
+                Icons.Default.Close
+                Icons.Default.Send
             }
+        }
+        appScope.launch(Dispatchers.IO) {
+            var first = true
+            SettingsDataStore(this@MiooDaoApp).feedFoldersFlow
+                .map { folders -> folders.map { it.uuid }.toSet() }
+                .distinctUntilChanged()
+                .collect { uuids ->
+                    com.mioo.dao.notification.CloudFeedIndexScheduler.apply(
+                        this@MiooDaoApp, uuids.isNotEmpty(), foldersChanged = !first
+                    )
+                    first = false
+                }
+        }
+        appScope.launch(Dispatchers.IO) {
+            var initialPolicy = true
+            SettingsDataStore(this@MiooDaoApp).offlineUpdatePolicy
+                .distinctUntilChanged().collect { (enabled, wifiOnly) ->
+                    com.mioo.dao.notification.OfflineUpdateScheduler.apply(this@MiooDaoApp, enabled, wifiOnly, !initialPolicy)
+                    initialPolicy = false
+                }
         }
         appScope.launch {
             kotlinx.coroutines.delay(3500)
@@ -160,16 +194,16 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
     override fun newImageLoader(): ImageLoader {
         synchronized(imageLoaderLock) {
             installedImageLoader?.let { return it }
-            enforceDiskCacheLimit(diskCacheMaxBytes)
             val loader = buildImageLoader(diskCacheMaxBytes)
             installedImageLoader = loader
+            enforcedDiskCacheBytes = diskCacheMaxBytes
             return loader
         }
     }
 
     /**
      * Coil opens one disk cache per directory and only trims down on close.
-     * Shut the current cache, trim to the new cap, then install a new loader.
+     * Shut the current cache, trim to the new cap when shrinking, then install a new loader.
      * [Coil.setImageLoader] stays outside [imageLoaderLock]: newImageLoader runs
      * under Coil's lock and then takes this lock.
      */
@@ -178,17 +212,21 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
         val bytes = ImageCacheLimit.toBytes(mb)
         var myGeneration = 0L
         val swap = synchronized(imageLoaderLock) {
-            if (bytes == diskCacheMaxBytes && enforcedDiskCacheBytes == bytes) return
+            val previousBytes = diskCacheMaxBytes
             diskCacheMaxBytes = bytes
             val previous = installedImageLoader
             if (previous == null) {
-                enforceDiskCacheLimit(bytes)
                 return
             }
+            if (bytes == previousBytes && enforcedDiskCacheBytes == bytes) return
             val previousClient = imageHttpClient
             previous.shutdown()
             closeCoilDiskCache(previous.diskCache)
-            enforceDiskCacheLimit(bytes)
+            if (bytes < previousBytes) {
+                enforceDiskCacheLimit(bytes)
+            } else {
+                enforcedDiskCacheBytes = bytes
+            }
             val replacement = buildImageLoader(bytes)
             installedImageLoader = replacement
             myGeneration = imageLoaderSwapGeneration.incrementAndGet()
@@ -234,6 +272,7 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
             // No crossfade on cold path — less GPU/animation work during first flings
             .crossfade(false)
             .allowHardware(true)
+            .bitmapFactoryMaxParallelism(2)
             .bitmapConfig(
                 if (lowRam) android.graphics.Bitmap.Config.RGB_565
                 else android.graphics.Bitmap.Config.ARGB_8888

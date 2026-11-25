@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.window.Dialog
 import com.mioo.dao.ui.theme.readingBodyStyle
 import com.mioo.dao.ui.theme.readingCardColor
+import com.mioo.dao.ui.theme.readingTitleStyle
 import com.mioo.dao.ui.theme.readingCardBorder
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.MiooMotion
@@ -110,8 +111,9 @@ fun RefPopup(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 24.dp)
                 .heightIn(max = maxCardHeight),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) androidx.compose.ui.graphics.Color(0xFF16181E) else androidx.compose.ui.graphics.Color.White),
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = readingCardColor()),
+            border = readingCardBorder(),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
@@ -154,7 +156,7 @@ fun RefPopup(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Warning,
-                                contentDescription = "Error",
+                                contentDescription = "加载失败",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(24.dp)
                             )
@@ -191,12 +193,9 @@ fun RefPopup(
                             Spacer(modifier = Modifier.height(12.dp))
                             ListThumbAsyncImage(
                                 imageUrl = imageUrl,
-                                contentDescription = "Attached Thumbnail",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(120.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { onImageClick(imageUrl) }
+                                contentDescription = "引用附图",
+                                preserveRatio = true,
+                                modifier = Modifier.clickable { onImageClick(imageUrl) }
                             )
                         }
                     }

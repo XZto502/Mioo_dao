@@ -6,5 +6,8 @@ import retrofit2.http.Url
 
 interface GithubApiService {
     @GET
+    suspend fun getReleases(@Url url: String): List<GithubRelease>
+
+    @GET
     suspend fun getLatestRelease(@Url url: String): GithubRelease
 }

@@ -8,13 +8,15 @@ import androidx.room.RoomDatabase
         HistoryEntity::class,
         BookmarkEntity::class,
         CacheEntity::class,
+        CachePostPreview::class,
         ThreadProgressEntity::class,
         CloudFeedThreadEntity::class,
+        CloudFeedSyncEntity::class,
         DraftEntity::class,
         OfflineThreadEntity::class,
         PostActionHistoryEntity::class
     ],
-    version = 11,
+    version = 13,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

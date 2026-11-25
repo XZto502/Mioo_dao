@@ -10,8 +10,21 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DraftDao {
 
-    @Query("SELECT * FROM drafts ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM drafts WHERE type != '_LEGACY_MIGRATION' ORDER BY updatedAt DESC")
     fun getAll(): Flow<List<DraftEntity>>
+
+    /** Commit the marker with the rows so retries never restore a deleted draft. */
+    @Transaction
+    suspend fun migrateLegacyDrafts(drafts: List<DraftEntity>) {
+        if (find("_LEGACY_MIGRATION", "drafts") != null) return
+        for (draft in drafts) {
+            val exists = find(draft.type, draft.targetId) != null ||
+                (draft.type == DraftEntity.TYPE_REPLY &&
+                    find(DraftEntity.TYPE_ARCHIVED_REPLY, draft.targetId) != null)
+            if (!exists) upsert(draft)
+        }
+        upsert(DraftEntity(type = "_LEGACY_MIGRATION", targetId = "drafts", content = ""))
+    }
 
     @Query("SELECT * FROM drafts WHERE type = :type AND targetId = :targetId ORDER BY updatedAt DESC, id DESC LIMIT 1")
     suspend fun find(type: String, targetId: String): DraftEntity?

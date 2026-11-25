@@ -4,6 +4,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class InlineQuoteLayoutTest {
+    @Test fun longMixedContentPreservesReferenceOrderAndExclusionBoundaries() {
+        val expected = mutableListOf<String>()
+        val html = buildString {
+            repeat(100) { index ->
+                val id = (20000000 + index).toString()
+                append("[h]11223344 >>No.567[/h] ")
+                append("<a href=\"https://example.com/87654321\">87654321</a> ")
+                append("<span data-id=\"12345678\">正文</span> ")
+                append("https://example.com/33445566 ")
+                append("$id<br>>>No.$id<br>")
+                expected.add(id)
+                expected.add(id)
+            }
+        }
+        assertEquals(expected, ContentBlockSplitter.quoteIds(html))
+        val quotes = expected.distinct().map { pendingInlineQuote(it) }
+        val blocks = ContentBlockSplitter.split(html, quotes)
+        assertEquals(expected, blocks.filterIsInstance<PostContentBlock.Quote>().map { it.quote.id })
+    }
+
+    @Test fun htmlSpoilersAndAdjacentLinksDoNotHideFollowingReferences() {
+        val html = "<span class=\"h\">12345678 >>No.10</span>" +
+            "22334455 <a href=\"/t/33445566\">33445566</a> 44556677 >>No.99"
+        assertEquals(listOf("22334455", "44556677", "99"), ContentBlockSplitter.quoteIds(html))
+    }
     @Test fun bareThreadIdsResolveButUrlsAttributesAndSpoilersDoNot() {
         val html = "正文 69729581<br>>>No.123<br>https://example.com/12345678 " +
             "<a href=\"https://example.com/87654321\">链接</a> [h]11223344[/h]"

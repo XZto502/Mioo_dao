@@ -99,14 +99,8 @@ val DarkSageTagColor = Color(0xFFEF5350)   // Lighter red for dark mode
 
 @Immutable
 data class DaoCustomColors(
-    val po: Color,
     val sage: Color,
     val admin: Color,
-    val quoteLink: Color,
-    val threadCardBg: Color,
-    val replyCardBg: Color,
-    val fabBg: Color,
-    val fabContent: Color,
     val sageTag: Color,
     val glassTopBar: Color,
     val glassNavBar: Color
@@ -114,14 +108,8 @@ data class DaoCustomColors(
 
 val LocalDaoCustomColors = staticCompositionLocalOf {
     DaoCustomColors(
-        po = Color.Unspecified,
         sage = Color.Unspecified,
         admin = Color.Unspecified,
-        quoteLink = Color.Unspecified,
-        threadCardBg = Color.Unspecified,
-        replyCardBg = Color.Unspecified,
-        fabBg = Color.Unspecified,
-        fabContent = Color.Unspecified,
         sageTag = Color.Unspecified,
         glassTopBar = Color.Unspecified,
         glassNavBar = Color.Unspecified

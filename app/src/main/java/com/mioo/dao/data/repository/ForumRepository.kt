@@ -7,29 +7,73 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import com.mioo.dao.data.local.CacheDao
+import com.mioo.dao.data.local.CacheEntity
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import javax.inject.Inject
 import javax.inject.Singleton
 
 interface ForumRepository {
+    suspend fun getCachedForumList(): List<ForumGroup>? = null
     fun getForumList(): Flow<XdResponse<List<ForumGroup>>>
     fun getTimelineList(): Flow<XdResponse<List<ForumGroup>>>
 }
 
 @Singleton
 class ForumRepositoryImpl @Inject constructor(
-    private val apiService: XdApiService
+    private val apiService: XdApiService,
+    private val cacheDao: CacheDao,
+    moshi: Moshi
 ) : ForumRepository {
+    private val listAdapter = moshi.adapter<List<ForumGroup>>(Types.newParameterizedType(List::class.java, ForumGroup::class.java))
+    private val mutex = Mutex()
+    private var memory: Pair<Long, List<ForumGroup>>? = null
+
+    override suspend fun getCachedForumList(): List<ForumGroup>? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        memory?.takeIf { now - it.first in 0..21_600_000L }?.let { return@withContext it.second }
+        val disk = cacheDao.getCache("forum_list", 1) ?: return@withContext null
+        val cached = runCatching { listAdapter.fromJson(disk.jsonResponse) }.getOrNull()
+        if (!cached.isNullOrEmpty()) {
+            memory = disk.cachedAt to cached
+            cached
+        } else {
+            null
+        }
+    }
 
     override fun getForumList(): Flow<XdResponse<List<ForumGroup>>> = flow {
         try {
-            val response = apiService.getForumList()
-            if (response.isEmpty()) {
-                emit(XdResponse.Success(getFallbackForumList()))
-            } else {
-                emit(XdResponse.Success(response))
+            val result = mutex.withLock {
+                val now = System.currentTimeMillis()
+                memory?.takeIf { now - it.first in 0..21_600_000L }?.let { return@withLock it.second }
+                val disk = cacheDao.getCache("forum_list", 1)
+                val cached = memory?.second ?: disk?.let { runCatching { listAdapter.fromJson(it.jsonResponse) }.getOrNull() }
+                if (!cached.isNullOrEmpty() && disk != null && now - disk.cachedAt in 0..21_600_000L) {
+                    memory = disk.cachedAt to cached
+                    return@withLock cached
+                }
+                try {
+                    val response = apiService.getForumList()
+                    check(response.isNotEmpty()) { "板块列表为空，请稍后重试" }
+                    memory = now to response
+                    cacheDao.insertCache(CacheEntity("forum_list", 1, listAdapter.toJson(response)))
+                    response
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    cached?.takeIf { it.isNotEmpty() } ?: throw e
+                }
             }
+            emit(XdResponse.Success(result))
         } catch (e: Exception) {
-            emit(XdResponse.Success(getFallbackForumList()))
+            if (e is CancellationException) throw e
+            emit(XdResponse.Error(message = e.localizedMessage ?: "无法获取板块列表", throwable = e))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -38,6 +82,7 @@ class ForumRepositoryImpl @Inject constructor(
             val response = apiService.getTimelineList()
             emit(XdResponse.Success(response))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             emit(XdResponse.Error(message = e.localizedMessage ?: "Unknown network error", throwable = e))
         }
     }.flowOn(Dispatchers.IO)

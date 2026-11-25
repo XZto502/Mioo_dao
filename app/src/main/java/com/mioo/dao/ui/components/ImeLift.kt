@@ -160,17 +160,34 @@ class ComposerInputPanelState {
 @Composable
 fun rememberComposerInputPanelState(): ComposerInputPanelState {
     val view = LocalView.current
-    DisposableEffect(view) {
+    val previousModeRef = remember(view) { intArrayOf(Int.MIN_VALUE) }
+    LaunchedEffect(view) {
+        androidx.compose.runtime.withFrameNanos { }
         var context = view.context
         while (context is android.content.ContextWrapper && context !is android.app.Activity) {
             context = context.baseContext
         }
-        val window = (context as? android.app.Activity)?.window
-        val previousMode = window?.attributes?.softInputMode
-        // Edge-to-edge keeps the root full size while adjustResize enables animated
-        // IME insets on older Android/OEM builds. Only our slot applies the inset.
-        window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        onDispose { if (previousMode != null) window?.setSoftInputMode(previousMode) }
+        val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
+        val previousMode = window.attributes.softInputMode
+        if (previousMode != android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE) {
+            previousModeRef[0] = previousMode
+            // Edge-to-edge keeps the root full size while adjustResize enables animated
+            // IME insets on older Android/OEM builds. Only our slot applies the inset.
+            window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
+    }
+    DisposableEffect(view) {
+        onDispose {
+            val saved = previousModeRef[0]
+            if (saved != Int.MIN_VALUE) {
+                previousModeRef[0] = Int.MIN_VALUE
+                var context = view.context
+                while (context is android.content.ContextWrapper && context !is android.app.Activity) {
+                    context = context.baseContext
+                }
+                (context as? android.app.Activity)?.window?.setSoftInputMode(saved)
+            }
+        }
     }
     return remember { ComposerInputPanelState() }
 }

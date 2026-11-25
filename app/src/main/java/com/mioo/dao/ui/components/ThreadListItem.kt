@@ -17,8 +17,22 @@ data class ThreadListItem(
     val replyCount: Int,
     val postData: PostData,
     val rawContent: String,
-    val hasImage: Boolean
+    val hasImage: Boolean,
+    val forumId: String? = null
 )
+
+/** Keep unchanged rows and their rich content stable during reply-count enrichment. */
+internal fun List<ThreadListItem>.withReplyCounts(counts: Map<String, Int>): List<ThreadListItem> {
+    if (counts.isEmpty()) return this
+    var updated: MutableList<ThreadListItem>? = null
+    forEachIndexed { index, item ->
+        val count = counts[item.idStr] ?: return@forEachIndexed
+        if (count < 0 || count == item.replyCount) return@forEachIndexed
+        val target = updated ?: toMutableList().also { updated = it }
+        target[index] = item.copy(replyCount = count)
+    }
+    return updated ?: this
+}
 
 /**
  * Pre-built local bookmark row.
@@ -39,31 +53,7 @@ fun List<Thread>.toFilteredThreadListItems(
     blockedKeywords: List<String>
 ): List<ThreadListItem> {
     if (isEmpty()) return emptyList()
-    val matcher = KeywordMatcher.build(blockedKeywords)
-    val result = ArrayList<ThreadListItem>(size)
-    for (thread in this) {
-        if (thread.idStr in blockedThreads) continue
-        if (thread.userHash in blockedUsers) continue
-        if (!matcher.isEmpty) {
-            val haystack = buildString(thread.content.length + (thread.title?.length ?: 0) + 1) {
-                thread.title?.let { append(it); append('\n') }
-                append(thread.content)
-            }.lowercase()
-            if (matcher.containsMatch(haystack, textIsLowercase = true)) continue
-        }
-        result.add(
-            ThreadListItem(
-                id = thread.id,
-                idStr = thread.idStr,
-                userHash = thread.userHash,
-                replyCount = thread.replyCount ?: 0,
-                postData = thread.toPostData(),
-                rawContent = thread.content,
-                hasImage = !thread.img.isNullOrBlank()
-            )
-        )
-    }
-    return result
+    return toFilteredThreadListItems(blockedThreads, blockedUsers, KeywordMatcher.build(blockedKeywords))
 }
 
 /**
@@ -76,6 +66,7 @@ fun List<Thread>.toFilteredThreadListItems(
     keywordMatcher: KeywordMatcher
 ): List<ThreadListItem> {
     if (isEmpty()) return emptyList()
+    val rawTimes = ArrayList<String>(size)
     val result = ArrayList<ThreadListItem>(size)
     for (thread in this) {
         if (thread.idStr in blockedThreads) continue
@@ -87,18 +78,22 @@ fun List<Thread>.toFilteredThreadListItems(
             }.lowercase()
             if (keywordMatcher.containsMatch(haystack, textIsLowercase = true)) continue
         }
+        val postData = thread.toPostData()
+        rawTimes.add(postData.createdAt)
         result.add(
             ThreadListItem(
                 id = thread.id,
                 idStr = thread.idStr,
                 userHash = thread.userHash,
                 replyCount = thread.replyCount ?: 0,
-                postData = thread.toPostData(),
+                postData = postData,
                 rawContent = thread.content,
-                hasImage = !thread.img.isNullOrBlank()
+                hasImage = !thread.img.isNullOrBlank(),
+                forumId = thread.fidStr
             )
         )
     }
+    prewarmReadingTimes(rawTimes)
     return result
 }
 
@@ -110,7 +105,7 @@ fun List<BookmarkEntity>.toBookmarkListItems(): List<BookmarkListItem> {
             postData = PostData(
                 id = entity.id,
                 title = entity.title.effectiveTitle(),
-                userName = entity.name ?: "Anonymous",
+                userName = entity.name ?: "无名氏",
                 userId = entity.userid,
                 createdAt = formatPostTime(entity.now),
                 content = entity.content,

@@ -1,5 +1,6 @@
 package com.mioo.dao.data.local
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -33,6 +34,7 @@ data class OfflineThreadEntity(
  * 离线串管理页列表项。cachedPages / jsonBytes 是查询期实时值——
  * 浏览写进的额外 api_cache 页也算进已缓存页数与体积。
  */
+@Immutable
 data class OfflineThreadSummary(
     val threadId: String,
     val title: String?,

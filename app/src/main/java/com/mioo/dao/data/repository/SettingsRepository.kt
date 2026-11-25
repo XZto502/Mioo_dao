@@ -19,11 +19,32 @@ import javax.inject.Singleton
 
 @Singleton
 class SettingsRepository @Inject constructor(
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val threadRepository: dagger.Lazy<ThreadRepository>
 ) {
+    val headerImageSettings = settingsDataStore.headerImageSettings
+    suspend fun saveHeaderImagePath(path: String) = settingsDataStore.saveHeaderImagePath(path)
+    suspend fun saveHeaderImageAlpha(alpha: Float) = settingsDataStore.saveHeaderImageAlpha(alpha)
+    suspend fun saveHeaderApplyToThread(enabled: Boolean) = settingsDataStore.saveHeaderApplyToThread(enabled)
+    val offlineUpdatePolicy = settingsDataStore.offlineUpdatePolicy
+    suspend fun saveOfflineUpdateEnabled(enabled: Boolean) = settingsDataStore.saveOfflineUpdateEnabled(enabled)
+    suspend fun saveOfflineUpdateWifiOnly(wifiOnly: Boolean) = settingsDataStore.saveOfflineUpdateWifiOnly(wifiOnly)
     // SupervisorJob: without it one failed write (e.g. DataStore IOException)
     // cancels the scope root and every later settings write becomes a silent no-op.
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val scrollTouchGuardEnabled = settingsDataStore.scrollTouchGuardFlow.stateIn(
+        repositoryScope, SharingStarted.Eagerly, false
+    )
+    fun setScrollTouchGuardEnabled(enabled: Boolean) {
+        repositoryScope.launch { settingsDataStore.saveScrollTouchGuard(enabled) }
+    }
+
+    val updateChannel = settingsDataStore.updateChannelFlow.stateIn(
+        repositoryScope, SharingStarted.Eagerly, com.mioo.dao.utils.UpdateChannel.STABLE
+    )
+    fun setUpdateChannel(channel: com.mioo.dao.utils.UpdateChannel) {
+        repositoryScope.launch { settingsDataStore.saveUpdateChannel(channel) }
+    }
     val predictiveBackEnabled = settingsDataStore.predictiveBackFlow.stateIn(
         repositoryScope, SharingStarted.Eagerly, false
     )
@@ -290,30 +311,13 @@ class SettingsRepository @Inject constructor(
 
     fun addCookie(cookie: String) {
         repositoryScope.launch {
-            // 直读 DataStore：settings.value 是 stateIn 产物，存在传播滞后，
-            // 快速连续操作时基于旧快照计算会互相覆盖
-            val currentList = settingsDataStore.cookiesListFlow.first().toMutableList()
-            if (cookie.isNotBlank() && !currentList.contains(cookie)) {
-                currentList.add(cookie)
-                settingsDataStore.saveCookiesList(currentList)
-                if (currentList.size == 1) {
-                    settingsDataStore.saveSelectedCookieIndex(0)
-                    settingsDataStore.saveUserHash(cookie)
-                    // 鉴权饼干默认跟随第一块导入的饼干（用户手动选择其他后不再覆盖）
-                    val auth = settingsDataStore.authCookieFlow.first()
-                    if (auth.isNullOrBlank()) settingsDataStore.saveAuthCookie(cookie)
-                }
-            }
+            settingsDataStore.changeCookie(cookie, remove = false)
         }
     }
 
     fun selectCookieIndex(index: Int) {
         repositoryScope.launch {
-            val list = settings.value.cookiesList
-            if (index in list.indices) {
-                settingsDataStore.saveSelectedCookieIndex(index)
-                settingsDataStore.saveUserHash(list[index])
-            }
+            settingsDataStore.selectCookie(index)
         }
     }
 
@@ -338,42 +342,13 @@ class SettingsRepository @Inject constructor(
 
     fun deleteCookie(cookie: String) {
         repositoryScope.launch {
-            val currentList = settingsDataStore.cookiesListFlow.first().toMutableList()
-            val indexToDelete = currentList.indexOf(cookie)
-            if (indexToDelete != -1) {
-                currentList.removeAt(indexToDelete)
-                settingsDataStore.saveCookiesList(currentList)
-
-                val notes = settingsDataStore.cookieNotesFlow.first().toMutableMap()
-                notes.remove(cookie)
-                settingsDataStore.saveCookieNotes(notes)
-
-                val newIndex = if (currentList.isEmpty()) 0 else {
-                    val prevIndex = settingsDataStore.selectedCookieIndexFlow.first()
-                    when {
-                        // 删除的是选中项之前的饼干 → 选中项左移一位，保持同一逻辑饼干
-                        indexToDelete < prevIndex -> prevIndex - 1
-                        // 删除的是末尾 → 收缩到新末尾
-                        prevIndex >= currentList.size -> currentList.size - 1
-                        else -> prevIndex
-                    }
-                }
-                settingsDataStore.saveSelectedCookieIndex(newIndex)
-
-                if (currentList.isNotEmpty()) {
-                    settingsDataStore.saveUserHash(currentList[newIndex])
-                } else {
-                    settingsDataStore.saveUserHash("")
-                }
-            }
+            settingsDataStore.changeCookie(cookie, remove = true)
         }
     }
 
     fun setCookieNote(cookie: String, note: String) {
         repositoryScope.launch {
-            val notes = settings.value.cookieNotes.toMutableMap()
-            if (note.isBlank()) notes.remove(cookie) else notes[cookie] = note.trim()
-            settingsDataStore.saveCookieNotes(notes)
+            settingsDataStore.updateCookieNote(cookie, note)
         }
     }
 
@@ -385,111 +360,69 @@ class SettingsRepository @Inject constructor(
 
     fun addFeedFolder(folder: com.mioo.dao.data.model.FeedFolder) {
         repositoryScope.launch {
-            val currentList = settings.value.feedFolders.toMutableList()
-            if (currentList.none { it.uuid == folder.uuid }) {
-                currentList.add(folder)
-                settingsDataStore.saveFeedFolders(currentList)
-            }
+            settingsDataStore.changeFeedFolder(null, folder)
         }
     }
 
     fun updateFeedFolder(oldUuid: String, folder: com.mioo.dao.data.model.FeedFolder) {
         repositoryScope.launch {
-            val current = settingsDataStore.feedFoldersFlow.first().toMutableList()
-            val index = current.indexOfFirst { it.uuid == oldUuid }
-            if (index >= 0 && current.none { it.uuid == folder.uuid && it.uuid != oldUuid }) {
-                current[index] = folder
-                settingsDataStore.saveFeedFolders(current)
-            }
+            settingsDataStore.changeFeedFolder(oldUuid, folder)
+            threadRepository.get().clearRemovedCloudFolder(oldUuid)
         }
     }
 
     fun removeFeedFolder(uuid: String) {
         repositoryScope.launch {
-            val currentList = settings.value.feedFolders.toMutableList()
-            currentList.removeAll { it.uuid == uuid }
-            settingsDataStore.saveFeedFolders(currentList)
+            settingsDataStore.changeFeedFolder(uuid, null)
+            threadRepository.get().clearRemovedCloudFolder(uuid)
         }
     }
 
     fun addBlockedThread(threadId: String) {
         repositoryScope.launch {
-            val current = settings.value.blockedThreads.toMutableList()
-            if (!current.contains(threadId)) {
-                current.add(threadId)
-                settingsDataStore.saveBlockedThreads(current)
-            }
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_BLOCKED_THREADS) { if (threadId !in it) it.add(threadId) }
         }
     }
 
     fun removeBlockedThread(threadId: String) {
         repositoryScope.launch {
-            val current = settings.value.blockedThreads.toMutableList()
-            if (current.remove(threadId)) {
-                settingsDataStore.saveBlockedThreads(current)
-            }
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_BLOCKED_THREADS) { it.remove(threadId) }
         }
     }
 
     fun addBlockedUser(userHash: String) {
         repositoryScope.launch {
-            val current = settings.value.blockedUsers.toMutableList()
-            if (!current.contains(userHash)) {
-                current.add(userHash)
-                settingsDataStore.saveBlockedUsers(current)
-            }
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_BLOCKED_USERS) { if (userHash !in it) it.add(userHash) }
         }
     }
 
     fun removeBlockedUser(userHash: String) {
         repositoryScope.launch {
-            val current = settings.value.blockedUsers.toMutableList()
-            if (current.remove(userHash)) {
-                settingsDataStore.saveBlockedUsers(current)
-            }
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_BLOCKED_USERS) { it.remove(userHash) }
         }
     }
 
     fun togglePinForum(forumId: String) {
         repositoryScope.launch {
-            val current = settings.value.pinnedForums.toMutableList()
-            if (current.contains(forumId)) {
-                current.remove(forumId)
-            } else {
-                current.add(forumId)
-            }
-            settingsDataStore.savePinnedForums(current)
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_PINNED_FORUMS) { if (!it.remove(forumId)) it.add(forumId) }
         }
     }
 
     fun toggleForumGroupExpand(groupId: String) {
         repositoryScope.launch {
-            val current = settings.value.expandedForumGroups.toMutableList()
-            if (current.contains(groupId)) {
-                current.remove(groupId)
-            } else {
-                current.add(groupId)
-            }
-            settingsDataStore.saveExpandedForumGroups(current)
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_EXPANDED_FORUM_GROUPS) { if (!it.remove(groupId)) it.add(groupId) }
         }
     }
 
     fun addBlockedKeyword(keyword: String) {
         repositoryScope.launch {
-            val current = settings.value.blockedKeywords.toMutableList()
-            if (keyword.isNotBlank() && !current.contains(keyword)) {
-                current.add(keyword)
-                settingsDataStore.saveBlockedKeywords(current)
-            }
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_BLOCKED_KEYWORDS) { if (keyword.isNotBlank() && keyword !in it) it.add(keyword) }
         }
     }
 
     fun removeBlockedKeyword(keyword: String) {
         repositoryScope.launch {
-            val current = settings.value.blockedKeywords.toMutableList()
-            if (current.remove(keyword)) {
-                settingsDataStore.saveBlockedKeywords(current)
-            }
+            settingsDataStore.updateStringList(SettingsDataStore.KEY_BLOCKED_KEYWORDS) { it.remove(keyword) }
         }
     }
 

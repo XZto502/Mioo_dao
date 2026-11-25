@@ -212,6 +212,8 @@ object MiooMotion {
         pushPopExit(reducedMotion)
 }
 
+val LocalReducedMotionEnabled = androidx.compose.runtime.staticCompositionLocalOf<Boolean?> { null }
+
 fun isReducedMotionEnabled(context: Context): Boolean {
     return try {
         Settings.Global.getFloat(
@@ -226,7 +228,8 @@ fun isReducedMotionEnabled(context: Context): Boolean {
 
 @Composable
 @ReadOnlyComposable
-fun isReducedMotionEnabled(): Boolean = isReducedMotionEnabled(LocalContext.current)
+fun isReducedMotionEnabled(): Boolean =
+    LocalReducedMotionEnabled.current ?: isReducedMotionEnabled(LocalContext.current)
 
 @Composable
 fun rememberPressScale(

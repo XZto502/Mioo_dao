@@ -7,7 +7,8 @@ import com.squareup.moshi.JsonClass
 data class GithubAsset(
     @Json(name = "name") val name: String,
     @Json(name = "browser_download_url") val browserDownloadUrl: String,
-    @Json(name = "size") val size: Long
+    @Json(name = "size") val size: Long,
+    @Json(name = "digest") val digest: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -16,5 +17,7 @@ data class GithubRelease(
     @Json(name = "name") val name: String?,
     @Json(name = "body") val body: String?,
     @Json(name = "html_url") val htmlUrl: String,
-    @Json(name = "assets") val assets: List<GithubAsset>?
+    @Json(name = "assets") val assets: List<GithubAsset>?,
+    @Json(name = "prerelease") val prerelease: Boolean = false,
+    @Json(name = "draft") val draft: Boolean = false
 )

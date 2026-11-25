@@ -1,5 +1,7 @@
 package com.mioo.dao.ui.screens.settings
 
+import com.mioo.dao.ui.screens.search.openAppDefaultLinksSettings
+
 import androidx.compose.foundation.layout.heightIn
 
 import android.app.Activity
@@ -36,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Cookie
@@ -61,6 +64,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -84,6 +88,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -113,10 +119,14 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBackClick: () -> Unit,
+    onOpenNetworkDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val updateChannel by viewModel.updateChannel.collectAsState()
+    var showUpdateChannelDialog by remember { mutableStateOf(false) }
     val predictiveBackEnabled by viewModel.predictiveBackEnabled.collectAsState()
+    val scrollTouchGuardEnabled by viewModel.scrollTouchGuardEnabled.collectAsState()
     val consent by viewModel.thirdPartyConsent.collectAsState()
     val allowThirdParty = consent?.allowThirdPartyServices == true
     val forumPreviewLines by viewModel.forumPreviewLines.collectAsState()
@@ -210,8 +220,10 @@ fun SettingsScreen(
         scope.launch {
             runCatching {
                 val json = viewModel.buildBackup(sections)
-                context.contentResolver.openOutputStream(uri)?.use { os ->
-                    os.write(json.toByteArray(Charsets.UTF_8))
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        os.write(json.toByteArray(Charsets.UTF_8))
+                    }
                 }
             }.onSuccess {
                 Toast.makeText(context, "备份已导出（${sections.size} 部分）", Toast.LENGTH_SHORT).show()
@@ -228,8 +240,11 @@ fun SettingsScreen(
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()
-                    ?.use { it.readText() }.orEmpty()
+                val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader().use { it.readText() }
+                    }.orEmpty()
+                }
                 viewModel.restoreBackup(text)
             }.onSuccess { importResult = it }
                 .onFailure { Toast.makeText(context, "恢复失败: ${it.message}", Toast.LENGTH_LONG).show() }
@@ -280,178 +295,43 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-        Text("外观与主题", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AppearanceSettingsGroup(settings, viewModel)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
-        // 3. Dark Mode Toggle (显示模式)
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.DarkMode, contentDescription = "显示模式")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "显示模式", style = settingsItemStyle())
+                    SettingsHeaderIcon(Icons.Outlined.Image, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("自定义顶栏背景", style = settingsItemStyle())
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                // 系统实时深色状态 + 当前生效的深色状态（点击回调里不能调 Composable，提前算好）
-                val systemDark = isSystemInDarkTheme()
-                val darkNow = when (settings.themeMode) {
-                    ThemeMode.DARK -> true
-                    ThemeMode.LIGHT -> false
-                    ThemeMode.SYSTEM -> systemDark
-                }
-
-                ThemeMode.values().forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                // 纯黑 (AMOLED) 仅深色可用：切到浅色（含跟随系统的浅色）时回落动态取色；
-                                // 跟随系统分支用系统实时深色判断，与当前模式无关
-                                val newDark = when (mode) {
-                                    ThemeMode.DARK -> true
-                                    ThemeMode.LIGHT -> false
-                                    ThemeMode.SYSTEM -> systemDark
-                                }
-                                if (!newDark && settings.themeColor == "amoled") {
-                                    viewModel.updateThemeColor("dynamic")
-                                }
-                                viewModel.updateThemeMode(mode)
-                            }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.themeMode == mode,
-                            onClick = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = when(mode) {
-                                ThemeMode.SYSTEM -> "跟随系统"
-                                ThemeMode.LIGHT -> "浅色主题"
-                                ThemeMode.DARK -> "深色主题"
-                            },
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
+                com.mioo.dao.ui.components.HeaderImageSettingsContent()
             }
-        }
-
-        SettingsGroupDivider()
-        // 4. Theme Color Selection (主题颜色)
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = "主题颜色"
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "主题色选择", style = settingsItemStyle())
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 纯黑 (AMOLED) 仅在深色模式（含跟随系统的深色）下提供
-                val darkNow = when (settings.themeMode) {
-                    ThemeMode.DARK -> true
-                    ThemeMode.LIGHT -> false
-                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                }
-                val colors = listOf(
-                    "dynamic" to "动态取色 (Material You)",
-                    "classic" to "经典紫色 (Classic M3)",
-                    "teal" to "青蓝色 (Cyan)",
-                    "pink" to "樱花粉 (Sakura Pink)",
-                    "green" to "森林绿 (Forest Green)"
-                ) + if (darkNow) {
-                    listOf("amoled" to "纯黑 (AMOLED)")
-                } else {
-                    emptyList()
-                }
-
-
-                colors.forEach { (colorKey, colorLabel) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.updateThemeColor(colorKey) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = settings.themeColor == colorKey,
-                            onClick = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = colorLabel,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-        }
-
-        SettingsGroupDivider()
-        // 5. Glass effect (毛玻璃特效)
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(
-                        imageVector = Icons.Default.BlurOn,
-                        contentDescription = "毛玻璃特效"
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "毛玻璃特效",
-                        style = settingsItemStyle()
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后顶栏、底栏与卡片使用半透明毛玻璃风格，并显示背景流光；关闭后使用实色界面，可略微提升性能。完整模糊效果需 Android 12+，更低版本会自动使用约 95% 不透明底色。",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            viewModel.updateGlassEffectEnabled(!settings.glassEffectEnabled)
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (settings.glassEffectEnabled) "已开启" else "已关闭",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    androidx.compose.material3.Switch(
-                        checked = settings.glassEffectEnabled,
-                        onCheckedChange = { viewModel.updateGlassEffectEnabled(it) }
-                    )
-                }
-            }
-        }
-
         }
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
-        TextButton(onClick = { showKaomojiManager = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("自定义颜文字（${customKaomoji.size}）")
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("自定义颜文字", style = settingsItemStyle())
+                Text("已添加 ${customKaomoji.size} 个", style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            FilledTonalButton(onClick = { showKaomojiManager = true }) { Text("管理") }
         }
-        TextButton(onClick = { confirmResetQuickInputs = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("恢复默认快捷输入")
+        SettingsGroupDivider()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("创作快捷输入", style = settingsItemStyle())
+                Text("长按编辑器底部快捷项可编辑", style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = { confirmResetQuickInputs = true }) { Text("恢复默认") }
         }
         SettingsGroupDivider()
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -481,7 +361,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "滑动缩放以调整帖子和回复的内容文本字号大小。",
+                    text = "滑动缩放以调整串与回复的正文字号大小。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -510,7 +390,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "预览文字：欢迎来到喵岛讨论区！",
+                    text = "预览文字：欢迎来到喵岛！",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -561,7 +441,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "预览文字：欢迎来到喵岛讨论区！\n行间距越大，正文越舒展，阅读长串更轻松。",
+                    text = "预览文字：欢迎来到喵岛！\n行间距越大，正文越舒展，阅读长串更轻松。",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -681,7 +561,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后，回复中的 >>No.xxx 引用以收起卡片形式显示在正文中，点击可展开；关闭后仅保留链接文字，点击弹出浮层查看原帖",
+                    text = "开启后，回复中的 >>No.xxx 引用以预览卡片形式显示在正文中，点击可弹窗查看详情；关闭后仅保留引用链接，点击弹出浮层查看所引用的内容",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -754,7 +634,7 @@ fun SettingsScreen(
                 }
             }
         }
-        Text("发帖与饼干", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("发言与饼干", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 1. Cookie Configuration (饼干设置)
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
@@ -771,7 +651,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "在此添加并选择您发帖和回复时使用的发言饼干 (userhash)。",
+                    text = "在此添加并选择发串和回复时使用的发言饼干 (userhash)。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -982,7 +862,7 @@ fun SettingsScreen(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("发送前确认饼干", style = settingsItemStyle())
-                    Text("发送回复或新串前选择饼干", fontSize = 12.sp,
+                    Text("发送回复或新串前选择饼干", fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 }
                 androidx.compose.material3.Switch(checked = settings.confirmCookieBeforeSend,
@@ -1051,14 +931,14 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的串",
-                    fontSize = 13.sp,
+                    fontSize = com.mioo.dao.ui.theme.readingTextStyle(13f, 20f).fontSize,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedThreads.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的串",
-                        fontSize = 12.5.sp,
+                        fontSize = com.mioo.dao.ui.theme.readingTextStyle(12.5f, 20f).fontSize,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -1092,14 +972,14 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的发言饼干 ID",
-                    fontSize = 13.sp,
+                    fontSize = com.mioo.dao.ui.theme.readingTextStyle(13f, 20f).fontSize,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
                 if (settings.blockedUsers.isEmpty()) {
                     Text(
                         text = "暂无被屏蔽的 ID",
-                        fontSize = 12.5.sp,
+                        fontSize = com.mioo.dao.ui.theme.readingTextStyle(12.5f, 20f).fontSize,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -1133,7 +1013,7 @@ fun SettingsScreen(
 
                 Text(
                     text = "已屏蔽的关键字",
-                    fontSize = 13.sp,
+                    fontSize = com.mioo.dao.ui.theme.readingTextStyle(13f, 20f).fontSize,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
@@ -1231,7 +1111,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "添加额外的收藏夹UUID，可在收藏界面作为卡片独立浏览。",
+                    text = "添加额外的订阅 UUID（云端收藏夹），可在收藏界面分页独立浏览。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1287,8 +1167,8 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "后台定期向 X岛 官方接口查询：云端订阅夹（feed UUID）与本地收藏串是否有新回复，有更新则发系统通知。\n" +
-                        "说明：岛方未对第三方开放实时推送通道，蓝岛等客户端也是本地轮询同一套订阅数据，并非互相收对方 App 的推送。",
+                    text = "后台定期向 X 岛官方接口查询云端订阅（订阅 UUID）与本地收藏串是否有新回复，有更新时发送系统通知。\n" +
+                        "说明：岛方未开放实时推送通道，第三方客户端均通过本地定时轮询获取订阅更新。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1344,7 +1224,7 @@ fun SettingsScreen(
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("分享卡片显示喵岛水印", style = settingsItemStyle())
-                    Text("在生成的分享卡片底部展示喵岛标识与原串二维码",
+                    Text("在分享图底部附加喵岛标识与原串二维码",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -1361,7 +1241,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f)) {
                     Text("创作模式", style = settingsItemStyle())
                     Text(
-                        "串详情页收起底部常驻回复栏，改为右下角悬浮按钮并使用全屏信纸写作台",
+                        "收起底部常驻回复栏，改用悬浮按钮与全屏编辑卡片",
                         style = settingsDescriptionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1377,7 +1257,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("预测性返回", style = settingsItemStyle())
-                    Text("侧滑返回时跟随手势预览上一页面", style = settingsDescriptionStyle(),
+                    Text("侧滑返回时跟手预览上一级页面", style = settingsDescriptionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 androidx.compose.material3.Switch(
@@ -1386,7 +1266,76 @@ fun SettingsScreen(
                 )
             }
         }
+        SettingsGroupCard(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("滑动防误触", style = settingsItemStyle())
+                    Text("提高起滑判定阈值，减少点击或斜滑时的误滑动",
+                        style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(
+                    checked = scrollTouchGuardEnabled,
+                    onCheckedChange = viewModel::setScrollTouchGuardEnabled
+                )
+            }
+        }
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Column(Modifier.fillMaxWidth().clickable { showUpdateChannelDialog = true }.padding(16.dp)) {
+                Text("更新通道", style = settingsItemStyle())
+                Spacer(Modifier.height(6.dp))
+                Text(if (updateChannel == com.mioo.dao.utils.UpdateChannel.STABLE) "正式版" else "测试版",
+                    style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (showUpdateChannelDialog) {
+            AlertDialog(
+                onDismissRequest = { showUpdateChannelDialog = false },
+                shape = MaterialTheme.shapes.large, tonalElevation = 0.dp,
+                title = { Text("更新通道", fontSize = com.mioo.dao.ui.theme.readingTextStyle(17.5f, 20f).fontSize, fontWeight = FontWeight.SemiBold) },
+                text = {
+                    Column {
+                        com.mioo.dao.utils.UpdateChannel.values().forEach { channel ->
+                            Row(Modifier.fillMaxWidth().clickable {
+                                viewModel.setUpdateChannel(channel)
+                            }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = updateChannel == channel,
+                                    onClick = { viewModel.setUpdateChannel(channel) })
+                                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "正式版" else "测试版")
+                                    Text(if (channel == com.mioo.dao.utils.UpdateChannel.STABLE) "稳定版本，适合日常使用"
+                                        else "抢先体验新功能，可能存在未知问题",
+                                        fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        if (updateChannel == com.mioo.dao.utils.UpdateChannel.BETA) {
+                            Text("切回正式版后，将在下个更高版本正式版发布时覆盖升级",
+                                fontSize = com.mioo.dao.ui.theme.readingTextStyle(12f, 20f).fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp))
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { showUpdateChannelDialog = false }) { Text("完成") } }
+            )
+        }
         Text("网络、备份与缓存", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { openAppDefaultLinksSettings(context) }
+                    .padding(16.dp)
+            ) {
+                Text("默认打开", style = settingsItemStyle())
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "在系统设置中允许喵岛打开 X 岛链接",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -1395,7 +1344,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
                     Text("第三方服务", style = settingsItemStyle())
                     Text(
-                        "允许检查和下载更新、外部搜索、以图搜源与网络兼容模式的第三方 DNS。",
+                        "允许检查更新、外部搜索、以图搜源及网络兼容的第三方 DNS",
                         style = settingsDescriptionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1411,7 +1360,7 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("网络兼容模式", style = settingsItemStyle())
                 Spacer(Modifier.height(8.dp))
-                Text("发串、回复或加载帖子经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
+                Text("发串、回复或加载串内容经常超时、连接重置时可尝试开启。使用加密解析改善连接，开启后对新连接生效。",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
                 Spacer(Modifier.height(12.dp))
@@ -1430,6 +1379,33 @@ fun SettingsScreen(
                 }
             }
         }
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenNetworkDiagnostics)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SettingsHeaderIcon(Icons.Default.NetworkCheck, contentDescription = "X 岛通信诊断")
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("X 岛通信诊断", style = settingsItemStyle())
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        "检测 API、图床、网页域名连通性、阻塞环节与延迟",
+                        style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        }
         // 省流量模式开关
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
@@ -1446,7 +1422,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "开启后帖子图片不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
+                    text = "开启后串内与列表附图不再自动加载，仅显示占位，点击单张加载；点开大图不受影响",
                     style = settingsDescriptionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                 )
@@ -1505,313 +1481,20 @@ fun SettingsScreen(
                 }
             }
         }
-        // 6. Offline and Caching Settings (离线与缓存设置)
-        val cacheSize by viewModel.cacheSizeState.collectAsState()
-        val isPreloading by viewModel.isPreloadingState.collectAsState()
-        val preloadProgress by viewModel.preloadProgressState.collectAsState()
+        OfflineSettingsGroup(settings, viewModel)
 
-        SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(0.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Default.Save, contentDescription = "离线缓存")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "离线阅读与智能预加载",
-                        style = settingsItemStyle()
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开启后会在网络连接可用时预先下载帖子，方便您在无网环境下进行阅读。",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Cache Size & Clear
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "本地离线数据大小",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                        )
-                        Text(
-                            text = cacheSize,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.clearCache() },
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("清除数据")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Image Cache Size & Clear
-                val imageCacheSize by viewModel.imageCacheSizeState.collectAsState()
-                val context = LocalContext.current
-                var cacheLimitDraft by remember(settings.cacheLimitMb) {
-                    mutableStateOf(settings.cacheLimitMb.toFloat())
-                }
-                LaunchedEffect(settings.cacheLimitMb) {
-                    viewModel.updateImageCacheSize(context)
-                    kotlinx.coroutines.delay(700)
-                    viewModel.updateImageCacheSize(context)
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "图片缓存",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "$imageCacheSize / ${cacheLimitDraft.toInt()} MB",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.clearImageCache(context) },
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("清理图片")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "图片缓存上限: ${cacheLimitDraft.toInt()} MB",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "只限制图片磁盘缓存，默认 1024 MB。超出后自动删掉最久没看的图片，松手后立即生效。",
-                    style = settingsDescriptionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
-                )
-                Slider(
-                    value = cacheLimitDraft,
-                    onValueChange = { cacheLimitDraft = it },
-                    onValueChangeFinished = { viewModel.updateCacheLimitMb(cacheLimitDraft.toInt()) },
-                    valueRange = ImageCacheLimit.MIN_MB.toFloat()..ImageCacheLimit.MAX_MB.toFloat(),
-                    steps = ImageCacheLimit.SLIDER_STEPS
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "${ImageCacheLimit.MIN_MB} MB",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${ImageCacheLimit.MAX_MB} MB",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Smart Preload Mode
-                Text(
-                    text = "自动预加载网络模式",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        "WIFI_ONLY" to "仅限 WiFi",
-                        "ALL_NETWORKS" to "所有网络",
-                        "DISABLED" to "关闭"
-                    ).forEach { (mode, label) ->
-                        val selected = settings.smartPreloadMode == mode
-                        FilterChip(
-                            selected = selected,
-                            onClick = { viewModel.updateSmartPreloadMode(mode) },
-                            label = { Text(label) }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Preload Count Slider — 关闭预加载时无意义，隐藏
-                if (settings.smartPreloadMode != "DISABLED") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "列表预加载数: ${settings.preloadCount} 串",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                        )
-                    }
-                    Slider(
-                        value = settings.preloadCount.toFloat(),
-                        onValueChange = { viewModel.updatePreloadCount(it.toInt()) },
-                        valueRange = 5f..30f,
-                        steps = 4
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Preload Bookmarks — 正式版屏蔽批量缓存，避免对岛服务器造成过大负担
-                if (com.mioo.dao.BuildConfig.BETA || com.mioo.dao.BuildConfig.DEBUG) {
-                    Button(
-                        onClick = { viewModel.preloadBookmarks() },
-                        enabled = !isPreloading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(if (isPreloading) "正在缓存收藏夹..." else "一键缓存所有收藏串")
-                    }
-
-                    if (isPreloading && preloadProgress != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        val (current, total) = preloadProgress!!
-                        val progressFraction = if (total > 0) current.toFloat() / total.toFloat() else 0f
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            LinearProgressIndicator(
-                                progress = { progressFraction },
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "$current / $total",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-        }
         Spacer(modifier = Modifier.height(100.dp))
     }
 }
 
     if (showAddFolderDialog) {
-        var dialogVisible by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { dialogVisible = true }
-        val dialogScale by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = if (dialogVisible) 1f else 0.96f,
-            animationSpec = androidx.compose.animation.core.tween(220), label = "folderDialog"
-        )
-        fun closeFolderDialog() {
-            dialogVisible = false
-            scope.launch { kotlinx.coroutines.delay(220); showAddFolderDialog = false }
-        }
-        androidx.compose.material3.AlertDialog(
-            modifier = Modifier.graphicsLayer { scaleX = dialogScale; scaleY = dialogScale; alpha = ((dialogScale - 0.96f) / 0.04f).coerceIn(0f, 1f) },
-            shape = RoundedCornerShape(22.dp),
-            tonalElevation = 0.dp,
-            containerColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF181A20) else Color.White,
-            onDismissRequest = { closeFolderDialog() },
-            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
-            title = {
-                com.mioo.dao.ui.theme.ImmersiveDialogEffect()
-                Text(if (editingFolderUuid == null) "添加云端收藏夹" else "编辑云端收藏夹", fontSize = 17.5.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            },
-            text = {
-                Column {
-                    val fieldColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF22252D) else Color(0xFFF2F4F8)
-                    val fieldColors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = fieldColor, unfocusedContainerColor = fieldColor,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        unfocusedBorderColor = Color.Transparent
-                    )
-                    Text("收藏夹名称", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(
-                        value = newFolderName, onValueChange = { newFolderName = it },
-                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
-                        singleLine = true, modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Text("订阅 UUID", Modifier.padding(start = 2.dp, bottom = 6.dp), fontSize = 12.sp,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(
-                        value = newFolderUuid, onValueChange = { newFolderUuid = it },
-                        shape = RoundedCornerShape(12.dp), colors = fieldColors,
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.5.sp),
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        trailingIcon = {
-                            Box(Modifier.size(48.dp).clickable(
-                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                indication = null
-                            ) { newFolderUuid = java.util.UUID.randomUUID().toString().replace("-", "").take(16) },
-                                contentAlignment = Alignment.Center) {
-                                Icon(Icons.Outlined.Refresh, "随机生成订阅 ID", Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    )
-                    Text("可填入已有订阅 ID 多端同步，或点右侧图标随机生成",
-                        Modifier.padding(start = 2.dp, top = 6.dp), fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                    if (newFolderUuid.isNotBlank() && settings.feedFolders.any { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
-                        Text("该订阅 ID 已存在", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            },
-            confirmButton = {
-                FolderActionButton(tonal = true,
-                    onClick = {
-                        if (newFolderName.isNotBlank() && newFolderUuid.isNotBlank() && settings.feedFolders.none { it.uuid == newFolderUuid.trim() && it.uuid != editingFolderUuid }) {
-                            if (editingFolderUuid == null) viewModel.addFeedFolder(newFolderName.trim(), newFolderUuid.trim())
-                            else viewModel.updateFeedFolder(editingFolderUuid!!, newFolderName.trim(), newFolderUuid.trim())
-                            closeFolderDialog()
-                            newFolderName = ""
-                            newFolderUuid = ""
-                        }
-                    }
-                ) {
-                    Text(if (editingFolderUuid == null) "添加" else "保存")
-                }
-            },
-            dismissButton = {
-                FolderActionButton(onClick = { closeFolderDialog() }) {
-                    Text("取消")
-                }
-            }
+        FolderInputDialog(
+            values = FolderInputValues(editingFolderUuid, newFolderName, newFolderUuid, settings.feedFolders),
+            onNameChange = { newFolderName = it },
+            onUuidChange = { newFolderUuid = it },
+            onDismiss = { showAddFolderDialog = false },
+            onAdd = viewModel::addFeedFolder,
+            onUpdate = viewModel::updateFeedFolder
         )
     }
 
@@ -1840,78 +1523,23 @@ fun SettingsScreen(
         )
     }
     if (showBackupPicker) {
-        val sectionLabels = listOf(
-            "cookies" to "发言饼干（含备注/鉴权/选中）",
-            "history" to "浏览历史（含阅读位置）",
-            "replyHistory" to "发言历史（含附图）",
-            "newThreadHistory" to "发串历史（含附图）",
-            "bookmarks" to "本地收藏",
-            "drafts" to "草稿箱",
-            "settings" to "应用设置（主题/字体/开关等）",
-            "blocks" to "屏蔽与板块（串/饼干/关键词/置顶/展开）"
-        )
-        AlertDialog(
-            onDismissRequest = { showBackupPicker = false },
-            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
-            title = { com.mioo.dao.ui.theme.ImmersiveDialogEffect(); Text("选择备份内容") },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    sectionLabels.forEach { (key, label) ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { pendingBackupSections = toggleSection(pendingBackupSections, key) },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = key in pendingBackupSections,
-                                onCheckedChange = { pendingBackupSections = toggleSection(pendingBackupSections, key) }
-                            )
-                            Text(label, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showBackupPicker = false
-                        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
-                        backupExportLauncher.launch("mioo-backup-$stamp.json")
-                    },
-                    enabled = pendingBackupSections.isNotEmpty()
-                ) { Text("导出") }
-            },
-            dismissButton = { TextButton(onClick = { showBackupPicker = false; pendingBackupSections = emptySet() }) { Text("取消") } }
+        BackupPickerDialog(
+            pendingBackupSections = pendingBackupSections,
+            onSectionsChange = { pendingBackupSections = it },
+            onDismiss = { showBackupPicker = false },
+            onCancel = { showBackupPicker = false; pendingBackupSections = emptySet() },
+            onExport = {
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+                backupExportLauncher.launch("mioo-backup-$stamp.json")
+            }
         )
     }
 
-    importResult?.let { r ->
-        AlertDialog(
-            onDismissRequest = { importResult = null },
-            properties = com.mioo.dao.ui.theme.immersiveDialogProperties(),
-            title = { com.mioo.dao.ui.theme.ImmersiveDialogEffect(); Text("恢复完成") },
-            text = {
-                val lines = buildList {
-                    if (r.legacyCookiesOnly) add("旧版饼干备份：已导入 ${r.cookies} 个饼干")
-                    else {
-                        if (r.cookies >= 0) add("发言饼干：${r.cookies} 个")
-                        if (r.history >= 0) add("浏览历史：${r.history} 条")
-                        if (r.replyHistory >= 0) add("发言历史：${r.replyHistory} 条")
-                        if (r.newThreadHistory >= 0) add("发串历史：${r.newThreadHistory} 条")
-                        if (r.bookmarks >= 0) add("本地收藏：${r.bookmarks} 条")
-                        if (r.drafts >= 0) add("草稿箱：${r.drafts} 条")
-                        if (r.settings) add("应用设置：已恢复")
-                        if (r.blocks) add("屏蔽与板块：已恢复")
-                    }
-                }
-                Text(lines.joinToString("\n"))
-            },
-            confirmButton = { TextButton(onClick = { importResult = null }) { Text("好") } }
-        )
-    }
+    importResult?.let { BackupResultDialog(it) { importResult = null } }
+
 }
 
-private fun toggleSection(current: Set<String>, key: String): Set<String> =
+internal fun toggleSection(current: Set<String>, key: String): Set<String> =
     if (key in current) current - key else current + key
 
 /**
@@ -2010,26 +1638,26 @@ internal fun secondaryCardBackground(): Color {
 }
 
 @Composable
-private fun SettingsGroupCard(modifier: Modifier = Modifier, elevation: androidx.compose.material3.CardElevation = CardDefaults.cardElevation(0.dp), content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = secondaryCardBackground(), contentColor = MaterialTheme.colorScheme.onSurface), elevation = elevation, content = content)
+internal fun SettingsGroupCard(modifier: Modifier = Modifier, elevation: androidx.compose.material3.CardElevation = CardDefaults.cardElevation(0.dp), content: @Composable ColumnScope.() -> Unit) {
+    Card(modifier = modifier, shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = secondaryCardBackground(), contentColor = MaterialTheme.colorScheme.onSurface), elevation = elevation, content = content)
 }
 
 @Composable
-private fun SettingsHeaderIcon(imageVector: ImageVector, contentDescription: String?) {
+internal fun SettingsHeaderIcon(imageVector: ImageVector, contentDescription: String?) {
     Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
         Icon(imageVector, contentDescription, modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
     }
 }
 
 @Composable
-private fun SettingsGroupDivider() {
+internal fun SettingsGroupDivider() {
     HorizontalDivider(modifier = Modifier.padding(start = 62.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
 }
 
 @Composable
-private fun FolderActionButton(onClick: () -> Unit, tonal: Boolean = false, content: @Composable () -> Unit) {
+internal fun FolderActionButton(onClick: () -> Unit, tonal: Boolean = false, content: @Composable () -> Unit) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(20.dp))
+        modifier = Modifier.clip(MaterialTheme.shapes.medium)
             .background(if (tonal) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
             .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),

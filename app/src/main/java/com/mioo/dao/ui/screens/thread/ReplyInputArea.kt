@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.OpenInFull
@@ -285,17 +286,26 @@ internal fun ReplyInputArea(
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val paper = if (dark) Color(0xFF16181E) else Color.White
     val page = if (dark) Color(0xFF0E1015) else Color(0xFFF0F1F4)
+    var layoutPhase by remember(fullScreen) { mutableStateOf(if (fullScreen) 0 else 3) }
+    LaunchedEffect(fullScreen) {
+        if (fullScreen) {
+            androidx.compose.runtime.withFrameNanos { }
+            layoutPhase = 1
+            androidx.compose.runtime.withFrameNanos { }
+            layoutPhase = 2
+            androidx.compose.runtime.withFrameNanos { }
+            layoutPhase = 3
+        }
+    }
 
     // 实心底座贴屏幕物理底边，由内容下方的共享槽位把控件顶起来：
     // 无键盘无面板时槽位 = 导航条高度（与现在贴导航条一致）；
     // 键盘/面板谁高用谁，背景始终不透明地铺到屏幕底。
-    Surface(
-        color = if (fullScreen) page else readingComposerColor(),
-        tonalElevation = 0.dp,
-        modifier = if (fullScreen) Modifier.fillMaxSize().clickable(
+    Box(
+        modifier = (if (fullScreen) Modifier.fillMaxSize().background(page).clickable(
             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
             indication = null, onClick = {}
-        ) else Modifier.fillMaxWidth()
+        ) else Modifier.fillMaxWidth().background(readingComposerColor()))
     ) {
         Column(
             modifier = Modifier.fillMaxWidth()
@@ -305,8 +315,13 @@ internal fun ReplyInputArea(
                     verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { minimize() }) { Icon(Icons.Default.Close, "收起写作台") }
                     Column(Modifier.weight(1f)) {
-                        Text("回复串", fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Text("回复串", fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                            color = MaterialTheme.colorScheme.onSurface)
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer)
+                        ) {
                             Text("No.$threadId", Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 11.sp,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -320,11 +335,16 @@ internal fun ReplyInputArea(
                     }
                 }
             }
-            Surface(
-                modifier = if (fullScreen) Modifier.weight(1f).fillMaxWidth().padding(12.dp)
-                    else Modifier.fillMaxWidth(),
-                color = if (fullScreen) paper else Color.Transparent,
-                shape = RoundedCornerShape(20.dp)
+            if (layoutPhase == 0) {
+                Spacer(Modifier.weight(1f))
+            } else Box(
+                modifier = if (fullScreen) {
+                    Modifier.weight(1f).fillMaxWidth().padding(12.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(paper)
+                } else {
+                    Modifier.fillMaxWidth()
+                }
             ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = if (fullScreen) 0.dp else 12.dp, vertical = 8.dp)) {
                 if (fullScreen) {
@@ -429,13 +449,17 @@ internal fun ReplyInputArea(
                                 field()
                             }
                         })
-                    com.mioo.dao.ui.components.QuickInputBar(
-                        onInsert = { item ->
-                            val offset = item.cursorOffsetFromEnd.coerceIn(0, item.content.length)
-                            insertPair(item.content.dropLast(offset), item.content.takeLast(offset))
-                        }, onUndo = { restoreEdit(true) }, onRedo = { restoreEdit(false) },
-                        canUndo = editorState.undo.isNotEmpty(), canRedo = editorState.redo.isNotEmpty(), enabled = !isReplying && !loadingDraft
-                    )
+                    if (layoutPhase >= 2) {
+                        com.mioo.dao.ui.components.QuickInputBar(
+                            onInsert = { item ->
+                                val offset = item.cursorOffsetFromEnd.coerceIn(0, item.content.length)
+                                insertPair(item.content.dropLast(offset), item.content.takeLast(offset))
+                            }, onUndo = { restoreEdit(true) }, onRedo = { restoreEdit(false) },
+                            canUndo = editorState.undo.isNotEmpty(), canRedo = editorState.redo.isNotEmpty(), enabled = !isReplying && !loadingDraft
+                        )
+                    } else {
+                        Spacer(Modifier.height(40.dp))
+                    }
                 } else OutlinedTextField(
                     value = textFieldValue,
                     onValueChange = { applyEdit(it) },
@@ -466,7 +490,10 @@ internal fun ReplyInputArea(
 
             }
             }
-                Row(
+            if (!fullScreen && layoutPhase < 2) {
+                Spacer(Modifier.fillMaxWidth().navigationBarsPadding().height(56.dp))
+            }
+            if ((fullScreen && layoutPhase >= 3) || (!fullScreen && layoutPhase >= 2)) Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -530,7 +557,11 @@ internal fun ReplyInputArea(
                     }
                 }
 
-            com.mioo.dao.ui.components.ComposerInputPanelSlot(inputPanel, onInsert = ::insertAtCursor)
+            if (layoutPhase >= 3) {
+                com.mioo.dao.ui.components.ComposerInputPanelSlot(inputPanel, onInsert = ::insertAtCursor)
+            } else if (!fullScreen && layoutPhase == 2) {
+                Spacer(Modifier.fillMaxWidth().navigationBarsPadding())
+            }
         }
     }
 

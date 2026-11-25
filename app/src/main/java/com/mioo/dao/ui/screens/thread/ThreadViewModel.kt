@@ -1,8 +1,7 @@
 package com.mioo.dao.ui.screens.thread
 
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.SavedStateHandle
 import com.mioo.dao.data.local.DraftEntity
 import com.mioo.dao.data.local.PostDraftContent
@@ -36,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
@@ -62,6 +62,7 @@ data class ThreadListUiState(
     val showPoOnly: Boolean = false,
     val isLoading: Boolean = false,
     val isReplacing: Boolean = false,
+    val pagingDirection: Int = 0,
     val contentRevision: Int = 0,
     val errorMessage: String? = null,
     val nextPageError: String? = null,
@@ -83,6 +84,7 @@ data class ThreadChromeUiState(
     val isSubscribed: Boolean = false,
     /** Thread lives in a 云端收藏夹 (cloud feed cache) — icon also lights up for it. */
     val isCloudSubscribed: Boolean = false,
+    val failedRemovalFolders: Set<String> = emptySet(),
     val feedFolders: List<FeedFolder> = emptyList(),
     val isDownloading: Boolean = false,
     /** 本串已离线（offline_threads 有标记）——三点菜单显示「更新离线缓存 (已保存)」。 */
@@ -120,6 +122,7 @@ class ThreadViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
+    private val fromOfflineList = savedStateHandle.get<Boolean>("offline") == true
     val threadId: String = savedStateHandle.get<String>("threadId")
         ?: throw IllegalArgumentException("threadId is required")
 
@@ -159,7 +162,15 @@ class ThreadViewModel @Inject constructor(
      * Per-key observable quote map. Compose only invalidates items that read a given id,
      * so filling quote A does not recompose the card that only needs quote B.
      */
-    val quoteCache: SnapshotStateMap<String, Reply> = mutableStateMapOf()
+    private val quoteReplies = java.util.concurrent.ConcurrentHashMap<String, Reply>()
+    private val quoteSlotLock = Any()
+    private val quotePostSlots = HashMap<String, androidx.compose.runtime.MutableState<PostData?>>()
+
+    fun quotePostState(id: String): androidx.compose.runtime.State<PostData?> {
+        synchronized(quoteSlotLock) {
+            return quotePostSlots.getOrPut(id) { mutableStateOf(null) }
+        }
+    }
 
     fun sharePosts(): List<PostData> {
         val thread = _listState.value.thread ?: return emptyList()
@@ -178,7 +189,7 @@ class ThreadViewModel @Inject constructor(
         val upstream = ids.filterNot { it in local }.map { id -> async {
             semaphore.withPermit {
                 try {
-                    val reply = quoteCache[id] ?: kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                    val reply = quoteReplies[id] ?: kotlinx.coroutines.withTimeoutOrNull(8000L) {
                         (threadRepository.getRefPost(id).first() as? XdResponse.Success)?.data
                     }
                     reply?.let { id to it.toPostData(it.userHash == main?.userId) }
@@ -216,8 +227,23 @@ class ThreadViewModel @Inject constructor(
     /** Last replyCount written via markBookmarkRead — skip SWR double Room updates. */
     private var lastMarkedReadCount: Int = -1
     /** Bumps on every new load so stale SWR/network emissions cannot overwrite a newer page. */
-    private var loadGeneration: Int = 0
-    private var pageLoadJob: Job? = null
+    private val pagingRequests = PagingRequestCoordinator()
+    private val loadGeneration get() = pagingRequests.generation
+    private val previousPrefetch = PreviousPagePrefetch<Pair<Int, Boolean>, XdResponse<Thread>>(viewModelScope)
+
+    private fun preparePreviousPage() {
+        val state = _listState.value
+        if (state.startPage <= 1) {
+            previousPrefetch.clear()
+            return
+        }
+        val page = state.startPage - 1
+        val poOnly = state.showPoOnly
+        previousPrefetch.prepare(page to poOnly) {
+            (if (poOnly) threadRepository.getPoDetail(threadId, page)
+             else threadRepository.getThreadDetail(threadId, page, preferOffline = fromOfflineList)).first()
+        }
+    }
     private var quoteFetchJob: Job? = null
     private val progressWriteMutex = Mutex()
     private var progressWriteVersion = 0L
@@ -235,6 +261,11 @@ class ThreadViewModel @Inject constructor(
     private var resumeScrollSeeded: Boolean = false
     /** After prepending, wait until user leaves the top edge before auto-loading earlier pages again. */
     private var suppressPreviousLoad: Boolean = false
+    private var prependAnchorProvider: ((List<String>, Boolean) -> Pair<Int, Int>?)? = null
+
+    fun registerPrependAnchorProvider(provider: ((List<String>, Boolean) -> Pair<Int, Int>?)?) {
+        prependAnchorProvider = provider
+    }
 
     /** Unfiltered replies as returned by the API (after page merge). */
     private var rawPosts: List<Reply> = emptyList()
@@ -333,12 +364,11 @@ class ThreadViewModel @Inject constructor(
     }
 
     private fun loadThreadDetails() {
-        val openingGeneration = ++loadGeneration
-        pageLoadJob?.cancel()
+        val openingGeneration = pagingRequests.begin()
         quoteFetchJob?.cancel()
         isLastPage = false
         rawPosts = emptyList()
-        quoteCache.clear()
+        // This ViewModel is bound to one thread; keep resolved quotes across reloads.
         quoteIdExtractCache.evictAll()
         stickyResumeIndex = null
         resumePostId = null
@@ -415,15 +445,15 @@ class ThreadViewModel @Inject constructor(
         val total = totalPages
         if (page < 1 || page > total) return
         val state = _listState.value
-        if (!state.isLoading) {
-            val index = state.displayItems.indexOfFirst { replyPages[it.idStr] == page }
-            if (page == 1 && state.startPage == 1 || index >= 0) {
-                resumePostId = null
-                resumeOffset = 0
-                stickyResumeIndex = null
-                _listState.update { it.copy(pendingScrollIndex = if (page == 1 && state.startPage == 1) 0 else index + 1, pendingScrollOffset = 0) }
-                return
-            }
+        val loadedIndex = loadedPageJumpIndex(page, state.startPage, state.isReplacing) {
+            state.displayItems.indexOfFirst { replyPages[it.idStr] == page }
+        }
+        if (loadedIndex != null) {
+            resumePostId = null
+            resumeOffset = 0
+            stickyResumeIndex = null
+            _listState.update { it.copy(pendingScrollIndex = loadedIndex, pendingScrollOffset = 0) }
+            return
         }
         // Do not bail on isLoading — resume must cancel in-flight page-1 SWR via loadGeneration
 
@@ -455,13 +485,12 @@ class ThreadViewModel @Inject constructor(
     fun refreshThread(tailOnly: Boolean = false, onResult: (String) -> Unit) {
         val before = _listState.value
         if (before.isLoading || before.thread == null) return
-        val gen = ++loadGeneration
-        pageLoadJob?.cancel()
+        val gen = pagingRequests.begin()
         quoteFetchJob?.cancel()
         val start = before.startPage
         val end = before.currentPage.coerceAtLeast(start)
         _listState.update { it.copy(isLoading = true) }
-        pageLoadJob = viewModelScope.launch {
+        viewModelScope.launch {
             try {
                 val pages = mutableListOf<Thread>()
                 val refreshedPages = mutableMapOf<String, Int>()
@@ -523,7 +552,7 @@ class ThreadViewModel @Inject constructor(
             } finally {
                 if (gen == loadGeneration) _listState.update { it.copy(isLoading = false) }
             }
-        }
+        }.also { pagingRequests.attach(gen, it) }
     }
 
     /**
@@ -531,21 +560,25 @@ class ThreadViewModel @Inject constructor(
      *             PREPEND: load earlier page when user scrolls up after a mid-thread jump.
      */
     private fun loadPage(page: Int, mode: LoadMode, fromFilterSkip: Boolean = false) {
+        if (mode == LoadMode.REPLACE) previousPrefetch.clear()
+        val preparedPrevious = if (mode == LoadMode.PREPEND) {
+            previousPrefetch.take(page to _listState.value.showPoOnly)
+        } else null
         if (!fromFilterSkip) {
             filteredSkips = 0
             _listState.update { it.copy(filterHint = null) }
         }
-        val gen = ++loadGeneration
-        pageLoadJob?.cancel()
+        val gen = pagingRequests.begin()
         quoteFetchJob?.cancel()
         _listState.update { it.copy(isLoading = true, isReplacing = mode == LoadMode.REPLACE,
+            pagingDirection = when (mode) { LoadMode.PREPEND -> -1; LoadMode.APPEND -> 1; else -> 0 },
             nextPageError = null, previousPageError = null) }
 
-        pageLoadJob = viewModelScope.launch {
+        viewModelScope.launch {
             val flow = if (_listState.value.showPoOnly) {
                 threadRepository.getPoDetail(threadId, page)
             } else {
-                threadRepository.getThreadDetail(threadId, page)
+                threadRepository.getThreadDetail(threadId, page, preferOffline = fromOfflineList)
             }
 
             // Avoid re-fetching quotes for the same page when SWR emits cache then network
@@ -555,7 +588,23 @@ class ThreadViewModel @Inject constructor(
             var lastAddedVisible = 0
             var lastIsLast = true
 
-            kotlinx.coroutines.flow.flow { emit(flow.last()) }.collect { response ->
+            kotlinx.coroutines.flow.flow {
+                val prepared = try {
+                    preparedPrevious?.await()
+                } finally {
+                    // Once handed to foreground paging, its cancellation owns this request too.
+                    if (preparedPrevious?.isCompleted == false) preparedPrevious.cancel()
+                }
+                if (prepared is XdResponse.Success && prepared.data.idStr == threadId) {
+                    emit(prepared)
+                } else if (mode == LoadMode.REPLACE && stickyResumeIndex == null) {
+                    emitAll(flow)
+                } else {
+                    // Resume publishes its complete reading window once. A second
+                    // cache/network replacement can resize rows around the saved anchor.
+                    emit(flow.last())
+                }
+            }.collect { response ->
                 // A newer loadPage/jumpToPage has started — drop this emission
                 if (gen != loadGeneration) return@collect
 
@@ -580,13 +629,17 @@ class ThreadViewModel @Inject constructor(
                                     .filter { it in 1..totalPagesVal }
                                     .map { neighbor -> async {
                                         val result = if (_listState.value.showPoOnly) {
-                                            threadRepository.getPoDetail(threadId, neighbor).last()
+                                            jumpPageContext(threadRepository.getPoDetail(threadId, neighbor))
                                         } else {
-                                            threadRepository.getThreadDetail(threadId, neighbor).last()
+                                            jumpPageContext(threadRepository.getThreadDetail(threadId, neighbor, preferOffline = fromOfflineList))
                                         }
                                         neighbor to (result as? XdResponse.Success)?.data
                                     } }.awaitAll().forEach { (neighbor, data) ->
-                                        if (data?.idStr == threadId) window[neighbor] = data
+                                        // Empty cached neighbours provide no scroll context and
+                                        // must not make a fresh target look like the last page.
+                                        if (data?.isUsefulJumpContext(threadId) == true) {
+                                            window[neighbor] = data
+                                        }
                                     }
                             }
                         }
@@ -638,15 +691,34 @@ class ThreadViewModel @Inject constructor(
                             !resumeScrollSeeded
                         ) {
                             resumeScrollSeeded = true
+                            val visibleIds = displayItems.mapTo(HashSet(displayItems.size)) { it.idStr }
                             resolveWindowReadingIndex(resumePostId, threadId,
                                 threadData.replies.orEmpty().map { it.idStr }
-                                    .filter { id -> displayItems.any { it.idStr == id } },
+                                    .filter { id -> id in visibleIds },
                                 displayItems.map { it.idStr }, stickyResumeIndex ?: 0, page)
                         } else {
                             null
                         }
 
+                        // Capture the live viewport at publication, not when the request started.
+                        // Explicit restoration also cancels accumulated edge fling displacement.
+                        // Stable floor keys keep the live viewport during prepend.
+                        // Publishing a scroll request here cancels each new drag/fling.
+                        val prependAnchor: Pair<Int, Int>? = null
                         seedLocalQuotes(newPosts, threadData)
+                        withContext(Dispatchers.Default) {
+                            com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmThreadWindow(
+                                mainContent = mainPostData.content,
+                                items = displayItems,
+                                anchorIndex = when (mode) {
+                                    LoadMode.REPLACE -> seedPending ?: 0
+                                    LoadMode.PREPEND -> 0
+                                    LoadMode.APPEND -> (displayItems.size - newPosts.size).coerceAtLeast(0)
+                                },
+                                windowSize = 10
+                            )
+                        }
+                        if (gen != loadGeneration) return@collect
                         _listState.update { state ->
                             state.copy(
                                 thread = threadData,
@@ -655,7 +727,14 @@ class ThreadViewModel @Inject constructor(
                                 // Cache is an interim result. Keep the request busy until
                                 // its network emission completes, or a new page can discard it.
                                 isLoading = true,
-                                contentRevision = state.contentRevision + if (mode == LoadMode.REPLACE) 1 else 0,
+                                // Only bump contentRevision on a REPLACE load that needs a freshly seeded
+                                // LazyListState (saved-anchor resume or replacing an already-loaded page);
+                                // initial top-of-thread load already has a fresh (0, 0) LazyListState, and
+                                // SWR network re-emission must keep the live scroll anchor.
+                                contentRevision = state.contentRevision + if (
+                                    mode == LoadMode.REPLACE && !sawSuccess &&
+                                        (seedPending != null || state.thread != null)
+                                ) 1 else 0,
                                 errorMessage = null,
                                 nextPageError = null,
                                 previousPageError = null,
@@ -673,8 +752,8 @@ class ThreadViewModel @Inject constructor(
                                     LoadMode.REPLACE -> windowStart
                                     LoadMode.APPEND -> state.startPage
                                 },
-                                pendingScrollIndex = seedPending ?: state.pendingScrollIndex,
-                                pendingScrollOffset = if (seedPending != null) resumeOffset else state.pendingScrollOffset
+                                pendingScrollIndex = prependAnchor?.first ?: seedPending ?: state.pendingScrollIndex,
+                                pendingScrollOffset = prependAnchor?.second ?: if (seedPending != null) resumeOffset else state.pendingScrollOffset
                             )
                         }
 
@@ -739,7 +818,11 @@ class ThreadViewModel @Inject constructor(
                                 errorMessage = if (rawPosts.isEmpty()) response.message else null,
                                 nextPageError = if (mode == LoadMode.APPEND) response.message else null,
                                 previousPageError = if (mode == LoadMode.PREPEND) response.message else null,
-                                currentPage = if (mode == LoadMode.PREPEND) it.currentPage else page
+                                currentPage = if (mode == LoadMode.PREPEND) {
+                                    it.currentPage
+                                } else {
+                                    page
+                                }
                             )
                         }
                     }
@@ -747,7 +830,14 @@ class ThreadViewModel @Inject constructor(
             }
             if (gen != loadGeneration) return@launch
             // Release pagination only after every cache/network result has been applied.
-            _listState.update { it.copy(isLoading = false, isReplacing = false) }
+            _listState.update { it.copy(isLoading = false, isReplacing = false, pagingDirection = 0) }
+            if (_listState.value.previousPageError == null) preparePreviousPage()
+            if (mode == LoadMode.REPLACE && sawSuccess && lastAddedVisible > 0 &&
+                _listState.value.pendingScrollIndex == null &&
+                _listState.value.startPage > 1) {
+                loadPreviousPage()
+                return@launch
+            }
             if (mode == LoadMode.PREPEND) return@launch
             val blockedPage = sawSuccess && lastRawCount > 0 && lastAddedVisible <= 0
             val canChain = blockedPage && !lastIsLast && filteredSkips < MAX_FILTERED_SKIPS
@@ -765,7 +855,7 @@ class ThreadViewModel @Inject constructor(
                 filteredSkips = 0
                 _listState.update { it.copy(filterHint = null) }
             }
-        }
+        }.also { pagingRequests.attach(gen, it) }
     }
 
     private fun scheduleRebuildDisplayItems(debounceMs: Long = 0L) {
@@ -872,19 +962,48 @@ class ThreadViewModel @Inject constructor(
         return result
     }
 
+    private fun Reply.toInlineQuotePostData(poUserHash: String?): PostData {
+        val base = toPostData(isPo = userHash == poUserHash)
+        val targetResto = when {
+            resto != null && resto > 0L -> resto.toString()
+            idStr == threadId -> threadId
+            else -> idStr
+        }
+        return base.copy(resto = targetResto)
+    }
+
+    private fun publishQuoteSlotsOnMain(entries: Map<String, Pair<Reply, PostData>>) {
+        for ((id, pair) in entries) {
+            quoteReplies[id] = pair.first
+            synchronized(quoteSlotLock) {
+                quotePostSlots.getOrPut(id) { mutableStateOf(null) }
+            }.value = pair.second
+        }
+    }
+
+    private fun publishQuoteSlotOnMain(id: String, reply: Reply, postData: PostData) {
+        quoteReplies[id] = reply
+        synchronized(quoteSlotLock) {
+            quotePostSlots.getOrPut(id) { mutableStateOf(null) }
+        }.value = postData
+    }
+
     private fun seedLocalQuotes(replies: List<Reply>, mainThread: Thread) {
         val postsById = rawPosts.associateBy { it.idStr }
+        val poUserHash = mainThread.userHash
         for (reply in replies) {
             val ids = extractQuoteIdsFromContent(reply.content)
             for (id in ids) {
-                if (quoteCache.containsKey(id)) continue
+                if (quoteReplies.containsKey(id)) continue
                 val local = postsById[id]
                 if (local != null) {
-                    quoteCache[id] = local.copy(resto = threadId.toLongOrNull())
+                    val adjusted = local.copy(resto = threadId.toLongOrNull())
+                    publishQuoteSlotOnMain(id, adjusted, adjusted.toInlineQuotePostData(poUserHash))
                     continue
                 }
                 if (mainThread.idStr == id) {
-                    quoteCache[id] = mainThread.toReplyPlaceholder()
+                    val placeholder = mainThread.toReplyPlaceholder()
+                    publishQuoteSlotOnMain(id, placeholder, placeholder.toInlineQuotePostData(poUserHash))
                 }
             }
         }
@@ -900,22 +1019,25 @@ class ThreadViewModel @Inject constructor(
             }
             if (quoteIds.isEmpty()) return@launch
 
-            val missingIds = quoteIds.filter { it !in quoteCache }
+            val missingIds = quoteIds.filter { !quoteReplies.containsKey(it) }
             if (missingIds.isEmpty()) return@launch
 
             val postsById = rawPosts.associateBy { it.idStr }
             val mainThread = _listState.value.thread
-            val localBatch = HashMap<String, Reply>()
+            val poUserHash = mainThread?.userHash
+            val localBatch = HashMap<String, Pair<Reply, PostData>>()
             val networkIds = ArrayList<String>()
 
             for (id in missingIds) {
                 val localReply = postsById[id]
                 if (localReply != null) {
-                    localBatch[id] = localReply.copy(resto = threadId.toLongOrNull())
+                    val adjusted = localReply.copy(resto = threadId.toLongOrNull())
+                    localBatch[id] = adjusted to adjusted.toInlineQuotePostData(poUserHash)
                     continue
                 }
                 if (mainThread != null && mainThread.idStr == id) {
-                    localBatch[id] = mainThread.toReplyPlaceholder()
+                    val placeholder = mainThread.toReplyPlaceholder()
+                    localBatch[id] = placeholder to placeholder.toInlineQuotePostData(poUserHash)
                     continue
                 }
                 networkIds.add(id)
@@ -923,7 +1045,7 @@ class ThreadViewModel @Inject constructor(
 
             if (localBatch.isNotEmpty()) {
                 withContext(Dispatchers.Main.immediate) {
-                    if (generation == loadGeneration) quoteCache.putAll(localBatch)
+                    if (generation == loadGeneration) publishQuoteSlotsOnMain(localBatch)
                 }
             }
 
@@ -940,9 +1062,10 @@ class ThreadViewModel @Inject constructor(
                             // 错误文案且弹窗不再走网络重试（重进串才能恢复）
                             val reply = resolveQuoteFromNetwork(id)
                             if (reply != null) {
+                                val postData = reply.toInlineQuotePostData(poUserHash)
                                 withContext(Dispatchers.Main.immediate) {
-                                    if (generation == loadGeneration && id !in quoteCache) {
-                                        quoteCache[id] = reply
+                                    if (generation == loadGeneration && !quoteReplies.containsKey(id)) {
+                                        publishQuoteSlotOnMain(id, reply, postData)
                                     }
                                 }
                             }
@@ -1058,9 +1181,12 @@ class ThreadViewModel @Inject constructor(
                     threadRepository.addBookmark(thread)
                 }
             } else {
-                threadRepository.addFeed(folderUuid, threadId).collect { response ->
+                threadRepository.addFeed(folderUuid, thread).collect { response ->
                     when (response) {
-                        is XdResponse.Success -> onComplete?.invoke("已保存至云端收藏夹")
+                        is XdResponse.Success -> {
+                            _chromeState.update { it.copy(failedRemovalFolders = emptySet()) }
+                            onComplete?.invoke("已保存至云端收藏夹")
+                        }
                         is XdResponse.Error ->
                             onComplete?.invoke("保存失败: ${response.message.ifBlank { "网络错误" }}")
                     }
@@ -1072,12 +1198,13 @@ class ThreadViewModel @Inject constructor(
     /** Remove this thread from every cloud feed it is cached under. */
     fun removeCloudSubscription(onComplete: ((String) -> Unit)? = null) {
         viewModelScope.launch {
-            threadRepository.removeCloudSubscriptions(threadId).collect { response ->
+            val retry = _chromeState.value.failedRemovalFolders.takeIf { it.isNotEmpty() }
+            threadRepository.removeCloudSubscriptions(threadId, retry).collect { response ->
                 when (response) {
-                    is XdResponse.Success ->
-                        onComplete?.invoke(
-                            if (response.data > 0) "已从云端收藏夹移除" else "云端收藏夹中没有找到该串"
-                        )
+                    is XdResponse.Success -> {
+                        _chromeState.update { it.copy(failedRemovalFolders = response.data.failed) }
+                        onComplete?.invoke(response.data.message())
+                    }
                     is XdResponse.Error -> onComplete?.invoke("移除失败: ${response.message}")
                 }
             }
@@ -1086,7 +1213,8 @@ class ThreadViewModel @Inject constructor(
 
     fun saveToFolder(folderUuid: String, onComplete: () -> Unit) {
         viewModelScope.launch {
-            threadRepository.addFeed(folderUuid, threadId).collect {
+            val thread = _listState.value.thread ?: return@launch
+            threadRepository.addFeed(folderUuid, thread).collect {
                 onComplete()
             }
         }
@@ -1335,7 +1463,7 @@ class ThreadViewModel @Inject constructor(
             while (refBackStack.size > 12) refBackStack.removeFirst()
         }
         val canGoBack = refBackStack.isNotEmpty()
-        val cached = quoteCache[postId]
+        val cached = quoteReplies[postId]
         if (cached != null) {
             _refPopupState.value = ThreadRefPopupUiState(
                 refPostId = postId,
@@ -1360,7 +1488,10 @@ class ThreadViewModel @Inject constructor(
                 when (response) {
                     is XdResponse.Success -> {
                         val reply = response.data
-                        quoteCache[postId] = reply
+                        val inlinePost = withContext(Dispatchers.Default) {
+                            reply.toInlineQuotePostData(_listState.value.thread?.userHash)
+                        }
+                        publishQuoteSlotOnMain(postId, reply, inlinePost)
                         _refPopupState.update {
                             it.copy(
                                 isRefLoading = false,
@@ -1384,16 +1515,21 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    val offlineTransfers get() = threadRepository.offlineTransfers
+
     fun downloadThread(onResult: (String) -> Unit) {
         if (_chromeState.value.isDownloading) return
         _chromeState.update { it.copy(isDownloading = true) }
         viewModelScope.launch {
-            threadRepository.downloadFullThread(threadId).collect { response ->
-                _chromeState.update { it.copy(isDownloading = false) }
-                when (response) {
-                    is XdResponse.Success -> onResult("离线缓存已更新")
-                    is XdResponse.Error -> onResult("下载失败: ${response.message}")
+            try {
+                threadRepository.downloadFullThread(threadId).collect { response ->
+                    when (response) {
+                        is XdResponse.Success -> onResult("离线缓存已更新")
+                        is XdResponse.Error -> onResult("下载失败: ${response.message}")
+                    }
                 }
+            } finally {
+                _chromeState.update { it.copy(isDownloading = false) }
             }
         }
     }
@@ -1420,8 +1556,18 @@ class ThreadViewModel @Inject constructor(
         // stable reading anchor and its page assignment changes after a merge.
         if (postId == "9999999") return
         val actualPage = if (postId == threadId) 1 else replyPages[postId] ?: return
-        val pageItems = state.displayItems.filter { replyPages[it.idStr] == actualPage }
-        val localIndex = if (postId == threadId) 0 else pageItems.indexOfFirst { it.idStr == postId } + 1
+        var localIndex = 0
+        if (postId != threadId) {
+            var pageIndex = 0
+            for (item in state.displayItems) {
+                if (replyPages[item.idStr] != actualPage) continue
+                pageIndex++
+                if (item.idStr == postId) {
+                    localIndex = pageIndex
+                    break
+                }
+            }
+        }
         val writeVersion = ++progressWriteVersion
         // 离开页面会清理 ViewModel；已经采集到的位置仍须完成这次短数据库写入。
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -1447,7 +1593,9 @@ class ThreadViewModel @Inject constructor(
             _listState.update { it.copy(pendingScrollIndex = null) }
         }
         // Drop sticky after first successful seed; item keys preserve scroll across SWR
+        val wasInitialRestore = stickyResumeIndex != null
         stickyResumeIndex = null
+        if (wasInitialRestore && !_listState.value.isLoading) loadPreviousPage()
     }
 
     fun clearReadingProgress() {

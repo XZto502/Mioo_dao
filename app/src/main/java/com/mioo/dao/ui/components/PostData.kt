@@ -49,7 +49,7 @@ fun Thread.toPostData(): PostData {
     return PostData(
         id = this.idStr,
         title = this.title.effectiveTitle(),
-        userName = this.name ?: "Anonymous",
+        userName = this.name ?: "无名氏",
         userId = this.userHash,
         createdAt = formatPostTime(this.now),
         content = this.content,
@@ -68,7 +68,7 @@ fun Reply.toPostData(isPo: Boolean): PostData {
     return PostData(
         id = this.idStr,
         title = this.title.effectiveTitle(),
-        userName = this.name ?: "Anonymous",
+        userName = this.name ?: "无名氏",
         userId = this.userHash,
         createdAt = formatPostTime(this.now),
         content = this.content,

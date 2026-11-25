@@ -18,10 +18,11 @@ interface OfflineThreadDao {
     @Query("SELECT * FROM offline_threads")
     suspend fun getAllOnce(): List<OfflineThreadEntity>
 
-    /**
-     * 管理页列表：按下载时间倒序。cachedPages / jsonBytes 从 api_cache 实时聚合，
-     * 两张表任一变动都会触发 Flow 重算。
-     */
+    // 用离线表变更触发统计。更新已有离线串时条数可以不变，每次发射都要处理。
+    @Query("SELECT COUNT(*) FROM offline_threads")
+    fun observeSummaryChanges(): Flow<Int>
+
+    /** 按下载时间倒序，单次遍历缓存页计算页数及大小。 */
     @Query(
         """
         SELECT
@@ -35,15 +36,15 @@ interface OfflineThreadDao {
             o.downloadedAt AS downloadedAt,
             o.imageBytes AS imageBytes,
             o.coverFile AS coverFile,
-            (SELECT COUNT(*) FROM api_cache a
-             WHERE a.cacheKey = 'thread_' || o.threadId) AS cachedPages,
-            (SELECT COALESCE(SUM(LENGTH(a.jsonResponse)), 0) FROM api_cache a
-             WHERE a.cacheKey = 'thread_' || o.threadId) AS jsonBytes
+            COUNT(a.page) AS cachedPages,
+            COALESCE(SUM(LENGTH(a.jsonResponse)), 0) AS jsonBytes
         FROM offline_threads o
+        LEFT JOIN api_cache a ON a.cacheKey = 'thread_' || o.threadId
+        GROUP BY o.threadId
         ORDER BY o.downloadedAt DESC
         """
     )
-    fun observeSummaries(): Flow<List<OfflineThreadSummary>>
+    suspend fun getSummaries(): List<OfflineThreadSummary>
 
     @Query("SELECT EXISTS(SELECT 1 FROM offline_threads WHERE threadId = :threadId)")
     fun observeDownloaded(threadId: String): Flow<Boolean>

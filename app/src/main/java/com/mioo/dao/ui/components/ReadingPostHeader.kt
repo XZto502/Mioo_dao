@@ -25,25 +25,58 @@ import androidx.compose.ui.unit.sp
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.readingMetaStyle
 import com.mioo.dao.ui.theme.readingTextStyle
+import com.mioo.dao.ui.theme.readingTitleStyle
+
+private val PoBadgeShape = RoundedCornerShape(4.dp)
 
 @Composable
 internal fun ReadingIdentity(post: PostData, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val isBoldIdentity = post.isPo || post.isAdmin
+    val identityStyle = if (sharedStyles != null) {
+        if (isBoldIdentity) sharedStyles.identityBoldStyle else sharedStyles.identityNormalStyle
+    } else {
+        val baseBodyMedium = MaterialTheme.typography.bodyMedium
+        remember(baseBodyMedium, isBoldIdentity) {
+            val weight = if (isBoldIdentity) FontWeight.Bold else FontWeight.Medium
+            baseBodyMedium.copy(
+                fontSize = (12f * baseBodyMedium.fontSize.value / 14f).sp,
+                lineHeight = (16f * baseBodyMedium.lineHeight.value / 20f).sp,
+                fontWeight = weight,
+                letterSpacing = 0.3.sp
+            )
+        }
+    }
+    val poBadgeStyle = sharedStyles?.poBadgeStyle ?: run {
+        val baseBodyMedium = MaterialTheme.typography.bodyMedium
+        remember(baseBodyMedium) {
+            baseBodyMedium.copy(
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)
+            )
+        }
+    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(post.userId,
-            style = readingTextStyle(12f, 16f,
-                if (post.isPo || post.isAdmin) FontWeight.Bold else FontWeight.Medium)
-                .copy(letterSpacing = 0.3.sp),
+            style = identityStyle,
             color = when {
                 post.isAdmin -> DaoTheme.colors.admin
                 post.isPo -> colors.onSurface
                 else -> colors.onSurfaceVariant.copy(alpha = 0.82f)
             }, maxLines = 1, softWrap = false)
         if (post.isPo) {
-            ReadingRoleBadge(
-                "PO",
-                container = colors.secondaryContainer,
-                content = colors.onSecondaryContainer
+            Text(
+                text = "PO",
+                color = colors.onSecondaryContainer,
+                style = poBadgeStyle,
+                maxLines = 1, softWrap = false,
+                modifier = Modifier.padding(start = 4.dp)
+                    .background(colors.secondaryContainer, PoBadgeShape)
+                    .padding(horizontal = 4.5.dp, vertical = 1.dp)
             )
         }
         if (post.isAdmin) ReadingRoleBadge("ADMIN")
@@ -57,11 +90,33 @@ private fun ReadingRoleBadge(
     container: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
     content: Color = MaterialTheme.colorScheme.primary
 ) {
-    Text(label, style = readingTextStyle(10f, 14f, FontWeight.Bold), color = content,
-        maxLines = 1, softWrap = false,
-        modifier = Modifier.padding(start = 4.dp)
-            .background(container, RoundedCornerShape(5.dp))
-            .padding(horizontal = 5.dp, vertical = 1.dp))
+    ReadingPill(label, Modifier.padding(start = 4.dp), container, content)
+}
+
+@Composable
+fun ReadingPill(
+    text: String, modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+    content: Color = MaterialTheme.colorScheme.primary,
+    maxWidth: Int = 92
+) {
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val pillStyle = sharedStyles?.pillStyle ?: run {
+        val baseBodyMedium = MaterialTheme.typography.bodyMedium
+        remember(baseBodyMedium) {
+            baseBodyMedium.copy(
+                fontSize = (10.5f * baseBodyMedium.fontSize.value / 14f).sp,
+                lineHeight = (14f * baseBodyMedium.lineHeight.value / 20f).sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp
+            )
+        }
+    }
+    Box(modifier = modifier.background(container, MaterialTheme.shapes.extraSmall)) {
+        Text(text, Modifier.widthIn(max = maxWidth.dp).padding(horizontal = 6.dp, vertical = 2.dp),
+            style = pillStyle, color = content,
+            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /**
@@ -104,13 +159,13 @@ internal fun ReadingPostSubject(post: PostData) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = null) {
+internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = null, forumName: String? = null) {
     val colors = MaterialTheme.colorScheme
-    val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
     val quoteOnClick = onNumberClick
     val numberModifier = if (quoteOnClick != null) {
+        val clipboard = LocalClipboardManager.current
+        val context = LocalContext.current
+        val haptics = LocalHapticFeedback.current
         Modifier.combinedClickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
@@ -129,14 +184,24 @@ internal fun ReadingPostHeader(post: PostData, onNumberClick: (() -> Unit)? = nu
         // Both identity and number are measured at natural width. Only the clock
         // region may shrink; a long date must never turn an Admin ID into "A…".
         ReadingIdentity(post)
+        if (!forumName.isNullOrBlank()) {
+            Spacer(Modifier.width(6.dp))
+            ReadingPill(forumName)
+        }
+        val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+        val metaClockStyle = sharedStyles?.metaStyle ?: run {
+            val baseMetaStyle = readingMetaStyle()
+            remember(baseMetaStyle) { baseMetaStyle.copy(fontWeight = FontWeight.Normal) }
+        }
+        val formattedTime = remember(post.createdAt) { formatReadingTime(post.createdAt) }
         Row(Modifier.weight(1f).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(" · ${formatReadingTime(post.createdAt)}", style = readingMetaStyle().copy(fontWeight = FontWeight.Normal),
-                color = colors.onSurfaceVariant.copy(alpha = 0.52f),
+            Text(" · $formattedTime", style = metaClockStyle,
+                color = colors.onSurfaceVariant.copy(alpha = 0.75f),
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
         }
-        Text("No.${post.id}", modifier = numberModifier, style = readingMetaStyle(),
-            color = colors.onSurfaceVariant.copy(alpha = 0.42f),
+        Text("No.${post.id}", modifier = numberModifier, style = metaClockStyle,
+            color = colors.onSurfaceVariant.copy(alpha = 0.75f),
             maxLines = 1, softWrap = false)
     }
 }

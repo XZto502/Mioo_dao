@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -77,8 +78,10 @@ import com.mioo.dao.utils.DiceRoll
 import java.util.regex.Pattern
 
 private val HTML_TAG_REGEX = Regex("<[^>]+>")
+private val READING_PARAGRAPH_GAP_REGEX = Regex("\n\n")
+private val COMPACT_PREVIEW_BREAKS_REGEX = Regex("(\\r?\\n\\s*){2,}")
 private val BARE_THREAD_ID = Regex("(?<![A-Za-z0-9])\\d{8}(?![A-Za-z0-9])")
-private val BR_TAG_REGEX = Regex("(?i)<br\\s*/?>[ \\t]*(?:\\r\\n|\\r|\\n)?")
+private val BR_TAG_REGEX = Regex("(?i)[ \\t]*<br\\s*/?>[ \\t]*")
 private val PARAGRAPH_BREAKS = Regex("\\n[ \\t]*(?:\\n[ \\t]*)+")
 private val KAOMOJI_PATTERN = Regex("""\([^()\n]{1,32}\)|\|[^|\n]{1,16}\)""")
 private val KAOMOJI_FACE_MARKS = Regex("[ﾟ∀。´ヮゝωДдಠ益ಥ╥≧≦]")
@@ -172,6 +175,9 @@ fun String.stripRemainingHtmlTags(): String {
  * Parsed X-Island HTML comments into a styled Compose AnnotatedString.
  * [dicePreset] 非空时扫描正文骰点并生成内联胶囊。默认纯色；安科/CoC 才上金/红。
  */
+internal fun normalizePostHtmlSource(html: String): String =
+    if (HTML_TAG_REGEX.containsMatchIn(html)) html.replace("\r\n", " ").replace('\r', ' ').replace('\n', ' ')
+    else html.replace("\r\n", "\n").replace('\r', '\n')
 fun parseHtmlToAnnotatedString(
     html: String,
     quoteLinkColor: Color,
@@ -179,8 +185,8 @@ fun parseHtmlToAnnotatedString(
     darkTheme: Boolean = false,
     dicePreset: DiceRulePreset? = null
 ): ParsedContent {
-    val cleaned = html.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
-        .replace("\r\n", "\n").replace(PARAGRAPH_BREAKS, "\n\n")
+    val source = normalizePostHtmlSource(html)
+    val cleaned = source.replace(BR_TAG_REGEX, "\n").decodeHtmlEntities()
     val ctx = dicePreset?.let { DiceParseCtx(preset = it) }
     val annotated = buildAnnotatedString {
         var cursor = 0
@@ -194,7 +200,11 @@ fun parseHtmlToAnnotatedString(
         }
         appendHtmlFragment(cleaned.substring(cursor), quoteLinkColor, defaultGreenColor, darkTheme, ctx)
     }
-    return ParsedContent(annotated = annotated, diceBadges = ctx?.badges ?: emptyList())
+    val text = annotated.text
+    val first = text.indexOfFirst { it !in "\n\r \t" }
+    val trimmed = if (first < 0) AnnotatedString("") else
+        annotated.subSequence(first, text.indexOfLast { it !in "\n\r \t" } + 1)
+    return ParsedContent(annotated = trimmed, diceBadges = ctx?.badges ?: emptyList())
 }
 
 private val SPOILER_PATTERN = Regex(
@@ -242,7 +252,7 @@ private fun AnnotatedString.Builder.appendHtmlFragment(
                 }.forNight(darkTheme)
                 appendRichText(spanText, color, quoteLinkColor, ctx)
             } else if (linkUrl != null && linkText != null) {
-                appendLink(linkText.stripRemainingHtmlTags(), linkUrl)
+                appendLink(linkText.stripRemainingHtmlTags(), linkUrl, quoteLinkColor)
             } else if (fullQuote != null && postId != null) {
                 appendQuote(fullQuote, postId, quoteLinkColor)
             }
@@ -309,7 +319,7 @@ private fun AnnotatedString.Builder.appendRichText(
         val fullQuote = matcher.group(3)
         val postId = matcher.group(4)
         if (linkUrl != null && linkText != null) {
-            appendLink(linkText.stripRemainingHtmlTags(), linkUrl)
+            appendLink(linkText.stripRemainingHtmlTags(), linkUrl, quoteLinkColor)
         } else if (fullQuote != null && postId != null) {
             appendQuote(fullQuote, postId, quoteLinkColor)
         }
@@ -328,15 +338,23 @@ internal fun protectReadingKaomoji(text: String): String {
     }
 }
 
-internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString =
-    buildAnnotatedString {
-        append(this@withReadingParagraphGaps)
-        Regex("\n\n").findAll(this@withReadingParagraphGaps.text).forEach { gap ->
-            val start = gap.range.first + 1
-            addStyle(ParagraphStyle(lineHeight = (12f * scale).sp), start, start + 1)
-            addStyle(SpanStyle(fontSize = (6f * scale).sp), start, start + 1)
-        }
+internal fun AnnotatedString.withReadingParagraphGaps(scale: Float): AnnotatedString = this
+
+internal fun AnnotatedString.withBareThreadLinks(linkColor: Color): AnnotatedString {
+    var builder: AnnotatedString.Builder? = null
+    for (match in BARE_THREAD_ID.findAll(text)) {
+        val start = match.range.first
+        val end = match.range.last + 1
+        if (hasStringAnnotations("QUOTE_CLICK", start, end) ||
+            hasStringAnnotations("LINK_CLICK", start, end) ||
+            hasStringAnnotations("DICE_CLICK", start, end) ||
+            hasStringAnnotations("BARE_THREAD", start, end)) continue
+        val target = builder ?: AnnotatedString.Builder(this).also { builder = it }
+        target.addStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline), start, end)
+        target.addStringAnnotation("BARE_THREAD", match.value, start, end)
     }
+    return builder?.toAnnotatedString() ?: this
+}
 
 private fun AnnotatedString.Builder.appendPlain(raw: String, color: Color?, ctx: DiceParseCtx? = null) {
     val plain = protectReadingKaomoji(raw.stripRemainingHtmlTags())
@@ -371,13 +389,13 @@ private fun AnnotatedString.Builder.appendStyledPlain(plain: String, color: Colo
     if (color != null) addStyle(SpanStyle(color = color), start, length)
 }
 
-private fun AnnotatedString.Builder.appendLink(label: String, url: String) {
+private fun AnnotatedString.Builder.appendLink(label: String, url: String, linkColor: Color) {
     if (label.isEmpty()) return
     val start = length
     append(label)
     addStyle(
         SpanStyle(
-            color = Color(0xFF1E88E5),
+            color = linkColor,
             fontWeight = FontWeight.Bold,
             textDecoration = TextDecoration.Underline
         ),
@@ -418,8 +436,33 @@ private data class HtmlCacheKey(val html: String, val quoteColorArgb: Int, val d
  * Synchronized put/get — prewarm runs on Default while composition reads on main.
  */
 object HtmlParseCache {
-    private val cache = android.util.LruCache<HtmlCacheKey, ParsedContent>(600)
+    private const val MAX_BYTES = 8L * 1024L * 1024L
+    private const val MAX_ENTRIES = 600
+    private class Entry(val parsed: ParsedContent, val variants: Array<AnnotatedString?> = arrayOfNulls(4))
+    private class SizedEntry(val entry: Entry, val bytes: Long)
+    private fun textCost(text: AnnotatedString): Long = text.length * 2L +
+        (text.spanStyles.size + text.paragraphStyles.size + text.getStringAnnotations(0, text.length).size) * 128L
+    private fun entryCost(key: HtmlCacheKey, value: Entry): Long =
+        (key.html.length * 2L + textCost(value.parsed.annotated) +
+            value.variants.filterNotNull().sumOf { textCost(it) } + 256L).coerceAtLeast(1L)
+    private var totalBytes = 0L
+    private val cache = LinkedHashMap<HtmlCacheKey, SizedEntry>(128, 0.75f, true)
+    private val fastRead = java.util.concurrent.ConcurrentHashMap<HtmlCacheKey, Entry>(128)
     private val lock = Any()
+    private fun putEntry(key: HtmlCacheKey, entry: Entry) {
+        cache.remove(key)?.let { totalBytes -= it.bytes }
+        val cost = entryCost(key, entry)
+        cache[key] = SizedEntry(entry, cost)
+        fastRead[key] = entry
+        totalBytes += cost
+        val it = cache.entries.iterator()
+        while (it.hasNext() && (cache.size > MAX_ENTRIES || totalBytes > MAX_BYTES)) {
+            val eldest = it.next()
+            totalBytes -= eldest.value.bytes
+            fastRead.remove(eldest.key)
+            it.remove()
+        }
+    }
 
     fun getOrParse(
         html: String,
@@ -429,14 +472,39 @@ object HtmlParseCache {
     ): ParsedContent {
         val colorArgb = quoteLinkColor.toArgb()
         val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
+        fastRead[key]?.let { return it.parsed }
         synchronized(lock) {
-            cache.get(key)?.let { return it }
+            cache[key]?.entry?.let { return it.parsed }
         }
-        val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+        val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+        val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
         synchronized(lock) {
-            cache.put(key, parsed)
+            putEntry(key, Entry(parsed))
         }
         return parsed
+    }
+
+    fun displayText(
+        html: String, color: Color, darkTheme: Boolean, dicePreset: DiceRulePreset?,
+        compact: Boolean, trim: Boolean
+    ): AnnotatedString {
+        val parsed = getOrParse(html, color, darkTheme, dicePreset)
+        if (!compact && !trim) return parsed.annotated
+        val key = HtmlCacheKey(html, color.toArgb(), darkTheme, dicePreset?.name ?: "")
+        val index = (if (compact) 1 else 0) + (if (trim) 2 else 0)
+        fastRead[key]?.variants?.get(index)?.let { return it }
+        synchronized(lock) {
+            cache[key]?.entry?.variants?.get(index)?.let { return it }
+        }
+        val result = prepareHtmlPreview(parsed.annotated, compact, trim)
+        synchronized(lock) {
+            cache[key]?.entry?.let { current ->
+                val variants = current.variants.copyOf()
+                variants[index] = result
+                putEntry(key, Entry(current.parsed, variants))
+            }
+        }
+        return result
     }
 
     /**
@@ -448,20 +516,64 @@ object HtmlParseCache {
         htmlList: Collection<String>,
         quoteLinkColor: Color,
         darkTheme: Boolean = false,
-        dicePreset: DiceRulePreset? = null
+        dicePreset: DiceRulePreset? = null,
+        compactBlankLines: Boolean = false,
+        trimOuterWhitespace: Boolean = false
     ) {
         if (htmlList.isEmpty()) return
         val colorArgb = quoteLinkColor.toArgb()
+        val needVariant = compactBlankLines || trimOuterWhitespace
+        val variantIndex = (if (compactBlankLines) 1 else 0) + (if (trimOuterWhitespace) 2 else 0)
         for (html in htmlList) {
             if (html.isBlank()) continue
             val key = HtmlCacheKey(html, colorArgb, darkTheme, dicePreset?.name ?: "")
-            val hit = synchronized(lock) { cache.get(key) != null }
-            if (hit) continue
-            val parsed = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+            val existingEntry = fastRead[key] ?: synchronized(lock) { cache[key]?.entry }
+            if (existingEntry != null) {
+                if (!needVariant || existingEntry.variants[variantIndex] != null) continue
+                val variant = prepareHtmlPreview(existingEntry.parsed.annotated, compactBlankLines, trimOuterWhitespace)
+                synchronized(lock) {
+                    cache[key]?.entry?.let { current ->
+                        if (current.variants[variantIndex] == null) {
+                            val variants = current.variants.copyOf()
+                            variants[variantIndex] = variant
+                            putEntry(key, Entry(current.parsed, variants))
+                        }
+                    }
+                }
+                continue
+            }
+            val raw = parseHtmlToAnnotatedString(html, quoteLinkColor, darkTheme = darkTheme, dicePreset = dicePreset)
+            val parsed = raw.copy(annotated = raw.annotated.withBareThreadLinks(quoteLinkColor))
+            val variants = arrayOfNulls<AnnotatedString>(4)
+            if (needVariant) {
+                variants[variantIndex] = prepareHtmlPreview(parsed.annotated, compactBlankLines, trimOuterWhitespace)
+            }
             synchronized(lock) {
-                cache.put(key, parsed)
+                putEntry(key, Entry(parsed, variants))
             }
         }
+    }
+}
+
+/** Pure formatting shared by cached list and quote previews; annotations retain their offsets. */
+internal fun prepareHtmlPreview(text: AnnotatedString, compact: Boolean, trim: Boolean): AnnotatedString {
+    val source = if (trim) {
+        val start = text.text.indexOfFirst { !it.isQuoteEdgeWhitespace() }
+        if (start < 0) AnnotatedString("") else
+            text.subSequence(start, text.text.indexOfLast { !it.isQuoteEdgeWhitespace() } + 1)
+    } else text
+    if (!compact) return source
+    val matches = COMPACT_PREVIEW_BREAKS_REGEX.findAll(source.text).iterator()
+    if (!matches.hasNext()) return source
+    return buildAnnotatedString {
+        var start = 0
+        while (matches.hasNext()) {
+            val match = matches.next()
+            append(source.subSequence(start, match.range.first))
+            append("\n")
+            start = match.range.last + 1
+        }
+        append(source.subSequence(start, source.length))
     }
 }
 
@@ -504,42 +616,11 @@ fun HtmlContent(
     val parsed = remember(html, quoteColorArgb, darkTheme, dicePreset) {
         HtmlParseCache.getOrParse(html, quoteLinkColor, darkTheme, dicePreset)
     }
-    val paragraphScale = MaterialTheme.typography.bodyMedium.lineHeight.value / 20f
-    val annotatedString = remember(parsed.annotated, paragraphScale, compactBlankLines, trimOuterWhitespace) {
-        val source = if (trimOuterWhitespace) {
-            val value = parsed.annotated.text
-            val start = value.indexOfFirst { !it.isQuoteEdgeWhitespace() }
-            if (start < 0) AnnotatedString("") else parsed.annotated.subSequence(start, value.indexOfLast { !it.isQuoteEdgeWhitespace() } + 1)
-        } else parsed.annotated
-        if (compactBlankLines) {
-            val breaks = Regex("(\\r?\\n\\s*){2,}")
-            buildAnnotatedString {
-                var start = 0
-                breaks.findAll(source.text).forEach { match ->
-                    append(source.subSequence(start, match.range.first))
-                    append("\n")
-                    start = match.range.last + 1
-                }
-                append(source.subSequence(start, source.length))
-            }
-        } else source.withReadingParagraphGaps(paragraphScale)
+    val annotatedString = remember(parsed, compactBlankLines, trimOuterWhitespace) {
+        if (!compactBlankLines && !trimOuterWhitespace) parsed.annotated else
+            HtmlParseCache.displayText(html, quoteLinkColor, darkTheme, dicePreset, compactBlankLines, trimOuterWhitespace)
     }
-    val linkedText = remember(annotatedString, quoteLinkColor) {
-        buildAnnotatedString {
-            append(annotatedString)
-            BARE_THREAD_ID.findAll(annotatedString.text).forEach { match ->
-                val start = match.range.first
-                val end = match.range.last + 1
-                val covered = listOf("QUOTE_CLICK", "LINK_CLICK", "DICE_CLICK").any {
-                    annotatedString.getStringAnnotations(it, start, end).isNotEmpty()
-                }
-                if (!covered) {
-                    addStyle(SpanStyle(color = quoteLinkColor, textDecoration = TextDecoration.Underline), start, end)
-                    addStringAnnotation("BARE_THREAD", match.value, start, end)
-                }
-            }
-        }
-    }
+    val linkedText = annotatedString
     val context = LocalContext.current
     // Only allocate layout state when gestures need hit-testing (thread detail / reply).
     var layoutResult by remember(html, enableGestures) {
@@ -550,13 +631,22 @@ fun HtmlContent(
     val mergedStyle = remember(style, surfaceColor) {
         if (style.color == Color.Unspecified) style.copy(color = surfaceColor) else style
     }
+    val spoilerRanges = remember(linkedText) {
+        linkedText.getStringAnnotations("SPOILER", 0, linkedText.length)
+    }
+    if (!enableGestures && spoilerRanges.isEmpty() && parsed.diceBadges.isEmpty()) {
+        Text(text = linkedText, modifier = modifier, style = mergedStyle, maxLines = maxLines,
+            overflow = overflow, onTextLayout = NoOpOnTextLayout)
+        return
+    }
 
-    val textMeasurer = rememberTextMeasurer()
+    val textMeasurer = if (parsed.diceBadges.isNotEmpty()) rememberTextMeasurer() else null
     val density = LocalDensity.current
+    val diceScale = MaterialTheme.typography.bodyMedium.fontSize.value / 14f
     val diceTextStyle = LocalTextStyle.current.merge(
         TextStyle(
-            fontSize = 12.5.sp,
-            lineHeight = 12.5.sp,
+            fontSize = (12.5f * diceScale).sp,
+            lineHeight = (12.5f * diceScale).sp,
             fontFeatureSettings = "tnum",
             platformStyle = PlatformTextStyle(includeFontPadding = false),
             fontWeight = FontWeight.Medium,
@@ -564,13 +654,13 @@ fun HtmlContent(
             fontFamily = mergedStyle.fontFamily
         )
     )
-    val inlineContent = remember(parsed.diceBadges, textMeasurer, density, diceTextStyle) {
+    val inlineContent = remember(parsed.diceBadges, textMeasurer, density, diceTextStyle, diceScale) {
         if (parsed.diceBadges.isEmpty()) {
             emptyMap()
         } else {
             parsed.diceBadges.associate { spec ->
                 val displayText = spec.badgeText
-                val textWidth = textMeasurer.measure(
+                val textWidth = requireNotNull(textMeasurer).measure(
                     text = AnnotatedString(displayText),
                     style = diceTextStyle,
                     maxLines = 1,
@@ -579,7 +669,7 @@ fun HtmlContent(
                 val placeholderWidth = with(density) {
                     (textWidth + (13.dp + 4.dp + 6.dp * 2 + 3.dp * 2 + 2.dp).toPx()).toSp()
                 }
-                val placeholderHeight = with(density) { 22.dp.toSp() }
+                val placeholderHeight = with(density) { (22.dp * diceScale.coerceAtLeast(1f)).toSp() }
                 spec.id to InlineTextContent(
                     placeholder = Placeholder(
                         width = placeholderWidth,
@@ -588,7 +678,7 @@ fun HtmlContent(
                     )
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        DiceBadge(spec, diceTextStyle)
+                        DiceBadge(spec, diceTextStyle, diceScale)
                     }
                 }
             }
@@ -596,9 +686,6 @@ fun HtmlContent(
     }
 
     var revealedSpoilers by remember(html) { mutableStateOf(emptySet<String>()) }
-    val spoilerRanges = remember(linkedText) {
-        linkedText.getStringAnnotations("SPOILER", 0, linkedText.length)
-    }
     val reducedMotion = isReducedMotionEnabled()
     val spoilerProgress = spoilerRanges.map { range ->
         key(range.item) {
@@ -610,7 +697,7 @@ fun HtmlContent(
     }
     val spoilerAlphas = spoilerProgress.map { it.value }
     val displayText = remember(linkedText, spoilerAlphas, mergedStyle.color) {
-        buildAnnotatedString {
+        if (spoilerRanges.isEmpty()) linkedText else buildAnnotatedString {
             append(linkedText)
             spoilerRanges.forEachIndexed { index, range ->
                 val alpha = spoilerAlphas[index]
@@ -626,6 +713,44 @@ fun HtmlContent(
         else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.22f)
     val spoilerOutline = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val haptics = LocalHapticFeedback.current
+    val spoilerRects = remember(layoutResult, spoilerRanges, density) {
+        val layout = layoutResult
+        if (layout == null || spoilerRanges.isEmpty() || layout.lineCount == 0) {
+            emptyList()
+        } else {
+            val insetPx = with(density) { 1.5.dp.toPx() }
+            val visibleEnd = layout.getLineEnd(layout.lineCount - 1)
+            val textLen = layout.layoutInput.text.length
+            spoilerRanges.map { range ->
+                val endOffset = minOf(range.end, visibleEnd, textLen)
+                if (range.start < 0 || range.start >= endOffset) {
+                    emptyList()
+                } else {
+                    val firstLine = layout.getLineForOffset(range.start)
+                    val lastLine = layout.getLineForOffset(endOffset - 1)
+                    buildList {
+                        for (line in firstLine..lastLine) {
+                            val start = maxOf(range.start, layout.getLineStart(line))
+                            val end = minOf(range.end, layout.getLineEnd(line, visibleEnd = true))
+                            if (start >= end) continue
+                            var left = Float.POSITIVE_INFINITY
+                            var right = Float.NEGATIVE_INFINITY
+                            for (offset in start until end) {
+                                val bounds = layout.getBoundingBox(offset)
+                                left = minOf(left, bounds.left)
+                                right = maxOf(right, bounds.right)
+                            }
+                            val top = layout.getLineTop(line) + insetPx
+                            val bottom = layout.getLineBottom(line) - insetPx
+                            if (right > left && bottom > top) {
+                                add(Rect(left, top, right, bottom))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     val textModifier = if (!enableGestures) {
         modifier
@@ -698,36 +823,26 @@ fun HtmlContent(
     Text(
         text = displayText,
         modifier = if (spoilerRanges.isEmpty()) textModifier else textModifier.drawBehind {
-            val layout = layoutResult ?: return@drawBehind
-            spoilerRanges.forEachIndexed { index, range ->
-                if (layout.lineCount == 0) return@forEachIndexed
-                val visibleEnd = layout.getLineEnd(layout.lineCount - 1)
-                val endOffset = minOf(range.end, visibleEnd, layout.layoutInput.text.length)
-                if (range.start < 0 || range.start >= endOffset) return@forEachIndexed
-                val firstLine = layout.getLineForOffset(range.start)
-                val lastOffset = endOffset - 1
-                val lastLine = layout.getLineForOffset(lastOffset)
+            if (spoilerRects.isEmpty()) return@drawBehind
+            val radius = CornerRadius(6.dp.toPx())
+            val stroke = Stroke(width = 0.5.dp.toPx())
+            spoilerRects.forEachIndexed { index, lineRects ->
+                if (lineRects.isEmpty()) return@forEachIndexed
                 val progress = spoilerProgress[index].value
                 val fill = androidx.compose.ui.graphics.lerp(spoilerHiddenColor, spoilerRevealedColor, progress)
-                for (line in firstLine..lastLine) {
-                    val start = maxOf(range.start, layout.getLineStart(line))
-                    val end = minOf(range.end, layout.getLineEnd(line, visibleEnd = true))
-                    if (start >= end) continue
-                    var left = Float.POSITIVE_INFINITY
-                    var right = Float.NEGATIVE_INFINITY
-                    for (offset in start until end) {
-                        val bounds = layout.getBoundingBox(offset)
-                        left = minOf(left, bounds.left)
-                        right = maxOf(right, bounds.right)
+                lineRects.forEach { rect ->
+                    val topLeft = rect.topLeft
+                    val rectSize = rect.size
+                    drawRoundRect(fill, topLeft = topLeft, size = rectSize, cornerRadius = radius)
+                    if (progress < 1f) {
+                        drawRoundRect(
+                            spoilerOutline.copy(alpha = spoilerOutline.alpha * (1f - progress)),
+                            topLeft = topLeft,
+                            size = rectSize,
+                            cornerRadius = radius,
+                            style = stroke
+                        )
                     }
-                    val top = layout.getLineTop(line) + 1.5.dp.toPx()
-                    val bottom = layout.getLineBottom(line) - 1.5.dp.toPx()
-                    if (right <= left || bottom <= top) continue
-                    val rectSize = Size(right - left, bottom - top)
-                    val radius = CornerRadius(6.dp.toPx())
-                    drawRoundRect(fill, topLeft = Offset(left, top), size = rectSize, cornerRadius = radius)
-                    if (progress < 1f) drawRoundRect(spoilerOutline.copy(alpha = spoilerOutline.alpha * (1f - progress)),
-                        topLeft = Offset(left, top), size = rectSize, cornerRadius = radius, style = Stroke(width = 0.5.dp.toPx()))
                 }
             }
         },
@@ -746,7 +861,7 @@ fun HtmlContent(
 
 /** 骰点胶囊：13dp 矢量骰子 + 完整 `出目 [起,止]`。整枚可点，打开本串规则菜单。 */
 @Composable
-private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle) {
+private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle, scale: Float) {
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val normalBg = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
     val normalFg = MaterialTheme.colorScheme.onSecondaryContainer
@@ -754,7 +869,7 @@ private fun DiceBadge(spec: DiceBadgeSpec, textStyle: TextStyle) {
     Row(
         modifier = Modifier
             .wrapContentWidth(unbounded = true)
-            .height(20.dp)
+            .height(20.dp * scale.coerceAtLeast(1f))
             .clip(RoundedCornerShape(6.dp))
             .background(colors.background)
             .then(

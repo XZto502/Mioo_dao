@@ -10,6 +10,34 @@ class ReadingContentTest {
     private fun post(id: String) = PostData(id = id, userId = "cookie", createdAt = "", content = "quote $id")
     private fun parse(html: String) = parseHtmlToAnnotatedString(html, Color.Blue).annotated
 
+    @Test fun bareThreadLinksPreserveTextAndExistingAnnotations() {
+        val original = parse("12345678\n<a href=\"https://example.com/87654321\">87654321</a> >>No.23456789")
+        val result = original.withBareThreadLinks(Color.Red)
+        assertEquals(original.text, result.text)
+        val bare = result.getStringAnnotations("BARE_THREAD", 0, result.length).single()
+        assertEquals("12345678", bare.item)
+        assertEquals("12345678", result.text.substring(bare.start, bare.end))
+        assertEquals(original.getStringAnnotations(0, original.length),
+            result.getStringAnnotations(0, result.length).filter { it.tag != "BARE_THREAD" })
+    }
+
+    @Test fun ordinaryTextAndAlreadyLinkedNumbersReuseOriginalRichText() {
+        listOf("普通正文\n下一行", ">>No.12345678", "<a href=\"https://example.com\">12345678</a>",
+            "A12345678 123456789").forEach { html ->
+            val original = parse(html)
+            assertSame(original, original.withBareThreadLinks(Color.Red))
+        }
+    }
+
+    @Test fun bareNumbersInsideDiceDoNotBecomeThreadLinks() {
+        val original = androidx.compose.ui.text.buildAnnotatedString {
+            pushStringAnnotation("DICE_CLICK", "dice")
+            append("12345678")
+            pop()
+        }
+        assertSame(original, original.withBareThreadLinks(Color.Red))
+    }
+
     @Test fun resolvedReferencesFollowSourceOrderWithoutDuplicateLabels() {
         val blocks = ContentBlockSplitter.split(
             "<font color=\"blue\">&gt;&gt;No.22</font><br><br>正文<br>>>No.11",
@@ -35,17 +63,27 @@ class ReadingContentTest {
     @Test fun repeatedBreaksBecomeTwelveSpGapsWithoutMovingLinkAnnotations() {
         val annotated = parse("甲<br><br><br>乙\n\n\n<a href=\"https://example.com\">链接</a>")
             .withReadingParagraphGaps(1f)
-        assertEquals("甲\n\n乙\n\n链接", annotated.text)
-        assertEquals(listOf(12.sp, 12.sp), annotated.paragraphStyles.map { it.item.lineHeight })
+        assertEquals("甲\n\n\n乙   链接", annotated.text)
+        assertTrue(annotated.paragraphStyles.isEmpty())
         val link = annotated.getStringAnnotations("LINK_CLICK", 0, annotated.length).single()
         assertEquals("链接", annotated.text.substring(link.start, link.end))
-        assertEquals(6, link.start)
+        assertEquals(8, link.start)
     }
 
     @Test fun paragraphGapsRespectReadingScaleAndSingleBreaksStaySingle() {
         val annotated = parse("甲\n乙\n\n丙").withReadingParagraphGaps(1.25f)
         assertEquals("甲\n乙\n\n丙", annotated.text)
-        assertEquals(15.sp, annotated.paragraphStyles.single().item.lineHeight)
+        assertTrue(annotated.paragraphStyles.isEmpty())
+    }
+
+    @Test fun singleBreakContentRetainsLinkQuoteAndStyleAnnotations() {
+        val original = parse("甲\n<a href=\"https://example.com\">链接</a> >>No.22")
+        val result = original.withReadingParagraphGaps(1.25f)
+        assertSame(original, result)
+        assertEquals("22", result.getStringAnnotations("QUOTE_CLICK", 0, result.length).single().item)
+        assertEquals("https://example.com", result.getStringAnnotations("LINK_CLICK", 0, result.length).single().item)
+        assertEquals(original.spanStyles, result.spanStyles)
+        assertTrue(result.paragraphStyles.isEmpty())
     }
 
     @Test fun facesProtectSpacesAndPunctuationButOrdinaryParenthesesStayUnchanged() {
@@ -67,7 +105,7 @@ class ReadingContentTest {
         val quote = annotated.getStringAnnotations("QUOTE_CLICK", 0, annotated.length).single()
         assertEquals(">>No.22", annotated.text.substring(quote.start, quote.end))
         assertEquals("22", quote.item)
-        assertEquals(12.sp, annotated.paragraphStyles.single().item.lineHeight)
+        assertTrue(annotated.paragraphStyles.isEmpty())
     }
     @Test fun serverHtmlSourceNewlinesDoNotDoubleSubmittedLineBreaks() {
         assertEquals("甲\n乙", parse("甲<br />\r\n乙").text)

@@ -4,11 +4,13 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mioo.dao.data.local.BookmarkEntity
+import com.mioo.dao.data.local.CloudFeedThreadEntity
 import com.mioo.dao.data.local.SettingsDataStore
 import com.mioo.dao.data.model.FeedFolder
 import com.mioo.dao.data.model.Thread
 import com.mioo.dao.data.model.XdResponse
 import com.mioo.dao.data.repository.SettingsRepository
+import com.mioo.dao.data.repository.CloudFeedChange
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.components.BookmarkListItem
 import com.mioo.dao.ui.components.ThreadListItem
@@ -16,25 +18,26 @@ import com.mioo.dao.ui.components.toBookmarkListItems
 import com.mioo.dao.ui.components.toFilteredThreadListItems
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
-/** 单次进入夹列表最多补抓多少串的回复数，保护服务器。 */
-private const val REPLY_COUNT_ENRICH_LIMIT = 80
 
 @Immutable
 data class FeedUiState(
@@ -49,11 +52,20 @@ data class FeedUiState(
     val remoteReplyCounts: Map<String, Int> = emptyMap(),
     val feedFolders: List<FeedFolder> = emptyList(),
     val isLoading: Boolean = false,
+    val remoteLoadFailed: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val loadedRemotePage: Int = 1,
+    val hasMoreRemote: Boolean = false,
     val selectedFolderId: String? = null,
     val selectionReady: Boolean = false,
     /** 正在重新离线的串号（更新按钮转圈）。 */
-    val offlineUpdatingIds: Set<String> = emptySet()
+
 )
+
+@Immutable
+internal class CloudFeedIndexSnapshot(val entries: List<CloudFeedThreadEntity>) {
+    val byFolder = entries.groupBy { it.feedUuid }
+}
 
 @HiltViewModel
 class FeedViewModel @Inject constructor(
@@ -65,15 +77,41 @@ class FeedViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(FeedUiState())
     val uiState: StateFlow<FeedUiState> = _uiState
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    internal val cloudIndex = settingsDataStore.feedFoldersFlow
+        .map { folders -> folders.map { it.uuid }.distinct().sorted() }
+        .distinctUntilChanged()
+        .flatMapLatest { uuids ->
+            if (uuids.isEmpty()) flowOf(emptyList()) else threadRepository.observeCloudFeedIndex(uuids)
+        }
+        .map(::CloudFeedIndexSnapshot)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CloudFeedIndexSnapshot(emptyList()))
+
+    val fullyIndexedCloudFolders = threadRepository.observeFullyIndexedCloudFolders()
+        .map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val cachedFeedPosts = settingsDataStore.feedFoldersFlow
+        .map { folders -> folders.map { it.uuid }.distinct().sorted() }
+        .distinctUntilChanged()
+        .flatMapLatest(threadRepository::observeCachedFeedPosts)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000, replayExpirationMillis = 0), emptyMap())
+
     /** 一次性错误提示事件（取消订阅失败 / 加载更多失败等），由 FeedScreen 弹 Toast */
-    private val _errorEvents = MutableSharedFlow<String>()
-    val errorEvents: SharedFlow<String> = _errorEvents.asSharedFlow()
+    private val _errorEvents = Channel<String>(Channel.BUFFERED)
+    val errorEvents = _errorEvents.receiveAsFlow()
 
     private var remotePage = 1
     private var remoteLoadingMore = false
     private var remoteEndReached = false
+    private val remoteFolderCache = HashMap<String, CachedRemoteFolder>()
 
     init {
+        viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            threadRepository.cloudFeedChanges.collect(::applyCloudFeedChange)
+        }
         viewModelScope.launch {
             val saved = settingsDataStore.lastFeedFolderFlow.first().ifBlank { null }
             val folders = settingsDataStore.feedFoldersFlow.first()
@@ -85,12 +123,12 @@ class FeedViewModel @Inject constructor(
         // 「已离线」标签：离线串列表 + 尚未离线的存量收藏（后台巡检会逐串补齐）
         viewModelScope.launch {
             combine(
-                threadRepository.getOfflineThreadSummaries(),
-                threadRepository.getBookmarks()
+                threadRepository.getOfflineThreadSummaries().distinctUntilChanged(),
+                threadRepository.getBookmarks().distinctUntilChanged()
             ) { summaries, bookmarks ->
                 val offlineIds = summaries.mapTo(HashSet()) { it.threadId }
                 summaries to bookmarks.filter { it.id !in offlineIds }
-            }.collect { (summaries, pending) ->
+            }.flowOn(Dispatchers.Default).collectLatest { (summaries, pending) ->
                 val items = withContext(Dispatchers.Default) {
                     pending.toBookmarkListItems()
                 }
@@ -109,6 +147,8 @@ class FeedViewModel @Inject constructor(
             settingsDataStore.feedFoldersFlow
                 .distinctUntilChanged()
                 .collect { folders ->
+                    val activeUuids = folders.mapTo(HashSet()) { it.uuid }
+                    remoteFolderCache.keys.retainAll(activeUuids)
                     _uiState.update { it.copy(feedFolders = folders) }
                     val state = _uiState.value
                     if (state.selectionReady && state.selectedFolderId != null && folders.none { it.uuid == state.selectedFolderId }) {
@@ -130,17 +170,55 @@ class FeedViewModel @Inject constructor(
         }
     }
 
+    private data class CachedRemoteFolder(
+        val threads: List<Thread>,
+        val displayItems: List<ThreadListItem>,
+        val replyCounts: Map<String, Int>,
+        val page: Int,
+        val endReached: Boolean,
+        val hasMore: Boolean
+    )
+
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
-    private var replyCountJob: kotlinx.coroutines.Job? = null
+    private var remoteLoadMoreJob: kotlinx.coroutines.Job? = null
+    // Each request keeps its own set across suspensions while building display items.
+    private var firstPageChanges = mutableSetOf<String>()
+    private var nextPageChanges = mutableSetOf<String>()
+    private var remoteGeneration = 0L
 
     fun selectFolder(uuid: String?) {
         viewModelScope.launch { settingsDataStore.saveLastFeedFolder(uuid) }
         remoteFeedJob?.cancel()
-        replyCountJob?.cancel()
+        remoteLoadMoreJob?.cancel()
+        remoteGeneration++
+        remoteLoadingMore = false
+        val cached = if (uuid != null) remoteFolderCache[uuid] else null
+        if (cached != null) {
+            remotePage = cached.page
+            remoteEndReached = cached.endReached
+            _uiState.update {
+                it.copy(
+                    selectedFolderId = uuid,
+                    isLoading = false,
+                    remoteLoadFailed = false,
+                    isLoadingMore = false,
+                    hasMoreRemote = cached.hasMore,
+                    loadedRemotePage = cached.page,
+                    remoteThreads = cached.threads,
+                    remoteDisplayItems = cached.displayItems,
+                    remoteReplyCounts = cached.replyCounts
+                )
+            }
+            return
+        }
         _uiState.update {
             it.copy(
                 selectedFolderId = uuid,
                 isLoading = false,
+                remoteLoadFailed = false,
+                isLoadingMore = false,
+                hasMoreRemote = false,
+                loadedRemotePage = 1,
                 // 任何切换都清空旧数据：留着会在新文件夹标题下展示上一个夹的帖子
                 remoteThreads = emptyList(),
                 remoteDisplayItems = emptyList(),
@@ -153,90 +231,113 @@ class FeedViewModel @Inject constructor(
     }
 
     private fun loadRemoteFeed(uuid: String) {
+        val generation = ++remoteGeneration
+        remoteLoadMoreJob?.cancel()
+        remoteLoadingMore = false
         remotePage = 1
         remoteEndReached = false
         remoteFeedJob?.cancel()
+        val changed = mutableSetOf<String>().also { firstPageChanges = it }
         remoteFeedJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update {
+                it.copy(isLoading = it.remoteDisplayItems.isEmpty(), isLoadingMore = false, remoteLoadFailed = false)
+            }
             threadRepository.getFeed(uuid, 1).collect { response ->
                 // 请求期间用户已切到别的文件夹 → 丢弃，防止旧数据覆盖新夹
-                if (_uiState.value.selectedFolderId != uuid) return@collect
+                if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                 if (response is XdResponse.Success) {
-                    val threads = response.data
+                    val received = withContext(Dispatchers.Default) {
+                        newFeedPageItems(emptyList(), response.data) { it.idStr }
+                    }
                     val knownCounts = threadRepository.getCloudFeedReplyCounts(uuid)
+                    val display = buildRemoteItems(received, knownCounts)
+                    if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
+                    val state = _uiState.value
+                    val threads = mergeChangedFirstPage(state.remoteThreads, received, changed) { it.idStr }
+                    val items = mergeChangedFirstPage(state.remoteDisplayItems, display, changed) { it.idStr }
+                    val hasMore = received.isNotEmpty()
+                    remoteEndReached = !hasMore
+                    remoteFolderCache[uuid] = CachedRemoteFolder(
+                        threads = threads,
+                        displayItems = items,
+                        replyCounts = knownCounts,
+                        page = 1,
+                        endReached = remoteEndReached,
+                        hasMore = hasMore
+                    )
                     _uiState.update {
                         it.copy(
                             remoteThreads = threads,
                             remoteReplyCounts = knownCounts,
-                            remoteDisplayItems = buildRemoteItems(threads, knownCounts),
-                            isLoading = false
+                            remoteDisplayItems = items,
+                            isLoading = false,
+                            loadedRemotePage = 1,
+                            hasMoreRemote = hasMore
                         )
                     }
-                    enrichRemoteReplyCounts(uuid, threads)
                 } else {
-                    // 失败也清空：不能让上一个夹的数据顶替当前夹展示
-                    _uiState.update {
-                        it.copy(
-                            remoteThreads = emptyList(),
-                            remoteDisplayItems = emptyList(),
-                            remoteReplyCounts = emptyMap(),
-                            isLoading = false
-                        )
+                    val showRetry = _uiState.value.remoteDisplayItems.isEmpty()
+                    _uiState.update { it.copy(isLoading = false, remoteLoadFailed = showRetry) }
+                    if (!showRetry && response is XdResponse.Error) {
+                        _errorEvents.send("刷新收藏夹失败：${response.message}")
                     }
                 }
             }
         }
     }
 
-    /** feed 接口不带回复数：逐个刷新串的第 1 页并缓存回复数，250ms 限速。 */
-    private fun enrichRemoteReplyCounts(uuid: String, threads: List<Thread>) {
-        replyCountJob?.cancel()
-        replyCountJob = viewModelScope.launch {
-            var consecutiveFailures = 0
-            for (thread in threads.take(REPLY_COUNT_ENRICH_LIMIT)) {
-                if (_uiState.value.selectedFolderId != uuid) return@launch
-                val count = threadRepository.refreshCloudFeedReplyCount(thread.idStr)
-                if (count != null) {
-                    consecutiveFailures = 0
-                    _uiState.update { state ->
-                        val merged = state.remoteReplyCounts + (thread.idStr to count)
-                        state.copy(
-                            remoteReplyCounts = merged,
-                            remoteDisplayItems = buildRemoteItems(state.remoteThreads, merged)
-                        )
-                    }
-                } else {
-                    consecutiveFailures++
-                    if (consecutiveFailures >= 3) return@launch
-                }
-                delay(250)
-            }
-        }
-    }
-
-    private fun buildRemoteItems(
+    private suspend fun buildRemoteItems(
         threads: List<Thread>,
         counts: Map<String, Int>
-    ): List<ThreadListItem> {
+    ): List<ThreadListItem> = withContext(Dispatchers.Default) {
         val withCounts = threads.map { thread ->
             counts[thread.idStr]
                 ?.takeIf { it >= 0 }
                 ?.let { thread.copy(replyCount = it) }
                 ?: thread
         }
-        return withCounts.toFilteredThreadListItems(
+        withCounts.toFilteredThreadListItems(
             blockedThreads = emptySet(),
             blockedUsers = emptySet(),
             blockedKeywords = emptyList()
         )
     }
 
+    private fun applyCloudFeedChange(change: CloudFeedChange) {
+        val (uuid, threadId, added) = change
+        if (_uiState.value.feedFolders.none { it.uuid == uuid }) return
+        val selected = _uiState.value.selectedFolderId == uuid
+        val cached = remoteFolderCache[uuid]
+        if (!selected && cached == null) return
+
+        // Transform just the changed card. The in-flight pages still determine pagination.
+        val item = added?.let {
+            listOf(it).toFilteredThreadListItems(emptySet(), emptySet(), emptyList()).single()
+        }
+        if (selected) {
+            if (remoteFeedJob?.isActive == true) firstPageChanges.add(threadId)
+            if (remoteLoadMoreJob?.isActive == true) nextPageChanges.add(threadId)
+            _uiState.update {
+                it.copy(
+                    remoteThreads = applyFeedChange(it.remoteThreads, threadId, added) { row -> row.idStr },
+                    remoteDisplayItems = applyFeedChange(it.remoteDisplayItems, threadId, item) { row -> row.idStr }
+                )
+            }
+        }
+        if (cached != null) {
+            val state = _uiState.value
+            remoteFolderCache[uuid] = cached.copy(
+                threads = if (selected) state.remoteThreads else applyFeedChange(cached.threads, threadId, added) { it.idStr },
+                displayItems = if (selected) state.remoteDisplayItems else applyFeedChange(cached.displayItems, threadId, item) { it.idStr }
+            )
+        }
+    }
+
     fun unsubscribeRemote(uuid: String, threadId: String) {
         viewModelScope.launch {
             threadRepository.delFeed(uuid, threadId).collect { response ->
-                when (response) {
-                    is XdResponse.Success -> loadRemoteFeed(uuid)
-                    is XdResponse.Error -> _errorEvents.tryEmit("取消订阅失败：${response.message}")
+                if (response is XdResponse.Error) {
+                    _errorEvents.send("取消订阅未完成：${response.message}")
                 }
             }
         }
@@ -247,34 +348,66 @@ class FeedViewModel @Inject constructor(
         // 独立标志：加载更多不动 isLoading（那是首页全屏 spinner 的开关，动了会闪屏）
         if (remoteLoadingMore || remoteEndReached || _uiState.value.isLoading) return
         remoteLoadingMore = true
-        remotePage += 1
-        viewModelScope.launch {
+        _uiState.update { it.copy(isLoadingMore = true) }
+        val page = remotePage + 1
+        val generation = remoteGeneration
+        val changed = mutableSetOf<String>().also { nextPageChanges = it }
+        remoteLoadMoreJob = viewModelScope.launch {
             try {
-                threadRepository.getFeed(uuid, remotePage).collect { response ->
-                    if (_uiState.value.selectedFolderId != uuid) return@collect
+                remoteFeedJob?.join()
+                if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid || remoteEndReached) return@launch
+                var previewIds = emptySet<String>()
+                var lastPageEmpty: Boolean? = null
+                threadRepository.getFeed(uuid, page).collect { response ->
+                    if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
                     if (response is XdResponse.Success) {
                         val fresh = response.data
-                        if (fresh.isEmpty()) {
-                            remoteEndReached = true
-                            return@collect
+                        val state = _uiState.value
+                        val received = withContext(Dispatchers.Default) {
+                            newFeedPageItems(state.remoteThreads, fresh, replacing = previewIds) { it.idStr }
                         }
-                        val merged = (_uiState.value.remoteThreads + fresh).distinctBy { it.idStr }
-                        if (merged.size == _uiState.value.remoteThreads.size) remoteEndReached = true
+                        val display = buildRemoteItems(received, state.remoteReplyCounts)
+                        if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@collect
+                        val added = if (changed.isEmpty()) received else received.filterNot { it.idStr in changed }
+                        val items = if (changed.isEmpty()) display else display.filterNot { it.idStr in changed }
+                        val replaced = if (changed.isEmpty()) previewIds else previewIds - changed
                         _uiState.update {
                             it.copy(
-                                remoteThreads = merged,
-                                remoteDisplayItems = buildRemoteItems(merged, it.remoteReplyCounts)
+                                remoteThreads = appendFeedRows(it.remoteThreads, added, replaced) { row -> row.idStr },
+                                remoteDisplayItems = appendFeedRows(it.remoteDisplayItems, items, replaced) { row -> row.idStr }
                             )
                         }
-                        enrichRemoteReplyCounts(uuid, merged)
+                        previewIds = added.mapTo(HashSet()) { it.idStr }
+                        lastPageEmpty = fresh.isEmpty()
                     } else {
                         // 失败回退页码，让用户下拉重试
-                        remotePage -= 1
-                        _errorEvents.tryEmit("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")
+                        _errorEvents.send("加载更多订阅失败：${(response as? XdResponse.Error)?.message ?: "网络错误"}")
                     }
                 }
+                if (remoteGeneration != generation || _uiState.value.selectedFolderId != uuid) return@launch
+                lastPageEmpty?.let { empty ->
+                    remoteEndReached = empty
+                    if (!empty) remotePage = page
+                    val state = _uiState.updateAndGet {
+                        it.copy(
+                            hasMoreRemote = !empty,
+                            loadedRemotePage = remotePage
+                        )
+                    }
+                    remoteFolderCache[uuid] = CachedRemoteFolder(
+                        threads = state.remoteThreads,
+                        displayItems = state.remoteDisplayItems,
+                        replyCounts = state.remoteReplyCounts,
+                        page = remotePage,
+                        endReached = empty,
+                        hasMore = !empty
+                    )
+                }
             } finally {
-                remoteLoadingMore = false
+                if (remoteGeneration == generation) {
+                    remoteLoadingMore = false
+                    _uiState.update { it.copy(isLoadingMore = false) }
+                }
             }
         }
     }
@@ -293,25 +426,22 @@ class FeedViewModel @Inject constructor(
     }
 
     /** 重新拉取最新页（复用整串离线下载，已缓存页/图按 key 覆盖或跳过）。 */
+    val offlineTransfers get() = threadRepository.offlineTransfers
+
     fun updateOffline(
         summary: com.mioo.dao.data.local.OfflineThreadSummary,
         onResult: (String) -> Unit
     ) {
         val id = summary.threadId
-        if (id in _uiState.value.offlineUpdatingIds) return
-        _uiState.update { it.copy(offlineUpdatingIds = it.offlineUpdatingIds + id) }
+        if (offlineTransfers.value[id]?.let { it.error == null } == true) return
         viewModelScope.launch {
-            try {
-                threadRepository.downloadFullThread(id).collect { response ->
-                    onResult(
-                        when (response) {
-                            is XdResponse.Success -> "离线缓存已更新"
-                            is XdResponse.Error -> "更新失败: ${response.message}"
-                        }
-                    )
-                }
-            } finally {
-                _uiState.update { it.copy(offlineUpdatingIds = it.offlineUpdatingIds - id) }
+            threadRepository.downloadFullThread(id).collect { response ->
+                onResult(
+                    when (response) {
+                        is XdResponse.Success -> "离线缓存已更新"
+                        is XdResponse.Error -> "更新失败: ${response.message}"
+                    }
+                )
             }
         }
     }

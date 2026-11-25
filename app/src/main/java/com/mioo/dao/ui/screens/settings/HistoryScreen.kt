@@ -47,8 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mioo.dao.data.local.HistoryType
 import com.mioo.dao.data.model.effectiveTitle
-import com.mioo.dao.ui.components.homePageColor
-import com.mioo.dao.ui.components.homeCardColor
+import com.mioo.dao.ui.theme.readingBackground
+import com.mioo.dao.ui.theme.readingCardColor
 import com.mioo.dao.ui.components.HtmlContent
 import com.mioo.dao.ui.components.HtmlParseCache
 import com.mioo.dao.ui.components.LocalDicePreset
@@ -57,9 +57,12 @@ import com.mioo.dao.ui.components.ReadingIdentity
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbAsyncImage
 import com.mioo.dao.ui.components.formatReadingTimestamp
+import com.mioo.dao.ui.components.slowFlingClick
 import com.mioo.dao.ui.theme.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -68,10 +71,11 @@ fun HistoryScreen(
     onNavigateToThread: (String) -> Unit,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
     openGeneration: Int = 0,
+    isActiveTab: () -> Boolean = { true },
+    reducedMotion: Boolean = isReducedMotionEnabled(),
     viewModel: HistoryViewModel = hiltViewModel(),
     modifier: Modifier = Modifier
 ) {
-    val reducedMotion = isReducedMotionEnabled()
     val types = remember { HistoryType.values() }
     val initialType by viewModel.initialType.collectAsState()
     val restoredType = initialType ?: return
@@ -87,6 +91,7 @@ fun HistoryScreen(
     var deleteItem by remember { mutableStateOf<HistoryItem?>(null) }
     var image by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    var pageSwitchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val haptics = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
     val searchFocus = remember { FocusRequester() }
@@ -103,13 +108,13 @@ fun HistoryScreen(
     LaunchedEffect(viewModel) { viewModel.messages.collect { snackbar.showSnackbar(it) } }
     LaunchedEffect(image) { onImageViewerOpenChange(image != null) }
     DisposableEffect(Unit) { onDispose { onImageViewerOpenChange(false) } }
-    BackHandler(enabled = showSearch && image == null && clearType == null && deleteItem == null) {
+    BackHandler(enabled = showSearch && image == null && clearType == null && deleteItem == null && isActiveTab()) {
         closeSearch()
     }
 
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Scaffold(
-            containerColor = homePageColor(),
+            containerColor = readingBackground(),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopAppBar(
@@ -148,7 +153,7 @@ fun HistoryScreen(
                             Icon(Icons.Outlined.DeleteSweep, contentDescription = "清空${type.label}")
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = DaoTheme.colors.glassTopBar)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = readingTopBarColor())
                 )
             },
             snackbarHost = { SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(bottom = 104.dp)) }
@@ -160,7 +165,10 @@ fun HistoryScreen(
                         Surface(onClick = {
                             if (!selected) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                scope.launch { pager.animateScrollToPage(index, animationSpec = MiooMotion.tabPagerSpring()) }
+                                pageSwitchJob?.cancel()
+                                pageSwitchJob = scope.launch {
+                                    pager.animateScrollToPage(index, animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                                }
                             }
                         }, shape = CircleShape, color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent) {
                             Text(entry.label, Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -170,22 +178,38 @@ fun HistoryScreen(
                     }
                 }
 
-                HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
+                val pagerTouchGuard = com.mioo.dao.ui.components.rememberTouchGuardConfiguration(
+                    com.mioo.dao.ui.components.LocalScrollTouchGuardEnabled.current
+                )
+                CompositionLocalProvider(
+                    androidx.compose.foundation.LocalOverscrollConfiguration provides null,
+                    androidx.compose.ui.platform.LocalViewConfiguration provides pagerTouchGuard
+                ) {
+                HorizontalPager(state = pager, beyondBoundsPageCount = 0, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
                     val category = types[page]
-                    val records by viewModel.items(category).collectAsState()
                     val quoteColor = MaterialTheme.colorScheme.primary
                     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                     val dicePreset = LocalDicePreset.current
-                    val readyRecords by produceState(initialValue = emptyList<HistoryItem>(), records, quoteColor, dark, dicePreset) {
-                        if (category == HistoryType.BROWSE && records.isNotEmpty()) {
-                            // Parsing HTML in the first list composition can stall the
-                            // dock transition while it passes over this page.
-                            withContext(Dispatchers.Default) {
-                                HtmlParseCache.prewarm(records.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                    val historyPageState by produceState(
+                        initialValue = false to emptyList<HistoryItem>(),
+                        category, quoteColor, dark, dicePreset
+                    ) {
+                        snapshotFlow { isActiveTab() }
+                            .distinctUntilChanged()
+                            .collectLatest { active ->
+                                if (!active) return@collectLatest
+                                viewModel.items(category).collect { latest ->
+                                    if (category == HistoryType.BROWSE && latest.isNotEmpty() && value.second.isEmpty()) {
+                                        withContext(Dispatchers.Default) {
+                                            HtmlParseCache.prewarm(latest.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                                        }
+                                    }
+                                    value = true to latest
+                                }
                             }
-                        }
-                        value = records
                     }
+                    val recordsLoaded = historyPageState.first
+                    val readyRecords = historyPageState.second
                     val categoryQuery by viewModel.query(category).collectAsState()
                     // A fresh state also clears LazyColumn's remembered item key, so an
                     // updated/reordered history cannot restore the old reading position.
@@ -194,22 +218,41 @@ fun HistoryScreen(
                     LaunchedEffect(categoryQuery) {
                         if (previousQuery != categoryQuery) { list.scrollToItem(0); previousQuery = categoryQuery }
                     }
-                    if (records.isEmpty()) {
+                    if (recordsLoaded && readyRecords.isEmpty()) {
                         Box(Modifier.fillMaxSize().padding(bottom = 104.dp), contentAlignment = Alignment.Center) {
                             Text(if (categoryQuery.isBlank()) "暂无${category.label}" else "没有匹配的记录",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    } else if (readyRecords.isNotEmpty()) LazyColumn(
-                        state = list, modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
-                            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
-                            HistoryCard(entry, onClick = { viewModel.open(entry, onNavigateToThread) },
-                                onLongClick = { deleteItem = entry }, onImageClick = { image = it })
+                    } else if (readyRecords.isNotEmpty()) {
+                        val initialViewport = com.mioo.dao.ui.components.rememberInitialListViewport(true)
+                        val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
+                        val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
+                        CompositionLocalProvider(androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration) {
+                            LazyColumn(
+                                state = list,
+                                flingBehavior = responsiveFling,
+                                userScrollEnabled = initialViewport.ready,
+                                modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
+                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
+                                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
+                                    val onClick = remember(entry, viewModel, onNavigateToThread) {
+                                        { viewModel.open(entry, onNavigateToThread) }
+                                    }
+                                    HistoryCard(
+                                        entry,
+                                        onClick = onClick,
+                                        onLongClick = { deleteItem = entry },
+                                        onImageClick = { image = it },
+                                        modifier = Modifier.slowFlingClick(responsiveFling, onClick)
+                                    )
+                                }
+                            }
                         }
                     }
+                }
                 }
             }
         }
@@ -232,16 +275,25 @@ fun HistoryScreen(
     ) }
 }
 
+private val collapseBlankLinesRegex = Regex("(\\r?\\n\\s*){2,}")
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () -> Unit, onImageClick: (String) -> Unit) {
+private fun HistoryCard(
+    item: HistoryItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onImageClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val scheme = MaterialTheme.colorScheme
     val meta = readingMetaStyle()
     val date = formatReadingTimestamp(item.timestamp, includeSeconds = false)
     Card(
-        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = homeCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = com.mioo.dao.ui.theme.readingCardBorder()
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -266,7 +318,10 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
             val bodyStyle = readingBodyStyle()
             if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = bodyStyle,
                 maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false, compactBlankLines = true)
-            else Text(item.content.replace(Regex("(\\r?\\n\\s*){2,}"), "\n"), style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
+            else {
+                val preview = remember(item.content) { item.content.replace(collapseBlankLinesRegex, "\n") }
+                Text(preview, style = bodyStyle, maxLines = 8, overflow = TextOverflow.Ellipsis)
+            }
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",
@@ -281,9 +336,5 @@ private fun HistoryCard(item: HistoryItem, onClick: () -> Unit, onLongClick: () 
 
 @Composable
 private fun HistoryPill(text: String, secondary: Boolean = false, maxWidth: Int = 92) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(shape = RoundedCornerShape(6.dp), color = if (secondary) scheme.secondaryContainer.copy(alpha = 0.65f) else scheme.primary.copy(alpha = 0.09f)) {
-        Text(text, Modifier.widthIn(max = maxWidth.dp).padding(horizontal = 6.dp, vertical = 2.dp), style = readingMetaStyle(),
-            color = if (secondary) scheme.onSecondaryContainer else scheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
+    com.mioo.dao.ui.components.ReadingPill(text, maxWidth = maxWidth)
 }

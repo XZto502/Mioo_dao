@@ -9,6 +9,25 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+private val channelVersionPattern = Regex("^(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?(?:\\+[a-z0-9.-]+)?$", RegexOption.IGNORE_CASE)
+private val betaNumberPattern = Regex("-beta(?:[.]?(\\d+))?", RegexOption.IGNORE_CASE)
+
+fun channelVersionCode(versionName: String): Int? {
+    val raw = versionName.trim().removePrefix("v").removePrefix("V")
+    val match = channelVersionPattern.matchEntire(raw) ?: return null
+    val major = match.groupValues[1].toLongOrNull() ?: return null
+    val minor = match.groupValues[2].ifEmpty { "0" }.toLongOrNull() ?: return null
+    val patch = match.groupValues[3].ifEmpty { "0" }.toLongOrNull() ?: return null
+    if (major > 2100 || minor !in 0..99 || patch !in 0..99) return null
+    val beta = betaNumberPattern.find(raw)
+    val suffix = if (beta == null) 99L else beta.groupValues[1].ifEmpty { "1" }.toLongOrNull()?.coerceIn(1L, 98L) ?: 98L
+    val code = major * 1_000_000L + minor * 10_000L + patch * 100L + suffix
+    return code.takeIf { it in 1..2_100_000_000L }?.toInt()
+}
+
+val appVersionName = "1.1.7"
+val testingVersionSuffix = "-beta.40"
+
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) {
@@ -28,8 +47,8 @@ android {
         applicationId = "com.mioo.dao"
         minSdk = 26
         targetSdk = 34
-        versionCode = 28
-        versionName = "1.1.6"
+        versionCode = requireNotNull(channelVersionCode(appVersionName))
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "BETA", "false")
@@ -108,10 +127,24 @@ android {
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        val verifyPreviewSigning = tasks.register("verifyPreviewSigning") {
+            doLast {
+                check(hasReleaseKeystore) { "Public preview APKs require the official RELEASE_* signing configuration." }
+            }
+        }
+        tasks.matching { it.name == "packagePreview" || it.name == "signPreviewBundle" }.configureEach {
+            dependsOn(verifyPreviewSigning)
+        }
+        // Public testing channel: same package and release signing identity as stable.
+        create("preview") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            versionNameSuffix = testingVersionSuffix
+        }
         // 测试版：包名加 .beta 后缀可与正式版共存，签名独立，应用名区分
         create("beta") {
             applicationIdSuffix = ".beta"
-            versionNameSuffix = "-beta"
+            versionNameSuffix = testingVersionSuffix
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
@@ -138,6 +171,13 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        val name = appVersionName + if (variant.buildType in setOf("preview", "beta")) testingVersionSuffix else ""
+        variant.outputs.forEach { it.versionCode.set(requireNotNull(channelVersionCode(name))) }
+    }
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
@@ -158,6 +198,7 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.2.0")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.8.0")
+    implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
     implementation("androidx.navigation:navigation-compose:2.7.5")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")

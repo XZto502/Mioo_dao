@@ -71,16 +71,13 @@ object NetworkModule {
             resolver("https://doh.pub/dns-query", "1.12.12.12", "120.53.53.53")
         ))
         val pool = okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES)
-        var previousMode = compatible()
+        val previousMode = java.util.concurrent.atomic.AtomicBoolean(compatible())
         val builder = OkHttpClient.Builder()
             .dns(dns)
             .addInterceptor { chain ->
-                synchronized(pool) {
-                    val mode = compatible()
-                    if (mode != previousMode) {
-                        pool.evictAll()
-                        previousMode = mode
-                    }
+                val mode = compatible()
+                if (previousMode.getAndSet(mode) != mode) {
+                    pool.evictAll()
                 }
                 chain.proceed(chain.request())
             }
@@ -93,9 +90,6 @@ object NetworkModule {
             .connectionPool(pool)
             .retryOnConnectionFailure(true)
 
-        // 50 MB HTTP response cache to reduce redundant API round-trips
-        val cacheDir = File(appContext.cacheDir, "okhttp_cache")
-        builder.cache(Cache(cacheDir, 50L * 1024 * 1024))
 
         // BODY logging serializes every JSON payload and image upload. Release stays NONE
         // so userhash cookies and upload bodies never hit logcat.

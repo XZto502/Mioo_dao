@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface HistoryDao {
+    @Query("SELECT id FROM bookmarks ORDER BY id")
+    fun observeBookmarkIds(): Flow<List<String>>
 
     @Query("""SELECT h.*, COALESCE(p.page, 1) AS lastReadPage FROM history h
         LEFT JOIN thread_progress p ON p.threadId = h.id
@@ -86,6 +88,10 @@ interface HistoryDao {
 
     @Query("SELECT * FROM bookmarks ORDER BY timestamp DESC")
     fun getAllBookmarks(): Flow<List<BookmarkEntity>>
+
+    /** Bounded snapshot for background badge/notification checks. */
+    @Query("SELECT * FROM bookmarks ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentBookmarks(limit: Int): List<BookmarkEntity>
 
     @Query(
         """

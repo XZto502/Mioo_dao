@@ -28,6 +28,13 @@ import androidx.core.view.WindowCompat
 var isActivitySystemBarsOverridden: Boolean = false
 
 /**
+ * 当前可见页面对宿主状态栏图标明暗的覆写（例如自定义顶图铺到状态栏下方时）。
+ * `true` = 深色图标（浅色底），`false` = 浅色图标（深色底），`null` = 跟随全局主题 `!darkTheme`。
+ */
+@Volatile
+var activeLightStatusBarsOverride: Boolean? = null
+
+/**
  * 安全地从 [Context] 解包出宿主 [Activity]。
  */
 fun Context.findActivity(): Activity? {

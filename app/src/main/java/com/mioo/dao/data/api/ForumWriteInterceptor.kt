@@ -20,9 +20,7 @@ class ForumWriteInterceptor(private val compatibilityEnabled: () -> Boolean) : I
             override fun isOneShot() = true
             override fun writeTo(sink: BufferedSink) = body.writeTo(sink)
         }).build()
-        val transport = if (compatibilityEnabled()) {
-            chain.withWriteTimeout(60, TimeUnit.SECONDS).withReadTimeout(30, TimeUnit.SECONDS)
-        } else chain
+        val transport = chain.withWriteTimeout(60, TimeUnit.SECONDS).withReadTimeout(30, TimeUnit.SECONDS)
         return transport.proceed(request)
     }
 }

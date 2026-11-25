@@ -1,5 +1,7 @@
 package com.mioo.dao
 
+import com.mioo.dao.utils.isNewerVersion
+
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -16,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,6 +49,8 @@ import com.mioo.dao.data.repository.SettingsRepository
 import com.mioo.dao.data.repository.ThreadRepository
 import com.mioo.dao.ui.navigation.MiooDaoNavGraph
 import com.mioo.dao.ui.theme.ImmersiveDialogEffect
+import com.mioo.dao.ui.theme.LocalReducedMotionEnabled
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import com.mioo.dao.ui.theme.MiooDaoTheme
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import com.mioo.dao.ui.theme.installImmersiveBarGuard
@@ -53,6 +58,7 @@ import com.mioo.dao.ui.theme.isActivitySystemBarsOverridden
 import com.mioo.dao.ui.theme.removeImmersiveBarGuard
 import com.mioo.dao.utils.ThreadLinkParser
 import com.mioo.dao.utils.UpdatePromptController
+import com.mioo.dao.ui.components.LocalScrollTouchGuardEnabled
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
@@ -84,18 +90,20 @@ class MainActivity : ComponentActivity() {
     // ThreadRepository is NOT field-injected: avoids pulling the full network/Room graph
     // into Activity creation. Update-check resolves it lazily after cold list settles.
 
+    private var initialExternalThreadIdState = mutableStateOf<String?>(null)
     private var pendingThreadIdState = mutableStateOf<String?>(null)
 
     /** Clipboard-detected 8-digit thread id awaiting user confirmation. */
     private var clipboardThreadCandidate = mutableStateOf<String?>(null)
+    private val reducedMotionState = mutableStateOf(false)
 
     /**
-     * Full clipboard text we already asked about (accept or dismiss).
+     * Fingerprint of clipboard content already handled (accept or dismiss).
      * Only suppress while the clipboard content is unchanged.
      * 进程级：Activity 重建（深浅色切换/语言切换/进程恢复）后不再对同一段剪贴板重复弹窗。
      */
     companion object {
-        @Volatile private var lastPromptedClipboardText: String? = null
+        @Volatile private var lastPromptedClipboardHash: Int? = null
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -121,7 +129,11 @@ class MainActivity : ComponentActivity() {
         // Decor does not fit system windows so WindowInsets.ime animates smoothly into Compose.
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        pendingThreadIdState.value = parsePendingThreadId(intent)
+        val launchThreadId = parsePendingThreadId(intent)
+        val directExternalId = if (intent?.action == Intent.ACTION_VIEW) launchThreadId else null
+        initialExternalThreadIdState.value = directExternalId
+        pendingThreadIdState.value = if (directExternalId != null) null else launchThreadId
+        reducedMotionState.value = isReducedMotionEnabled(this)
 
         // Never stick on splash if list is empty/error/slow network (prefer first-content callback)
         lifecycleScope.launch {
@@ -167,25 +179,30 @@ class MainActivity : ComponentActivity() {
             // Keep system bars immersive when app theme changes (not only system UI mode).
             SideEffect {
                 if (!isActivitySystemBarsOverridden) {
-                    applyImmersiveSystemBars(darkTheme)
+                    applyImmersiveSystemBars(
+                        darkTheme = darkTheme,
+                        lightStatusBars = com.mioo.dao.ui.theme.activeLightStatusBarsOverride ?: !darkTheme
+                    )
                 }
             }
 
+            val initialExternalThreadId by initialExternalThreadIdState
             val pendingThreadId by pendingThreadIdState
             val clipboardThreadId by clipboardThreadCandidate
 
+            val updateChannel by settingsRepository.updateChannel.collectAsState()
             val consent by settingsRepository.thirdPartyConsent.collectAsState()
             val predictiveBackEnabled by settingsRepository.predictiveBackEnabled.collectAsState()
+            val scrollTouchGuardEnabled by settingsRepository.scrollTouchGuardEnabled.collectAsState()
             val allowThirdParty = consent?.allowThirdPartyServices == true
             // Restarting the effect cancels the startup check if consent is withdrawn.
-            LaunchedEffect(allowThirdParty) {
+            LaunchedEffect(allowThirdParty, updateChannel) {
                 if (!allowThirdParty) {
                     if (UpdatePromptController.release != null) UpdatePromptController.dismiss()
                     if (consent != null) com.mioo.dao.utils.UpdateDownloader.cancelActiveDownload(applicationContext)
                     return@LaunchedEffect
                 }
-                // 测试版不检查更新：下载到的正式包包名/签名不同，无法覆盖安装
-                if (com.mioo.dao.BuildConfig.BETA) return@LaunchedEffect
+                UpdatePromptController.onChannelChanged(updateChannel)
                 delay(10000)
                 val threadRepo = runCatching {
                     EntryPointAccessors.fromApplication(
@@ -208,6 +225,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val reducedMotion by reducedMotionState
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalReducedMotionEnabled provides reducedMotion
+            ) {
             MiooDaoTheme(
                 darkTheme = darkTheme,
                 themeColor = themeColor,
@@ -220,9 +241,11 @@ class MainActivity : ComponentActivity() {
             ) {
                 CompositionLocalProvider(
                     LocalThirdPartyServicesAllowed provides allowThirdParty,
-                    LocalPredictiveBackEnabled provides predictiveBackEnabled
+                    LocalPredictiveBackEnabled provides predictiveBackEnabled,
+                    LocalScrollTouchGuardEnabled provides scrollTouchGuardEnabled
                 ) {
                     MiooDaoNavGraph(
+                        initialThreadId = initialExternalThreadId,
                         pendingThreadId = pendingThreadId,
                         onPendingThreadConsumed = { pendingThreadIdState.value = null },
                         onColdStartContentReady = {
@@ -240,13 +263,13 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text("本软件（喵岛）是由 Sanae-Koishi 开发的第三方客户端，不受 X 岛官方支持。使用时您的数据安全与数据泄露风险无法由 X 岛本身保证。",
                                     fontWeight = FontWeight.Bold)
-                                Text("论坛内容来自 X 岛（www.nmbxd.com）。饼干、浏览历史、本地收藏和草稿保存在手机上。发帖时，饼干和发帖内容会发送给 X 岛。云端收藏通过 X 岛服务同步。")
+                                Text("版块与串内容来自 X 岛（www.nmbxd.com）。饼干、浏览历史、本地收藏和草稿保存在手机上。发串或回复时，饼干和发言内容会发送给 X 岛。云端收藏通过 X 岛服务同步。")
                                 Text("可选的第三方服务", fontWeight = FontWeight.Bold)
-                                Text("更新检查和下载连接 GitHub、jsDelivr、ghproxy.net 或 ghfast.top 获取版本信息和安装包，不发送饼干、帖子内容或本地记录。")
+                                Text("更新检查和下载连接 GitHub、jsDelivr、ghproxy.net 或 ghfast.top 获取版本信息和安装包，不发送饼干、串内容或本地记录。")
                                 Text("主动使用外部搜索时会将关键词交给所选搜索引擎。主动使用以图搜源时会将公开图片链接交给 SauceNAO、Ascii2d 或 Yandex。")
                                 Text("网络兼容模式可能通过阿里 DNS 或腾讯 DNS 解析 X 岛 API 域名。解析服务只收到域名查询。")
-                                Text("主动打开帖子或关于页面中的链接时，浏览器会访问对应网站。")
-                                Text("拒绝后仍可浏览 X 岛、发帖、回帖和使用收藏与饼干功能。你可以在设置中更改选择。")
+                                Text("主动打开串内或关于页面中的链接时，浏览器会访问对应网站。")
+                                Text("拒绝后仍可浏览 X 岛、发串、回复和使用收藏与饼干功能。你可以在设置中更改选择。")
                             }
                         },
                         confirmButton = {
@@ -302,7 +325,15 @@ class MainActivity : ComponentActivity() {
                             Text("发现新版本 (${release.tagName})")
                         },
                         text = {
-                            Column {
+                            Column(Modifier.verticalScroll(rememberScrollState())) {
+                                androidx.compose.material3.Surface(
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(if (release.prerelease) "测试版" else "正式版",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                                }
+                                Spacer(Modifier.height(8.dp))
                                 if (!release.name.isNullOrBlank()) {
                                     Text(
                                         text = release.name,
@@ -340,7 +371,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+            }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        reducedMotionState.value = isReducedMotionEnabled(this)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -355,6 +392,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingThreadIdState.value = parsePendingThreadId(intent)
+        reducedMotionState.value = isReducedMotionEnabled(this)
     }
 
     private fun parsePendingThreadId(intent: Intent?): String? {
@@ -374,9 +412,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun markClipboardPromptHandled() {
-        lastPromptedClipboardText = readClipboardText()
+        lastPromptedClipboardHash = readClipboardText()?.hashCode()
         clipboardThreadCandidate.value = null
     }
+
+    private var clipboardReadJob: kotlinx.coroutines.Job? = null
 
     private fun checkClipboardForThreadId() {
         if (isFinishing || isDestroyed) return
@@ -387,13 +427,18 @@ class MainActivity : ComponentActivity() {
         // Need focus — Android blocks clipboard reads otherwise (returns empty / null)
         if (!hasWindowFocus()) return
 
-        val text = readClipboardText() ?: return
-        if (text.isBlank()) return
-        // Same clip content already handled
-        if (text == lastPromptedClipboardText) return
-
-        val threadId = ThreadLinkParser.parseEightDigitThreadId(text) ?: return
-        clipboardThreadCandidate.value = threadId
+        if (clipboardReadJob?.isActive == true) return
+        clipboardReadJob = lifecycleScope.launch {
+            val candidate = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val text = readClipboardText() ?: return@withContext null
+                ThreadLinkParser.parseEightDigitThreadId(text)?.let { text.hashCode() to it }
+            } ?: return@launch
+            if (hasWindowFocus() && !isFinishing && !isDestroyed &&
+                pendingThreadIdState.value == null && clipboardThreadCandidate.value == null &&
+                candidate.first != lastPromptedClipboardHash) {
+                clipboardThreadCandidate.value = candidate.second
+            }
+        }
     }
 
     private fun readClipboardText(): String? {
@@ -429,10 +474,13 @@ private data class ThemeConfig(
  * gesture indicator (dark
  * ) and 3-button nav area.
  */
-private fun ComponentActivity.applyImmersiveSystemBars(darkTheme: Boolean) {
+private fun ComponentActivity.applyImmersiveSystemBars(
+    darkTheme: Boolean,
+    lightStatusBars: Boolean = !darkTheme
+) {
     val transparent = android.graphics.Color.TRANSPARENT
     enableEdgeToEdge(
-        statusBarStyle = if (darkTheme) {
+        statusBarStyle = if (!lightStatusBars) {
             SystemBarStyle.dark(transparent)
         } else {
             SystemBarStyle.light(transparent, transparent)
@@ -463,21 +511,4 @@ private fun ComponentActivity.applyImmersiveSystemBars(darkTheme: Boolean) {
 
 private fun getAppVersionName(): String {
     return com.mioo.dao.BuildConfig.VERSION_NAME
-}
-
-private fun isNewerVersion(currentVersion: String, latestVersion: String): Boolean {
-    val cleanCurrent = currentVersion.trim().lowercase().removePrefix("v")
-    val cleanLatest = latestVersion.trim().lowercase().removePrefix("v")
-    if (cleanCurrent == cleanLatest) return false
-
-    // 剥掉每段的 -beta / +build 等后缀再转数字，避免 "10-beta" 整段被丢弃导致误判
-    val currentParts = cleanCurrent.split(".").mapNotNull { it.substringBefore('-').substringBefore('+').toIntOrNull() }
-    val latestParts = cleanLatest.split(".").mapNotNull { it.substringBefore('-').substringBefore('+').toIntOrNull() }
-
-    val minLength = minOf(currentParts.size, latestParts.size)
-    for (i in 0 until minLength) {
-        if (latestParts[i] > currentParts[i]) return true
-        if (latestParts[i] < currentParts[i]) return false
-    }
-    return latestParts.size > currentParts.size
 }

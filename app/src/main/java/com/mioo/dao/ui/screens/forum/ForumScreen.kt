@@ -1,14 +1,22 @@
 package com.mioo.dao.ui.screens.forum
 
+import com.mioo.dao.ui.components.useUnbufferedFlingGrab
+
 import android.widget.Toast
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.stopScroll
+import androidx.compose.foundation.MutatePriority
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import com.mioo.dao.ui.theme.isReducedMotionEnabled
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -16,6 +24,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
+import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalViewConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListConfiguration
+import com.mioo.dao.ui.components.rememberResponsiveListFling
+import com.mioo.dao.ui.components.ResponsiveListFling
+import com.mioo.dao.ui.components.slowFlingClick
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -50,12 +64,14 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -68,6 +84,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -77,14 +94,21 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -97,7 +121,8 @@ import com.mioo.dao.ui.components.FreeCopyDialog
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbImage
 import com.mioo.dao.ui.components.PrefetchListImages
-import com.mioo.dao.ui.components.homePageColor
+import com.mioo.dao.ui.components.rememberInitialListViewport
+import com.mioo.dao.ui.theme.readingBackground
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.compressImageUnder2MB
@@ -109,6 +134,7 @@ import com.mioo.dao.ui.theme.ImmersiveDialogEffect
 import com.mioo.dao.ui.theme.immersiveDialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -136,7 +162,13 @@ fun ForumScreen(
     /** 与主框架共用，使抽屉盖在底部导航之上。 */
     drawerState: DrawerState,
     boardDrawerSlot: BoardDrawerSlot,
-    modifier: Modifier = Modifier
+    onScrollInProgressChange: (Boolean) -> Unit = {},
+    modifier: Modifier = Modifier,
+
+    headerData: com.mioo.dao.ui.components.CustomHeaderData = com.mioo.dao.ui.components.CustomHeaderData(),
+    headerModifier: Modifier = Modifier,
+    bodyModifier: Modifier = Modifier,
+
 ) {
     val uiState by viewModel.uiState.collectAsState()
     // Pins + cookies only — theme/font changes must not recompose the board list
@@ -145,8 +177,25 @@ fun ForumScreen(
     val context = LocalContext.current
     // Per-board scroll: rememberSaveable survives navigate→thread→back so position is restored.
     val currentForumId = viewModel.forumId
-    val listState = rememberSaveable(currentForumId, saver = LazyListState.Saver) {
+    val displayedForumId = uiState.displayedForumId
+    val isBoardSwitchPending = displayedForumId != currentForumId && uiState.isRefreshing
+    val listState = rememberSaveable(displayedForumId, uiState.boardSwitchGeneration, saver = LazyListState.Saver) {
         LazyListState()
+    }
+    val latestScrollChange = rememberUpdatedState(onScrollInProgressChange)
+    LaunchedEffect(listState, viewModel) {
+        snapshotFlow { listState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collect { scrolling ->
+                viewModel.setUserScrolling(scrolling)
+                latestScrollChange.value(scrolling)
+            }
+    }
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose {
+            viewModel.setUserScrolling(false)
+            latestScrollChange.value(false)
+        }
     }
     val drawerListState = rememberLazyListState()
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -165,9 +214,24 @@ fun ForumScreen(
     val switchingBoardState = remember { mutableStateOf(false) }
     var switchingBoard by switchingBoardState
     val emptyStringLambda = remember { { _: String -> } }
-    var handledRefreshGeneration by rememberSaveable(currentForumId) { mutableStateOf(0L) }
+    var handledRefreshGeneration by rememberSaveable(displayedForumId) { mutableStateOf(0L) }
+    var alignAfterManualRefresh by remember(displayedForumId) { mutableStateOf(false) }
+    val refreshScrollObserver = remember(displayedForumId, listState, viewModel) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Observe only; never consume motion or interrupt the list's fling.
+                // The pull that starts a refresh is not a move away from its top.
+                if (source == NestedScrollSource.Drag && available.y != 0f &&
+                    (available.y < 0f || listState.canScrollBackward) &&
+                    alignAfterManualRefresh) {
+                    alignAfterManualRefresh = false
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
-    val previousForumId = rememberSaveable { mutableStateOf(currentForumId) }
+    val previousForumId = rememberSaveable { mutableStateOf(displayedForumId) }
     // True for a short window after board switch — pause prefetch/prewarm during swap
     var boardSwitchQuiet by remember { mutableStateOf(false) }
 
@@ -175,6 +239,7 @@ fun ForumScreen(
         if (listState.layoutInfo.totalItemsCount > 0) {
             listState.scrollToItem(0)
         }
+        alignAfterManualRefresh = true
         viewModel.refresh()
     }
 
@@ -213,19 +278,53 @@ fun ForumScreen(
 
     LaunchedEffect(activeImageUrl) { onImageViewerOpenChange(activeImageUrl != null) }
 
-    val pullThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 80.dp.toPx() }
-    val pullToRefreshState = remember(currentForumId, pullThresholdPx) {
-        ForumPullRefreshState(pullThresholdPx)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val pullThresholdPx = with(density) { 80.dp.toPx() }
+    val pullActivationSlopPx = with(density) { 8.dp.toPx() }
+    val pullToRefreshState = remember(currentForumId, pullThresholdPx, pullActivationSlopPx) {
+        ForumPullRefreshState(pullThresholdPx, pullActivationSlopPx)
+    }
+    val reducedBoardSwitchMotion = isReducedMotionEnabled()
+    val boardSwitchCoverAlpha = remember { Animatable(0f) }
+    LaunchedEffect(isBoardSwitchPending, displayedForumId, uiState.boardSwitchGeneration, reducedBoardSwitchMotion) {
+        if (isBoardSwitchPending) {
+            boardSwitchCoverAlpha.snapTo(1f)
+        } else if (boardSwitchCoverAlpha.value > 0f) {
+            // Hold the opaque readingBackground cover for one frame while the newly
+            // committed board lays out its prewarmed cards, then reveal smoothly on GPU.
+            withFrameNanos { }
+            if (reducedBoardSwitchMotion) {
+                boardSwitchCoverAlpha.snapTo(0f)
+            } else {
+                boardSwitchCoverAlpha.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(durationMillis = 130, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
+    var showDelayedSwitchLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(isBoardSwitchPending, drawerBlocksMainList) {
+        if (!isBoardSwitchPending || drawerBlocksMainList) {
+            showDelayedSwitchLoading = false
+            return@LaunchedEffect
+        }
+        delay(60)
+        showDelayedSwitchLoading = true
     }
     // Top pull circle is the sole full-list loading indicator (initial / board switch / refresh).
-    val showTopLoading = uiState.isRefreshing ||
-        (uiState.isLoading && uiState.threads.isEmpty())
+    val showTopLoading = if (isBoardSwitchPending) {
+        showDelayedSwitchLoading
+    } else {
+        uiState.isRefreshing || (uiState.isLoading && uiState.threads.isEmpty())
+    }
 
     // User pull: fire refresh only when the VM is not already refreshing.
     LaunchedEffect(pullToRefreshState, pullToRefreshState.isRefreshing) {
         if (pullToRefreshState.isRefreshing && !uiState.isRefreshing) {
             // A pull can only trigger at the top; don't start another list scroll
             // mutation while the release gesture is dispatching its fling.
+            alignAfterManualRefresh = true
             viewModel.refresh()
         }
     }
@@ -240,33 +339,42 @@ fun ForumScreen(
         }
     }
 
-    // A refreshed page may insert new keyed rows before the old visible item.
-    // Scroll after the final page-1 emission is applied, not only before requesting it.
+    // Align a refreshed top only if the user has not started reading meanwhile.
+    // A slow SWR response must not jump an already scrolling list back to item 0.
     LaunchedEffect(
         uiState.completedRefreshGeneration,
         uiState.completedRefreshForumId,
-        currentForumId
+        displayedForumId
     ) {
         val generation = uiState.completedRefreshGeneration
-        if (uiState.completedRefreshForumId != currentForumId || generation <= handledRefreshGeneration) {
+        if (uiState.completedRefreshForumId != displayedForumId || generation <= handledRefreshGeneration) {
             return@LaunchedEffect
         }
         withFrameNanos { }
-        listState.scrollToItem(0)
+        if (alignAfterManualRefresh && !listState.isScrollInProgress) {
+            listState.scrollToItem(0)
+        }
+        alignAfterManualRefresh = false
         handledRefreshGeneration = generation
     }
 
     // Paging via snapshotFlow — does not recompose the whole screen on every scroll frame
     // (derivedStateOf + LaunchedEffect(.value) used to restart the effect on flag churn).
-    LaunchedEffect(listState, currentForumId, uiState.isLoading, uiState.isRefreshing, uiState.isLastPage) {
+    val latestItemCount = rememberUpdatedState(uiState.displayItems.size)
+    LaunchedEffect(listState, displayedForumId) {
         snapshotFlow {
+            val count = latestItemCount.value
+            if (count <= 0 || listState.firstVisibleItemIndex + 10 < count) {
+                return@snapshotFlow -1
+            }
             val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false
-            last >= info.totalItemsCount - 2
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow -1
+            // The stable footer occupies one slot even while idle.
+            if (last >= info.totalItemsCount - 3) count else -1
         }
             .distinctUntilChanged()
-            .collect { nearEnd ->
-                if (!nearEnd) return@collect
+            .collect { triggerCount ->
+                if (triggerCount <= 0) return@collect
                 val s = viewModel.uiState.value
                 if (!s.isLoading && !s.isRefreshing && !s.isLastPage) {
                     viewModel.loadNextPage()
@@ -276,19 +384,19 @@ fun ForumScreen(
 
     // Board change: quiet heavy work briefly (no overlapping list transition).
     // Keep short — high-frequency board switches should not feel delayed (Emil: tens/day → reduce).
-    LaunchedEffect(currentForumId) {
-        if (currentForumId != previousForumId.value) {
+    LaunchedEffect(displayedForumId) {
+        if (displayedForumId != previousForumId.value) {
             boardSwitchQuiet = true
-            listState.scrollToItem(0)
-            previousForumId.value = currentForumId
+            previousForumId.value = displayedForumId
             delay(160)
             boardSwitchQuiet = false
         }
     }
 
-    LaunchedEffect(drawerState.currentValue) {
-        if (drawerState.currentValue != DrawerValue.Open) return@LaunchedEffect
-        if (uiState.forumGroups.isEmpty()) {
+    LaunchedEffect(drawerState.currentValue, drawerState.targetValue) {
+        val visible = drawerState.currentValue != DrawerValue.Closed ||
+            drawerState.targetValue != DrawerValue.Closed
+        if (visible && viewModel.forumGroups.value.isEmpty()) {
             viewModel.loadForumGroups()
         }
     }
@@ -301,18 +409,29 @@ fun ForumScreen(
     }
 
     val allowBackgroundWarm = !drawerBlocksMainList && !boardSwitchQuiet
+    val drawerWarmedState = remember { mutableStateOf(false) }
+    val drawerVisibleState = rememberUpdatedState(drawerBlocksMainList)
+    LaunchedEffect(drawerBlocksMainList) {
+        if (drawerBlocksMainList) {
+            drawerWarmedState.value = true
+        }
+    }
 
     val selectBoard = remember(viewModel, drawerState, scope, switchingBoardState) {
         { id: String, name: String ->
             if (!switchingBoardState.value) {
                 switchingBoardState.value = true
                 scope.launch {
+                    val drawerClosed = kotlinx.coroutines.CompletableDeferred<Unit>()
                     try {
-                        // Finish dismissing the modal scrim before replacing its underlying list.
-                        // Otherwise a gesture can interrupt close and leave the new board covered.
+                        // Start fetching the new board in parallel with drawer close,
+                        // but gate UI commit until the drawer finishes closing.
+                        if (id != viewModel.forumId) {
+                            viewModel.selectForum(id, name, readyGate = drawerClosed)
+                        }
                         drawerState.close()
-                        if (id != viewModel.forumId) viewModel.selectForum(id, name)
                     } finally {
+                        drawerClosed.complete(Unit)
                         switchingBoardState.value = false
                     }
                 }
@@ -330,6 +449,7 @@ fun ForumScreen(
                 viewModel = viewModel,
                 settingsViewModel = settingsViewModel,
                 drawerListState = drawerListState,
+                populateList = { drawerVisibleState.value || drawerWarmedState.value },
                 onSelectBoard = selectBoard
             )
         }
@@ -342,24 +462,41 @@ fun ForumScreen(
     Box(Modifier.fillMaxSize()) {
             Scaffold(
             topBar = {
+                com.mioo.dao.ui.components.CustomHeaderBar(headerData, headerModifier) { headerStyle ->
+                val navButtonColors = IconButtonDefaults.iconButtonColors(
+                    contentColor = headerStyle.navigationContentColor,
+                    disabledContentColor = headerStyle.navigationDisabledColor
+                )
+                val refreshColors = headerStyle.trailingActionAt(0)
+                val refreshButtonColors = IconButtonDefaults.iconButtonColors(
+                    contentColor = refreshColors.contentColor,
+                    disabledContentColor = refreshColors.disabledContentColor
+                )
                 TopAppBar(
+
                     title = {
                         Column {
                             // Instant title swap — no AnimatedContent tax on board change
                             Text(
                                 text = uiState.currentForumName,
                                 style = MaterialTheme.typography.titleMedium,
+                                color = headerStyle.titleContentColor,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                 maxLines = 1
                             )
                             Text(
                                 text = "X岛 · nmbxd.com",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                color = if (headerStyle.enabled) {
+                                    headerStyle.subtitleContentColor
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                }
                             )
                         }
                     },
                     navigationIcon = {
+                        com.mioo.dao.ui.components.HeaderActionRow {
                         IconButton(
                             onClick = {
                                 scope.launch {
@@ -374,30 +511,40 @@ fun ForumScreen(
                                         drawerState.close()
                                     }
                                 }
-                            }
+                            },
+                            colors = navButtonColors
                         ) {
                             Icon(Icons.Default.Menu, contentDescription = "切换板块")
                         }
+                        }
                     },
                     actions = {
+                        com.mioo.dao.ui.components.HeaderActionRow {
                         IconButton(
                             onClick = {
                                 scope.launch { refreshFromTop() }
                             },
-                            enabled = !uiState.isRefreshing
+                            enabled = !uiState.isRefreshing,
+                            colors = refreshButtonColors
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = readingTopBarColor()
+                        containerColor = if (headerStyle.enabled) Color.Transparent else readingTopBarColor(),
+                        titleContentColor = headerStyle.titleContentColor,
+                        navigationIconContentColor = headerStyle.navigationContentColor,
+                        actionIconContentColor = refreshColors.contentColor
                     )
                 )
+                }
             },
             floatingActionButton = {
                 FloatingActionButton(
                     onClick = { showCreateDialog = true },
                     modifier = Modifier
+                        .then(bodyModifier)
                         .padding(bottom = 120.dp)
                         // dock 下沉时同步向内缩小 + 淡出 + 轻微下沉（绘制时读取，不触发重组）
                         .graphicsLayer {
@@ -428,35 +575,112 @@ fun ForumScreen(
             },
             modifier = modifier,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = homePageColor()
+            containerColor = if (headerData.enabled) Color.Transparent else readingBackground()
         ) { paddingValues ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .then(bodyModifier)
+                    .background(readingBackground())
+                    .pointerInput(drawerState, listState, switchingBoard) {
+                        // A flinging LazyColumn starts dragging immediately and may consume
+                        // the horizontal touch before the parent drawer sees its slop.
+                        // Observe Initial even when consumed, but claim only a clear right drag.
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            if (switchingBoard ||
+                                drawerState.currentValue != DrawerValue.Closed ||
+                                drawerState.targetValue != DrawerValue.Closed
+                            ) {
+                                return@awaitEachGesture
+                            }
+                            val intent = BoardSwipeIntent(viewConfiguration.touchSlop)
+                            var claimed = false
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                if (event.changes.size != 1) return@awaitEachGesture
+                                val change = event.changes.first()
+                                if (claimed) {
+                                    change.consume()
+                                } else if (change.pressed) {
+                                    when (intent.add(
+                                        change.position.x - change.previousPosition.x,
+                                        change.position.y - change.previousPosition.y
+                                    )) {
+                                        BoardSwipeIntent.Result.VERTICAL -> return@awaitEachGesture
+                                        BoardSwipeIntent.Result.OPEN -> {
+                                            claimed = true
+                                            change.consume()
+                                            scope.launch {
+                                                // An active drag owns UserInput priority; Default
+                                                // stopScroll can be cancelled before open() runs.
+                                                listState.stopScroll(MutatePriority.PreventUserInput)
+                                            }
+                                            scope.launch {
+                                                drawerState.open()
+                                            }
+                                        }
+                                        BoardSwipeIntent.Result.WAIT -> Unit
+                                    }
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
                     .nestedScroll(pullToRefreshState.nestedScrollConnection)
+                    .nestedScroll(refreshScrollObserver)
             ) {
                 // Single list instance — pass only list fields so chrome/drawer flags
                 // do not force every row to recompose.
-                key(currentForumId) {
-                    ForumThreadListPane(
-                        forumKey = currentForumId,
-                        previewMaxLines = previewMaxLines,
-                        displayItems = uiState.displayItems,
-                        isLoading = uiState.isLoading,
-                        isRefreshing = uiState.isRefreshing,
-                        isLastPage = uiState.isLastPage,
-                        emptyHint = uiState.emptyHint,
-                        onContinuePastBlocks = { viewModel.continuePastBlockedPages() },
-                        listState = listState,
-                        emptyStringLambda = emptyStringLambda,
-                        onNavigateToThread = onNavigateToThread,
-                        onImageClick = { activeImageUrl = it },
-                        onBlockThread = { settingsViewModel.addBlockedThread(it) },
-                        onBlockUser = { settingsViewModel.addBlockedUser(it) },
-                        onFreeCopy = { freeCopyText = it },
-                        warmEnabled = allowBackgroundWarm,
-                        onFirstScreenReady = notifyColdStartReady
+                val onContinuePastBlocks = remember(viewModel) { { viewModel.continuePastBlockedPages() } }
+                val onImageClick = remember { { url: String -> activeImageUrl = url } }
+                val onBlockThread = remember(settingsViewModel) { { id: String -> settingsViewModel.addBlockedThread(id) } }
+                val onBlockUser = remember(settingsViewModel) { { id: String -> settingsViewModel.addBlockedUser(id) } }
+                val onFreeCopy = remember { { text: String -> freeCopyText = text } }
+                val timelineForumNames = rememberTimelineForumNames(displayedForumId, viewModel)
+                ForumThreadListPane(
+                    forumKey = displayedForumId,
+                    forumNames = timelineForumNames,
+                    previewMaxLines = previewMaxLines,
+                    displayItems = uiState.displayItems,
+                    isLoading = uiState.isLoading,
+                    isRefreshing = uiState.isRefreshing,
+                    isLastPage = uiState.isLastPage,
+                    emptyHint = uiState.emptyHint,
+                    onContinuePastBlocks = onContinuePastBlocks,
+                    listState = listState,
+                    emptyStringLambda = emptyStringLambda,
+                    onNavigateToThread = onNavigateToThread,
+                    onImageClick = onImageClick,
+                    onBlockThread = onBlockThread,
+                    onBlockUser = onBlockUser,
+                    onFreeCopy = onFreeCopy,
+                    warmEnabled = allowBackgroundWarm,
+                    onFirstScreenReady = notifyColdStartReady
+                )
+
+                if (isBoardSwitchPending || boardSwitchCoverAlpha.value > 0.001f) {
+                    val coverColor = readingBackground()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = if (isBoardSwitchPending) 1f else boardSwitchCoverAlpha.value
+                            }
+                            .background(coverColor)
+                            .then(
+                                if (isBoardSwitchPending) {
+                                    Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                awaitPointerEvent().changes.forEach { it.consume() }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            )
                     )
                 }
 
@@ -478,12 +702,10 @@ fun ForumScreen(
                 }
 
                 // Unified loading indicator: only the top pull-to-refresh circle.
-                if (pullToRefreshState.isRefreshing || pullToRefreshState.progress > 0f) {
-                    PullToRefreshContainer(
-                        state = pullToRefreshState,
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    )
-                }
+                ForumPullRefreshOverlay(
+                    state = pullToRefreshState,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
             }
         }
 
@@ -577,7 +799,7 @@ fun ForumScreen(
                                 pendingPostDraft?.let { viewModel.deleteDraft(it.id) }
                                 pendingPostDraft = null
                                 showCreateDialog = false
-                                Toast.makeText(context, "发串成功", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "新串发送成功", Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(context, "发串失败: $message", Toast.LENGTH_LONG).show()
                             }
@@ -598,15 +820,47 @@ fun ForumScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ForumPullRefreshOverlay(
+    state: PullToRefreshState,
+    modifier: Modifier = Modifier
+) {
+    // Defer initial cold-start spinner by one frame so the first window draw
+    // does not compile PullToRefresh shadow/arc shaders alongside root chrome.
+    var settledFirstFrame by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        settledFirstFrame = true
+    }
+    if (settledFirstFrame && (state.isRefreshing || state.progress > 0f)) {
+        PullToRefreshContainer(
+            state = state,
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
+private fun rememberTimelineForumNames(
+    forumKey: String,
+    viewModel: ForumViewModel
+): Map<String, String> {
+    if (forumKey != "-1") return emptyMap()
+    val forumGroups by viewModel.forumGroups.collectAsState()
+    return remember(forumGroups) {
+        forumGroups.flatMap { it.forums }.associate { it.id to it.name }
+    }
+}
+
 @Composable
 private fun ForumBoardDrawer(
     viewModel: ForumViewModel,
     settingsViewModel: SettingsViewModel,
     drawerListState: LazyListState,
+    populateList: () -> Boolean,
     onSelectBoard: (String, String) -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
     val context = LocalContext.current
     ModalDrawerSheet(
         modifier = Modifier
@@ -646,140 +900,159 @@ private fun ForumBoardDrawer(
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        val pinnedForumsList = remember(uiState.forumGroups, forumSettings.pinnedForums) {
-            uiState.forumGroups.flatMap { it.forums }
-                .filter { forumSettings.pinnedForums.contains(it.id) }
-                .distinctBy { it.id }
+        if (populateList()) {
+            ForumBoardDrawerList(
+                viewModel = viewModel,
+                settingsViewModel = settingsViewModel,
+                drawerListState = drawerListState,
+                onSelectBoard = onSelectBoard
+            )
         }
-        LazyColumn(
-            state = drawerListState,
-            modifier = Modifier.fillMaxSize(),
-            // 抽屉盖住底栏后，只留系统导航条安全区，滚到底仍能看全板块
-            contentPadding = PaddingValues(
-                top = 8.dp,
-                bottom = WindowInsets.navigationBars.asPaddingValues()
-                    .calculateBottomPadding() + 16.dp,
-                start = 12.dp,
-                end = 12.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            if (pinnedForumsList.isNotEmpty()) {
-                item(key = "header_pinned", contentType = "drawer_header") {
+    }
+}
+
+@Composable
+private fun ForumBoardDrawerList(
+    viewModel: ForumViewModel,
+    settingsViewModel: SettingsViewModel,
+    drawerListState: LazyListState,
+    onSelectBoard: (String, String) -> Unit
+) {
+    val forumGroups by viewModel.forumGroups.collectAsState()
+    val forumSettings by settingsViewModel.forumScreenSettings.collectAsState()
+    val context = LocalContext.current
+    val initialViewport = rememberInitialListViewport(
+        hasContent = forumGroups.isNotEmpty(),
+        steps = 10,
+        deferFirstRow = true
+    )
+    val pinnedForumsList = remember(forumGroups, forumSettings.pinnedForums) {
+        forumGroups.flatMap { it.forums }
+            .filter { forumSettings.pinnedForums.contains(it.id) }
+            .distinctBy { it.id }
+    }
+    val drawerConfiguration = rememberResponsiveListConfiguration()
+    val drawerFling = rememberResponsiveListFling()
+    val starPainter = rememberVectorPainter(Icons.Default.Star)
+    val expandMorePainter = rememberVectorPainter(Icons.Default.ExpandMore)
+    CompositionLocalProvider(LocalViewConfiguration provides drawerConfiguration) {
+    LazyColumn(
+        state = drawerListState,
+        flingBehavior = drawerFling,
+        modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
+        // 抽屉盖住底栏后，只留系统导航条安全区，滚到底仍能看全板块
+        contentPadding = PaddingValues(
+            top = 8.dp,
+            bottom = WindowInsets.navigationBars.asPaddingValues()
+                .calculateBottomPadding() + 16.dp,
+            start = 12.dp,
+            end = 12.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (pinnedForumsList.isNotEmpty()) {
+            item(key = "header_pinned", contentType = "drawer_header") {
+                Text(
+                    text = "置顶版块",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                )
+            }
+            items(pinnedForumsList, key = { "pinned_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
+                ForumDrawerItem(
+                    name = forum.name,
+                    isSelected = forum.id == viewModel.forumId,
+                    showStar = true,
+                    starPainter = starPainter,
+                    starTint = MaterialTheme.colorScheme.primary,
+                    onClick = { onSelectBoard(forum.id, forum.name) },
+                    onLongClick = {
+                        val wasPinned = forumSettings.pinnedForums.contains(forum.id)
+                        settingsViewModel.togglePinForum(forum.id)
+                        Toast.makeText(
+                            context,
+                            if (wasPinned) "已取消置顶" else "已将版块置顶",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+            }
+            item(key = "divider_pinned", contentType = "drawer_divider") {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+        }
+
+        // Normal Forum Groups — flatten expanded forums as lazy rows so initial drawer
+        // measurement only measures visible rows instead of a full nested Column.
+        forumGroups.forEach { group ->
+            val groupExpanded = forumSettings.expandedForumGroups.contains(group.id)
+            item(key = "group_${group.id}", contentType = "drawer_group") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "置顶版块",
+                        text = group.name,
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${group.forums.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                    Icon(
+                        painter = expandMorePainter,
+                        contentDescription = if (groupExpanded) "收起分类" else "展开分类",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .graphicsLayer { rotationZ = if (groupExpanded) 180f else 0f }
                     )
                 }
-                items(pinnedForumsList, key = { "pinned_${it.id}" }, contentType = { "drawer_forum" }) { forum ->
+            }
+            if (groupExpanded) {
+                items(
+                    items = group.forums,
+                    key = { forum -> "group_${group.id}_forum_${forum.id}" },
+                    contentType = { "drawer_forum" }
+                ) { forum ->
+                    val isPinned = forumSettings.pinnedForums.contains(forum.id)
                     ForumDrawerItem(
                         name = forum.name,
                         isSelected = forum.id == viewModel.forumId,
-                        showStar = true,
-                        starTint = MaterialTheme.colorScheme.primary,
+                        showStar = isPinned,
+                        starPainter = starPainter,
+                        starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                         onClick = { onSelectBoard(forum.id, forum.name) },
                         onLongClick = {
-                            val wasPinned = forumSettings.pinnedForums.contains(forum.id)
                             settingsViewModel.togglePinForum(forum.id)
                             Toast.makeText(
                                 context,
-                                if (wasPinned) "已取消置顶" else "已将版块置顶",
+                                if (isPinned) "已取消置顶" else "已将版块置顶",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
                     )
                 }
-                item(key = "divider_pinned", contentType = "drawer_divider") {
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                }
-            }
-
-            // Normal Forum Groups — 每组一个 item，展开/收起整体做手风琴动画
-            uiState.forumGroups.forEach { group ->
-                val groupExpanded = forumSettings.expandedForumGroups.contains(group.id)
-                item(key = "group_${group.id}", contentType = "drawer_group") {
-                    Column {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { settingsViewModel.toggleForumGroupExpand(group.id) }
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = group.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = "${group.forums.size}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(end = 6.dp)
-                            )
-                            val chevronRotation by animateFloatAsState(
-                                targetValue = if (groupExpanded) 180f else 0f,
-                                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                                label = "drawerChevron"
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ExpandMore,
-                                contentDescription = if (groupExpanded) "收起分类" else "展开分类",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .rotate(chevronRotation)
-                            )
-                        }
-                        // 收起时 AnimatedVisibility 不组合内容，抽屉的懒加载不受影响
-                        AnimatedVisibility(
-                            visible = groupExpanded,
-                            enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                                expandVertically(
-                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                    expandFrom = Alignment.Top
-                                ),
-                            exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
-                                shrinkVertically(
-                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                    shrinkTowards = Alignment.Top
-                                )
-                        ) {
-                            Column {
-                                group.forums.forEach { forum ->
-                                    val isPinned = forumSettings.pinnedForums.contains(forum.id)
-                                    ForumDrawerItem(
-                                        name = forum.name,
-                                        isSelected = forum.id == viewModel.forumId,
-                                        showStar = isPinned,
-                                        starTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                        onClick = { onSelectBoard(forum.id, forum.name) },
-                                        onLongClick = {
-                                            settingsViewModel.togglePinForum(forum.id)
-                                            Toast.makeText(
-                                                context,
-                                                if (isPinned) "已取消置顶" else "已将版块置顶",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }
+    }
 }
+
+private val DrawerItemShape = RoundedCornerShape(10.dp)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -787,11 +1060,12 @@ private fun ForumDrawerItem(
     name: String,
     isSelected: Boolean,
     showStar: Boolean,
+    starPainter: Painter,
     starTint: Color,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    // Instant selection colors — no per-item animateColorAsState during drawer swipe
+    // Instant selection colors — no per-item animateColorAsState or Surface wrapper overhead
     val containerColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -803,40 +1077,44 @@ private fun ForumDrawerItem(
         MaterialTheme.colorScheme.onSurface
     }
 
-    Surface(
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (isSelected) {
+                    Modifier
+                        .clip(DrawerItemShape)
+                        .background(containerColor)
+                } else {
+                    Modifier
+                }
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
-            ),
-        color = containerColor,
-        shape = RoundedCornerShape(10.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp)
-        ) {
-            if (showStar) {
-                Icon(
-                    imageVector = Icons.Default.Star,
-                    contentDescription = "已置顶",
-                    tint = starTint,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            Text(
-                text = name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (isSelected) {
-                    androidx.compose.ui.text.font.FontWeight.Bold
-                } else {
-                    androidx.compose.ui.text.font.FontWeight.Normal
-                },
-                color = contentColor
             )
+            .padding(horizontal = 16.dp, vertical = 11.dp)
+    ) {
+        if (showStar) {
+            Icon(
+                painter = starPainter,
+                contentDescription = "已置顶",
+                tint = starTint,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
         }
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (isSelected) {
+                androidx.compose.ui.text.font.FontWeight.Bold
+            } else {
+                androidx.compose.ui.text.font.FontWeight.Normal
+            },
+            color = contentColor
+        )
     }
 }
 
@@ -844,6 +1122,7 @@ private fun ForumDrawerItem(
 @Composable
 private fun ForumThreadListPane(
     forumKey: String,
+    forumNames: Map<String, String>,
     previewMaxLines: Int,
     displayItems: List<ThreadListItem>,
     isLoading: Boolean,
@@ -862,162 +1141,114 @@ private fun ForumThreadListPane(
     onFirstScreenReady: () -> Unit = {}
 ) {
     val quoteLinkColor = MaterialTheme.colorScheme.primary
+    val prewarmDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val isEmptyLoading = displayItems.isEmpty() && (isLoading || isRefreshing)
     val isEmptyIdle = displayItems.isEmpty() && !isLoading && !isRefreshing
 
-    /**
-     * listReady / showImages gate *images & prefetch only* — never the row set.
-     * Hiding real items behind a 1-row placeholder clamped LazyListState to 0 on back.
-     *
-     * Split prewarm vs image-enable effects: paging appends used to restart a combined
-     * LaunchedEffect and re-delay image enable + re-scan the whole HTML list.
-     *
-     * showImages uses rememberSaveable so thread detail → back does not flash empty thumbs.
-     */
     val listReady = displayItems.isNotEmpty()
-    var showImages by rememberSaveable(forumKey) { mutableStateOf(false) }
+    // Keep a single viewport helper across board switches so LazyColumn reuses its
+    // card slot pool instead of resetting into staged slicing on every board swap.
+    val initialViewport = rememberInitialListViewport(
+        hasContent = listReady,
+        resetKey = Unit,
+        steps = 3,
+        deferFirstRow = false
+    )
+    val viewportReady = initialViewport.ready
     var firstScreenNotified by remember(forumKey) { mutableStateOf(false) }
     var blockTarget by remember { mutableStateOf<ThreadListItem?>(null) }
     val haptics = LocalHapticFeedback.current
 
-    LaunchedEffect(forumKey, listReady) {
-        if (!listReady || firstScreenNotified) return@LaunchedEffect
+    LaunchedEffect(forumKey, listReady, viewportReady) {
+        if (!listReady || !viewportReady || firstScreenNotified) return@LaunchedEffect
         firstScreenNotified = true
         // Drop splash on next frame — no artificial 16ms wait
         onFirstScreenReady()
     }
 
-    // Cold head prewarm: only first viewport (4) so first paint wins CPU over Default parse.
-    LaunchedEffect(forumKey, listReady, quoteLinkColor) {
-        if (!listReady || displayItems.isEmpty()) return@LaunchedEffect
-        val head = displayItems.take(4).map { it.postData.content }
-        withContext(Dispatchers.Default) {
-            com.mioo.dao.ui.components.HtmlParseCache.prewarm(head, quoteLinkColor)
-        }
-        // Remainder of first page after first composition window
-        delay(120)
-        if (displayItems.size > 4) {
-            val rest = displayItems.drop(4).take(8).map { it.postData.content }
-            withContext(Dispatchers.Default) {
-                com.mioo.dao.ui.components.HtmlParseCache.prewarm(rest, quoteLinkColor)
-            }
-        }
-    }
-    LaunchedEffect(forumKey, listState, quoteLinkColor, warmEnabled) {
+    val previewDicePreset = com.mioo.dao.ui.components.LocalDicePreset.current
+    val latestDisplayItems = rememberUpdatedState(displayItems)
+    LaunchedEffect(forumKey, listState, quoteLinkColor, prewarmDarkTheme, previewDicePreset, warmEnabled) {
         if (!warmEnabled) return@LaunchedEffect
         snapshotFlow {
-            if (listState.isScrollInProgress) return@snapshotFlow null
-            val info = listState.layoutInfo
-            val first = info.visibleItemsInfo.firstOrNull()?.index ?: listState.firstVisibleItemIndex
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: first
-            first to last
+            val size = latestDisplayItems.value.size
+            if (size == 0) null else (listState.firstVisibleItemIndex / 4) to size
         }
             .distinctUntilChanged()
-            .collect { range ->
-                if (range == null || displayItems.isEmpty()) return@collect
-                val (first, last) = range
-                val start = first.coerceAtLeast(0)
-                val end = (last + 5).coerceAtMost(displayItems.size)
-                if (start >= end) return@collect
-                val slice = displayItems.subList(start, end).map { it.postData.content }
+            .collectLatest { state ->
+                val (batch, _) = state ?: return@collectLatest
+                val items = latestDisplayItems.value
+                val start = (batch * 4 - 2).coerceAtLeast(0)
+                val end = (batch * 4 + 24).coerceAtMost(items.size)
+                if (start >= end) return@collectLatest
                 withContext(Dispatchers.Default) {
-                    com.mioo.dao.ui.components.HtmlParseCache.prewarm(slice, quoteLinkColor)
+                    for (index in start until end) {
+                        kotlinx.coroutines.yield()
+                        com.mioo.dao.ui.components.HtmlParseCache.prewarm(
+                            listOf(items[index].postData.content), quoteLinkColor,
+                            prewarmDarkTheme, previewDicePreset, compactBlankLines = true
+                        )
+                    }
                 }
             }
     }
 
-    // Thumbnails after first paint settles — cold path keeps decode off the critical frame.
-    LaunchedEffect(forumKey, listReady, warmEnabled) {
-        if (!listReady || !warmEnabled || showImages) return@LaunchedEffect
-        delay(450)
-        snapshotFlow { listState.isScrollInProgress }
-            .first { scrolling -> !scrolling }
-        delay(200)
-        showImages = true
-    }
 
-    val prefetchUrls = remember(displayItems, showImages) {
-        if (!showImages) emptyList()
-        else displayItems.map { it.postData.imageUrl }
+    // Mount visible thumbnails with each staged row. Enabling the entire viewport
+    // at once after it becomes interactive can overlap the user's first drag.
+    val prefetchUrls = remember(displayItems, viewportReady) {
+        if (viewportReady) displayItems.map { it.postData.imageUrl } else emptyList()
     }
     PrefetchListImages(
         imageUrls = prefetchUrls,
         listState = listState,
         sizePx = ListThumbImage.SIZE_PX,
         ahead = 2,
-        initialDelayMs = 500,
+        initialDelayMs = 450,
         // Prefetch only when not flinging (see PrefetchListImages)
-        enabled = warmEnabled && showImages && listReady
+        enabled = warmEnabled && viewportReady && listReady
     )
 
-    // Block dialog outside items — avoids per-row AlertDialog composition during scroll
+    // A single dialog is shared by all visible rows.
     blockTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { blockTarget = null },
-            properties = immersiveDialogProperties(),
-            title = {
-                ImmersiveDialogEffect()
-                Text("内容操作")
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextButton(
-                        onClick = {
-                            onBlockThread(target.idStr)
-                            blockTarget = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("屏蔽此串 (No.${target.idStr})")
-                    }
-                    TextButton(
-                        onClick = {
-                            onBlockUser(target.userHash)
-                            blockTarget = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("屏蔽发言饼干 (ID: ${target.userHash})")
-                    }
-                    TextButton(
-                        onClick = {
-                            onFreeCopy(target.rawContent)
-                            blockTarget = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("自由复制帖子内容")
-                    }
-                    TextButton(
-                        onClick = { blockTarget = null },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("取消")
-                    }
-                }
-            },
-            confirmButton = {}
+        com.mioo.dao.ui.components.PostActionSheet(
+            title = "内容操作 No.${target.idStr}",
+            onDismiss = { blockTarget = null },
+            actions = listOf(
+                com.mioo.dao.ui.components.PostAction("屏蔽此串 (No.${target.idStr})", com.mioo.dao.ui.components.PostActionIcons.block, true) { onBlockThread(target.idStr) },
+                com.mioo.dao.ui.components.PostAction("屏蔽该饼干 (ID: ${target.userHash})", com.mioo.dao.ui.components.PostActionIcons.blockUser, true) { onBlockUser(target.userHash) },
+                com.mioo.dao.ui.components.PostAction("复制文本", com.mioo.dao.ui.components.PostActionIcons.copy) { onFreeCopy(target.rawContent) }
+            )
         )
     }
-
     // The platform edge stretch can consume the first pull while unwinding a
     // fling at the top. The refresh indicator owns this edge interaction instead.
-    CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+    val responsiveConfiguration = rememberResponsiveListConfiguration()
+    val responsiveFling = rememberResponsiveListFling()
+    val onItemLongClick = remember(haptics) {
+        { item: ThreadListItem ->
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            blockTarget = item
+        }
+    }
+    CompositionLocalProvider(LocalOverscrollConfiguration provides null, LocalViewConfiguration provides responsiveConfiguration) {
     // Always keep a LazyColumn so pull-to-refresh has a scrollable child.
     LazyColumn(
         state = listState,
+        flingBehavior = responsiveFling,
         // ModalNavigationDrawer already owns its scrim/gestures. Disabling this child
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize()
+            .then(if (listReady) initialViewport.modifier else Modifier)
+            .useUnbufferedFlingGrab(responsiveFling),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             start = 12.dp,
             end = 12.dp,
             top = 12.dp,
-            bottom = 100.dp
+            // Move the existing bottom breathing room into a stable footer.
+            // 8 dp item spacing + its 92 dp height preserve the idle layout.
+            bottom = if (displayItems.isEmpty()) 100.dp else 0.dp
         )
     ) {
         // Only show the empty/loading placeholder when there is truly no data.
@@ -1039,7 +1270,7 @@ private fun ForumThreadListPane(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            emptyHint ?: "该板块下暂无帖子。",
+                            emptyHint ?: "该板块下暂无串。",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         if (!emptyHint.isNullOrBlank() && !isLastPage) {
@@ -1055,20 +1286,19 @@ private fun ForumThreadListPane(
         items(
             items = displayItems,
             key = { it.id },
-            // contentType must not depend on showImages — flipping it thrashs the item pool mid-scroll
             contentType = { item -> if (item.hasImage) "thread_image" else "thread_text" }
         ) { item ->
             ForumThreadRow(
                 item = item,
+                forumName = if (forumKey == "-1") item.forumId?.let {
+                    forumNames[it] ?: "板块 $it"
+                } else null,
+                fling = responsiveFling,
                 previewMaxLines = previewMaxLines,
-                showImage = showImages,
                 emptyStringLambda = emptyStringLambda,
                 onNavigateToThread = onNavigateToThread,
                 onImageClick = onImageClick,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    blockTarget = item
-                }
+                onItemLongClick = onItemLongClick
             )
         }
 
@@ -1094,32 +1324,26 @@ private fun ForumThreadListPane(
             }
         }
 
-        if (isLoading && displayItems.isNotEmpty()) {
-            item(key = "loading_footer", contentType = "loading") {
+        if (displayItems.isNotEmpty()) {
+            // Removing a loading item at the scroll boundary clamps the list
+            // immediately upward. Change only its contents, never its geometry.
+            item(key = "paging_footer", contentType = "paging_footer") {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
+                        .height(92.dp)
+                        .padding(top = 16.dp, start = 16.dp, end = 16.dp),
+                    contentAlignment = Alignment.TopCenter
                 ) {
-                    CircularProgressIndicator()
-                }
-            }
-        }
-
-        if (isLastPage) {
-            item(key = "end_footer", contentType = "end") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "已加载全部帖子。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator()
+                    } else if (isLastPage) {
+                        Text(
+                            text = "已加载全部串。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -1134,29 +1358,31 @@ private fun ForumThreadListPane(
 @Composable
 private fun ForumThreadRow(
     item: ThreadListItem,
+    forumName: String?,
+    fling: ResponsiveListFling,
     previewMaxLines: Int,
-    showImage: Boolean,
     emptyStringLambda: (String) -> Unit,
     onNavigateToThread: (String) -> Unit,
     onImageClick: (String) -> Unit,
-    onLongClick: () -> Unit
+    onItemLongClick: (ThreadListItem) -> Unit
 ) {
     val onThreadClick = remember(item.idStr, onNavigateToThread) {
         { onNavigateToThread(item.idStr) }
     }
-    val onImageClickRemembered = remember(onImageClick) {
-        { url: String -> onImageClick(url) }
+    val onLongClick = remember(item, onItemLongClick) {
+        { onItemLongClick(item) }
     }
     ThreadCard(
+        modifier = Modifier.slowFlingClick(fling, onThreadClick),
         postData = item.postData,
+        forumName = forumName,
         replyCount = item.replyCount,
         onThreadClick = onThreadClick,
         onQuoteClick = emptyStringLambda,
-        onImageClick = onImageClickRemembered,
+        onImageClick = onImageClick,
         onLongClick = onLongClick,
         contentMaxLines = previewMaxLines,
-        compactPreviewBlankLines = true,
-        showImage = showImage && item.hasImage
+        compactPreviewBlankLines = true
     )
 }
 

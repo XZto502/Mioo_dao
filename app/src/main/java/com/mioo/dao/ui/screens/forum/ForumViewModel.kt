@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -38,7 +39,8 @@ import javax.inject.Inject
 data class ForumUiState(
     val threads: List<Thread> = emptyList(),
     val displayItems: List<ThreadListItem> = emptyList(),
-    val forumGroups: List<ForumGroup> = emptyList(),
+    val displayedForumId: String = "-1",
+    val boardSwitchGeneration: Long = 0L,
     val currentForumName: String = "时间线",
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
@@ -64,6 +66,14 @@ class ForumViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ForumUiState())
     val uiState: StateFlow<ForumUiState> = _uiState.asStateFlow()
 
+    private val _forumGroups = MutableStateFlow<List<ForumGroup>>(emptyList())
+    val forumGroups: StateFlow<List<ForumGroup>> = _forumGroups.asStateFlow()
+
+    private val userScrolling = MutableStateFlow(false)
+    fun setUserScrolling(scrolling: Boolean) {
+        userScrolling.value = scrolling
+    }
+
     private var currentPage = 1
     private var listJob: Job? = null
     /** Cancel previous smart-preload when board/refresh changes so stale GETs don't hog bandwidth. */
@@ -71,6 +81,7 @@ class ForumViewModel @Inject constructor(
     private var blockedThreads: Set<String> = emptySet()
     private var blockedUsers: Set<String> = emptySet()
     private var keywordMatcher: KeywordMatcher = KeywordMatcher.EMPTY
+    private var appliedBlockFilters: Triple<Set<String>, Set<String>, List<String>>? = null
     /** Pages skipped because every row was hidden by block rules. Caps auto-follow. */
     private var blockedPageSkips = 0
     private var refreshGeneration = 0L
@@ -93,8 +104,14 @@ class ForumViewModel @Inject constructor(
             blockedThreads = snap.blockedThreads.toHashSet()
             blockedUsers = snap.blockedUsers.toHashSet()
             keywordMatcher = KeywordMatcher.build(snap.blockedKeywords)
+            appliedBlockFilters = Triple(blockedThreads, blockedUsers, snap.blockedKeywords)
             forumId = snap.lastForumId
-            _uiState.update { it.copy(currentForumName = snap.lastForumName) }
+            _uiState.update {
+                it.copy(
+                    displayedForumId = snap.lastForumId,
+                    currentForumName = snap.lastForumName
+                )
+            }
             // First network/disk slot = timeline/showf (SWR cache paints immediately)
             refresh()
         }
@@ -106,19 +123,33 @@ class ForumViewModel @Inject constructor(
                 .map { Triple(it.blockedThreads, it.blockedUsers, it.blockedKeywords) }
                 .distinctUntilChanged()
                 .collect { (threads, users, keywords) ->
-                    blockedThreads = threads.toHashSet()
-                    blockedUsers = users.toHashSet()
+                    val threadSet = threads.toHashSet()
+                    val userSet = users.toHashSet()
+                    val nextFilters = Triple<Set<String>, Set<String>, List<String>>(threadSet, userSet, keywords)
+                    if (nextFilters == appliedBlockFilters) return@collect
+                    appliedBlockFilters = nextFilters
+                    blockedThreads = threadSet
+                    blockedUsers = userSet
                     keywordMatcher = KeywordMatcher.build(keywords)
-                    if (_uiState.value.threads.isNotEmpty()) {
+                    if (_uiState.value.threads.isNotEmpty() && _uiState.value.displayedForumId == forumId) {
                         rebuildDisplayItems()
                     }
                 }
         }
 
-        // Board drawer catalog after list fling window — never share bandwidth with cold list.
+        // Seed cached board catalog immediately so timeline pills don't pop mid-fling at t=2.8s.
         viewModelScope.launch {
-            delay(2000)
-            if (_uiState.value.forumGroups.isEmpty()) {
+            val cachedGroups = runCatching { forumRepository.getCachedForumList() }.getOrNull()
+            if (!cachedGroups.isNullOrEmpty() && _forumGroups.value.isEmpty()) {
+                _forumGroups.value = cachedGroups
+            }
+        }
+
+        // Network fallback only when disk cache was empty, and never emit mid-scroll.
+        viewModelScope.launch {
+            delay(2800)
+            if (_forumGroups.value.isEmpty()) {
+                userScrolling.first { !it }
                 loadForumGroupsSync()
             }
         }
@@ -127,7 +158,7 @@ class ForumViewModel @Inject constructor(
     private suspend fun loadForumGroupsSync() {
         forumRepository.getForumList().collect { response ->
             if (response is XdResponse.Success) {
-                _uiState.update { it.copy(forumGroups = response.data) }
+                _forumGroups.value = response.data
             }
         }
     }
@@ -142,6 +173,9 @@ class ForumViewModel @Inject constructor(
         if (threads.isEmpty()) return
         preloadJob = viewModelScope.launch {
             delay(delayMs)
+            userScrolling.first { !it }
+            delay(400)
+            userScrolling.first { !it }
             // Cap here too so settings preloadCount cannot stampede
             threadRepository.smartPreloadThreads(threads.take(6))
         }
@@ -178,25 +212,28 @@ class ForumViewModel @Inject constructor(
         viewModelScope.launch {
             forumRepository.getForumList().collect { response ->
                 if (response is XdResponse.Success) {
-                    _uiState.update { it.copy(forumGroups = response.data) }
+                    _forumGroups.value = response.data
                 }
             }
         }
     }
 
-    fun selectForum(id: String, name: String) {
+    fun selectForum(
+        id: String,
+        name: String,
+        readyGate: kotlinx.coroutines.Deferred<Unit>? = null
+    ) {
         if (forumId == id) return
         forumId = id
         preloadJob?.cancel()
         blockedPageSkips = 0
-        // Clear previous board content so only the center spinner shows while loading.
+        // Keep the current board's list mounted until the new board is ready so switching
+        // never wipes the screen to a blank white void mid-fetch.
         _uiState.update {
             it.copy(
                 currentForumName = name,
-                threads = emptyList(),
-                displayItems = emptyList(),
-                isLoading = true,
-                isRefreshing = false,
+                isLoading = false,
+                isRefreshing = true,
                 isLastPage = false,
                 errorMessage = null,
                 emptyHint = null
@@ -205,7 +242,7 @@ class ForumViewModel @Inject constructor(
         viewModelScope.launch {
             settingsDataStore.saveLastForum(id, name)
         }
-        refresh()
+        refresh(readyGate = readyGate)
     }
 
     fun loadNextPage(fromAutoSkip: Boolean = false) {
@@ -236,6 +273,10 @@ class ForumViewModel @Inject constructor(
             var rawNonEmpty = false
             var addedVisible = false
             var failed = false
+            var settledThreads: List<Thread>? = null
+            var settledDisplayItems: List<ThreadListItem>? = null
+            var settledIsLastPage: Boolean? = null
+            var settledError: String? = null
             try {
                 var gotPage = false
                 flow.settledForumPage().collect { response ->
@@ -251,7 +292,15 @@ class ForumViewModel @Inject constructor(
                             val displayItems = withContext(Dispatchers.Default) {
                                 combinedList.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
-                                )
+                                ).also { built ->
+                                    val newlyAddedStart = existing.size.coerceAtMost(built.size)
+                                    if (newlyAddedStart < built.size) {
+                                        com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmForumPreview(
+                                            built.subList(newlyAddedStart, built.size),
+                                            limit = 8
+                                        )
+                                    }
+                                }
                             }
                             if (forumId != requestForumId || listGeneration != requestGeneration) return@collect
                             val existingIds = existing.mapTo(HashSet()) { it.id }
@@ -264,25 +313,14 @@ class ForumViewModel @Inject constructor(
                             }
                             if (newThreads.isNotEmpty()) rawNonEmpty = true
                             if (addedVisibleOnPage) addedVisible = true
-                            _uiState.update { state ->
-                                state.copy(
-                                    threads = combinedList,
-                                    displayItems = displayItems,
-                                    isLoading = true,
-                                    isLastPage = newThreads.isEmpty() && !gotPage,
-                                    errorMessage = null,
-                                    emptyHint = null
-                                )
-                            }
+                            settledThreads = combinedList
+                            settledDisplayItems = displayItems
+                            settledIsLastPage = newThreads.isEmpty() && !gotPage
+                            settledError = null
                         }
                         is XdResponse.Error -> {
                             failed = true
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    errorMessage = "加载串列表失败: ${response.message}"
-                                )
-                            }
+                            settledError = "加载串列表失败: ${response.message}"
                         }
                     }
                 }
@@ -290,24 +328,45 @@ class ForumViewModel @Inject constructor(
                 throw e
             } finally {
                 if (forumId == requestForumId && listGeneration == requestGeneration) {
+                    val finalIsLastPage = settledIsLastPage ?: _uiState.value.isLastPage
+                    val finalDisplayItems = settledDisplayItems ?: _uiState.value.displayItems
+                    val finalThreads = settledThreads ?: _uiState.value.threads
                     val canChain = !failed && rawNonEmpty && !addedVisible &&
-                        !_uiState.value.isLastPage &&
+                        !finalIsLastPage &&
                         blockedPageSkips < MAX_BLOCKED_PAGE_SKIPS
                     if (canChain) {
                         blockedPageSkips++
-                        _uiState.update { it.copy(isLoading = false, emptyHint = null) }
+                        _uiState.update { state ->
+                            state.copy(
+                                threads = finalThreads,
+                                displayItems = finalDisplayItems,
+                                isLoading = false,
+                                isLastPage = finalIsLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
+                                emptyHint = null
+                            )
+                        }
                         loadNextPage(fromAutoSkip = true)
                     } else {
                         if (addedVisible) blockedPageSkips = 0
                         val hint = when {
-                            _uiState.value.displayItems.isNotEmpty() -> null
-                            _uiState.value.threads.isNotEmpty() &&
+                            finalDisplayItems.isNotEmpty() -> null
+                            finalThreads.isNotEmpty() &&
                                 blockedPageSkips >= MAX_BLOCKED_PAGE_SKIPS ->
                                 "连续多页都被屏蔽规则挡住了"
-                            _uiState.value.threads.isNotEmpty() -> "这些串都被屏蔽规则挡住了"
+                            finalThreads.isNotEmpty() -> "这些串都被屏蔽规则挡住了"
                             else -> null
                         }
-                        _uiState.update { it.copy(isLoading = false, emptyHint = hint) }
+                        _uiState.update { state ->
+                            state.copy(
+                                threads = finalThreads,
+                                displayItems = finalDisplayItems,
+                                isLoading = false,
+                                isLastPage = finalIsLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
+                                emptyHint = hint
+                            )
+                        }
                     }
                 }
             }
@@ -322,8 +381,9 @@ class ForumViewModel @Inject constructor(
         loadNextPage()
     }
 
-    fun refresh() {
+    fun refresh(readyGate: kotlinx.coroutines.Deferred<Unit>? = null) {
         val requestForumId = forumId
+        val isBoardSwitch = _uiState.value.displayedForumId != requestForumId
         val refreshToken = ++refreshGeneration
         val requestGeneration = ++listGeneration
         blockedPageSkips = 0
@@ -350,6 +410,11 @@ class ForumViewModel @Inject constructor(
 
             var handoffBlocked = false
             var refreshed = false
+            var settledThreads: List<Thread>? = null
+            var settledDisplayItems: List<ThreadListItem>? = null
+            var settledIsLastPage: Boolean? = null
+            var settledError: String? = null
+            var settledEmptyHint: String? = null
             try {
                 var lastNonEmpty = false
                 flow.settledForumPage().collect { response ->
@@ -361,64 +426,87 @@ class ForumViewModel @Inject constructor(
                             val displayItems = withContext(Dispatchers.Default) {
                                 freshThreads.toFilteredThreadListItems(
                                     blockedThreads, blockedUsers, keywordMatcher
-                                )
+                                ).also { built ->
+                                    if (isBoardSwitch) {
+                                        com.mioo.dao.ui.components.HtmlPrewarmBridge.prewarmForumPreview(
+                                            built,
+                                            limit = 6
+                                        )
+                                    }
+                                }
                             }
                             if (forumId != requestForumId || listGeneration != requestGeneration) return@collect
                             refreshed = true
                             currentPage = if (freshThreads.isEmpty()) 1 else 2
-                            // Update list; keep isRefreshing until flow ends
-                            _uiState.update { state ->
-                                state.copy(
-                                    threads = freshThreads,
-                                    displayItems = displayItems,
-                                    isLoading = false,
-                                    isLastPage = freshThreads.isEmpty(),
-                                    errorMessage = null
-                                )
-                            }
+                            settledThreads = freshThreads
+                            settledDisplayItems = displayItems
+                            settledIsLastPage = freshThreads.isEmpty()
+                            settledError = null
                         }
                         is XdResponse.Error -> {
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    errorMessage = "刷新失败: ${response.message}"
-                                )
-                            }
+                            settledError = "刷新失败: ${response.message}"
                         }
                     }
                 }
+                readyGate?.await()
+                if (forumId != requestForumId || listGeneration != requestGeneration) return@launch
                 if (forumId == requestForumId && listGeneration == requestGeneration) {
                     // Next page to request after a full page-1 refresh.
-                    val visible = _uiState.value.displayItems.isNotEmpty()
+                    val visibleItems = settledDisplayItems ?: _uiState.value.displayItems
+                    val visible = visibleItems.isNotEmpty()
+                    val lastPageNow = settledIsLastPage ?: _uiState.value.isLastPage
                     if (lastNonEmpty && visible) {
                         // Well after cold list + first fling
-                        scheduleSmartPreload(_uiState.value.threads, delayMs = 3200L)
+                        scheduleSmartPreload(settledThreads ?: _uiState.value.threads, delayMs = 3200L)
                     }
-                    handoffBlocked = lastNonEmpty && !visible && !_uiState.value.isLastPage
-                    if (lastNonEmpty && !visible && _uiState.value.isLastPage) {
-                        _uiState.update { it.copy(emptyHint = "这些串都被屏蔽规则挡住了") }
+                    handoffBlocked = lastNonEmpty && !visible && !lastPageNow
+                    if (lastNonEmpty && !visible && lastPageNow) {
+                        settledEmptyHint = "这些串都被屏蔽规则挡住了"
                     }
                 }
             } finally {
                 if (forumId == requestForumId && listGeneration == requestGeneration) {
                     if (handoffBlocked) {
                         blockedPageSkips = 1
-                        _uiState.update {
-                            it.copy(
+                        _uiState.update { state ->
+                            val switchingNow = state.displayedForumId != requestForumId
+                            state.copy(
+                                displayedForumId = requestForumId,
+                                boardSwitchGeneration = if (switchingNow) {
+                                    state.boardSwitchGeneration + 1
+                                } else {
+                                    state.boardSwitchGeneration
+                                },
+                                threads = settledThreads ?: if (switchingNow) emptyList() else state.threads,
+                                displayItems = settledDisplayItems ?: if (switchingNow) emptyList() else state.displayItems,
                                 isRefreshing = false,
                                 isLoading = false,
+                                isLastPage = settledIsLastPage ?: state.isLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
                                 emptyHint = null,
-                                completedRefreshGeneration = if (refreshed) refreshToken else it.completedRefreshGeneration,
+                                completedRefreshGeneration = if (refreshed) refreshToken else state.completedRefreshGeneration,
                                 completedRefreshForumId = requestForumId
                             )
                         }
                         loadNextPage(fromAutoSkip = true)
                     } else {
-                        _uiState.update {
-                            it.copy(
+                        _uiState.update { state ->
+                            val switchingNow = state.displayedForumId != requestForumId
+                            state.copy(
+                                displayedForumId = requestForumId,
+                                boardSwitchGeneration = if (switchingNow) {
+                                    state.boardSwitchGeneration + 1
+                                } else {
+                                    state.boardSwitchGeneration
+                                },
+                                threads = settledThreads ?: if (switchingNow) emptyList() else state.threads,
+                                displayItems = settledDisplayItems ?: if (switchingNow) emptyList() else state.displayItems,
                                 isRefreshing = false,
                                 isLoading = false,
-                                completedRefreshGeneration = if (refreshed) refreshToken else it.completedRefreshGeneration,
+                                isLastPage = settledIsLastPage ?: state.isLastPage,
+                                errorMessage = settledError ?: if (settledThreads != null) null else state.errorMessage,
+                                emptyHint = settledEmptyHint ?: state.emptyHint,
+                                completedRefreshGeneration = if (refreshed) refreshToken else state.completedRefreshGeneration,
                                 completedRefreshForumId = requestForumId
                             )
                         }

@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -83,6 +81,13 @@ fun ReplyCard(
     onNumberClick: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val border = sharedStyles?.cardBorder ?: readingCardBorder()
+    val cardBg = sharedStyles?.cardColor ?: readingCardColor()
+    val styledModifier = modifier
+        .fillMaxWidth()
+        .background(cardBg, shape)
+        .let { if (border != null) it.border(border, shape) else it }
     // Do not call rememberPressScale when disabled — it still subscribes to press + animateFloat.
     val cardModifier = if (enablePressScale) {
         val pressScale = rememberPressScale(
@@ -90,8 +95,7 @@ fun ReplyCard(
             pressedScale = MiooMotion.ScaleCardPress,
             enabled = true
         )
-        modifier
-            .fillMaxWidth()
+        styledModifier
             .graphicsPressScale(pressScale)
             .combinedClickable(
                 interactionSource = interactionSource,
@@ -100,8 +104,7 @@ fun ReplyCard(
                 onLongClick = onCardLongClick
             )
     } else {
-        modifier
-            .fillMaxWidth()
+        styledModifier
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -109,16 +112,7 @@ fun ReplyCard(
                 onLongClick = onCardLongClick
             )
     }
-    val border = readingCardBorder()
-    Card(
-        modifier = cardModifier,
-        shape = shape,
-        colors = CardDefaults.cardColors(
-            containerColor = readingCardColor()
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = border
-    ) {
+    Box(modifier = cardModifier) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -133,6 +127,10 @@ fun ReplyCard(
                 ContentBlockSplitter.split(postData.content, quotedPosts.list)
             }
 
+            val bodyStyle = sharedStyles?.bodyMediumStyle ?: run {
+                val baseBodyStyle = readingBodyStyle()
+                remember(baseBodyStyle) { baseBodyStyle.copy(fontWeight = FontWeight.Medium) }
+            }
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -143,7 +141,7 @@ fun ReplyCard(
                             HtmlContent(
                                 html = block.html,
                                 onQuoteClick = onQuoteClick,
-                                style = readingBodyStyle(),
+                                style = bodyStyle,
                                 modifier = Modifier.fillMaxWidth(),
                                 onTextClick = onCardClick,
                                 onLongClick = onCardLongClick
@@ -212,7 +210,7 @@ fun QuotedPostBox(
                 Text("No.${quote.id}", style = readingTextStyle(11f, 16f).copy(fontFeatureSettings = "tnum"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                 val previewContent = remember(quote.content) {
-                    quote.content.replace(Regex("(?i)(?:\\s|<br\\s*/?>|&nbsp;)+$"), "")
+                    quote.content.replace(TRAILING_QUOTE_BREAKS_REGEX, "")
                 }
                 if (previewContent.isBlank()) Text("（图片或空内容）", style = readingQuoteStyle())
                 else HtmlContent(html = previewContent, onQuoteClick = {}, style = readingQuoteStyle(),
@@ -222,17 +220,22 @@ fun QuotedPostBox(
     }
 }
 
+private val TRAILING_QUOTE_BREAKS_REGEX = Regex("(?i)(?:\\s|<br\\s*/?>|&nbsp;)+$")
+private val QUOTE_BR_REGEX = Regex("(?i)<br\\s*/?>")
+private val QUOTE_TAG_REGEX = Regex("<[^>]*>")
+private val QUOTE_WS_REGEX = Regex("\\s+")
+
 /** 引用卡片收起态的一行纯文本预览：去 HTML 标签/实体、压空白、截断。 */
 private fun quotePreviewPlain(html: String): String {
     val plain = html
-        .replace(Regex("(?i)<br\\s*/?>"), " ")
-        .replace(Regex("<[^>]*>"), "")
+        .replace(QUOTE_BR_REGEX, " ")
+        .replace(QUOTE_TAG_REGEX, "")
         .replace("&gt;", ">")
         .replace("&lt;", "<")
         .replace("&quot;", "\"")
         .replace("&nbsp;", " ")
         .replace("&amp;", "&")
-        .replace(Regex("\\s+"), " ")
+        .replace(QUOTE_WS_REGEX, " ")
         .trim()
     return when {
         plain.isEmpty() -> "（图片或空内容）"
