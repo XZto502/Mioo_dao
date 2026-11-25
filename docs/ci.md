@@ -1,34 +1,28 @@
-# 自动测试
+# Android CI
 
-GitHub Actions 的 `Android CI` 在分支推送、Pull Request 和手动运行时执行。
-同一分支的新提交会取消上一轮未完成的检查。
+GitHub Actions 的 `Android CI` 工作流在分支推送、Pull Request 与手动触发时运行。同一分支的新提交会自动取消上一轮未完成的检查。
 
 ## 检查内容
 
-- `compileDebugKotlin`：检查 Kotlin 编译。
-- `testDebugUnitTest`：执行全部 JVM 回归测试。
-- `lintDebug`：检查 Android Lint，错误会阻止通过，警告保留在报告中。
-- `assembleBeta`：前三项通过后构建启用 R8 的测试 APK。
+- `compileDebugKotlin`：校验 Kotlin 编译。
+- `testDebugUnitTest`：运行全部 JVM 单元测试。
+- `lintDebug`：运行 Android Lint 静态检查（存在 Error 时失败，Warning 保留在报告中）。
+- `assembleBeta`：上述检查通过后构建启用 R8 混淆与资源压缩的测试版 APK。
 
-使用项目自带 Gradle Wrapper、Temurin 17 和 Android SDK 34，不需要配置签名 Secrets。
-Actions 固定到提交 SHA；升级时同时更新旁边的版本注释。
+工作流使用仓库自带的 Gradle Wrapper、Temurin JDK 17 与 Android SDK 34，无需配置签名 Secrets；第三方 Actions 均固定到具体提交 SHA。
 
-## 查看结果
+## 构建产物与报告
 
-在仓库 Actions 中打开运行记录：
+每次运行结束后可在 GitHub Actions 页面下载对应产物：
 
-- `android-reports-*`：测试 XML、HTML 和 Lint 报告，失败时也尝试上传，保留 14 天。
-- `beta-ci-*`：测试 APK 和 R8 mapping，保留 7 天。
+- `android-reports-*`：单元测试 XML/HTML 与 Lint 报告（失败时同样上传，保留 14 天）。
+- `beta-ci-*`：CI 构建的 `app-beta.apk` 与 R8 `mapping.txt`（保留 7 天）。
 
-CI APK 使用运行器临时调试证书，仅用于 CI 验证。它与手机当前测试版签名不同，
-不能作为已有测试版的覆盖升级包。正式分发继续使用本地指定证书构建。
-CI 不发布 GitHub Release，也不上传云盘。
+> 说明：CI 产物使用临时调试签名，仅用于自动化验证与预览测试，不会自动发布 Release，也不能覆盖已安装的正式签名安装包。
 
-本地对应命令：
+## 对应命令
 
-```powershell
-.\gradlew.bat compileDebugKotlin testDebugUnitTest lintDebug --continue
-.\gradlew.bat assembleBeta
+```bash
+./gradlew compileDebugKotlin testDebugUnitTest lintDebug --continue
+./gradlew assembleBeta
 ```
-
-此流程覆盖编译、逻辑回归、静态检查和 R8 打包，不包含真机触摸、帧率或预测性返回测试。

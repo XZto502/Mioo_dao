@@ -107,7 +107,6 @@ Debug 安装包输出路径为 `app/build/outputs/apk/debug/`。预编译安装�
 
 - [CI 工作流说明](docs/ci.md)
 - [正式版与测试版更新通道](docs/update-channels.md)
-- [1.1.6 重构说明](docs/refactoring-1.1.6.md)
 
 ---
 

@@ -107,7 +107,6 @@ Debug APKs are generated under `app/build/outputs/apk/debug/`. Prebuilt releases
 
 - [CI Workflow Guide](docs/ci.md)
 - [Release & Beta Update Channels](docs/update-channels.md)
-- [1.1.6 Refactoring Notes](docs/refactoring-1.1.6.md)
 
 ---
 
