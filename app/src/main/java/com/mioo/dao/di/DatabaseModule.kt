@@ -131,28 +131,59 @@ object DatabaseModule {
         }
     }
 
-    private val MIGRATION_11_12 = object : Migration(11, 12) {
+    private fun SupportSQLiteDatabase.tableColumns(table: String): Set<String> {
+        val columns = mutableSetOf<String>()
+        query("PRAGMA table_info(`$table`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) columns.add(cursor.getString(nameIdx))
+        }
+        return columns
+    }
+
+    internal val MIGRATION_11_12 = object : Migration(11, 12) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE cloud_feed_threads ADD COLUMN title TEXT")
-            db.execSQL("ALTER TABLE cloud_feed_threads ADD COLUMN position INTEGER NOT NULL DEFAULT 2147483647")
-            db.execSQL("CREATE TABLE IF NOT EXISTS cloud_feed_sync (feedUuid TEXT NOT NULL PRIMARY KEY, lastCheckedAt INTEGER NOT NULL, lastFullScanAt INTEGER NOT NULL)")
+            val cloudColumns = db.tableColumns("cloud_feed_threads")
+            if ("title" !in cloudColumns) {
+                db.execSQL("ALTER TABLE `cloud_feed_threads` ADD COLUMN `title` TEXT")
+            }
+            if ("position" !in cloudColumns) {
+                db.execSQL("ALTER TABLE `cloud_feed_threads` ADD COLUMN `position` INTEGER NOT NULL DEFAULT 2147483647")
+            }
+            db.execSQL("DROP TABLE IF EXISTS `cloud_feed_sync`")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `cloud_feed_sync` (" +
+                    "`feedUuid` TEXT NOT NULL PRIMARY KEY, " +
+                    "`lastCheckedAt` INTEGER NOT NULL, " +
+                    "`lastFullScanAt` INTEGER NOT NULL)"
+            )
         }
     }
 
-    private val MIGRATION_12_13 = object : Migration(12, 13) {
+    internal val MIGRATION_12_13 = object : Migration(12, 13) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE api_cache ADD COLUMN searchIndexed INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE api_cache ADD COLUMN feedStale INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("""
-                CREATE TABLE cache_post_previews (
-                    cacheKey TEXT NOT NULL, page INTEGER NOT NULL, threadId TEXT NOT NULL,
-                    title TEXT, content TEXT NOT NULL, userHash TEXT NOT NULL, now TEXT NOT NULL,
-                    imageUrl TEXT, replyCount INTEGER NOT NULL,
-                    PRIMARY KEY (cacheKey, page, threadId),
-                    FOREIGN KEY (cacheKey, page) REFERENCES api_cache (cacheKey, page) ON DELETE CASCADE
+            val cacheColumns = db.tableColumns("api_cache")
+            if ("searchIndexed" !in cacheColumns) {
+                db.execSQL("ALTER TABLE `api_cache` ADD COLUMN `searchIndexed` INTEGER NOT NULL DEFAULT 0")
+            }
+            if ("feedStale" !in cacheColumns) {
+                db.execSQL("ALTER TABLE `api_cache` ADD COLUMN `feedStale` INTEGER NOT NULL DEFAULT 0")
+            }
+            db.execSQL("DROP TABLE IF EXISTS `cache_post_previews`")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `cache_post_previews` (
+                    `cacheKey` TEXT NOT NULL, `page` INTEGER NOT NULL, `threadId` TEXT NOT NULL,
+                    `title` TEXT, `content` TEXT NOT NULL, `userHash` TEXT NOT NULL, `now` TEXT NOT NULL,
+                    `imageUrl` TEXT, `replyCount` INTEGER NOT NULL,
+                    PRIMARY KEY(`cacheKey`, `page`, `threadId`),
+                    FOREIGN KEY(`cacheKey`, `page`) REFERENCES `api_cache`(`cacheKey`, `page`) ON UPDATE NO ACTION ON DELETE CASCADE
                 )
-            """.trimIndent())
-            db.execSQL("CREATE INDEX index_cache_post_previews_threadId ON cache_post_previews (threadId)")
+                """.trimIndent()
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cache_post_previews_threadId` " +
+                    "ON `cache_post_previews` (`threadId`)"
+            )
         }
     }
 
