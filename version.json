@@ -2,10 +2,10 @@
   "tag_name": "v1.1.7",
   "assets": [
     {
-      "size": 5615624,
+      "size": 5615200,
       "name": "app-release.apk",
       "browser_download_url": "https://github.com/XZto502/Mioo_dao/releases/download/v1.1.7/app-release.apk",
-      "digest": "sha256:fdadd4ecb3f86b31c7f2d72399ea8d459ff785f09f6911598b31c4d95febb903"
+      "digest": "sha256:108f1826fd5a7e93ec122bad2d1df83c96277b5ff4d071da8178000595424059"
     }
   ],
   "body": "喵岛 v1.1.7 更新内容：\n- 涂鸦板支持手动保存到相册及点击「完成」时自动保存到相册（可随时开关）\n- 新增「X 岛网络诊断」页面、正式版/测试版双更新通道与更新包完整性/签名校验\n- 支持 Chrome Custom Tabs 站内搜索与直接打开 X 岛串链接\n- 云端收藏夹支持 PO 主内容搜索、SWR 秒切缓存与索引自动修复；时间线卡片新增来源板块标签\n- 离线串支持后台保守自动更新、手动下载实时进度与流量估算，并可秒开已缓存离线串\n- 长图默认满宽显示并优化缩放拖拽惯性；自定义顶栏支持无遮罩按深浅面积自动适配黑白字体\n- 全面优化冷启动、板块切换防闪烁、详情页退场、搜索、抽屉与滑动流畅度，修复收藏与更多菜单对齐问题",
