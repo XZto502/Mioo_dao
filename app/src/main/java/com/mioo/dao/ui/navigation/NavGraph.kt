@@ -226,8 +226,6 @@ fun MiooDaoNavGraph(
 
     val density = LocalDensity.current
     var currentTabIndex by rememberSaveable { mutableIntStateOf(0) }
-    val latestTabIndex = rememberUpdatedState(currentTabIndex)
-    var historyOpenGeneration by remember { mutableIntStateOf(0) }
 
     val bottomBarItems = remember {
         listOf(
@@ -244,21 +242,12 @@ fun MiooDaoNavGraph(
     val drawerBackProgress = remember { Animatable(0f) }
     val drawerScope = rememberCoroutineScope()
     LaunchedEffect(navController) {
-        var prevRoute: String? = null
         navController.currentBackStackEntryFlow.collect { entry ->
             val route = entry.destination.route
             isHomeRoute.value = route == Screen.Home.route
-            // 离开详情页即清零：返回列表后立刻重点同一串（快速预览习惯）不被 400ms 窗口吞掉
-            if (route != Screen.Thread.route) {
-            }
-            if (route == Screen.Home.route && prevRoute == Screen.Thread.route &&
-                latestTabIndex.value == 2) {
-                historyOpenGeneration++
-            }
             if (route != Screen.Home.route && boardDrawerState.currentValue != DrawerValue.Closed) {
                 boardDrawerState.close()
             }
-            prevRoute = route
         }
     }
     // 大图查看器打开时收起悬浮 dock：不遮查看器底部药丸、不拦点击
@@ -451,7 +440,6 @@ fun MiooDaoNavGraph(
                     MainTabs(
                         currentTabIndex = currentTabIndex,
                         reducedMotion = reducedMotion,
-                        historyOpenGeneration = historyOpenGeneration,
                         boardHeader = boardHeaderData,
                         onNavigateToThread = navigateToThread,
                         onNavigateToOfflineThread = navigateToOfflineThread,
@@ -489,7 +477,6 @@ fun MiooDaoNavGraph(
                         currentTabIndex = currentTabIndex,
                         onTabSelect = { index ->
                             flushPendingBack?.invoke()
-                            if (index == 2) historyOpenGeneration++
                             if (currentTabIndex != index) currentTabIndex = index
                         }
                     )
@@ -1116,7 +1103,6 @@ private fun SyncCustomHeaderStatusBar(
 private fun MainTabs(
     currentTabIndex: Int,
     reducedMotion: Boolean,
-    historyOpenGeneration: Int,
     boardHeader: com.mioo.dao.ui.components.CustomHeaderData,
     onNavigateToThread: (String) -> Unit,
     onNavigateToOfflineThread: (String) -> Unit,
@@ -1266,7 +1252,6 @@ private fun MainTabs(
                     TabPageContent(
                         page = page,
                         tabState = tabState,
-                        historyOpenGeneration = historyOpenGeneration,
                         onNavigateToThread = onNavigateToThread,
                         onNavigateToOfflineThread = onNavigateToOfflineThread,
                         onColdStartContentReady = onColdStartContentReady,
@@ -1295,7 +1280,6 @@ private fun MainTabs(
 private fun TabPageContent(
     page: Int,
     tabState: androidx.compose.runtime.saveable.SaveableStateHolder,
-    historyOpenGeneration: Int,
     onNavigateToThread: (String) -> Unit,
     onNavigateToOfflineThread: (String) -> Unit,
     onColdStartContentReady: () -> Unit,
@@ -1347,7 +1331,6 @@ private fun TabPageContent(
                 HistoryScreen(
                     onNavigateToThread = onNavigateToThread,
                     onImageViewerOpenChange = onImageViewerOpenChange,
-                    openGeneration = historyOpenGeneration,
                     isActiveTab = isPageActive,
                     reducedMotion = reducedMotion
                 )

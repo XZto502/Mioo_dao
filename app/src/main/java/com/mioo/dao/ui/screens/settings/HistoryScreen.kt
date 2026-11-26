@@ -23,6 +23,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material3.*
@@ -70,7 +71,6 @@ import kotlinx.coroutines.withContext
 fun HistoryScreen(
     onNavigateToThread: (String) -> Unit,
     onImageViewerOpenChange: (Boolean) -> Unit = {},
-    openGeneration: Int = 0,
     isActiveTab: () -> Boolean = { true },
     reducedMotion: Boolean = isReducedMotionEnabled(),
     viewModel: HistoryViewModel = hiltViewModel(),
@@ -80,6 +80,9 @@ fun HistoryScreen(
     val initialType by viewModel.initialType.collectAsState()
     val restoredType = initialType ?: return
     val pager = rememberPagerState(initialPage = types.indexOf(restoredType).coerceAtLeast(0)) { types.size }
+    val listStates = types.associateWith { entry ->
+        rememberSaveable(entry.name, saver = LazyListState.Saver) { LazyListState() }
+    }
     LaunchedEffect(pager) {
         snapshotFlow { pager.settledPage }.collect { viewModel.saveSelectedType(types[it]) }
     }
@@ -149,6 +152,14 @@ fun HistoryScreen(
                                 searching = true
                             }
                         }) { Icon(if (showSearch) Icons.Default.Close else Icons.Default.Search, contentDescription = if (showSearch) "关闭搜索" else "搜索历史") }
+                        if (!showSearch) {
+                            IconButton(onClick = {
+                                viewModel.refresh(type)
+                                scope.launch { listStates[type]?.scrollToItem(0) }
+                            }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "刷新${type.label}")
+                            }
+                        }
                         IconButton(onClick = { clearType = type }) {
                             Icon(Icons.Outlined.DeleteSweep, contentDescription = "清空${type.label}")
                         }
@@ -190,30 +201,25 @@ fun HistoryScreen(
                     val quoteColor = MaterialTheme.colorScheme.primary
                     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                     val dicePreset = LocalDicePreset.current
-                    val historyPageState by produceState(
-                        initialValue = false to emptyList<HistoryItem>(),
-                        category, quoteColor, dark, dicePreset
-                    ) {
+                    val pageState by viewModel.pageState(category).collectAsState()
+                    LaunchedEffect(category) {
                         snapshotFlow { isActiveTab() }
                             .distinctUntilChanged()
-                            .collectLatest { active ->
-                                if (!active) return@collectLatest
-                                viewModel.items(category).collect { latest ->
-                                    if (category == HistoryType.BROWSE && latest.isNotEmpty() && value.second.isEmpty()) {
-                                        withContext(Dispatchers.Default) {
-                                            HtmlParseCache.prewarm(latest.take(8).map { it.content }, quoteColor, dark, dicePreset)
-                                        }
-                                    }
-                                    value = true to latest
-                                }
+                            .collect { active ->
+                                if (active) viewModel.ensureLoaded(category)
                             }
                     }
-                    val recordsLoaded = historyPageState.first
-                    val readyRecords = historyPageState.second
+                    LaunchedEffect(category, pageState.loaded, pageState.items, quoteColor, dark, dicePreset) {
+                        if (category == HistoryType.BROWSE && pageState.loaded && pageState.items.isNotEmpty()) {
+                            withContext(Dispatchers.Default) {
+                                HtmlParseCache.prewarm(pageState.items.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                            }
+                        }
+                    }
+                    val recordsLoaded = pageState.loaded
+                    val readyRecords = pageState.items
                     val categoryQuery by viewModel.query(category).collectAsState()
-                    // A fresh state also clears LazyColumn's remembered item key, so an
-                    // updated/reordered history cannot restore the old reading position.
-                    val list = remember(category, openGeneration) { LazyListState() }
+                    val list = listStates.getValue(category)
                     var previousQuery by rememberSaveable(category.name) { mutableStateOf(categoryQuery) }
                     LaunchedEffect(categoryQuery) {
                         if (previousQuery != categoryQuery) { list.scrollToItem(0); previousQuery = categoryQuery }
