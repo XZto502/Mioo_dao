@@ -1,6 +1,7 @@
 package com.mioo.dao.data.repository
 
 import com.mioo.dao.data.local.BookmarkEntity
+import com.mioo.dao.data.model.FeedFolder
 import com.mioo.dao.data.local.DraftDao
 import com.mioo.dao.data.local.DraftEntity
 import com.mioo.dao.data.local.HistoryDao
@@ -36,14 +37,15 @@ class BackupRepository @Inject constructor(
         const val SECTION_REPLIES = "replyHistory"
         const val SECTION_NEW_THREADS = "newThreadHistory"
         const val SECTION_BOOKMARKS = "bookmarks"
+        const val SECTION_CLOUD_FOLDERS = "cloudFolders"
         const val SECTION_DRAFTS = "drafts"
         const val SECTION_SETTINGS = "settings"
         const val SECTION_BLOCKS = "blocks"
         val ALL_SECTIONS = listOf(
             SECTION_COOKIES, SECTION_HISTORY, SECTION_REPLIES, SECTION_NEW_THREADS, SECTION_BOOKMARKS,
-            SECTION_DRAFTS, SECTION_SETTINGS, SECTION_BLOCKS
+            SECTION_CLOUD_FOLDERS, SECTION_DRAFTS, SECTION_SETTINGS, SECTION_BLOCKS
         )
-        private const val VERSION = 3
+        private const val VERSION = 4
     }
 
     /** 各段恢复条数，-1 表示文件里没有该段。 */
@@ -53,6 +55,7 @@ class BackupRepository @Inject constructor(
         val replyHistory: Int = -1,
         val newThreadHistory: Int = -1,
         val bookmarks: Int = -1,
+        val cloudFolders: Int = -1,
         val drafts: Int = -1,
         val settings: Boolean = false,
         val blocks: Boolean = false,
@@ -129,6 +132,22 @@ class BackupRepository @Inject constructor(
                 arr.put(o)
             }
             root.put(SECTION_BOOKMARKS, arr)
+        }
+
+        if (SECTION_CLOUD_FOLDERS in sections) {
+            val folders = normalizeFeedFolders(settingsDataStore.feedFoldersFlow.first())
+            val lastFolder = settingsDataStore.lastFeedFolderFlow.first().trim()
+            val arr = JSONArray()
+            folders.forEach { f ->
+                arr.put(JSONObject().apply {
+                    put("name", f.name)
+                    put("uuid", f.uuid)
+                })
+            }
+            root.put(SECTION_CLOUD_FOLDERS, JSONObject().apply {
+                put("folders", arr)
+                put("lastFeedFolder", lastFolder)
+            })
         }
 
         if (SECTION_DRAFTS in sections) {
@@ -225,6 +244,7 @@ class BackupRepository @Inject constructor(
         var replyCount = -1
         var newThreadCount = -1
         var bookmarksCount = -1
+        var cloudFoldersCount = -1
         var draftsCount = -1
         var settingsRestored = false
         var blocksRestored = false
@@ -313,6 +333,35 @@ class BackupRepository @Inject constructor(
             bookmarksCount = entities.size
         }
 
+        if (root.has(SECTION_CLOUD_FOLDERS) && !root.isNull(SECTION_CLOUD_FOLDERS)) {
+            val rawFolders = mutableListOf<FeedFolder>()
+            var importedLastFolder = ""
+            val obj = root.optJSONObject(SECTION_CLOUD_FOLDERS)
+            val arr = obj?.optJSONArray("folders") ?: root.optJSONArray(SECTION_CLOUD_FOLDERS)
+            if (obj != null) {
+                importedLastFolder = obj.optString("lastFeedFolder", "")
+            }
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    rawFolders.add(
+                        FeedFolder(
+                            name = item.optString("name", ""),
+                            uuid = item.optString("uuid", "")
+                        )
+                    )
+                }
+            }
+            val imported = normalizeFeedFolders(rawFolders)
+            val existing = settingsDataStore.feedFoldersFlow.first()
+            val merged = mergeFeedFolders(existing, imported)
+            settingsDataStore.saveFeedFolders(merged)
+            resolveRestoredLastFeedFolder(importedLastFolder, merged)?.let { resolved ->
+                settingsDataStore.saveLastFeedFolder(resolved)
+            }
+            cloudFoldersCount = imported.size
+        }
+
         root.optJSONArray(SECTION_DRAFTS)?.let { arr ->
             var count = 0
             for (i in 0 until arr.length()) {
@@ -384,6 +433,7 @@ class BackupRepository @Inject constructor(
             replyHistory = replyCount,
             newThreadHistory = newThreadCount,
             bookmarks = bookmarksCount,
+            cloudFolders = cloudFoldersCount,
             drafts = draftsCount,
             settings = settingsRestored,
             blocks = blocksRestored

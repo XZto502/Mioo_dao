@@ -36,6 +36,7 @@ internal fun BackupPickerDialog(
             "replyHistory" to "发言历史（含附图）",
             "newThreadHistory" to "发串历史（含附图）",
             "bookmarks" to "本地收藏",
+            BackupRepository.SECTION_CLOUD_FOLDERS to "云端收藏夹（名称与 UUID）",
             "drafts" to "草稿箱",
             "settings" to "应用设置（主题/字体/开关等）",
             "blocks" to "屏蔽与板块（串/饼干/关键词/置顶/展开）"
@@ -92,6 +93,7 @@ internal fun BackupResultDialog(r: BackupRepository.ImportResult, onDismiss: () 
                         if (r.replyHistory >= 0) add("发言历史：${r.replyHistory} 条")
                         if (r.newThreadHistory >= 0) add("发串历史：${r.newThreadHistory} 条")
                         if (r.bookmarks >= 0) add("本地收藏：${r.bookmarks} 条")
+                        if (r.cloudFolders >= 0) add("云端收藏夹：${r.cloudFolders} 个")
                         if (r.drafts >= 0) add("草稿箱：${r.drafts} 条")
                         if (r.settings) add("应用设置：已恢复")
                         if (r.blocks) add("屏蔽与板块：已恢复")
