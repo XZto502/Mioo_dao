@@ -52,7 +52,7 @@ class StartupAndScrollBenchmark {
             pressHome()
             startActivityAndWait()
             dismissFirstLaunchDialogsIfPresent()
-            waitForBoardReady()
+            waitForBoardContentReady()
         }
     ) {
         repeat(2) {
@@ -65,20 +65,10 @@ class StartupAndScrollBenchmark {
 
     private fun MacrobenchmarkScope.flingBoardList(direction: Direction) {
         val boardList = device.wait(Until.findObject(By.res(BOARD_LIST_TAG)), 3_000)
-        if (boardList != null) {
-            // Keep fling inside the center 60% width so horizontal drawer arbitration never interferes.
-            boardList.setGestureMargin(device.displayWidth / 5)
-            boardList.fling(direction)
-        } else {
-            val centerX = device.displayWidth / 2
-            val topY = device.displayHeight / 4
-            val bottomY = (device.displayHeight * 3) / 4
-            if (direction == Direction.DOWN) {
-                device.swipe(centerX, bottomY, centerX, topY, 12)
-            } else {
-                device.swipe(centerX, topY, centerX, bottomY, 12)
-            }
-        }
+        checkNotNull(boardList) { "Board LazyColumn ($BOARD_LIST_TAG) not found" }
+        // Keep fling inside the center 60% width so horizontal drawer arbitration never interferes.
+        boardList.setGestureMargin(device.displayWidth / 5)
+        boardList.fling(direction)
         device.waitForIdle()
     }
 
@@ -87,10 +77,25 @@ class StartupAndScrollBenchmark {
         device.waitForIdle()
     }
 
+    private fun MacrobenchmarkScope.waitForBoardContentReady() {
+        waitForBoardReady()
+        val deadline = System.currentTimeMillis() + 12_000
+        while (System.currentTimeMillis() < deadline) {
+            dismissFirstLaunchDialogsIfPresent()
+            val list = device.findObject(By.res(BOARD_LIST_TAG))
+            if (list != null && list.childCount >= 3) {
+                device.waitForIdle()
+                return
+            }
+            Thread.sleep(250)
+        }
+    }
+
     private fun MacrobenchmarkScope.dismissFirstLaunchDialogsIfPresent() {
-        val acceptText = listOf("同意并继续", "仅浏览", "稍后再说", "关闭")
-        for (label in acceptText) {
-            val button = device.findObject(By.text(label))
+        // Prefer declining third-party update checks during benchmarks so GitHub popups don't interrupt.
+        val dialogButtons = listOf("拒绝第三方服务", "同意并继续", "忽略")
+        for (label in dialogButtons) {
+            val button = device.wait(Until.findObject(By.text(label)), 1_500)
             if (button != null) {
                 button.click()
                 device.waitForIdle()

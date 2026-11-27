@@ -30,6 +30,13 @@ class BaselineProfileGenerator {
             pressHome()
             startActivityAndWait()
 
+            for (label in listOf("拒绝第三方服务", "同意并继续", "忽略")) {
+                device.wait(Until.findObject(By.text(label)), 1_500)?.let {
+                    it.click()
+                    device.waitForIdle()
+                }
+            }
+
             device.wait(Until.hasObject(By.res("forum_board_list")), 8_000)
             device.waitForIdle()
 
