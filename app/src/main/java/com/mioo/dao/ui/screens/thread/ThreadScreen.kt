@@ -38,6 +38,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.mioo.dao.ui.theme.MiooMotion
@@ -1454,6 +1455,7 @@ private fun ThreadChromeActions(
     val context = LocalContext.current
     // 「删除离线缓存」二次确认（三点菜单触发）
     var showRemoveOffline by remember { mutableStateOf(false) }
+    var showNotifyModeDialog by remember { mutableStateOf(false) }
 
     val poActionColors = headerStyle.trailingActionAt(2)
     val bookmarkActionColors = headerStyle.trailingActionAt(1)
@@ -1612,6 +1614,21 @@ private fun ThreadChromeActions(
                     viewModel.toggleShowImagesOnly()
                 }
             )
+            if (chrome.isSubscribed || chrome.isCloudSubscribed) {
+                val notifyModeLabel = when (chrome.watchNotifyMode) {
+                    com.mioo.dao.data.local.SubscriptionNotifyMode.PO_ONLY -> "仅 PO"
+                    com.mioo.dao.data.local.SubscriptionNotifyMode.MUTE -> "静音"
+                    else -> "全部"
+                }
+                Md3ThreadMenuItem(
+                    label = "新回复提醒 ($notifyModeLabel)",
+                    leadingIcon = Icons.Outlined.Notifications,
+                    onClick = {
+                        onShowOverflowMenuChange(false)
+                        showNotifyModeDialog = true
+                    }
+                )
+            }
             when {
                 downloading -> Md3ThreadMenuItem(
                     label = transfer?.label() ?: "等待下载",
@@ -1653,6 +1670,51 @@ private fun ThreadChromeActions(
                     }
                 )
             }
+        }
+
+        if (showNotifyModeDialog) {
+            val options = listOf(
+                com.mioo.dao.data.local.SubscriptionNotifyMode.ALL to "全部回复",
+                com.mioo.dao.data.local.SubscriptionNotifyMode.PO_ONLY to "仅 PO 主更新",
+                com.mioo.dao.data.local.SubscriptionNotifyMode.MUTE to "静音此串"
+            )
+            AlertDialog(
+                onDismissRequest = { showNotifyModeDialog = false },
+                title = { Text("本串新回复提醒") },
+                text = {
+                    Column {
+                        options.forEach { (mode, label) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.updateThreadNotifyMode(mode)
+                                        showNotifyModeDialog = false
+                                        Toast.makeText(context, "已设为「$label」", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.RadioButton(
+                                    selected = chrome.watchNotifyMode == mode,
+                                    onClick = {
+                                        viewModel.updateThreadNotifyMode(mode)
+                                        showNotifyModeDialog = false
+                                        Toast.makeText(context, "已设为「$label」", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = label, style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showNotifyModeDialog = false }) {
+                        Text("关闭")
+                    }
+                }
+            )
         }
 
         if (showRemoveOffline) {

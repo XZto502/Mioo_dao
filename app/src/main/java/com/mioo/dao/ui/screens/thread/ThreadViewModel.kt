@@ -90,7 +90,8 @@ data class ThreadChromeUiState(
     /** 本串已离线（offline_threads 有标记）——三点菜单显示「更新离线缓存 (已保存)」。 */
     val isOfflineSaved: Boolean = false,
     /** 本串已缓存所属的云端收藏夹 uuid 集合（收藏菜单按夹显示"已收藏进该夹"）。 */
-    val cloudFolderUuids: Set<String> = emptySet()
+    val cloudFolderUuids: Set<String> = emptySet(),
+    val watchNotifyMode: Int = com.mioo.dao.data.local.SubscriptionNotifyMode.ALL
 )
 
 /** Nested >>No.xxxx popup — isolated so open/close never invalidates the list. */
@@ -123,6 +124,9 @@ class ThreadViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val fromOfflineList = savedStateHandle.get<Boolean>("offline") == true
+    private val jumpToLatest = savedStateHandle.get<Boolean>("jumpToLatest") == true
+    private var pendingJumpToLatest = jumpToLatest
+    private var pendingScrollToBottomOnReplace = false
     val threadId: String = savedStateHandle.get<String>("threadId")
         ?: throw IllegalArgumentException("threadId is required")
 
@@ -155,6 +159,19 @@ class ThreadViewModel @Inject constructor(
         _dicePreset.value = preset
         viewModelScope.launch {
             settingsRepository.saveThreadDicePreset(threadId, preset)
+        }
+    }
+
+    fun updateThreadNotifyMode(mode: Int) {
+        viewModelScope.launch {
+            val thread = _listState.value.thread
+            threadRepository.setThreadNotifyMode(
+                threadId = threadId,
+                mode = mode,
+                title = thread?.title,
+                poUserHash = thread?.userHash.orEmpty(),
+                replyCount = thread?.replyCount ?: 0
+            )
         }
     }
 
@@ -328,6 +345,12 @@ class ThreadViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            threadRepository.observeThreadNotifyMode(threadId).collect { mode ->
+                _chromeState.update { it.copy(watchNotifyMode = mode) }
+            }
+        }
+
+        viewModelScope.launch {
             settingsRepository.settings
                 .map { it.feedFolders }
                 .distinctUntilChanged()
@@ -398,7 +421,9 @@ class ThreadViewModel @Inject constructor(
 
         // Read progress first and open that page directly — avoids page1 paint then jump
         viewModelScope.launch {
-            val progress = runCatching { threadRepository.getThreadProgress(threadId) }.getOrNull()
+            val progress = if (pendingJumpToLatest) null else {
+                runCatching { threadRepository.getThreadProgress(threadId) }.getOrNull()
+            }
             if (openingGeneration != loadGeneration) return@launch
             val targetPage = progress?.page?.coerceAtLeast(1) ?: 1
             val localIndex = progress?.firstVisibleIndex?.coerceAtLeast(0) ?: 0
@@ -719,6 +744,10 @@ class ThreadViewModel @Inject constructor(
                             )
                         }
                         if (gen != loadGeneration) return@collect
+                        val scrollToBottomNow = mode == LoadMode.REPLACE && pendingScrollToBottomOnReplace
+                        if (scrollToBottomNow) {
+                            pendingScrollToBottomOnReplace = false
+                        }
                         _listState.update { state ->
                             state.copy(
                                 thread = threadData,
@@ -733,7 +762,7 @@ class ThreadViewModel @Inject constructor(
                                 // SWR network re-emission must keep the live scroll anchor.
                                 contentRevision = state.contentRevision + if (
                                     mode == LoadMode.REPLACE && !sawSuccess &&
-                                        (seedPending != null || state.thread != null)
+                                        (seedPending != null || scrollToBottomNow || state.thread != null)
                                 ) 1 else 0,
                                 errorMessage = null,
                                 nextPageError = null,
@@ -752,9 +781,23 @@ class ThreadViewModel @Inject constructor(
                                     LoadMode.REPLACE -> windowStart
                                     LoadMode.APPEND -> state.startPage
                                 },
-                                pendingScrollIndex = prependAnchor?.first ?: seedPending ?: state.pendingScrollIndex,
-                                pendingScrollOffset = prependAnchor?.second ?: if (seedPending != null) resumeOffset else state.pendingScrollOffset
+                                pendingScrollIndex = if (scrollToBottomNow) displayItems.size else (prependAnchor?.first ?: seedPending ?: state.pendingScrollIndex),
+                                pendingScrollOffset = if (scrollToBottomNow) 0 else (prependAnchor?.second ?: if (seedPending != null) resumeOffset else state.pendingScrollOffset)
                             )
+                        }
+                        if (mode == LoadMode.REPLACE && pendingJumpToLatest) {
+                            pendingJumpToLatest = false
+                            if (totalPagesVal > 1 && windowEnd < totalPagesVal) {
+                                pendingScrollToBottomOnReplace = true
+                                jumpToPage(totalPagesVal)
+                            } else {
+                                _listState.update {
+                                    it.copy(
+                                        pendingScrollIndex = displayItems.size,
+                                        pendingScrollOffset = 0
+                                    )
+                                }
+                            }
                         }
 
                         // 续读直接进第 N 页时 repo 的 page<=1 历史写入会跳过，这里补记
@@ -765,8 +808,8 @@ class ThreadViewModel @Inject constructor(
                             }
                         }
 
-                        // Bookmark read: only when subscribed, once per distinct replyCount
-                        if (_chromeState.value.isSubscribed &&
+                        // Bookmark read: when local or cloud subscribed, once per distinct replyCount
+                        if ((_chromeState.value.isSubscribed || _chromeState.value.isCloudSubscribed) &&
                             mode != LoadMode.PREPEND &&
                             lastMarkedReadCount != replyCount
                         ) {

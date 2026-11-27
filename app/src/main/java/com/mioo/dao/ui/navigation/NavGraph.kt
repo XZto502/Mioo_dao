@@ -138,9 +138,15 @@ sealed class Screen(val route: String) {
     object NetworkDiagnostics : Screen("network_diagnostics")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
-    object Thread : Screen("thread/{threadId}?replyDraftId={replyDraftId}&offline={offline}") {
-        fun createRoute(threadId: String, replyDraftId: Long? = null, offline: Boolean = false) = when {
+    object Thread : Screen("thread/{threadId}?replyDraftId={replyDraftId}&offline={offline}&jumpToLatest={jumpToLatest}") {
+        fun createRoute(
+            threadId: String,
+            replyDraftId: Long? = null,
+            offline: Boolean = false,
+            jumpToLatest: Boolean = false
+        ) = when {
             offline -> "thread/$threadId?offline=true"
+            jumpToLatest -> "thread/$threadId?jumpToLatest=true"
             replyDraftId != null -> "thread/$threadId?replyDraftId=$replyDraftId"
             else -> "thread/$threadId"
         }
@@ -153,6 +159,7 @@ fun MiooDaoNavGraph(
     modifier: Modifier = Modifier,
     initialThreadId: String? = null,
     pendingThreadId: String? = null,
+    pendingJumpToLatest: Boolean = false,
     onPendingThreadConsumed: () -> Unit = {},
     /** First board list paint / error — dismiss system splash. */
     onColdStartContentReady: () -> Unit = {}
@@ -202,7 +209,7 @@ fun MiooDaoNavGraph(
     val navigateToOfflineThread: (String) -> Unit = remember(openThread) { { openThread(it, true) } }
 
     var instantThreadTarget by remember { mutableStateOf<String?>(null) }
-    androidx.compose.runtime.LaunchedEffect(pendingThreadId) {
+    LaunchedEffect(pendingThreadId, pendingJumpToLatest) {
         val id = pendingThreadId ?: return@LaunchedEffect
         if (id.isNotBlank()) {
             flushPendingBack?.invoke()
@@ -213,7 +220,7 @@ fun MiooDaoNavGraph(
                 top?.arguments?.getString("threadId") == id
             if (!alreadyOpen) {
                 instantThreadTarget = id
-                navController.navigate(Screen.Thread.createRoute(id))
+                navController.navigate(Screen.Thread.createRoute(id, jumpToLatest = pendingJumpToLatest))
             }
             onPendingThreadConsumed()
         }
@@ -744,6 +751,10 @@ private fun ParallaxPageHost(
                         defaultValue = 0L
                     },
                     navArgument("offline") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
+                    navArgument("jumpToLatest") {
                         type = NavType.BoolType
                         defaultValue = false
                     }

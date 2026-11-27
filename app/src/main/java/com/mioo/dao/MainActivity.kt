@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
 
     private var initialExternalThreadIdState = mutableStateOf<String?>(null)
     private var pendingThreadIdState = mutableStateOf<String?>(null)
+    private var pendingJumpToLatestState = mutableStateOf(false)
 
     /** Clipboard-detected 8-digit thread id awaiting user confirmation. */
     private var clipboardThreadCandidate = mutableStateOf<String?>(null)
@@ -133,6 +134,8 @@ class MainActivity : ComponentActivity() {
         val directExternalId = if (intent?.action == Intent.ACTION_VIEW) launchThreadId else null
         initialExternalThreadIdState.value = directExternalId
         pendingThreadIdState.value = if (directExternalId != null) null else launchThreadId
+        pendingJumpToLatestState.value = directExternalId == null &&
+            intent?.getBooleanExtra(com.mioo.dao.notification.SubscriptionNotifier.EXTRA_JUMP_TO_LATEST, false) == true
         reducedMotionState.value = isReducedMotionEnabled(this)
 
         // Never stick on splash if list is empty/error/slow network (prefer first-content callback)
@@ -188,6 +191,7 @@ class MainActivity : ComponentActivity() {
 
             val initialExternalThreadId by initialExternalThreadIdState
             val pendingThreadId by pendingThreadIdState
+            val pendingJumpToLatest by pendingJumpToLatestState
             val clipboardThreadId by clipboardThreadCandidate
 
             val updateChannel by settingsRepository.updateChannel.collectAsState()
@@ -247,7 +251,11 @@ class MainActivity : ComponentActivity() {
                     MiooDaoNavGraph(
                         initialThreadId = initialExternalThreadId,
                         pendingThreadId = pendingThreadId,
-                        onPendingThreadConsumed = { pendingThreadIdState.value = null },
+                        pendingJumpToLatest = pendingJumpToLatest,
+                        onPendingThreadConsumed = {
+                            pendingThreadIdState.value = null
+                            pendingJumpToLatestState.value = false
+                        },
                         onColdStartContentReady = {
                             keepSplashOnScreen.set(false)
                         }
@@ -392,6 +400,8 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingThreadIdState.value = parsePendingThreadId(intent)
+        pendingJumpToLatestState.value =
+            intent.getBooleanExtra(com.mioo.dao.notification.SubscriptionNotifier.EXTRA_JUMP_TO_LATEST, false)
         reducedMotionState.value = isReducedMotionEnabled(this)
     }
 

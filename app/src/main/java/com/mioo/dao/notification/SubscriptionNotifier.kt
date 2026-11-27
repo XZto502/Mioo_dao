@@ -25,6 +25,7 @@ class SubscriptionNotifier @Inject constructor(
     companion object {
         const val CHANNEL_ID = "subscription_updates"
         const val EXTRA_THREAD_ID = "extra_thread_id"
+        const val EXTRA_JUMP_TO_LATEST = "extra_jump_to_latest"
         private const val SUMMARY_ID = 9001
         private const val GROUP_KEY = "mioo_subscription_group"
     }
@@ -55,12 +56,20 @@ class SubscriptionNotifier @Inject constructor(
         val nm = NotificationManagerCompat.from(context)
         updates.take(8).forEach { update ->
             val title = update.title ?: "No.${update.threadId}"
-            val text = "有 ${update.newReplyDelta} 条新回复"
+            val headline = when {
+                update.isRevivedDormant -> "沉睡串复活 · +${update.newReplyDelta} 条新回复"
+                update.isPoUpdate -> "PO 主更新了 · +${update.newReplyDelta} 条新回复"
+                else -> "有 ${update.newReplyDelta} 条新回复"
+            }
+            val preview = update.previewText?.takeIf { it.isNotBlank() }
+            val text = if (preview != null) "$headline：$preview" else headline
+            val bigText = if (preview != null) "$headline\n$preview" else headline
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra(EXTRA_THREAD_ID, update.threadId)
+                putExtra(EXTRA_JUMP_TO_LATEST, true)
                 // Unique data so PendingIntents don't collide
                 data = android.net.Uri.parse("mioodao://thread/${update.threadId}")
             }
@@ -70,15 +79,37 @@ class SubscriptionNotifier @Inject constructor(
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+            val markReadIntent = Intent(context, SubscriptionActionReceiver::class.java).apply {
+                action = SubscriptionActionReceiver.ACTION_MARK_READ
+                putExtra(SubscriptionActionReceiver.EXTRA_THREAD_ID, update.threadId)
+            }
+            val markReadPending = PendingIntent.getBroadcast(
+                context,
+                (update.threadId + ":read").hashCode(),
+                markReadIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val muteIntent = Intent(context, SubscriptionActionReceiver::class.java).apply {
+                action = SubscriptionActionReceiver.ACTION_MUTE_THREAD
+                putExtra(SubscriptionActionReceiver.EXTRA_THREAD_ID, update.threadId)
+            }
+            val mutePending = PendingIntent.getBroadcast(
+                context,
+                (update.threadId + ":mute").hashCode(),
+                muteIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(com.mioo.dao.R.drawable.ic_stat_notify)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText("$title\n$text"))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
                 .setGroup(GROUP_KEY)
                 .setContentIntent(pending)
+                .addAction(0, "标为已读", markReadPending)
+                .addAction(0, "静音此串", mutePending)
                 .build()
             try {
                 nm.notify(update.threadId.hashCode() and 0x7FFFFFFF, notification)
