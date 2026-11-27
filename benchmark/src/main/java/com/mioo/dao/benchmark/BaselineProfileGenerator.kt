@@ -41,13 +41,15 @@ class BaselineProfileGenerator {
             device.waitForIdle()
 
             device.wait(Until.findObject(By.res("forum_board_list")), 8_000)?.let { list ->
-                list.setGestureMargin(device.displayWidth / 5)
-                list.fling(Direction.DOWN)
-                device.waitForIdle()
-            }
-            device.wait(Until.findObject(By.res("forum_board_list")), 3_000)?.let { list ->
-                list.setGestureMargin(device.displayWidth / 5)
-                list.fling(Direction.UP)
+                val bounds = list.visibleBounds
+                val centerX = bounds.centerX()
+                val topY = bounds.top + (bounds.height() * 0.22f).toInt()
+                val bottomY = bounds.top + (bounds.height() * 0.80f).toInt()
+                repeat(2) {
+                    device.swipe(centerX, bottomY, centerX, topY, 10)
+                    device.waitForIdle()
+                }
+                device.swipe(centerX, topY, centerX, bottomY, 12)
                 device.waitForIdle()
             }
         }

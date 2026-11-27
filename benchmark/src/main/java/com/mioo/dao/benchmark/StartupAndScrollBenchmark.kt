@@ -55,22 +55,28 @@ class StartupAndScrollBenchmark {
             waitForBoardContentReady()
         }
     ) {
-        repeat(2) {
-            flingBoardList(Direction.DOWN)
+        repeat(3) {
+            swipeBoardList(scrollDownContent = true)
         }
         repeat(2) {
-            flingBoardList(Direction.UP)
+            swipeBoardList(scrollDownContent = false)
         }
     }
 
-    private fun MacrobenchmarkScope.flingBoardList(direction: Direction) {
+    private fun MacrobenchmarkScope.swipeBoardList(scrollDownContent: Boolean) {
         val boardList = device.wait(Until.findObject(By.res(BOARD_LIST_TAG)), 3_000)
         checkNotNull(boardList) { "Board LazyColumn ($BOARD_LIST_TAG) not found" }
-        // Keep fling inside the center 60% width so horizontal drawer arbitration never interferes.
-        val horizontalMargin = device.displayWidth / 5
-        boardList.setGestureMargins(horizontalMargin, 120, horizontalMargin, 120)
-        boardList.fling(direction, 4500)
-        Thread.sleep(600)
+        val bounds = boardList.visibleBounds
+        val centerX = bounds.centerX()
+        val topY = bounds.top + (bounds.height() * 0.22f).toInt()
+        val bottomY = bounds.top + (bounds.height() * 0.80f).toInt()
+        // Finger UP (bottomY -> topY) scrolls content down; finger DOWN (topY -> bottomY) scrolls content up.
+        if (scrollDownContent) {
+            device.swipe(centerX, bottomY, centerX, topY, 10)
+        } else {
+            device.swipe(centerX, topY, centerX, bottomY, 12)
+        }
+        Thread.sleep(650)
         device.waitForIdle()
     }
 
@@ -85,14 +91,14 @@ class StartupAndScrollBenchmark {
         while (System.currentTimeMillis() < deadline) {
             dismissFirstLaunchDialogsIfPresent()
             val list = device.findObject(By.res(BOARD_LIST_TAG))
-            if (list != null && list.childCount >= 3) {
+            if (list != null && device.hasObject(By.textContains("No."))) {
                 device.waitForIdle()
                 return
             }
             Thread.sleep(250)
         }
         val finalCount = device.findObject(By.res(BOARD_LIST_TAG))?.childCount ?: -1
-        error("Board list ($BOARD_LIST_TAG) did not load >= 3 cards within 15s (childCount=$finalCount)")
+        error("Board list ($BOARD_LIST_TAG) did not load thread cards within 15s (childCount=$finalCount)")
     }
 
     private fun MacrobenchmarkScope.dismissFirstLaunchDialogsIfPresent() {
