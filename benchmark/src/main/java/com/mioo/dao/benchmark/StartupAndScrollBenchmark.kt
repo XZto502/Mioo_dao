@@ -8,16 +8,16 @@ import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.Direction
+import android.graphics.Rect
 import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Minimal Layer-3 Macrobenchmark suite:
+ * On-device reading benchmarks:
  * 1. Cold startup to first board viewport
- * 2. Board list fast vertical fling (P50 / P90 / P99 frame timing & overrun)
+ * 2. Board flings, interrupted scrolling, thread reading and return to board
  *
  * Run on a physical device:
  *   ./gradlew :benchmark:connectedBenchmarkReleaseAndroidTest
@@ -61,6 +61,83 @@ class StartupAndScrollBenchmark {
         repeat(2) {
             swipeBoardList(scrollDownContent = false)
         }
+    }
+
+    @Test
+    fun interruptBoardFling() = measureReadingFrames {
+        val bounds = visibleList(BOARD_LIST_TAG).visibleBounds
+        swipe(bounds, steps = 80)
+        Thread.sleep(300)
+        repeat(3) { swipe(bounds, steps = 8) }
+        swipe(bounds, steps = 12, reverse = true)
+        device.waitForIdle()
+    }
+
+    @Test
+    fun scrollThreadDetail() = measureReadingFrames(setup = { openScrollableThread() }) {
+        val bounds = visibleList(DETAIL_LIST_TAG).visibleBounds
+        swipe(bounds, steps = 80)
+        repeat(2) { swipe(bounds, steps = 10) }
+        swipe(bounds, steps = 18, reverse = true)
+        device.waitForIdle()
+    }
+
+    @Test
+    fun returnFromThreadAndScroll() = measureReadingFrames(setup = { openScrollableThread() }) {
+        device.pressBack()
+        swipe(visibleList(BOARD_LIST_TAG).visibleBounds, steps = 10)
+        device.waitForIdle()
+    }
+
+    private fun measureReadingFrames(
+        setup: MacrobenchmarkScope.() -> Unit = {},
+        measure: MacrobenchmarkScope.() -> Unit
+    ) = benchmarkRule.measureRepeated(
+        packageName = TARGET_PACKAGE,
+        metrics = listOf(FrameTimingMetric()),
+        compilationMode = CompilationMode.Partial(),
+        iterations = 5,
+        startupMode = StartupMode.WARM,
+        setupBlock = {
+            pressHome()
+            startActivityAndWait()
+            if (device.hasObject(By.res(DETAIL_LIST_TAG))) device.pressBack()
+            waitForBoardContentReady()
+            setup()
+        },
+        measureBlock = measure
+    )
+
+    private fun MacrobenchmarkScope.visibleList(tag: String) =
+        checkNotNull(device.wait(Until.findObject(By.res(tag).scrollable(true)), 8_000)) {
+            "Expected scrollable list: $tag"
+        }
+
+    private fun MacrobenchmarkScope.openScrollableThread() {
+        val card = (0..4).firstNotNullOfOrNull { attempt ->
+            val board = visibleList(BOARD_LIST_TAG)
+            val candidate = board.findObjects(By.res("forum_long_thread_card")).firstOrNull {
+                it.visibleBounds.height() >= board.visibleBounds.height() / 8
+            }
+            if (candidate == null && attempt < 4) {
+                swipe(board.visibleBounds, steps = 32)
+                device.waitForIdle()
+            }
+            candidate
+        } ?: error("No visible thread with at least 20 replies")
+        // Use the card's inner padding, outside text links and image actions.
+        val bounds = card.visibleBounds
+        device.click(bounds.left + bounds.width() / 100, bounds.centerY())
+        visibleList(DETAIL_LIST_TAG)
+        device.waitForIdle()
+    }
+
+    private fun MacrobenchmarkScope.swipe(bounds: Rect, steps: Int, reverse: Boolean = false) {
+        val top = bounds.top + bounds.height() / 4
+        val bottom = bounds.bottom - bounds.height() / 4
+        val start = if (reverse) top else bottom
+        val end = if (reverse) bottom else top
+        check(device.swipe(bounds.centerX(), start, bounds.centerX(), end, steps))
     }
 
     private fun MacrobenchmarkScope.swipeBoardList(scrollDownContent: Boolean) {
@@ -115,6 +192,7 @@ class StartupAndScrollBenchmark {
 
     private companion object {
         const val TARGET_PACKAGE = "com.mioo.dao"
+        const val DETAIL_LIST_TAG = "thread_reading_list"
         const val BOARD_LIST_TAG = "forum_board_list"
     }
 }

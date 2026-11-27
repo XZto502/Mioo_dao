@@ -65,6 +65,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -914,6 +917,11 @@ fun ThreadScreen(
                     flingBehavior = responsiveFling,
                     userScrollEnabled = readingListReady,
                     modifier = Modifier.fillMaxSize().then(initialViewport.modifier)
+                        .semantics {
+                            @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+                            testTagsAsResourceId = true
+                        }
+                        .testTag("thread_reading_list")
                         .layout { measurable, constraints ->
                             // Once off-screen retirement begins (stage >= 1), freeze LazyColumn
                             // layout so emptying existing card slots never triggers new item

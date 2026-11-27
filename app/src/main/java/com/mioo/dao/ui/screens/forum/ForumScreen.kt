@@ -1381,7 +1381,7 @@ private fun ForumThreadRow(
         { onItemLongClick(item) }
     }
     ThreadCard(
-        modifier = Modifier.slowFlingClick(fling, onThreadClick),
+        modifier = Modifier.testTag(if (item.replyCount >= 20) "forum_long_thread_card" else "forum_thread_card").slowFlingClick(fling, onThreadClick),
         postData = item.postData,
         forumName = forumName,
         replyCount = item.replyCount,

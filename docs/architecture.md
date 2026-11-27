@@ -12,7 +12,7 @@
 
 ## 喵岛真机回归
 
-仓库已有 `benchmark/src/main/java/com/mioo/dao/benchmark/StartupAndScrollBenchmark.kt`，涵盖冷启动及首页连续滑动，目标包为 **com.mioo.dao**。请在专用测试设备运行该模块。保有用户正式安装的手机上，日常测试使用独立 beta。
+仓库已有 `benchmark/src/main/java/com/mioo/dao/benchmark/StartupAndScrollBenchmark.kt`，涵盖冷启动、首页连续滑动、慢拖后连续快滑并反向打断、串详情阅读、返回首页立即滑动，目标包为 **com.mioo.dao**。请在专用测试设备运行该模块。保有用户正式安装的手机上，日常测试使用独立 beta。
 
 以改动前的喵岛测试版为基线。在同一设备上，分别用改动前后的构建打开相同版面或同一长串，记录提交号、串号及实际刷新率。测试冷启首滑、连续快滑、慢拖、反向打断、打开详情再返回。
 
