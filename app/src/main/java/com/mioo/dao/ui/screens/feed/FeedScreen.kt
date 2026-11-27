@@ -797,10 +797,6 @@ private fun FeedSearchResultCard(
                     )
                 }
             }
-            if (match.replyCount > 0) {
-                Spacer(Modifier.height(10.dp))
-                com.mioo.dao.ui.components.ReadingPill("${match.replyCount} replies", maxWidth = 160)
-            }
         }
     }
 }
@@ -828,7 +824,8 @@ private fun LocalBookmarkRow(
             onQuoteClick = emptyStringLambda,
             onImageClick = onImageClick,
             onLongClick = { confirmDelete = true },
-            compactPreviewBlankLines = true
+            compactPreviewBlankLines = true,
+            showReplyCount = false
         )
         if (item.newReplyCount > 0) {
             Badge(
@@ -946,24 +943,10 @@ private fun RemoteBookmarkRow(
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Text(
-                        text = if (item.replyCount > 0) "${item.replyCount} replies" else "云端订阅",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFeatureSettings = "tnum"
-                        ),
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
                 val formattedTime = remember(item.postData.createdAt) {
                     com.mioo.dao.ui.components.formatReadingTime(item.postData.createdAt)
                 }
                 if (formattedTime.isNotBlank()) {
-                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = formattedTime,
                         style = MaterialTheme.typography.labelSmall.copy(
