@@ -67,8 +67,10 @@ class StartupAndScrollBenchmark {
         val boardList = device.wait(Until.findObject(By.res(BOARD_LIST_TAG)), 3_000)
         checkNotNull(boardList) { "Board LazyColumn ($BOARD_LIST_TAG) not found" }
         // Keep fling inside the center 60% width so horizontal drawer arbitration never interferes.
-        boardList.setGestureMargin(device.displayWidth / 5)
-        boardList.fling(direction)
+        val horizontalMargin = device.displayWidth / 5
+        boardList.setGestureMargins(horizontalMargin, 120, horizontalMargin, 120)
+        boardList.fling(direction, 4500)
+        Thread.sleep(600)
         device.waitForIdle()
     }
 
@@ -79,7 +81,7 @@ class StartupAndScrollBenchmark {
 
     private fun MacrobenchmarkScope.waitForBoardContentReady() {
         waitForBoardReady()
-        val deadline = System.currentTimeMillis() + 12_000
+        val deadline = System.currentTimeMillis() + 15_000
         while (System.currentTimeMillis() < deadline) {
             dismissFirstLaunchDialogsIfPresent()
             val list = device.findObject(By.res(BOARD_LIST_TAG))
@@ -89,13 +91,15 @@ class StartupAndScrollBenchmark {
             }
             Thread.sleep(250)
         }
+        val finalCount = device.findObject(By.res(BOARD_LIST_TAG))?.childCount ?: -1
+        error("Board list ($BOARD_LIST_TAG) did not load >= 3 cards within 15s (childCount=$finalCount)")
     }
 
     private fun MacrobenchmarkScope.dismissFirstLaunchDialogsIfPresent() {
         // Prefer declining third-party update checks during benchmarks so GitHub popups don't interrupt.
         val dialogButtons = listOf("拒绝第三方服务", "同意并继续", "忽略")
         for (label in dialogButtons) {
-            val button = device.wait(Until.findObject(By.text(label)), 1_500)
+            val button = device.wait(Until.findObject(By.text(label)), 400)
             if (button != null) {
                 button.click()
                 device.waitForIdle()
