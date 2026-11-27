@@ -295,8 +295,14 @@ private fun HistoryCard(
     val scheme = MaterialTheme.colorScheme
     val meta = readingMetaStyle()
     val date = formatReadingTimestamp(item.timestamp, includeSeconds = false)
+    val cardInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Card(
-        modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        modifier = modifier.fillMaxWidth().combinedClickable(
+            interactionSource = cardInteraction,
+            indication = null,
+            onClick = onClick,
+            onLongClick = onLongClick
+        ),
         shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = com.mioo.dao.ui.theme.readingCardBorder()
@@ -330,8 +336,12 @@ private fun HistoryCard(
             }
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
+                val imageInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",
-                    preserveRatio = true, modifier = Modifier.clickable { onImageClick(image) })
+                    preserveRatio = true, modifier = Modifier.clickable(
+                        interactionSource = imageInteraction,
+                        indication = null
+                    ) { onImageClick(image) })
             }
             if (item.type == HistoryType.BROWSE && item.lastReadPage > 1) {
                 Spacer(Modifier.height(10.dp)); HistoryPill("读至第 ${item.lastReadPage} 页", maxWidth = 160)

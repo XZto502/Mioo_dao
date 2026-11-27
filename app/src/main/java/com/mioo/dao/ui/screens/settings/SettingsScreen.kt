@@ -1178,7 +1178,10 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {
                             val enable = !settings.subscriptionNotificationsEnabled
                             if (enable && android.os.Build.VERSION.SDK_INT >= 33) {
                                 notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -1222,7 +1225,10 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
+                            .clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null
+                            ) {
                                 viewModel.updateSubscriptionQuietHours(!subscriptionQuietHours)
                             }
                             .padding(vertical = 4.dp),
