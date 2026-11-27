@@ -56,10 +56,14 @@ import com.mioo.dao.ui.components.LocalDicePreset
 import com.mioo.dao.ui.components.PostData
 import com.mioo.dao.ui.components.ReadingIdentity
 import com.mioo.dao.ui.components.ImageViewer
+import androidx.compose.foundation.border
 import com.mioo.dao.ui.components.ListThumbAsyncImage
+import com.mioo.dao.ui.components.ListThumbImage
+import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.formatReadingTimestamp
 import com.mioo.dao.ui.components.pagerHorizontalSwipeArbitration
 import com.mioo.dao.ui.components.slowFlingClick
+import com.mioo.dao.ui.components.useUnbufferedFlingGrab
 import com.mioo.dao.ui.theme.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -224,7 +228,13 @@ fun HistoryScreen(
                     LaunchedEffect(category, pageState.loaded, pageState.items, quoteColor, dark, dicePreset) {
                         if (category == HistoryType.BROWSE && pageState.loaded && pageState.items.isNotEmpty()) {
                             withContext(Dispatchers.Default) {
-                                HtmlParseCache.prewarm(pageState.items.take(8).map { it.content }, quoteColor, dark, dicePreset)
+                                HtmlParseCache.prewarm(
+                                    htmlList = pageState.items.take(120).map { it.content },
+                                    quoteLinkColor = quoteColor,
+                                    darkTheme = dark,
+                                    dicePreset = dicePreset,
+                                    compactBlankLines = true
+                                )
                             }
                         }
                     }
@@ -244,11 +254,25 @@ fun HistoryScreen(
                     } else if (readyRecords.isNotEmpty()) {
                         val initialViewport = com.mioo.dao.ui.components.rememberInitialListViewport(true)
                         val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
+                        val emptyQuoteClick = remember { { _: String -> } }
+                        val openImage = remember { { url: String -> image = url } }
+                        val prefetchUrls = remember(readyRecords) { readyRecords.map { it.image } }
+                        PrefetchListImages(
+                            imageUrls = prefetchUrls,
+                            listState = list,
+                            sizePx = ListThumbImage.SIZE_PX,
+                            ahead = 2,
+                            initialDelayMs = 450,
+                            enabled = isActiveTab() && page == pager.currentPage
+                        )
                         LazyColumn(
                             state = list,
                             flingBehavior = responsiveFling,
                             userScrollEnabled = initialViewport.ready,
-                            modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(initialViewport.modifier)
+                                .useUnbufferedFlingGrab(responsiveFling),
                             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
                                 bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -257,11 +281,13 @@ fun HistoryScreen(
                                 val onClick = remember(entry, viewModel, onNavigateToThread) {
                                     { viewModel.open(entry, onNavigateToThread) }
                                 }
+                                val onLongClick = remember(entry) { { deleteItem = entry } }
                                 HistoryCard(
                                     entry,
                                     onClick = onClick,
-                                    onLongClick = { deleteItem = entry },
-                                    onImageClick = { image = it },
+                                    onLongClick = onLongClick,
+                                    onImageClick = openImage,
+                                    emptyQuoteClick = emptyQuoteClick,
                                     modifier = Modifier.slowFlingClick(responsiveFling, onClick)
                                 )
                             }
@@ -291,6 +317,7 @@ fun HistoryScreen(
 }
 
 private val collapseBlankLinesRegex = Regex("(\\r?\\n\\s*){2,}")
+private val HistoryCardShape = RoundedCornerShape(16.dp)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -299,35 +326,49 @@ private fun HistoryCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onImageClick: (String) -> Unit,
+    emptyQuoteClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
-    val meta = readingMetaStyle()
-    val date = formatReadingTimestamp(item.timestamp, includeSeconds = false)
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val cardBg = sharedStyles?.cardColor ?: readingCardColor()
+    val border = sharedStyles?.cardBorder ?: com.mioo.dao.ui.theme.readingCardBorder()
+    val meta = sharedStyles?.metaStyle ?: readingMetaStyle()
+    val bodyStyle = sharedStyles?.bodyMediumStyle ?: readingBodyStyle()
+    val date = remember(item.timestamp) { formatReadingTimestamp(item.timestamp, includeSeconds = false) }
+    val identityPost = remember(item.threadId, item.cookieHash) {
+        PostData(
+            id = item.threadId.orEmpty(),
+            userId = item.cookieHash.ifBlank { "未记录饼干" },
+            createdAt = "",
+            content = "",
+            isPo = false,
+            isAdmin = item.cookieHash.equals("Admin", ignoreCase = true)
+        )
+    }
     val cardInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Card(
-        modifier = modifier.fillMaxWidth().combinedClickable(
-            interactionSource = cardInteraction,
-            indication = null,
-            onClick = onClick,
-            onLongClick = onLongClick
-        ),
-        shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = readingCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = com.mioo.dao.ui.theme.readingCardBorder()
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(cardBg, HistoryCardShape)
+            .let { if (border != null) it.border(border, HistoryCardShape) else it }
+            .combinedClickable(
+                interactionSource = cardInteraction,
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                ReadingIdentity(PostData(id = item.threadId.orEmpty(), userId = item.cookieHash.ifBlank { "未记录饼干" },
-                    createdAt = "", content = "", isPo = false,
-                    isAdmin = item.cookieHash.equals("Admin", ignoreCase = true)))
+                ReadingIdentity(identityPost)
                 if (item.type == HistoryType.NEW_THREAD) { Spacer(Modifier.width(4.dp)); HistoryPill("PO") }
                 Spacer(Modifier.width(6.dp))
                 HistoryPill(item.forumName)
-                Text(" · $date", modifier = Modifier.weight(1f), style = meta.copy(fontWeight = FontWeight.Normal),
+                Text(" · $date", modifier = Modifier.weight(1f), style = meta,
                     color = scheme.onSurfaceVariant.copy(alpha = 0.6f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.width(6.dp))
-                Text(item.threadId?.let { "No.$it" } ?: "串号确认中", style = meta.copy(fontWeight = FontWeight.Normal), maxLines = 1, softWrap = false,
+                Text(item.threadId?.let { "No.$it" } ?: "串号确认中", style = meta, maxLines = 1, softWrap = false,
                     color = if (item.threadId == null) scheme.primary else scheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(10.dp))
@@ -336,8 +377,7 @@ private fun HistoryCard(
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(6.dp))
             }
-            val bodyStyle = readingBodyStyle()
-            if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = {}, style = bodyStyle,
+            if (item.type == HistoryType.BROWSE) HtmlContent(item.content, onQuoteClick = emptyQuoteClick, style = bodyStyle,
                 maxLines = 5, overflow = TextOverflow.Ellipsis, enableGestures = false, compactBlankLines = true)
             else {
                 val preview = remember(item.content) { item.content.replace(collapseBlankLinesRegex, "\n") }
@@ -346,11 +386,13 @@ private fun HistoryCard(
             item.image?.let { image ->
                 Spacer(Modifier.height(10.dp))
                 val imageInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                val onThumbClick = remember(image, onImageClick) { { onImageClick(image) } }
                 ListThumbAsyncImage(imageUrl = image, contentDescription = "历史附图",
                     preserveRatio = true, modifier = Modifier.clickable(
                         interactionSource = imageInteraction,
-                        indication = null
-                    ) { onImageClick(image) })
+                        indication = null,
+                        onClick = onThumbClick
+                    ))
             }
             if (item.type == HistoryType.BROWSE && item.lastReadPage > 1) {
                 Spacer(Modifier.height(10.dp)); HistoryPill("读至第 ${item.lastReadPage} 页", maxWidth = 160)

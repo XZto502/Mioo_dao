@@ -299,6 +299,8 @@ fun OfflineThreadsScreen(
 }
 
 private val OFFLINE_BLANK_LINES_REGEX = Regex("(\\r?\\n\\s*){2,}")
+private val OfflineCardShape = RoundedCornerShape(16.dp)
+private val OfflinePillShape = RoundedCornerShape(50)
 
 /** 离线串卡片：管理页与收藏页「已离线」标签共用。 */
 @OptIn(ExperimentalFoundationApi::class)
@@ -313,26 +315,40 @@ fun OfflineThreadCard(
     modifier: Modifier = Modifier,
     forumName: String = summary.forumName
 ) {
-    Card(
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val cardBg = sharedStyles?.cardColor ?: com.mioo.dao.ui.theme.readingCardColor()
+    val metaStyle = sharedStyles?.metaStyle ?: readingMetaStyle()
+    val bodyStyle = sharedStyles?.bodyMediumStyle ?: readingBodyStyle()
+    val baseTitleMedium = MaterialTheme.typography.titleMedium
+    val titleStyle = remember(baseTitleMedium) { baseTitleMedium.copy(fontWeight = FontWeight.Bold) }
+    val baseLabelSmall = MaterialTheme.typography.labelSmall
+    val labelTnumStyle = remember(baseLabelSmall) { baseLabelSmall.copy(fontFeatureSettings = "tnum") }
+    val identityPost = remember(summary.threadId, summary.poUserHash) {
+        PostData(
+            id = summary.threadId,
+            userId = summary.poUserHash.ifBlank { "???" },
+            createdAt = "",
+            content = "",
+            isPo = false,
+            isAdmin = summary.poUserHash.equals("Admin", ignoreCase = true)
+        )
+    }
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            .background(cardBg, OfflineCardShape)
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             // 头行：PO 饼干 + 板块名 …… 串号
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ReadingIdentity(PostData(id = summary.threadId, userId = summary.poUserHash.ifBlank { "???" },
-                    createdAt = "", content = "", isPo = false,
-                    isAdmin = summary.poUserHash.equals("Admin", ignoreCase = true)))
+                ReadingIdentity(identityPost)
                 Spacer(modifier = Modifier.width(8.dp))
                 com.mioo.dao.ui.components.ReadingPill(forumName)
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = "No.${summary.threadId}",
-                    style = readingMetaStyle(), maxLines = 1, softWrap = false,
+                    style = metaStyle, maxLines = 1, softWrap = false,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
                 )
             }
@@ -341,7 +357,7 @@ fun OfflineThreadCard(
 
             // Match the board card: title, body, then its thumbnail below.
             summary.title?.takeIf { it.isNotBlank() && it != "无标题" }?.let { title ->
-                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                Text(title, style = titleStyle,
                     color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(modifier = Modifier.height(6.dp))
             }
@@ -349,7 +365,7 @@ fun OfflineThreadCard(
                 val displaySummary = remember(summary.contentSummary) {
                     summary.contentSummary.replace(OFFLINE_BLANK_LINES_REGEX, "\n")
                 }
-                Text(displaySummary, style = readingBodyStyle(), maxLines = 5, overflow = TextOverflow.Ellipsis)
+                Text(displaySummary, style = bodyStyle, maxLines = 5, overflow = TextOverflow.Ellipsis)
             }
             summary.coverFile?.takeIf { it.isNotBlank() }?.let { cover ->
                 val coverFile = remember(cover, offlineImageDir) { File(offlineImageDir, cover) }
@@ -366,15 +382,12 @@ fun OfflineThreadCard(
 
             // 底行：缓存胶囊 + 下载时间 …… 更新 / 删除
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.secondaryContainer
+                Box(
+                    modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer, OfflinePillShape)
                 ) {
                     Text(
                         text = "已缓存 ${summary.cachedPages} 页 (${summary.replyCount} replies)",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFeatureSettings = "tnum"
-                        ),
+                        style = labelTnumStyle,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
@@ -385,9 +398,7 @@ fun OfflineThreadCard(
                 }
                 Text(
                     text = formattedDownloadedAt,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFeatureSettings = "tnum"
-                    ),
+                    style = labelTnumStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
                 Spacer(modifier = Modifier.weight(1f))

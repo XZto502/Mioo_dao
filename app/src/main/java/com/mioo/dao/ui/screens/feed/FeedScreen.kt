@@ -7,6 +7,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
@@ -101,6 +102,7 @@ import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
 import com.mioo.dao.ui.components.pagerHorizontalSwipeArbitration
 import com.mioo.dao.ui.components.slowFlingClick
+import com.mioo.dao.ui.components.useUnbufferedFlingGrab
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.readingTopBarColor
 import com.mioo.dao.ui.theme.MiooMotion
@@ -140,7 +142,7 @@ fun FeedScreen(
     val cachedFolderPreviews by viewModel.cachedFolderPreviews.collectAsState()
     val folderIds = remember(uiState.feedFolders) { listOf(null) + uiState.feedFolders.map { it.uuid } }
     val pager = rememberPagerState(initialPage = folderIds.indexOf(uiState.selectedFolderId).coerceAtLeast(0)) { folderIds.size }
-    val listStates = remember { mutableStateMapOf<String, LazyListState>() }
+    val listStates = remember { HashMap<String, LazyListState>() }
     val pageSnapshots = remember { mutableStateMapOf<String, FeedUiState>() }
     fun pageKey(id: String?) = id ?: "__offline__"
     SideEffect {
@@ -158,6 +160,7 @@ fun FeedScreen(
     var pageSwitchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val haptics = LocalHapticFeedback.current
     val emptyStringLambda = remember { { _: String -> } }
+    val openImage = remember { { url: String -> activeImageUrl = url } }
     val quoteLinkColor = MaterialTheme.colorScheme.primary
     // 长按/删除按钮弹出的离线串删除确认
     var pendingOfflineDelete by remember {
@@ -192,6 +195,7 @@ fun FeedScreen(
 
     // 订阅操作失败等一次性错误提示
     val context = androidx.compose.ui.platform.LocalContext.current
+    val offlineImageDir = remember(context) { java.io.File(context.filesDir, "offline_images") }
     LaunchedEffect(Unit) {
         viewModel.errorEvents.collect { msg ->
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
@@ -224,12 +228,14 @@ fun FeedScreen(
 
     // Pre-parse HTML for currently visible feed list
     val prewarmDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val dicePreset = com.mioo.dao.ui.components.LocalDicePreset.current
     LaunchedEffect(
         uiState.selectedFolderId,
         uiState.localDisplayItems,
         uiState.remoteDisplayItems,
         quoteLinkColor,
-        prewarmDarkTheme
+        prewarmDarkTheme,
+        dicePreset
     ) {
         val htmls = if (uiState.selectedFolderId == null) {
             uiState.localDisplayItems.map { it.postData.content }
@@ -238,7 +244,13 @@ fun FeedScreen(
         }
         if (htmls.isNotEmpty()) {
             withContext(Dispatchers.Default) {
-                HtmlParseCache.prewarm(htmls, quoteLinkColor, prewarmDarkTheme)
+                HtmlParseCache.prewarm(
+                    htmlList = htmls,
+                    quoteLinkColor = quoteLinkColor,
+                    darkTheme = prewarmDarkTheme,
+                    dicePreset = dicePreset,
+                    compactBlankLines = true
+                )
             }
         }
     }
@@ -380,7 +392,9 @@ fun FeedScreen(
                 val listState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
                 SideEffect { listStates[pageKey(folderId)] = listState }
                 val uiState = pageState
-                val offlineTransfers by viewModel.offlineTransfers.collectAsState()
+                val offlineTransfers by remember(viewModel, folderId) {
+                    if (folderId == null) viewModel.offlineTransfers else flowOf(emptyMap())
+                }.collectAsState(initial = emptyMap())
                 val offlineItems = uiState.offlineSummaries
                 val localItems = uiState.localDisplayItems
                 val remoteItems = uiState.remoteDisplayItems
@@ -462,29 +476,29 @@ fun FeedScreen(
                         imageUrls = feedImageUrls,
                         listState = listState,
                         sizePx = ListThumbImage.SIZE_PX,
-                        ahead = 5,
-                        initialDelayMs = 400,
+                        ahead = 2,
+                        initialDelayMs = 450,
                         enabled = current && isActiveTab()
                     )
 
                     // 触底加载更多（本地收藏为全量数据，loadMoreRemote 在 VM 里对 null 夹直接返回）
-                    val shouldLoadMore = remember(listState, remoteItems.size, cachedRows.size) {
-                        derivedStateOf {
+                    LaunchedEffect(current, listState, remoteItems.size, uiState.loadedRemotePage) {
+                        if (!current || folderId == null || remoteItems.isEmpty()) return@LaunchedEffect
+                        snapshotFlow {
                             val lastLoadedRow = remoteItems.size - 1
                             lastLoadedRow >= 0 && listState.layoutInfo.visibleItemsInfo.any {
                                 it.index in (lastLoadedRow - 2)..lastLoadedRow
                             }
+                        }.distinctUntilChanged().collect { nearEnd ->
+                            if (nearEnd) viewModel.loadMoreRemote()
                         }
-                    }
-                    LaunchedEffect(current, remoteItems.size, uiState.loadedRemotePage, shouldLoadMore.value) {
-                        if (current && shouldLoadMore.value) viewModel.loadMoreRemote()
                     }
 
                     val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
                     LazyColumn(
                         state = listState,
                         flingBehavior = responsiveFling,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().useUnbufferedFlingGrab(responsiveFling),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             start = 12.dp,
@@ -502,9 +516,18 @@ fun FeedScreen(
                                 key = { "o_${it.threadId}" },
                                 contentType = { "offline_thread" }
                             ) { summary ->
+                                val resolvedForumName = remember(summary.forumName, forumNames) {
+                                    if (summary.forumName.startsWith("板块")) {
+                                        FALLBACK_FORUM_NAME_REGEX.matchEntire(summary.forumName)
+                                            ?.groupValues?.get(1)?.let { forumNames[it] } ?: summary.forumName
+                                    } else {
+                                        summary.forumName
+                                    }
+                                }
                                 OfflineFeedRow(
                                     summary = summary,
-                                    forumName = FALLBACK_FORUM_NAME_REGEX.matchEntire(summary.forumName)?.groupValues?.get(1)?.let { forumNames[it] } ?: summary.forumName,
+                                    forumName = resolvedForumName,
+                                    offlineImageDir = offlineImageDir,
                                     isUpdating = offlineTransfers[summary.threadId]?.let { it.error == null } == true,
                                     onNavigateToThread = onNavigateToOfflineThread,
                                     onUpdate = {
@@ -533,7 +556,7 @@ fun FeedScreen(
                                     fling = responsiveFling,
                                     onNavigateToThread = openThread,
                                     onUnsubscribe = { viewModel.unsubscribe(item.id) },
-                                    onImageClick = { activeImageUrl = it },
+                                    onImageClick = openImage,
                                     emptyStringLambda = emptyStringLambda
                                 )
                             }
@@ -559,7 +582,7 @@ fun FeedScreen(
                                     onUnsubscribe = {
                                         viewModel.unsubscribeRemote(folderId, item.idStr)
                                     },
-                                    onImageClick = { activeImageUrl = it },
+                                    onImageClick = openImage,
                                     emptyStringLambda = emptyStringLambda
                                 )
                             }
@@ -581,18 +604,18 @@ fun FeedScreen(
     }
 }
 private val FALLBACK_FORUM_NAME_REGEX = Regex("^板块\\s*(\\d+)$")
+private val FeedCardShape = RoundedCornerShape(16.dp)
 
 @Composable
 private fun OfflineFeedRow(
     summary: com.mioo.dao.data.local.OfflineThreadSummary,
     forumName: String,
+    offlineImageDir: java.io.File,
     isUpdating: Boolean,
     onNavigateToThread: (String) -> Unit,
     onUpdate: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val offlineImageDir = remember { java.io.File(context.filesDir, "offline_images") }
     com.mioo.dao.ui.screens.offline.OfflineThreadCard(
         summary = summary,
         forumName = forumName,
@@ -689,8 +712,11 @@ private fun FeedSearchResultCard(
     onImageClick: (String) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
-    val meta = com.mioo.dao.ui.theme.readingMetaStyle()
-    val bodyStyle = com.mioo.dao.ui.theme.readingBodyStyle()
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val cardBg = sharedStyles?.cardColor ?: com.mioo.dao.ui.theme.readingCardColor()
+    val border = sharedStyles?.cardBorder ?: com.mioo.dao.ui.theme.readingCardBorder()
+    val meta = sharedStyles?.metaStyle ?: com.mioo.dao.ui.theme.readingMetaStyle()
+    val bodyStyle = sharedStyles?.bodyMediumStyle ?: com.mioo.dao.ui.theme.readingBodyStyle()
     val onOpen = remember(match.threadId, onClick) { onClick }
     val sourceLabel = remember(match.sources) { match.sources.joinToString(" · ") }
     val dateLabel = remember(match.createdAt, match.timestamp) {
@@ -700,15 +726,18 @@ private fun FeedSearchResultCard(
             else -> ""
         }
     }
-    Card(
+    val cardInteraction = remember { MutableInteractionSource() }
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .background(cardBg, FeedCardShape)
+            .let { if (border != null) it.border(border, FeedCardShape) else it }
             .slowFlingClick(fling, onOpen)
-            .combinedClickable(onClick = onOpen),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = com.mioo.dao.ui.theme.readingCardBorder()
+            .combinedClickable(
+                interactionSource = cardInteraction,
+                indication = null,
+                onClick = onOpen
+            )
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -875,20 +904,26 @@ private fun RemoteBookmarkRow(
     var confirmDelete by remember { mutableStateOf(false) }
     val onClick = remember(item.idStr) { { onNavigateToThread(item.idStr) } }
     val interactionSource = remember { MutableInteractionSource() }
+    val sharedStyles = com.mioo.dao.ui.theme.LocalReadingCardStyles.current
+    val cardBg = sharedStyles?.cardColor ?: com.mioo.dao.ui.theme.readingCardColor()
+    val metaStyle = sharedStyles?.metaStyle ?: com.mioo.dao.ui.theme.readingMetaStyle()
+    val bodyStyle = sharedStyles?.bodyMediumStyle ?: com.mioo.dao.ui.theme.readingBodyStyle()
+    val baseTitleMedium = MaterialTheme.typography.titleMedium
+    val titleStyle = remember(baseTitleMedium) { baseTitleMedium.copy(fontWeight = FontWeight.Bold) }
+    val baseLabelSmall = MaterialTheme.typography.labelSmall
+    val timeStyle = remember(baseLabelSmall) { baseLabelSmall.copy(fontFeatureSettings = "tnum") }
 
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .background(cardBg, FeedCardShape)
             .slowFlingClick(fling, onClick)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
                 onLongClick = { confirmDelete = true }
-            ),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            )
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -900,7 +935,7 @@ private fun RemoteBookmarkRow(
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = "No.${item.idStr}",
-                    style = com.mioo.dao.ui.theme.readingMetaStyle(),
+                    style = metaStyle,
                     maxLines = 1,
                     softWrap = false,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
@@ -912,7 +947,7 @@ private fun RemoteBookmarkRow(
             item.postData.title?.takeIf { it.isNotBlank() && it != "无标题" }?.let { title ->
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = titleStyle,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -923,7 +958,7 @@ private fun RemoteBookmarkRow(
             com.mioo.dao.ui.components.HtmlContent(
                 html = item.postData.content,
                 onQuoteClick = emptyStringLambda,
-                style = com.mioo.dao.ui.theme.readingBodyStyle(),
+                style = bodyStyle,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 5,
                 overflow = TextOverflow.Ellipsis,
@@ -956,9 +991,7 @@ private fun RemoteBookmarkRow(
                 if (formattedTime.isNotBlank()) {
                     Text(
                         text = formattedTime,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFeatureSettings = "tnum"
-                        ),
+                        style = timeStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         maxLines = 1,
                         softWrap = false,
