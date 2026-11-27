@@ -22,3 +22,15 @@
    - 包名 `com.mioo.dao.beta`，可与正式版并行安装，仅接收同名附件 `app-beta.apk`，不接收正式包或公开测试包更新。
 
 发行版及预发行版字段格式参见 [GitHub Releases API 文档](https://docs.github.com/en/rest/releases/releases#list-releases)。
+
+## 签名恢复演练
+
+分别为正式签名和独立 beta 签名保留加密离线副本，将密码、别名的恢复方式通过独立的安全渠道保管。用已知可覆盖安装的历史发行 APK，通过 Android Build Tools 的 `apksigner verify --print-certs` 取得可信证书 SHA-256 指纹并留档。APK 文件摘要用于检查下载完整性，签名证书指纹用于检查更新身份。
+
+在干净环境恢复副本，使用对应签名配置构建下一版 APK。Windows 可执行以下只读核验，参数中的指纹取自上述可信记录，版本码取自本次发布计划。
+
+```powershell
+.\tools\verify-apk.ps1 -Apk $apk -Channel beta -ExpectedVersionCode $plannedCode -ExpectedSignerSha256 $trustedFingerprint -BuildTools $buildTools
+```
+
+在备用设备安装旧版并创建一条本地收藏，使用 `adb -s <备用设备序列号> install -r <新包>` 覆盖安装。核对版本、收藏和设置仍可读取，记录日期、渠道、旧新版本及核验结果。签名不符或安装失败时保留现场；成功覆盖安装并读回数据后才算恢复演练通过。
