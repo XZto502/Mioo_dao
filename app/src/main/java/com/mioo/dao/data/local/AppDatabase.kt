@@ -14,9 +14,10 @@ import androidx.room.RoomDatabase
         CloudFeedSyncEntity::class,
         DraftEntity::class,
         OfflineThreadEntity::class,
-        PostActionHistoryEntity::class
+        PostActionHistoryEntity::class,
+        SubscriptionWatchEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -27,4 +28,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cloudFeedDao(): CloudFeedDao
     abstract fun draftDao(): DraftDao
     abstract fun offlineThreadDao(): OfflineThreadDao
+    abstract fun subscriptionWatchDao(): SubscriptionWatchDao
 }

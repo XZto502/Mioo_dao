@@ -187,6 +187,32 @@ object DatabaseModule {
         }
     }
 
+    internal val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP TABLE IF EXISTS `subscription_watch`")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `subscription_watch` (
+                    `threadId` TEXT NOT NULL,
+                    `title` TEXT,
+                    `poUserHash` TEXT NOT NULL,
+                    `source` TEXT NOT NULL,
+                    `notifyMode` INTEGER NOT NULL,
+                    `lastReadReplyCount` INTEGER NOT NULL,
+                    `lastNotifiedReplyCount` INTEGER NOT NULL,
+                    `lastKnownReplyCount` INTEGER NOT NULL,
+                    `lastNotifiedReplyId` INTEGER NOT NULL,
+                    `lastActivityAt` INTEGER NOT NULL,
+                    `lastCheckedAt` INTEGER NOT NULL,
+                    `nextCheckAt` INTEGER NOT NULL,
+                    `consecutiveIdleChecks` INTEGER NOT NULL,
+                    PRIMARY KEY(`threadId`)
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun providePostActionHistoryDao(database: AppDatabase): com.mioo.dao.data.local.PostActionHistoryDao = database.postActionHistoryDao()
@@ -205,7 +231,7 @@ object DatabaseModule {
             .fallbackToDestructiveMigrationFrom(1, 2, 3)
             // 侧载分发下用户可能回滚安装旧版：降级重建好过访问 DB 即崩溃循环
             .fallbackToDestructiveMigrationOnDowngrade()
-            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+            .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
             // First open happens on IO during Application warm — keep main free for Compose.
             .setQueryExecutor(java.util.concurrent.Executors.newFixedThreadPool(2))
             .setTransactionExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())
@@ -246,6 +272,12 @@ object DatabaseModule {
     @Singleton
     fun provideOfflineThreadDao(database: AppDatabase): com.mioo.dao.data.local.OfflineThreadDao {
         return database.offlineThreadDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideSubscriptionWatchDao(database: AppDatabase): com.mioo.dao.data.local.SubscriptionWatchDao {
+        return database.subscriptionWatchDao()
     }
 
     @Provides
