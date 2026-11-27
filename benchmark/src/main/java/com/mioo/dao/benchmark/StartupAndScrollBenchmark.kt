@@ -55,31 +55,31 @@ class StartupAndScrollBenchmark {
             waitForBoardReady()
         }
     ) {
-        val boardList = device.findObject(By.res(BOARD_LIST_TAG))
+        repeat(2) {
+            flingBoardList(Direction.DOWN)
+        }
+        repeat(2) {
+            flingBoardList(Direction.UP)
+        }
+    }
+
+    private fun MacrobenchmarkScope.flingBoardList(direction: Direction) {
+        val boardList = device.wait(Until.findObject(By.res(BOARD_LIST_TAG)), 3_000)
         if (boardList != null) {
             // Keep fling inside the center 60% width so horizontal drawer arbitration never interferes.
             boardList.setGestureMargin(device.displayWidth / 5)
-            repeat(2) {
-                boardList.fling(Direction.DOWN)
-                device.waitForIdle()
-            }
-            repeat(2) {
-                boardList.fling(Direction.UP)
-                device.waitForIdle()
-            }
+            boardList.fling(direction)
         } else {
             val centerX = device.displayWidth / 2
             val topY = device.displayHeight / 4
             val bottomY = (device.displayHeight * 3) / 4
-            repeat(2) {
+            if (direction == Direction.DOWN) {
                 device.swipe(centerX, bottomY, centerX, topY, 12)
-                device.waitForIdle()
-            }
-            repeat(2) {
+            } else {
                 device.swipe(centerX, topY, centerX, bottomY, 12)
-                device.waitForIdle()
             }
         }
+        device.waitForIdle()
     }
 
     private fun MacrobenchmarkScope.waitForBoardReady() {

@@ -33,12 +33,14 @@ class BaselineProfileGenerator {
             device.wait(Until.hasObject(By.res("forum_board_list")), 8_000)
             device.waitForIdle()
 
-            val boardList = device.findObject(By.res("forum_board_list"))
-            if (boardList != null) {
-                boardList.setGestureMargin(device.displayWidth / 5)
-                boardList.fling(Direction.DOWN)
+            device.wait(Until.findObject(By.res("forum_board_list")), 8_000)?.let { list ->
+                list.setGestureMargin(device.displayWidth / 5)
+                list.fling(Direction.DOWN)
                 device.waitForIdle()
-                boardList.fling(Direction.UP)
+            }
+            device.wait(Until.findObject(By.res("forum_board_list")), 3_000)?.let { list ->
+                list.setGestureMargin(device.displayWidth / 5)
+                list.fling(Direction.UP)
                 device.waitForIdle()
             }
         }
