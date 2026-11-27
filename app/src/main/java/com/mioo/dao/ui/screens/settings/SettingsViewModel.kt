@@ -408,8 +408,13 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.updateSubscriptionQuietHours(enabled)
     }
 
-    fun updateSubscriptionQuietHoursRange(startHour: Int, endHour: Int) {
-        settingsRepository.updateSubscriptionQuietHoursRange(startHour, endHour)
+    fun updateSubscriptionQuietHoursRange(
+        startHour: Int,
+        endHour: Int,
+        startMinute: Int = 0,
+        endMinute: Int = 0
+    ) {
+        settingsRepository.updateSubscriptionQuietHoursRange(startHour, endHour, startMinute, endMinute)
     }
 
     private var lastManualCheckAtMs = 0L

@@ -217,9 +217,14 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    fun updateSubscriptionQuietHoursRange(startHour: Int, endHour: Int) {
+    fun updateSubscriptionQuietHoursRange(
+        startHour: Int,
+        endHour: Int,
+        startMinute: Int = 0,
+        endMinute: Int = 0
+    ) {
         repositoryScope.launch {
-            settingsDataStore.saveSubscriptionQuietHoursRange(startHour, endHour)
+            settingsDataStore.saveSubscriptionQuietHoursRange(startHour, endHour, startMinute, endMinute)
         }
     }
 

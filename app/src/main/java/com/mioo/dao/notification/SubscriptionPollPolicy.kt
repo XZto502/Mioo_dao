@@ -10,6 +10,28 @@ enum class WatchTier {
     DORMANT
 }
 
+data class IntervalValidationResult(
+    val minutes: Int?,
+    val error: String?
+)
+
+enum class QuietTimeField {
+    START_HOUR,
+    START_MINUTE,
+    END_HOUR,
+    END_MINUTE,
+    RANGE
+}
+
+data class QuietHoursValidationResult(
+    val startHour: Int?,
+    val startMinute: Int?,
+    val endHour: Int?,
+    val endMinute: Int?,
+    val error: String?,
+    val invalidFields: Set<QuietTimeField> = emptySet()
+)
+
 object SubscriptionPollPolicy {
     const val DEFAULT_BASE_INTERVAL_MINUTES = 60
     const val MIN_INTERVAL_MINUTES = 15
@@ -86,22 +108,108 @@ object SubscriptionPollPolicy {
         return result
     }
 
+    fun validateIntervalMinutes(raw: String): IntervalValidationResult {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) {
+            return IntervalValidationResult(null, "请输入检查间隔（15–180 分钟）")
+        }
+        if (trimmed.any { it !in '0'..'9' }) {
+            return IntervalValidationResult(null, "请输入有效整数")
+        }
+        val parsed = trimmed.toIntOrNull()
+            ?: return IntervalValidationResult(null, "请输入有效整数")
+        if (parsed < MIN_INTERVAL_MINUTES) {
+            return IntervalValidationResult(null, "最低不能小于 $MIN_INTERVAL_MINUTES 分钟")
+        }
+        if (parsed > MAX_INTERVAL_MINUTES) {
+            return IntervalValidationResult(null, "最高不能超过 $MAX_INTERVAL_MINUTES 分钟")
+        }
+        return IntervalValidationResult(parsed, null)
+    }
+
+    fun validateQuietHoursInput(
+        startHourRaw: String,
+        startMinuteRaw: String,
+        endHourRaw: String,
+        endMinuteRaw: String
+    ): QuietHoursValidationResult {
+        val fields = listOf(
+            QuietTimeField.START_HOUR to startHourRaw.trim(),
+            QuietTimeField.START_MINUTE to startMinuteRaw.trim(),
+            QuietTimeField.END_HOUR to endHourRaw.trim(),
+            QuietTimeField.END_MINUTE to endMinuteRaw.trim()
+        )
+        val emptyFields = fields.filter { it.second.isEmpty() }.mapTo(mutableSetOf()) { it.first }
+        if (emptyFields.isNotEmpty()) {
+            return QuietHoursValidationResult(null, null, null, null, "请输入完整时间", emptyFields)
+        }
+        val nonDigitFields = fields.filter { (_, v) -> v.any { it !in '0'..'9' } }.mapTo(mutableSetOf()) { it.first }
+        if (nonDigitFields.isNotEmpty()) {
+            return QuietHoursValidationResult(null, null, null, null, "仅支持数字", nonDigitFields)
+        }
+        val sh = fields[0].second.toIntOrNull()
+        val sm = fields[1].second.toIntOrNull()
+        val eh = fields[2].second.toIntOrNull()
+        val em = fields[3].second.toIntOrNull()
+        if (sh == null || sm == null || eh == null || em == null) {
+            return QuietHoursValidationResult(null, null, null, null, "仅支持数字", fields.mapTo(mutableSetOf()) { it.first })
+        }
+        val badHours = mutableSetOf<QuietTimeField>()
+        if (sh !in 0..23) badHours.add(QuietTimeField.START_HOUR)
+        if (eh !in 0..23) badHours.add(QuietTimeField.END_HOUR)
+        if (badHours.isNotEmpty()) {
+            return QuietHoursValidationResult(null, null, null, null, "小时需在 00–23 之间", badHours)
+        }
+        val badMinutes = mutableSetOf<QuietTimeField>()
+        if (sm !in 0..59) badMinutes.add(QuietTimeField.START_MINUTE)
+        if (em !in 0..59) badMinutes.add(QuietTimeField.END_MINUTE)
+        if (badMinutes.isNotEmpty()) {
+            return QuietHoursValidationResult(null, null, null, null, "分钟需在 00–59 之间", badMinutes)
+        }
+        if (sh == eh && sm == em) {
+            return QuietHoursValidationResult(
+                null, null, null, null,
+                "开始与结束时间不能相同",
+                setOf(QuietTimeField.RANGE)
+            )
+        }
+        return QuietHoursValidationResult(sh, sm, eh, em, null)
+    }
+
     fun isInQuietHours(
         hourOfDay: Int,
         enabled: Boolean,
         startHour: Int = QUIET_HOURS_START,
         endHour: Int = QUIET_HOURS_END
+    ): Boolean = isInQuietHours(
+        hourOfDay = hourOfDay,
+        minuteOfHour = 0,
+        enabled = enabled,
+        startHour = startHour,
+        startMinute = 0,
+        endHour = endHour,
+        endMinute = 0
+    )
+
+    fun isInQuietHours(
+        hourOfDay: Int,
+        minuteOfHour: Int,
+        enabled: Boolean,
+        startHour: Int = QUIET_HOURS_START,
+        startMinute: Int = 0,
+        endHour: Int = QUIET_HOURS_END,
+        endMinute: Int = 0
     ): Boolean {
         if (!enabled) return false
-        val hour = hourOfDay.coerceIn(0, 23)
-        val start = startHour.coerceIn(0, 23)
-        val end = endHour.coerceIn(0, 23)
-        return if (start == end) {
+        val nowMin = hourOfDay.coerceIn(0, 23) * 60 + minuteOfHour.coerceIn(0, 59)
+        val startMin = startHour.coerceIn(0, 23) * 60 + startMinute.coerceIn(0, 59)
+        val endMin = endHour.coerceIn(0, 23) * 60 + endMinute.coerceIn(0, 59)
+        return if (startMin == endMin) {
             false
-        } else if (start < end) {
-            hour in start until end
+        } else if (startMin < endMin) {
+            nowMin in startMin until endMin
         } else {
-            hour >= start || hour < end
+            nowMin >= startMin || nowMin < endMin
         }
     }
 

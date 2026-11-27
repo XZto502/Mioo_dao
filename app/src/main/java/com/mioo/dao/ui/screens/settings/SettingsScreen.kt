@@ -30,11 +30,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.outlined.Refresh
@@ -83,6 +92,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -1212,61 +1222,93 @@ fun SettingsScreen(
                     var intervalInput by remember(settings.notificationIntervalMinutes) {
                         mutableStateOf(settings.notificationIntervalMinutes.toString())
                     }
-                    var pickingQuietStart by remember { mutableStateOf<Boolean?>(null) }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "基准检查间隔（15–180 分钟，冷门串自动降频）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = intervalInput,
-                            onValueChange = { raw ->
-                                intervalInput = raw.filter { it.isDigit() }.take(3)
-                            },
-                            singleLine = true,
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
-                            ),
-                            modifier = Modifier.width(88.dp)
-                        )
-                        Text(
-                            text = "分钟",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(
-                            onClick = {
-                                val parsed = intervalInput.toIntOrNull()
-                                if (parsed == null || parsed !in 15..180) {
-                                    Toast.makeText(context, "请输入 15–180 之间的整数", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    viewModel.updateNotificationIntervalMinutes(parsed)
-                                    focusManager.clearFocus()
-                                    Toast.makeText(context, "已设为每 $parsed 分钟检查", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        ) {
-                            Text("应用")
+                    val intervalValidation = remember(intervalInput) {
+                        com.mioo.dao.notification.SubscriptionPollPolicy.validateIntervalMinutes(intervalInput)
+                    }
+                    val applyInterval = {
+                        val parsed = intervalValidation.minutes
+                        if (parsed == null) {
+                            Toast.makeText(
+                                context,
+                                intervalValidation.error ?: "请输入 15–180 之间的整数",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            viewModel.updateNotificationIntervalMinutes(parsed)
+                            intervalInput = parsed.toString()
+                            focusManager.clearFocus()
+                            Toast.makeText(context, "已设为每 $parsed 分钟检查", Toast.LENGTH_SHORT).show()
                         }
                     }
-                    Slider(
-                        value = settings.notificationIntervalMinutes.coerceIn(15, 180).toFloat(),
-                        onValueChange = {
-                            val rounded = it.toInt().coerceIn(15, 180)
-                            intervalInput = rounded.toString()
-                            viewModel.updateNotificationIntervalMinutes(rounded)
-                        },
-                        valueRange = 15f..180f,
-                        steps = 10
-                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = secondaryPageBackground()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "基准检查间隔",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "冷门串自动降频 · 15–180 分钟",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                                    )
+                                }
+                                MiooCompactNumberField(
+                                    value = intervalInput,
+                                    onValueChange = { raw ->
+                                        intervalInput = raw.filter { it in '0'..'9' }.take(3)
+                                    },
+                                    isError = intervalValidation.error != null,
+                                    suffix = "分钟",
+                                    imeAction = ImeAction.Done,
+                                    onImeAction = applyInterval,
+                                    modifier = Modifier.width(92.dp)
+                                )
+                                MiooTonalApplyChip(
+                                    text = "应用",
+                                    enabled = intervalValidation.minutes != null &&
+                                        intervalValidation.minutes != settings.notificationIntervalMinutes,
+                                    onClick = applyInterval
+                                )
+                            }
+                            if (intervalValidation.error != null) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = intervalValidation.error,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Slider(
+                                value = settings.notificationIntervalMinutes.coerceIn(15, 180).toFloat(),
+                                onValueChange = {
+                                    val rounded = it.toInt().coerceIn(15, 180)
+                                    intervalInput = rounded.toString()
+                                    viewModel.updateNotificationIntervalMinutes(rounded)
+                                },
+                                valueRange = 15f..180f,
+                                steps = 10
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1297,69 +1339,151 @@ fun SettingsScreen(
                         )
                     }
                     if (subscriptionQuietHoursConfig.enabled) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        var startHourInput by remember(subscriptionQuietHoursConfig) {
+                            mutableStateOf("%02d".format(subscriptionQuietHoursConfig.startHour))
+                        }
+                        var startMinuteInput by remember(subscriptionQuietHoursConfig) {
+                            mutableStateOf("%02d".format(subscriptionQuietHoursConfig.startMinute))
+                        }
+                        var endHourInput by remember(subscriptionQuietHoursConfig) {
+                            mutableStateOf("%02d".format(subscriptionQuietHoursConfig.endHour))
+                        }
+                        var endMinuteInput by remember(subscriptionQuietHoursConfig) {
+                            mutableStateOf("%02d".format(subscriptionQuietHoursConfig.endMinute))
+                        }
+                        val quietValidation = remember(
+                            startHourInput,
+                            startMinuteInput,
+                            endHourInput,
+                            endMinuteInput
                         ) {
-                            OutlinedButton(onClick = { pickingQuietStart = true }) {
-                                Text("开始 ${"%02d:00".format(subscriptionQuietHoursConfig.startHour)}")
-                            }
-                            Text("至", style = MaterialTheme.typography.bodySmall)
-                            OutlinedButton(onClick = { pickingQuietStart = false }) {
-                                Text("结束 ${"%02d:00".format(subscriptionQuietHoursConfig.endHour)}")
+                            com.mioo.dao.notification.SubscriptionPollPolicy.validateQuietHoursInput(
+                                startHourRaw = startHourInput,
+                                startMinuteRaw = startMinuteInput,
+                                endHourRaw = endHourInput,
+                                endMinuteRaw = endMinuteInput
+                            )
+                        }
+                        val isQuietDirty = quietValidation.error == null && (
+                            quietValidation.startHour != subscriptionQuietHoursConfig.startHour ||
+                                quietValidation.startMinute != subscriptionQuietHoursConfig.startMinute ||
+                                quietValidation.endHour != subscriptionQuietHoursConfig.endHour ||
+                                quietValidation.endMinute != subscriptionQuietHoursConfig.endMinute
+                            )
+                        val saveQuietHours = {
+                            val sh = quietValidation.startHour
+                            val sm = quietValidation.startMinute
+                            val eh = quietValidation.endHour
+                            val em = quietValidation.endMinute
+                            if (sh == null || sm == null || eh == null || em == null) {
+                                Toast.makeText(
+                                    context,
+                                    quietValidation.error ?: "请输入有效的 24 小时制时间",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                viewModel.updateSubscriptionQuietHoursRange(sh, eh, sm, em)
+                                startHourInput = "%02d".format(sh)
+                                startMinuteInput = "%02d".format(sm)
+                                endHourInput = "%02d".format(eh)
+                                endMinuteInput = "%02d".format(em)
+                                focusManager.clearFocus()
+                                Toast.makeText(
+                                    context,
+                                    "免打扰时段已设为 ${"%02d:%02d".format(sh, sm)}–${"%02d:%02d".format(eh, em)}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
-                    }
-                    pickingQuietStart?.let { isStart ->
-                        AlertDialog(
-                            onDismissRequest = { pickingQuietStart = null },
-                            title = { Text(if (isStart) "选择免打扰开始时间" else "选择免打扰结束时间") },
-                            text = {
-                                androidx.compose.foundation.lazy.LazyColumn(
-                                    modifier = Modifier.height(280.dp)
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = secondaryPageBackground()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    items(24) { hour ->
-                                        val selected = if (isStart) {
-                                            subscriptionQuietHoursConfig.startHour == hour
+                                    MiooTimeInputGroup(
+                                        label = "开始时间",
+                                        hourValue = startHourInput,
+                                        minuteValue = startMinuteInput,
+                                        onHourChange = { startHourInput = it.filter { ch -> ch in '0'..'9' }.take(2) },
+                                        onMinuteChange = { startMinuteInput = it.filter { ch -> ch in '0'..'9' }.take(2) },
+                                        isHourError = com.mioo.dao.notification.QuietTimeField.START_HOUR in quietValidation.invalidFields ||
+                                            com.mioo.dao.notification.QuietTimeField.RANGE in quietValidation.invalidFields,
+                                        isMinuteError = com.mioo.dao.notification.QuietTimeField.START_MINUTE in quietValidation.invalidFields ||
+                                            com.mioo.dao.notification.QuietTimeField.RANGE in quietValidation.invalidFields,
+                                        onDone = saveQuietHours,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "至",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 16.dp)
+                                    )
+                                    MiooTimeInputGroup(
+                                        label = "结束时间",
+                                        hourValue = endHourInput,
+                                        minuteValue = endMinuteInput,
+                                        onHourChange = { endHourInput = it.filter { ch -> ch in '0'..'9' }.take(2) },
+                                        onMinuteChange = { endMinuteInput = it.filter { ch -> ch in '0'..'9' }.take(2) },
+                                        isHourError = com.mioo.dao.notification.QuietTimeField.END_HOUR in quietValidation.invalidFields ||
+                                            com.mioo.dao.notification.QuietTimeField.RANGE in quietValidation.invalidFields,
+                                        isMinuteError = com.mioo.dao.notification.QuietTimeField.END_MINUTE in quietValidation.invalidFields ||
+                                            com.mioo.dao.notification.QuietTimeField.RANGE in quietValidation.invalidFields,
+                                        onDone = saveQuietHours,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val summaryText = if (quietValidation.error != null) {
+                                        quietValidation.error
+                                    } else {
+                                        val sh = quietValidation.startHour!!
+                                        val sm = quietValidation.startMinute!!
+                                        val eh = quietValidation.endHour!!
+                                        val em = quietValidation.endMinute!!
+                                        val startTotal = sh * 60 + sm
+                                        val endTotal = eh * 60 + em
+                                        if (startTotal > endTotal) {
+                                            "跨夜时段 · ${"%02d:%02d".format(sh, sm)} 至次日 ${"%02d:%02d".format(eh, em)}"
                                         } else {
-                                            subscriptionQuietHoursConfig.endHour == hour
-                                        }
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    val newStart = if (isStart) hour else subscriptionQuietHoursConfig.startHour
-                                                    val newEnd = if (isStart) subscriptionQuietHoursConfig.endHour else hour
-                                                    viewModel.updateSubscriptionQuietHoursRange(newStart, newEnd)
-                                                    pickingQuietStart = null
-                                                }
-                                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            androidx.compose.material3.RadioButton(
-                                                selected = selected,
-                                                onClick = {
-                                                    val newStart = if (isStart) hour else subscriptionQuietHoursConfig.startHour
-                                                    val newEnd = if (isStart) subscriptionQuietHoursConfig.endHour else hour
-                                                    viewModel.updateSubscriptionQuietHoursRange(newStart, newEnd)
-                                                    pickingQuietStart = null
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("${"%02d:00".format(hour)}")
+                                            "当日时段 · ${"%02d:%02d".format(sh, sm)} 至 ${"%02d:%02d".format(eh, em)}"
                                         }
                                     }
-                                }
-                            },
-                            confirmButton = {
-                                TextButton(onClick = { pickingQuietStart = null }) {
-                                    Text("关闭")
+                                    Text(
+                                        text = summaryText,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (quietValidation.error != null) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    MiooTonalApplyChip(
+                                        text = "保存",
+                                        enabled = isQuietDirty,
+                                        onClick = saveQuietHours
+                                    )
                                 }
                             }
-                        )
+                        }
                     }
                     if (subscriptionCheckStatus.lastCheckAt > 0L) {
                         val timeText = remember(subscriptionCheckStatus.lastCheckAt) {
@@ -1855,5 +1979,154 @@ internal fun FolderActionButton(onClick: () -> Unit, tonal: Boolean = false, con
         contentAlignment = Alignment.Center
     ) {
         androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(color = if (tonal) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant), content = content)
+    }
+}
+
+@Composable
+private fun MiooCompactNumberField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    isError: Boolean,
+    modifier: Modifier = Modifier,
+    suffix: String? = null,
+    imeAction: ImeAction = ImeAction.Next,
+    onImeAction: (() -> Unit)? = null,
+    containerColor: Color = secondaryCardBackground()
+) {
+    var focused by remember { mutableStateOf(false) }
+    val borderColor = when {
+        isError -> MaterialTheme.colorScheme.error
+        focused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)
+        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
+    }
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = modifier
+            .height(36.dp)
+            .clip(shape)
+            .background(containerColor, shape)
+            .border(1.dp, borderColor, shape)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontFeatureSettings = "tnum",
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = imeAction
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = { onImeAction?.invoke() },
+                onNext = { onImeAction?.invoke() }
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .onFocusChanged { focused = it.isFocused }
+        )
+        if (!suffix.isNullOrEmpty()) {
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = suffix,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiooTimeInputGroup(
+    label: String,
+    hourValue: String,
+    minuteValue: String,
+    onHourChange: (String) -> Unit,
+    onMinuteChange: (String) -> Unit,
+    isHourError: Boolean,
+    isMinuteError: Boolean,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            MiooCompactNumberField(
+                value = hourValue,
+                onValueChange = onHourChange,
+                isError = isHourError,
+                imeAction = ImeAction.Next,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = ":",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            MiooCompactNumberField(
+                value = minuteValue,
+                onValueChange = onMinuteChange,
+                isError = isMinuteError,
+                imeAction = ImeAction.Done,
+                onImeAction = onDone,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiooTonalApplyChip(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(10.dp)
+    val bgColor = if (enabled) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
+    val textColor = if (enabled) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    }
+    Box(
+        modifier = Modifier
+            .height(36.dp)
+            .clip(shape)
+            .background(bgColor, shape)
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            )
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            color = textColor
+        )
     }
 }

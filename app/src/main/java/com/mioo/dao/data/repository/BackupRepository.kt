@@ -189,7 +189,9 @@ class BackupRepository @Inject constructor(
             o.put("subscriptionQuietHoursEnabled", settingsDataStore.subscriptionQuietHoursFlow.first())
             val quietConfig = settingsDataStore.subscriptionQuietHoursConfigFlow.first()
             o.put("subscriptionQuietStartHour", quietConfig.startHour)
+            o.put("subscriptionQuietStartMinute", quietConfig.startMinute)
             o.put("subscriptionQuietEndHour", quietConfig.endHour)
+            o.put("subscriptionQuietEndMinute", quietConfig.endMinute)
             o.put("enableCreatorMode", settingsDataStore.creatorModeFlow.first())
             o.put("confirmCookieBeforeSend", settingsDataStore.confirmCookieBeforeSendFlow.first())
             o.put("smartPreloadMode", settingsDataStore.smartPreloadModeFlow.first())
@@ -418,11 +420,17 @@ class BackupRepository @Inject constructor(
             if (o.has("preloadCount")) settingsDataStore.savePreloadCount(o.optInt("preloadCount"))
             if (o.has("subscriptionNotificationsEnabled")) settingsDataStore.saveSubscriptionNotifications(o.optBoolean("subscriptionNotificationsEnabled"))
             if (o.has("subscriptionQuietHoursEnabled")) settingsDataStore.saveSubscriptionQuietHours(o.optBoolean("subscriptionQuietHoursEnabled", false))
-            if (o.has("subscriptionQuietStartHour") || o.has("subscriptionQuietEndHour")) {
+            if (o.has("subscriptionQuietStartHour") ||
+                o.has("subscriptionQuietEndHour") ||
+                o.has("subscriptionQuietStartMinute") ||
+                o.has("subscriptionQuietEndMinute")
+            ) {
                 val current = settingsDataStore.subscriptionQuietHoursConfigFlow.first()
                 settingsDataStore.saveSubscriptionQuietHoursRange(
                     startHour = o.optInt("subscriptionQuietStartHour", current.startHour),
-                    endHour = o.optInt("subscriptionQuietEndHour", current.endHour)
+                    endHour = o.optInt("subscriptionQuietEndHour", current.endHour),
+                    startMinute = o.optInt("subscriptionQuietStartMinute", current.startMinute),
+                    endMinute = o.optInt("subscriptionQuietEndMinute", current.endMinute)
                 )
             }
             if (o.has("notificationIntervalMinutes")) settingsDataStore.saveNotificationIntervalMinutes(o.optInt("notificationIntervalMinutes"))

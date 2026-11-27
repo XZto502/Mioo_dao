@@ -1013,12 +1013,15 @@ class ThreadRepositoryImpl @Inject constructor(
         val baseInterval = settingsDataStore.notificationIntervalMinutesFlow.first()
         if (!force) {
             val quietConfig = settingsDataStore.subscriptionQuietHoursConfigFlow.first()
-            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            val cal = java.util.Calendar.getInstance()
             if (com.mioo.dao.notification.SubscriptionPollPolicy.isInQuietHours(
-                    hourOfDay = hour,
+                    hourOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY),
+                    minuteOfHour = cal.get(java.util.Calendar.MINUTE),
                     enabled = quietConfig.enabled,
                     startHour = quietConfig.startHour,
-                    endHour = quietConfig.endHour
+                    startMinute = quietConfig.startMinute,
+                    endHour = quietConfig.endHour,
+                    endMinute = quietConfig.endMinute
                 )
             ) {
                 settingsDataStore.saveSubscriptionCheckStatus(nowMs, "免打扰时段，已跳过本次检查")

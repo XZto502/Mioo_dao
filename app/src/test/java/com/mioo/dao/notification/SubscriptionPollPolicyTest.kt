@@ -91,6 +91,100 @@ class SubscriptionPollPolicyTest {
         assertFalse(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 12, enabled = true, startHour = 23, endHour = 7))
         assertTrue(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 10, enabled = true, startHour = 9, endHour = 12))
         assertFalse(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 12, enabled = true, startHour = 9, endHour = 12))
+
+        // Minute-precision checks (same-day and overnight)
+        assertFalse(
+            SubscriptionPollPolicy.isInQuietHours(
+                hourOfDay = 9, minuteOfHour = 29, enabled = true,
+                startHour = 9, startMinute = 30, endHour = 12, endMinute = 15
+            )
+        )
+        assertTrue(
+            SubscriptionPollPolicy.isInQuietHours(
+                hourOfDay = 9, minuteOfHour = 30, enabled = true,
+                startHour = 9, startMinute = 30, endHour = 12, endMinute = 15
+            )
+        )
+        assertFalse(
+            SubscriptionPollPolicy.isInQuietHours(
+                hourOfDay = 12, minuteOfHour = 15, enabled = true,
+                startHour = 9, startMinute = 30, endHour = 12, endMinute = 15
+            )
+        )
+        assertTrue(
+            SubscriptionPollPolicy.isInQuietHours(
+                hourOfDay = 23, minuteOfHour = 45, enabled = true,
+                startHour = 23, startMinute = 30, endHour = 7, endMinute = 45
+            )
+        )
+        assertTrue(
+            SubscriptionPollPolicy.isInQuietHours(
+                hourOfDay = 7, minuteOfHour = 44, enabled = true,
+                startHour = 23, startMinute = 30, endHour = 7, endMinute = 45
+            )
+        )
+        assertFalse(
+            SubscriptionPollPolicy.isInQuietHours(
+                hourOfDay = 7, minuteOfHour = 45, enabled = true,
+                startHour = 23, startMinute = 30, endHour = 7, endMinute = 45
+            )
+        )
+        assertFalse(
+            SubscriptionPollPolicy.isInQuietHours(
+                hourOfDay = 8, minuteOfHour = 0, enabled = true,
+                startHour = 8, startMinute = 0, endHour = 8, endMinute = 0
+            )
+        )
+    }
+
+    @Test
+    fun validatesCheckIntervalAndRejectsOutOfRangeInputs() {
+        assertEquals(15, SubscriptionPollPolicy.validateIntervalMinutes("15").minutes)
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("15").error)
+        assertEquals(60, SubscriptionPollPolicy.validateIntervalMinutes(" 60 ").minutes)
+        assertEquals(180, SubscriptionPollPolicy.validateIntervalMinutes("180").minutes)
+
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("").minutes)
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("0").minutes)
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("14").minutes)
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("181").minutes)
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("999").minutes)
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("-5").minutes)
+        assertNull(SubscriptionPollPolicy.validateIntervalMinutes("abc").minutes)
+    }
+
+    @Test
+    fun validatesManualQuietHoursAndRejectsNonsenseValues() {
+        val overnight = SubscriptionPollPolicy.validateQuietHoursInput("23", "30", "07", "45")
+        assertNull(overnight.error)
+        assertEquals(23, overnight.startHour)
+        assertEquals(30, overnight.startMinute)
+        assertEquals(7, overnight.endHour)
+        assertEquals(45, overnight.endMinute)
+
+        val singleDigits = SubscriptionPollPolicy.validateQuietHoursInput("7", "5", "22", "0")
+        assertNull(singleDigits.error)
+        assertEquals(7, singleDigits.startHour)
+        assertEquals(5, singleDigits.startMinute)
+
+        val empty = SubscriptionPollPolicy.validateQuietHoursInput("", "00", "08", "00")
+        assertTrue(QuietTimeField.START_HOUR in empty.invalidFields)
+
+        val badHour = SubscriptionPollPolicy.validateQuietHoursInput("24", "00", "08", "00")
+        assertTrue(QuietTimeField.START_HOUR in badHour.invalidFields)
+
+        val badEndHour = SubscriptionPollPolicy.validateQuietHoursInput("00", "00", "99", "00")
+        assertTrue(QuietTimeField.END_HOUR in badEndHour.invalidFields)
+
+        val badMinute = SubscriptionPollPolicy.validateQuietHoursInput("00", "60", "08", "99")
+        assertTrue(QuietTimeField.START_MINUTE in badMinute.invalidFields)
+        assertTrue(QuietTimeField.END_MINUTE in badMinute.invalidFields)
+
+        val nonDigit = SubscriptionPollPolicy.validateQuietHoursInput("ab", "00", "08", "00")
+        assertTrue(QuietTimeField.START_HOUR in nonDigit.invalidFields)
+
+        val equal = SubscriptionPollPolicy.validateQuietHoursInput("08", "00", "08", "00")
+        assertTrue(QuietTimeField.RANGE in equal.invalidFields)
     }
 
     @Test

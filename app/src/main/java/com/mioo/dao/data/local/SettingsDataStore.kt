@@ -49,7 +49,9 @@ data class SubscriptionCheckStatus(
 data class SubscriptionQuietHoursConfig(
     val enabled: Boolean = false,
     val startHour: Int = 0,
-    val endHour: Int = 8
+    val startMinute: Int = 0,
+    val endHour: Int = 8,
+    val endMinute: Int = 0
 )
 
 class SettingsDataStore(private val context: Context) {
@@ -185,7 +187,9 @@ class SettingsDataStore(private val context: Context) {
         val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
         val KEY_SUBSCRIPTION_QUIET_HOURS = booleanPreferencesKey("subscription_quiet_hours")
         val KEY_SUBSCRIPTION_QUIET_START_HOUR = intPreferencesKey("subscription_quiet_start_hour")
+        val KEY_SUBSCRIPTION_QUIET_START_MINUTE = intPreferencesKey("subscription_quiet_start_minute")
         val KEY_SUBSCRIPTION_QUIET_END_HOUR = intPreferencesKey("subscription_quiet_end_hour")
+        val KEY_SUBSCRIPTION_QUIET_END_MINUTE = intPreferencesKey("subscription_quiet_end_minute")
         val KEY_SUBSCRIPTION_COOLDOWN_UNTIL = longPreferencesKey("subscription_cooldown_until")
         val KEY_SUBSCRIPTION_CONSECUTIVE_ERRORS = intPreferencesKey("subscription_consecutive_errors")
         val KEY_SUBSCRIPTION_LAST_FEED_SYNC = longPreferencesKey("subscription_last_feed_sync")
@@ -685,7 +689,9 @@ class SettingsDataStore(private val context: Context) {
             SubscriptionQuietHoursConfig(
                 enabled = preferences[KEY_SUBSCRIPTION_QUIET_HOURS] ?: false,
                 startHour = (preferences[KEY_SUBSCRIPTION_QUIET_START_HOUR] ?: 0).coerceIn(0, 23),
-                endHour = (preferences[KEY_SUBSCRIPTION_QUIET_END_HOUR] ?: 8).coerceIn(0, 23)
+                startMinute = (preferences[KEY_SUBSCRIPTION_QUIET_START_MINUTE] ?: 0).coerceIn(0, 59),
+                endHour = (preferences[KEY_SUBSCRIPTION_QUIET_END_HOUR] ?: 8).coerceIn(0, 23),
+                endMinute = (preferences[KEY_SUBSCRIPTION_QUIET_END_MINUTE] ?: 0).coerceIn(0, 59)
             )
         }
 
@@ -825,10 +831,22 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
-    suspend fun saveSubscriptionQuietHoursRange(startHour: Int, endHour: Int) {
+    suspend fun saveSubscriptionQuietHoursRange(
+        startHour: Int,
+        endHour: Int,
+        startMinute: Int = 0,
+        endMinute: Int = 0
+    ) {
+        val clampedStartH = startHour.coerceIn(0, 23)
+        val clampedStartM = startMinute.coerceIn(0, 59)
+        val clampedEndH = endHour.coerceIn(0, 23)
+        val clampedEndM = endMinute.coerceIn(0, 59)
+        if (clampedStartH == clampedEndH && clampedStartM == clampedEndM) return
         context.dataStore.edit { preferences ->
-            preferences[KEY_SUBSCRIPTION_QUIET_START_HOUR] = startHour.coerceIn(0, 23)
-            preferences[KEY_SUBSCRIPTION_QUIET_END_HOUR] = endHour.coerceIn(0, 23)
+            preferences[KEY_SUBSCRIPTION_QUIET_START_HOUR] = clampedStartH
+            preferences[KEY_SUBSCRIPTION_QUIET_START_MINUTE] = clampedStartM
+            preferences[KEY_SUBSCRIPTION_QUIET_END_HOUR] = clampedEndH
+            preferences[KEY_SUBSCRIPTION_QUIET_END_MINUTE] = clampedEndM
         }
     }
 
