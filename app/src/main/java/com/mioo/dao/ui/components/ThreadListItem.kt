@@ -44,7 +44,8 @@ data class BookmarkListItem(
     val rawContent: String,
     val newReplyCount: Int = 0,
     /** 最近一次后台刷新到的回复总数（BookmarkEntity.lastKnownReplyCount），未知时为 0。 */
-    val replyCount: Int = 0
+    val replyCount: Int = 0,
+    val forumId: String? = null
 )
 
 fun List<Thread>.toFilteredThreadListItems(
@@ -117,7 +118,8 @@ fun List<BookmarkEntity>.toBookmarkListItems(): List<BookmarkListItem> {
             ),
             rawContent = entity.content,
             newReplyCount = entity.newReplyCount,
-            replyCount = entity.lastKnownReplyCount
+            replyCount = entity.lastKnownReplyCount,
+            forumId = entity.fid
         )
     }
 }

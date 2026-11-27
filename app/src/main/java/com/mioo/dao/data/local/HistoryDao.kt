@@ -28,6 +28,12 @@ interface HistoryDao {
     @Query("UPDATE history SET forumName = :name WHERE fid = :fid AND forumName = ''")
     suspend fun fillForumName(fid: String, name: String)
 
+    @Query(
+        "SELECT id AS threadId, fid AS fid FROM history " +
+            "WHERE id IN (:ids) AND fid IS NOT NULL AND fid != '' AND fid != '0'"
+    )
+    suspend fun getForumIdsForThreads(ids: List<String>): List<ThreadForumIdRow>
+
     // --- History operations ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

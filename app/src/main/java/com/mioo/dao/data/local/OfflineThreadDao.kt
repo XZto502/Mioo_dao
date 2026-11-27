@@ -6,6 +6,11 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+data class ThreadForumIdRow(
+    val threadId: String,
+    val fid: String
+)
+
 @Dao
 interface OfflineThreadDao {
 
@@ -51,6 +56,12 @@ interface OfflineThreadDao {
 
     @Query("DELETE FROM offline_threads WHERE threadId = :threadId")
     suspend fun delete(threadId: String)
+
+    @Query(
+        "SELECT threadId AS threadId, fid AS fid FROM offline_threads " +
+            "WHERE threadId IN (:ids) AND fid IS NOT NULL AND fid != '' AND fid != '0'"
+    )
+    suspend fun getForumIdsForThreads(ids: List<String>): List<ThreadForumIdRow>
 
     @Query("DELETE FROM offline_threads")
     suspend fun clear()

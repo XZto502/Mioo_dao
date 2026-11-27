@@ -193,6 +193,9 @@ interface ThreadRepository {
     /** 该夹内已缓存的回复数（threadId → count，仅含 >0 的已知值）。 */
     suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int>
 
+    /** 从本地离线缓存与浏览历史兜底查询缺失的板块 ID（threadId → fid）。 */
+    suspend fun resolveThreadForumIds(threadIds: List<String>): Map<String, Long>
+
     /** 从本地 api_cache 读取已缓存的云端收藏夹页与串详情首楼，用于收藏搜索正文与卡片展示。 */
     fun observeCachedFeedPosts(feedUuids: List<String>): Flow<Map<String, CachePostPreview>>
 
@@ -1684,6 +1687,26 @@ class ThreadRepositoryImpl @Inject constructor(
                 emptyMap()
             }
         }
+
+    override suspend fun resolveThreadForumIds(threadIds: List<String>): Map<String, Long> {
+        if (threadIds.isEmpty()) return emptyMap()
+        return withContext(Dispatchers.IO) {
+            try {
+                val result = HashMap<String, Long>(threadIds.size)
+                historyDao.getForumIdsForThreads(threadIds).forEach { row ->
+                    row.fid.toLongOrNull()?.takeIf { it > 0L }?.let { result[row.threadId] = it }
+                }
+                offlineThreadDao.getForumIdsForThreads(threadIds).forEach { row ->
+                    row.fid.toLongOrNull()?.takeIf { it > 0L }?.let { result[row.threadId] = it }
+                }
+                result
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
+    }
 
     override fun observeCachedFeedPosts(feedUuids: List<String>): Flow<Map<String, CachePostPreview>> =
         cacheDao.observeFeedPostPreviews(feedUuids, feedUuids.map { "feed_$it" })

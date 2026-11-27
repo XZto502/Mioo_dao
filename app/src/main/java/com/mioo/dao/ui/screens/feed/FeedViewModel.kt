@@ -289,18 +289,30 @@ class FeedViewModel @Inject constructor(
     private suspend fun buildRemoteItems(
         threads: List<Thread>,
         counts: Map<String, Int>
-    ): List<ThreadListItem> = withContext(Dispatchers.Default) {
-        val withCounts = threads.map { thread ->
-            counts[thread.idStr]
-                ?.takeIf { it >= 0 }
-                ?.let { thread.copy(replyCount = it) }
-                ?: thread
+    ): List<ThreadListItem> {
+        val missingFidIds = threads.filter { (it.fid ?: 0L) <= 0L }.map { it.idStr }
+        val fallbackFids = if (missingFidIds.isEmpty()) emptyMap() else {
+            threadRepository.resolveThreadForumIds(missingFidIds)
         }
-        withCounts.toFilteredThreadListItems(
-            blockedThreads = emptySet(),
-            blockedUsers = emptySet(),
-            blockedKeywords = emptyList()
-        )
+        return withContext(Dispatchers.Default) {
+            val enriched = threads.map { thread ->
+                val resolvedCount = counts[thread.idStr]?.takeIf { it >= 0 }
+                val resolvedFid = if ((thread.fid ?: 0L) <= 0L) fallbackFids[thread.idStr] else null
+                if (resolvedCount != null || resolvedFid != null) {
+                    thread.copy(
+                        replyCount = resolvedCount ?: thread.replyCount,
+                        fid = resolvedFid ?: thread.fid
+                    )
+                } else {
+                    thread
+                }
+            }
+            enriched.toFilteredThreadListItems(
+                blockedThreads = emptySet(),
+                blockedUsers = emptySet(),
+                blockedKeywords = emptyList()
+            )
+        }
     }
 
     private fun applyCloudFeedChange(change: CloudFeedChange) {

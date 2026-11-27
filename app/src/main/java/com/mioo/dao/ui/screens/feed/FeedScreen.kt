@@ -32,10 +32,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
@@ -505,8 +509,12 @@ fun FeedScreen(
                                     if (item.postData.imageUrl != null) "bookmark_image" else "bookmark_text"
                                 }
                             ) { item ->
+                                val forumName = item.forumId
+                                    ?.takeIf { it.isNotBlank() && it != "0" }
+                                    ?.let { fid -> forumNames[fid] ?: "板块 $fid" }
                                 LocalBookmarkRow(
                                     item = item,
+                                    forumName = forumName,
                                     fling = responsiveFling,
                                     onNavigateToThread = openThread,
                                     onUnsubscribe = { viewModel.unsubscribe(item.id) },
@@ -524,9 +532,13 @@ fun FeedScreen(
                                 }
                             ) { item ->
                                 val cachedCount = cachedById[item.idStr]?.replyCount ?: 0
+                                val forumName = item.forumId
+                                    ?.takeIf { it.isNotBlank() && it != "0" }
+                                    ?.let { fid -> forumNames[fid] ?: "板块 $fid" }
                                 RemoteBookmarkRow(
                                     item = if (cachedCount > 0 && cachedCount != item.replyCount)
                                         item.copy(replyCount = cachedCount) else item,
+                                    forumName = forumName,
                                     fling = responsiveFling,
                                     onNavigateToThread = openThread,
                                     onUnsubscribe = {
@@ -789,6 +801,7 @@ private fun FeedSearchResultCard(
 @Composable
 private fun LocalBookmarkRow(
     item: BookmarkListItem,
+    forumName: String?,
     fling: ResponsiveListFling,
     onNavigateToThread: (String) -> Unit,
     onUnsubscribe: () -> Unit,
@@ -803,6 +816,7 @@ private fun LocalBookmarkRow(
             modifier = Modifier.slowFlingClick(fling, onClick),
             postData = item.postData,
             replyCount = item.replyCount,
+            forumName = forumName,
             onThreadClick = onClick,
             onQuoteClick = emptyStringLambda,
             onImageClick = onImageClick,
@@ -836,9 +850,11 @@ private fun LocalBookmarkRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RemoteBookmarkRow(
     item: ThreadListItem,
+    forumName: String?,
     fling: ResponsiveListFling,
     onNavigateToThread: (String) -> Unit,
     onUnsubscribe: () -> Unit,
@@ -847,17 +863,133 @@ private fun RemoteBookmarkRow(
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
     val onClick = remember(item.idStr) { { onNavigateToThread(item.idStr) } }
+    val interactionSource = remember { MutableInteractionSource() }
 
-    ThreadCard(
-        modifier = Modifier.slowFlingClick(fling, onClick),
-        postData = item.postData,
-        replyCount = item.replyCount,
-        onThreadClick = onClick,
-        onQuoteClick = emptyStringLambda,
-        onImageClick = onImageClick,
-        onLongClick = { confirmDelete = true },
-        compactPreviewBlankLines = true
-    )
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .slowFlingClick(fling, onClick)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+                onLongClick = { confirmDelete = true }
+            ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = com.mioo.dao.ui.theme.readingCardColor()),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                com.mioo.dao.ui.components.ReadingIdentity(item.postData)
+                if (!forumName.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    com.mioo.dao.ui.components.ReadingPill(forumName)
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "No.${item.idStr}",
+                    style = com.mioo.dao.ui.theme.readingMetaStyle(),
+                    maxLines = 1,
+                    softWrap = false,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            item.postData.title?.takeIf { it.isNotBlank() && it != "无标题" }?.let { title ->
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            com.mioo.dao.ui.components.HtmlContent(
+                html = item.postData.content,
+                onQuoteClick = emptyStringLambda,
+                style = com.mioo.dao.ui.theme.readingBodyStyle(),
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis,
+                enableGestures = false,
+                compactBlankLines = true
+            )
+
+            item.postData.imageUrl?.let { imageUrl ->
+                Spacer(modifier = Modifier.height(10.dp))
+                val thumbInteraction = remember { MutableInteractionSource() }
+                val onThumbClick = remember(imageUrl, onImageClick) { { onImageClick(imageUrl) } }
+                com.mioo.dao.ui.components.ListThumbAsyncImage(
+                    imageUrl = imageUrl,
+                    contentDescription = "串附图",
+                    preserveRatio = true,
+                    modifier = Modifier.clickable(
+                        interactionSource = thumbInteraction,
+                        indication = null,
+                        onClick = onThumbClick
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Text(
+                        text = if (item.replyCount > 0) "${item.replyCount} 回复" else "云端订阅",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+                val formattedTime = remember(item.postData.createdAt) {
+                    com.mioo.dao.ui.components.formatReadingTime(item.postData.createdAt)
+                }
+                if (formattedTime.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = formattedTime,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                            onClick = { confirmDelete = true }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = "取消云端订阅",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
     if (confirmDelete) {
         RemoteUnsubscribeDialog(item.idStr, onDismiss = { confirmDelete = false }, onUnsubscribe = onUnsubscribe)
     }
