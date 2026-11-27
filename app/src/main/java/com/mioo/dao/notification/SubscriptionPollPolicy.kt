@@ -12,7 +12,7 @@ enum class WatchTier {
 
 object SubscriptionPollPolicy {
     const val DEFAULT_BASE_INTERVAL_MINUTES = 60
-    const val MIN_INTERVAL_MINUTES = 30
+    const val MIN_INTERVAL_MINUTES = 15
     const val MAX_INTERVAL_MINUTES = 180
     const val MAX_THREADS_PER_RUN = 6
     const val MAX_HOT_WARM_SLOTS = 4
@@ -145,5 +145,15 @@ object SubscriptionPollPolicy {
 
     fun calculateLastPage(replyCount: Int, pageSize: Int = 19): Int {
         return ((replyCount.coerceAtLeast(1) - 1) / pageSize) + 1
+    }
+
+    fun shouldSkipDuplicatePeriodicCheck(
+        lastCheckAt: Long,
+        nowMs: Long,
+        intervalMinutes: Int
+    ): Boolean {
+        if (lastCheckAt <= 0L || nowMs <= lastCheckAt) return false
+        val minGapMs = (intervalMinutes.coerceIn(MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES) * 60_000L) / 2L
+        return (nowMs - lastCheckAt) < minGapMs
     }
 }

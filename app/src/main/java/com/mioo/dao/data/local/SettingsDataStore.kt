@@ -46,6 +46,12 @@ data class SubscriptionCheckStatus(
     val cooldownUntil: Long = 0L
 )
 
+data class SubscriptionQuietHoursConfig(
+    val enabled: Boolean = false,
+    val startHour: Int = 0,
+    val endHour: Int = 8
+)
+
 class SettingsDataStore(private val context: Context) {
     private val safePreferences = context.dataStore.data.catch { error ->
         if (error is IOException) emit(emptyPreferences()) else throw error
@@ -178,6 +184,8 @@ class SettingsDataStore(private val context: Context) {
         val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
         val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
         val KEY_SUBSCRIPTION_QUIET_HOURS = booleanPreferencesKey("subscription_quiet_hours")
+        val KEY_SUBSCRIPTION_QUIET_START_HOUR = intPreferencesKey("subscription_quiet_start_hour")
+        val KEY_SUBSCRIPTION_QUIET_END_HOUR = intPreferencesKey("subscription_quiet_end_hour")
         val KEY_SUBSCRIPTION_COOLDOWN_UNTIL = longPreferencesKey("subscription_cooldown_until")
         val KEY_SUBSCRIPTION_CONSECUTIVE_ERRORS = intPreferencesKey("subscription_consecutive_errors")
         val KEY_SUBSCRIPTION_LAST_FEED_SYNC = longPreferencesKey("subscription_last_feed_sync")
@@ -650,7 +658,7 @@ class SettingsDataStore(private val context: Context) {
             }
         }
         .map { preferences ->
-            (preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] ?: 60).coerceIn(30, 180)
+            (preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] ?: 60).coerceIn(15, 180)
         }
 
     val subscriptionQuietHoursFlow: Flow<Boolean> = safePreferences
@@ -663,6 +671,22 @@ class SettingsDataStore(private val context: Context) {
         }
         .map { preferences ->
             preferences[KEY_SUBSCRIPTION_QUIET_HOURS] ?: false
+        }
+
+    val subscriptionQuietHoursConfigFlow: Flow<SubscriptionQuietHoursConfig> = safePreferences
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            SubscriptionQuietHoursConfig(
+                enabled = preferences[KEY_SUBSCRIPTION_QUIET_HOURS] ?: false,
+                startHour = (preferences[KEY_SUBSCRIPTION_QUIET_START_HOUR] ?: 0).coerceIn(0, 23),
+                endHour = (preferences[KEY_SUBSCRIPTION_QUIET_END_HOUR] ?: 8).coerceIn(0, 23)
+            )
         }
 
     val subscriptionCheckStatusFlow: Flow<SubscriptionCheckStatus> = safePreferences
@@ -791,13 +815,20 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun saveNotificationIntervalMinutes(minutes: Int) {
         context.dataStore.edit { preferences ->
-            preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] = minutes.coerceIn(30, 180)
+            preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] = minutes.coerceIn(15, 180)
         }
     }
 
     suspend fun saveSubscriptionQuietHours(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_SUBSCRIPTION_QUIET_HOURS] = enabled
+        }
+    }
+
+    suspend fun saveSubscriptionQuietHoursRange(startHour: Int, endHour: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SUBSCRIPTION_QUIET_START_HOUR] = startHour.coerceIn(0, 23)
+            preferences[KEY_SUBSCRIPTION_QUIET_END_HOUR] = endHour.coerceIn(0, 23)
         }
     }
 

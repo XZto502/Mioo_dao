@@ -43,7 +43,8 @@ class SubscriptionPollPolicyTest {
         assertEquals(WatchTier.DORMANT, SubscriptionPollPolicy.classifyTier(0L, now))
 
         assertEquals(60 * 60_000L, SubscriptionPollPolicy.nextCheckDelayMs(WatchTier.HOT, 60))
-        assertEquals(30 * 60_000L, SubscriptionPollPolicy.nextCheckDelayMs(WatchTier.HOT, 10))
+        assertEquals(15 * 60_000L, SubscriptionPollPolicy.nextCheckDelayMs(WatchTier.HOT, 10))
+        assertEquals(15 * 60_000L, SubscriptionPollPolicy.nextCheckDelayMs(WatchTier.HOT, 15))
         assertEquals(4 * hourMs, SubscriptionPollPolicy.nextCheckDelayMs(WatchTier.WARM, 60))
         assertEquals(18 * hourMs, SubscriptionPollPolicy.nextCheckDelayMs(WatchTier.COLD, 60))
         assertEquals(48 * hourMs, SubscriptionPollPolicy.nextCheckDelayMs(WatchTier.DORMANT, 60))
@@ -88,6 +89,16 @@ class SubscriptionPollPolicyTest {
         assertFalse(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 8, enabled = true))
         assertTrue(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 23, enabled = true, startHour = 23, endHour = 7))
         assertFalse(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 12, enabled = true, startHour = 23, endHour = 7))
+        assertTrue(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 10, enabled = true, startHour = 9, endHour = 12))
+        assertFalse(SubscriptionPollPolicy.isInQuietHours(hourOfDay = 12, enabled = true, startHour = 9, endHour = 12))
+    }
+
+    @Test
+    fun duplicatePeriodicCheckDedupRespectsHalfInterval() {
+        val last = now - 5 * 60_000L
+        assertTrue(SubscriptionPollPolicy.shouldSkipDuplicatePeriodicCheck(last, now, intervalMinutes = 15))
+        assertFalse(SubscriptionPollPolicy.shouldSkipDuplicatePeriodicCheck(now - 8 * 60_000L, now, intervalMinutes = 15))
+        assertFalse(SubscriptionPollPolicy.shouldSkipDuplicatePeriodicCheck(0L, now, intervalMinutes = 15))
     }
 
     @Test

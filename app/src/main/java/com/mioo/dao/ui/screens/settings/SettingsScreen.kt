@@ -1140,7 +1140,7 @@ fun SettingsScreen(
             }
         }
         // 5. Subscription notifications
-        val subscriptionQuietHours by viewModel.subscriptionQuietHours.collectAsState()
+        val subscriptionQuietHoursConfig by viewModel.subscriptionQuietHoursConfig.collectAsState()
         val subscriptionCheckStatus by viewModel.subscriptionCheckStatus.collectAsState()
         val notifPermissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
@@ -1208,19 +1208,64 @@ fun SettingsScreen(
                     )
                 }
                 if (settings.subscriptionNotificationsEnabled) {
+                    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+                    var intervalInput by remember(settings.notificationIntervalMinutes) {
+                        mutableStateOf(settings.notificationIntervalMinutes.toString())
+                    }
+                    var pickingQuietStart by remember { mutableStateOf<Boolean?>(null) }
+
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "基准检查间隔: ${settings.notificationIntervalMinutes} 分钟（冷门串自动降频）",
+                        text = "基准检查间隔（15–180 分钟，冷门串自动降频）",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = intervalInput,
+                            onValueChange = { raw ->
+                                intervalInput = raw.filter { it.isDigit() }.take(3)
+                            },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            ),
+                            modifier = Modifier.width(88.dp)
+                        )
+                        Text(
+                            text = "分钟",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = {
+                                val parsed = intervalInput.toIntOrNull()
+                                if (parsed == null || parsed !in 15..180) {
+                                    Toast.makeText(context, "请输入 15–180 之间的整数", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    viewModel.updateNotificationIntervalMinutes(parsed)
+                                    focusManager.clearFocus()
+                                    Toast.makeText(context, "已设为每 $parsed 分钟检查", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("应用")
+                        }
+                    }
                     Slider(
-                        value = settings.notificationIntervalMinutes.coerceIn(30, 180).toFloat(),
+                        value = settings.notificationIntervalMinutes.coerceIn(15, 180).toFloat(),
                         onValueChange = {
-                            viewModel.updateNotificationIntervalMinutes(it.toInt())
+                            val rounded = it.toInt().coerceIn(15, 180)
+                            intervalInput = rounded.toString()
+                            viewModel.updateNotificationIntervalMinutes(rounded)
                         },
-                        valueRange = 30f..180f,
-                        steps = 9
+                        valueRange = 15f..180f,
+                        steps = 10
                     )
                     Row(
                         modifier = Modifier
@@ -1229,7 +1274,7 @@ fun SettingsScreen(
                                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                 indication = null
                             ) {
-                                viewModel.updateSubscriptionQuietHours(!subscriptionQuietHours)
+                                viewModel.updateSubscriptionQuietHours(!subscriptionQuietHoursConfig.enabled)
                             }
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1237,18 +1282,83 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "夜间免打扰（00:00–08:00）",
+                                text = "免打扰",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = "开启后夜间暂停后台检查，减少请求与打扰",
+                                text = "开启后在设定时段内暂停后台检查",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
                             )
                         }
                         androidx.compose.material3.Switch(
-                            checked = subscriptionQuietHours,
+                            checked = subscriptionQuietHoursConfig.enabled,
                             onCheckedChange = { viewModel.updateSubscriptionQuietHours(it) }
+                        )
+                    }
+                    if (subscriptionQuietHoursConfig.enabled) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(onClick = { pickingQuietStart = true }) {
+                                Text("开始 ${"%02d:00".format(subscriptionQuietHoursConfig.startHour)}")
+                            }
+                            Text("至", style = MaterialTheme.typography.bodySmall)
+                            OutlinedButton(onClick = { pickingQuietStart = false }) {
+                                Text("结束 ${"%02d:00".format(subscriptionQuietHoursConfig.endHour)}")
+                            }
+                        }
+                    }
+                    pickingQuietStart?.let { isStart ->
+                        AlertDialog(
+                            onDismissRequest = { pickingQuietStart = null },
+                            title = { Text(if (isStart) "选择免打扰开始时间" else "选择免打扰结束时间") },
+                            text = {
+                                androidx.compose.foundation.lazy.LazyColumn(
+                                    modifier = Modifier.height(280.dp)
+                                ) {
+                                    items(24) { hour ->
+                                        val selected = if (isStart) {
+                                            subscriptionQuietHoursConfig.startHour == hour
+                                        } else {
+                                            subscriptionQuietHoursConfig.endHour == hour
+                                        }
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    val newStart = if (isStart) hour else subscriptionQuietHoursConfig.startHour
+                                                    val newEnd = if (isStart) subscriptionQuietHoursConfig.endHour else hour
+                                                    viewModel.updateSubscriptionQuietHoursRange(newStart, newEnd)
+                                                    pickingQuietStart = null
+                                                }
+                                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            androidx.compose.material3.RadioButton(
+                                                selected = selected,
+                                                onClick = {
+                                                    val newStart = if (isStart) hour else subscriptionQuietHoursConfig.startHour
+                                                    val newEnd = if (isStart) subscriptionQuietHoursConfig.endHour else hour
+                                                    viewModel.updateSubscriptionQuietHoursRange(newStart, newEnd)
+                                                    pickingQuietStart = null
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("${"%02d:00".format(hour)}")
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { pickingQuietStart = null }) {
+                                    Text("关闭")
+                                }
+                            }
                         )
                     }
                     if (subscriptionCheckStatus.lastCheckAt > 0L) {

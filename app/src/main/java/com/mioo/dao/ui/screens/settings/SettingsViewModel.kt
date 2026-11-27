@@ -388,6 +388,14 @@ class SettingsViewModel @Inject constructor(
     val subscriptionQuietHours: StateFlow<Boolean> = settingsRepository.subscriptionQuietHours
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val subscriptionQuietHoursConfig: StateFlow<com.mioo.dao.data.local.SubscriptionQuietHoursConfig> =
+        settingsRepository.subscriptionQuietHoursConfig
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                com.mioo.dao.data.local.SubscriptionQuietHoursConfig()
+            )
+
     val subscriptionCheckStatus: StateFlow<com.mioo.dao.data.local.SubscriptionCheckStatus> =
         settingsRepository.subscriptionCheckStatus
             .stateIn(
@@ -398,6 +406,10 @@ class SettingsViewModel @Inject constructor(
 
     fun updateSubscriptionQuietHours(enabled: Boolean) {
         settingsRepository.updateSubscriptionQuietHours(enabled)
+    }
+
+    fun updateSubscriptionQuietHoursRange(startHour: Int, endHour: Int) {
+        settingsRepository.updateSubscriptionQuietHoursRange(startHour, endHour)
     }
 
     private var lastManualCheckAtMs = 0L

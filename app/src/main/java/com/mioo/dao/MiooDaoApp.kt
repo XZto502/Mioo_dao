@@ -170,11 +170,17 @@ class MiooDaoApp : Application(), ImageLoaderFactory, Configuration.Provider {
                 )
                 val settingsRepository = entryPoint.settingsRepository()
                 val subscriptionScheduler = entryPoint.subscriptionScheduler()
+                var initialSubscriptionSync = true
                 settingsRepository.settings
                     .map { it.subscriptionNotificationsEnabled to it.notificationIntervalMinutes }
                     .distinctUntilChanged()
                     .collect { (enabled, interval) ->
-                        subscriptionScheduler.apply(enabled, interval)
+                        subscriptionScheduler.apply(
+                            enabled = enabled,
+                            intervalMinutes = interval,
+                            replaceExisting = !initialSubscriptionSync
+                        )
+                        initialSubscriptionSync = false
                     }
             }
         }

@@ -203,15 +203,23 @@ class SettingsRepository @Inject constructor(
     fun updateNotificationIntervalMinutes(minutes: Int) {
         repositoryScope.launch {
             settingsDataStore.saveNotificationIntervalMinutes(minutes)
+            threadRepository.get().clampWatchNextCheckAt(minutes)
         }
     }
 
     val subscriptionQuietHours = settingsDataStore.subscriptionQuietHoursFlow
+    val subscriptionQuietHoursConfig = settingsDataStore.subscriptionQuietHoursConfigFlow
     val subscriptionCheckStatus = settingsDataStore.subscriptionCheckStatusFlow
 
     fun updateSubscriptionQuietHours(enabled: Boolean) {
         repositoryScope.launch {
             settingsDataStore.saveSubscriptionQuietHours(enabled)
+        }
+    }
+
+    fun updateSubscriptionQuietHoursRange(startHour: Int, endHour: Int) {
+        repositoryScope.launch {
+            settingsDataStore.saveSubscriptionQuietHoursRange(startHour, endHour)
         }
     }
 

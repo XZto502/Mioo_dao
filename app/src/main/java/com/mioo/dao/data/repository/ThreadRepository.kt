@@ -161,6 +161,7 @@ interface ThreadRepository {
         replyCount: Int = 0
     )
     suspend fun markSubscriptionNotifiedRead(threadId: String)
+    suspend fun clampWatchNextCheckAt(intervalMinutes: Int)
 
     // Reading progress
     suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int, scrollOffset: Int = 0, anchorPostId: String? = null)
@@ -999,19 +1000,43 @@ class ThreadRepositoryImpl @Inject constructor(
         subscriptionNotifier.cancelThreadNotification(threadId)
     }
 
+    override suspend fun clampWatchNextCheckAt(intervalMinutes: Int) {
+        val clamped = intervalMinutes.coerceIn(
+            com.mioo.dao.notification.SubscriptionPollPolicy.MIN_INTERVAL_MINUTES,
+            com.mioo.dao.notification.SubscriptionPollPolicy.MAX_INTERVAL_MINUTES
+        )
+        subscriptionWatchDao.clampNextCheckAt(System.currentTimeMillis() + clamped * 60_000L)
+    }
+
     override suspend fun pollSubscriptionUpdatesForNotification(force: Boolean): SubscriptionPollResult {
         val nowMs = System.currentTimeMillis()
+        val baseInterval = settingsDataStore.notificationIntervalMinutesFlow.first()
         if (!force) {
-            val quietEnabled = settingsDataStore.subscriptionQuietHoursFlow.first()
+            val quietConfig = settingsDataStore.subscriptionQuietHoursConfigFlow.first()
             val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-            if (com.mioo.dao.notification.SubscriptionPollPolicy.isInQuietHours(hour, quietEnabled)) {
-                settingsDataStore.saveSubscriptionCheckStatus(nowMs, "夜间免打扰，已跳过本次检查")
-                return SubscriptionPollResult(emptyList(), 0, skippedReason = "夜间免打扰")
+            if (com.mioo.dao.notification.SubscriptionPollPolicy.isInQuietHours(
+                    hourOfDay = hour,
+                    enabled = quietConfig.enabled,
+                    startHour = quietConfig.startHour,
+                    endHour = quietConfig.endHour
+                )
+            ) {
+                settingsDataStore.saveSubscriptionCheckStatus(nowMs, "免打扰时段，已跳过本次检查")
+                return SubscriptionPollResult(emptyList(), 0, skippedReason = "免打扰时段")
             }
             val (cooldownUntil, _) = settingsDataStore.getSubscriptionCooldownState()
             if (cooldownUntil > nowMs) {
                 settingsDataStore.saveSubscriptionCheckStatus(nowMs, "接口冷却中，稍后再试")
                 return SubscriptionPollResult(emptyList(), 0, skippedReason = "接口冷却中")
+            }
+            val lastCheckAt = settingsDataStore.subscriptionCheckStatusFlow.first().lastCheckAt
+            if (com.mioo.dao.notification.SubscriptionPollPolicy.shouldSkipDuplicatePeriodicCheck(
+                    lastCheckAt = lastCheckAt,
+                    nowMs = nowMs,
+                    intervalMinutes = baseInterval
+                )
+            ) {
+                return SubscriptionPollResult(emptyList(), 0, skippedReason = "近期已检查")
             }
         }
 
@@ -1095,7 +1120,6 @@ class ThreadRepositoryImpl @Inject constructor(
         watchedThreadIdsCache = existingWatches.keys.toSet()
 
         val allWatches = existingWatches.values.toList()
-        val baseInterval = settingsDataStore.notificationIntervalMinutesFlow.first()
         val candidates = if (force) {
             com.mioo.dao.notification.SubscriptionPollPolicy.selectDueWatches(
                 allWatches.map { it.copy(nextCheckAt = 0L) },

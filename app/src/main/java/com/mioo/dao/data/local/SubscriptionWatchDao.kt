@@ -29,6 +29,9 @@ interface SubscriptionWatchDao {
     @Query("UPDATE subscription_watch SET notifyMode = :mode WHERE threadId = :threadId")
     suspend fun updateNotifyMode(threadId: String, mode: Int)
 
+    @Query("UPDATE subscription_watch SET nextCheckAt = :maxNextCheckAt WHERE nextCheckAt > :maxNextCheckAt")
+    suspend fun clampNextCheckAt(maxNextCheckAt: Long)
+
     @Query(
         """
         UPDATE subscription_watch
