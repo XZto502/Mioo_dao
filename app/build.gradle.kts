@@ -144,6 +144,7 @@ android {
         }
         // 测试版：包名加 .beta 后缀可与正式版共存，签名独立，应用名区分
         create("beta") {
+            matchingFallbacks += listOf("release")
             applicationIdSuffix = ".beta"
             versionNameSuffix = testingVersionSuffix
             isMinifyEnabled = true
