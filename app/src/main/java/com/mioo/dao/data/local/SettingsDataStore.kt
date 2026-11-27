@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mioo.dao.data.model.ImageCacheLimit
@@ -37,6 +38,12 @@ val defaultQuickInputs = listOf(
 data class ThirdPartyConsent(
     val hasShownComplianceDialog: Boolean = false,
     val allowThirdPartyServices: Boolean = false
+)
+
+data class SubscriptionCheckStatus(
+    val lastCheckAt: Long = 0L,
+    val summary: String = "",
+    val cooldownUntil: Long = 0L
 )
 
 class SettingsDataStore(private val context: Context) {
@@ -170,6 +177,12 @@ class SettingsDataStore(private val context: Context) {
         val KEY_PRELOAD_COUNT = intPreferencesKey("preload_count")
         val KEY_SUBSCRIPTION_NOTIFICATIONS = booleanPreferencesKey("subscription_notifications")
         val KEY_NOTIFICATION_INTERVAL_MINUTES = intPreferencesKey("notification_interval_minutes")
+        val KEY_SUBSCRIPTION_QUIET_HOURS = booleanPreferencesKey("subscription_quiet_hours")
+        val KEY_SUBSCRIPTION_COOLDOWN_UNTIL = longPreferencesKey("subscription_cooldown_until")
+        val KEY_SUBSCRIPTION_CONSECUTIVE_ERRORS = intPreferencesKey("subscription_consecutive_errors")
+        val KEY_SUBSCRIPTION_LAST_FEED_SYNC = longPreferencesKey("subscription_last_feed_sync")
+        val KEY_SUBSCRIPTION_LAST_CHECK_AT = longPreferencesKey("subscription_last_check_at")
+        val KEY_SUBSCRIPTION_LAST_CHECK_SUMMARY = stringPreferencesKey("subscription_last_check_summary")
         val KEY_GLASS_EFFECT_ENABLED = booleanPreferencesKey("glass_effect_enabled")
         val KEY_DICE_BADGES_ENABLED = booleanPreferencesKey("dice_badges_enabled")
         val KEY_CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
@@ -637,7 +650,35 @@ class SettingsDataStore(private val context: Context) {
             }
         }
         .map { preferences ->
-            (preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] ?: 30).coerceIn(15, 180)
+            (preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] ?: 60).coerceIn(30, 180)
+        }
+
+    val subscriptionQuietHoursFlow: Flow<Boolean> = safePreferences
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            preferences[KEY_SUBSCRIPTION_QUIET_HOURS] ?: false
+        }
+
+    val subscriptionCheckStatusFlow: Flow<SubscriptionCheckStatus> = safePreferences
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                throw exception
+            }
+        }
+        .map { preferences ->
+            SubscriptionCheckStatus(
+                lastCheckAt = preferences[KEY_SUBSCRIPTION_LAST_CHECK_AT] ?: 0L,
+                summary = preferences[KEY_SUBSCRIPTION_LAST_CHECK_SUMMARY].orEmpty(),
+                cooldownUntil = preferences[KEY_SUBSCRIPTION_COOLDOWN_UNTIL] ?: 0L
+            )
         }
 
     val glassEffectEnabledFlow: Flow<Boolean> = safePreferences
@@ -750,7 +791,44 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun saveNotificationIntervalMinutes(minutes: Int) {
         context.dataStore.edit { preferences ->
-            preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] = minutes.coerceIn(15, 180)
+            preferences[KEY_NOTIFICATION_INTERVAL_MINUTES] = minutes.coerceIn(30, 180)
+        }
+    }
+
+    suspend fun saveSubscriptionQuietHours(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SUBSCRIPTION_QUIET_HOURS] = enabled
+        }
+    }
+
+    suspend fun getSubscriptionCooldownState(): Pair<Long, Int> {
+        val prefs = safePreferences.first()
+        val until = prefs[KEY_SUBSCRIPTION_COOLDOWN_UNTIL] ?: 0L
+        val errors = prefs[KEY_SUBSCRIPTION_CONSECUTIVE_ERRORS] ?: 0
+        return until to errors
+    }
+
+    suspend fun saveSubscriptionCooldownState(untilMs: Long, consecutiveErrors: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SUBSCRIPTION_COOLDOWN_UNTIL] = untilMs
+            preferences[KEY_SUBSCRIPTION_CONSECUTIVE_ERRORS] = consecutiveErrors
+        }
+    }
+
+    suspend fun getSubscriptionLastFeedSyncAt(): Long {
+        return safePreferences.first()[KEY_SUBSCRIPTION_LAST_FEED_SYNC] ?: 0L
+    }
+
+    suspend fun saveSubscriptionLastFeedSyncAt(timestampMs: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SUBSCRIPTION_LAST_FEED_SYNC] = timestampMs
+        }
+    }
+
+    suspend fun saveSubscriptionCheckStatus(checkedAtMs: Long, summary: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SUBSCRIPTION_LAST_CHECK_AT] = checkedAtMs
+            preferences[KEY_SUBSCRIPTION_LAST_CHECK_SUMMARY] = summary
         }
     }
 

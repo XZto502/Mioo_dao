@@ -42,6 +42,11 @@ class SubscriptionNotifier @Inject constructor(
         manager.createNotificationChannel(channel)
     }
 
+    fun cancelThreadNotification(threadId: String) {
+        if (threadId.isBlank()) return
+        NotificationManagerCompat.from(context).cancel(threadId.hashCode() and 0x7FFFFFFF)
+    }
+
     fun notifyNewReplies(updates: List<BookmarkNewReply>) {
         if (updates.isEmpty()) return
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return

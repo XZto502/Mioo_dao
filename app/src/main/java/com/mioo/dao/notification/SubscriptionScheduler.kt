@@ -3,9 +3,12 @@ package com.mioo.dao.notification
 import android.content.Context
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -18,6 +21,7 @@ class SubscriptionScheduler @Inject constructor(
 ) {
     companion object {
         const val WORK_NAME = "mioo_subscription_check"
+        const val IMMEDIATE_WORK_NAME = "mioo_subscription_check_now"
     }
 
     fun apply(enabled: Boolean, intervalMinutes: Int) {
@@ -27,13 +31,18 @@ class SubscriptionScheduler @Inject constructor(
             wm.cancelUniqueWork(WORK_NAME)
             return
         }
-        // WorkManager minimum periodic interval is 15 minutes
-        val minutes = intervalMinutes.coerceIn(15, 180).toLong()
+        val minutes = intervalMinutes.coerceIn(
+            SubscriptionPollPolicy.MIN_INTERVAL_MINUTES,
+            SubscriptionPollPolicy.MAX_INTERVAL_MINUTES
+        ).toLong()
+        val flexMinutes = (minutes / 4).coerceAtLeast(15L).coerceAtMost(minutes)
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
         val request = PeriodicWorkRequestBuilder<SubscriptionCheckWorker>(
             minutes,
+            TimeUnit.MINUTES,
+            flexMinutes,
             TimeUnit.MINUTES
         )
             .setConstraints(constraints)
@@ -46,15 +55,20 @@ class SubscriptionScheduler @Inject constructor(
         )
     }
 
-    /** One-shot check soon (e.g. after enabling notifications). */
-    fun runOnceNow() {
+    /** One-shot check soon (e.g. after enabling notifications or manual trigger). */
+    fun runOnceNow(force: Boolean = true) {
         notifier.ensureChannel()
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        val request = androidx.work.OneTimeWorkRequestBuilder<SubscriptionCheckWorker>()
+        val request = OneTimeWorkRequestBuilder<SubscriptionCheckWorker>()
             .setConstraints(constraints)
+            .setInputData(workDataOf(SubscriptionCheckWorker.KEY_FORCE to force))
             .build()
-        WorkManager.getInstance(context).enqueue(request)
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            IMMEDIATE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
     }
 }

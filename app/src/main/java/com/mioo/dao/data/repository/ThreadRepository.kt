@@ -23,6 +23,10 @@ import com.mioo.dao.data.local.PostActionHistoryDao
 import com.mioo.dao.data.local.PostActionHistoryEntity
 import com.mioo.dao.data.local.ProgressDao
 import com.mioo.dao.data.local.SettingsDataStore
+import com.mioo.dao.data.local.SubscriptionNotifyMode
+import com.mioo.dao.data.local.SubscriptionWatchDao
+import com.mioo.dao.data.local.SubscriptionWatchEntity
+import com.mioo.dao.data.local.SubscriptionWatchSource
 import com.mioo.dao.data.local.ThreadProgressEntity
 import com.mioo.dao.data.model.LocalSearchHit
 import com.mioo.dao.data.model.LocalSearchResult
@@ -76,12 +80,21 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** One bookmarked thread that has unread new replies after a poll. */
+/** One bookmarked/subscribed thread that has unread new replies after a poll. */
 data class BookmarkNewReply(
     val threadId: String,
     val title: String?,
     val newReplyDelta: Int,
-    val totalReplies: Int
+    val totalReplies: Int,
+    val previewText: String? = null,
+    val isPoUpdate: Boolean = false,
+    val isRevivedDormant: Boolean = false
+)
+
+data class SubscriptionPollResult(
+    val updates: List<BookmarkNewReply>,
+    val checkedCount: Int,
+    val skippedReason: String? = null
 )
 
 interface ThreadRepository {
@@ -135,9 +148,19 @@ interface ThreadRepository {
 
     /**
      * Poll X-island subscription sources for new replies (background notification).
-     * Sources: local bookmarks + cloud feed folders (official feed/uuid API).
+     * Uses cold/hot tiering, per-run request budget, and exponential cooldown.
      */
-    suspend fun pollSubscriptionUpdatesForNotification(limit: Int = 30): List<BookmarkNewReply>
+    suspend fun pollSubscriptionUpdatesForNotification(force: Boolean = false): SubscriptionPollResult
+
+    fun observeThreadNotifyMode(threadId: String): Flow<Int>
+    suspend fun setThreadNotifyMode(
+        threadId: String,
+        mode: Int,
+        title: String? = null,
+        poUserHash: String = "",
+        replyCount: Int = 0
+    )
+    suspend fun markSubscriptionNotifiedRead(threadId: String)
 
     // Reading progress
     suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int, scrollOffset: Int = 0, anchorPostId: String? = null)
@@ -230,6 +253,8 @@ class ThreadRepositoryImpl @Inject constructor(
     private val database: AppDatabase,
     private val draftStorage: DraftStorage,
     private val offlineThreadDao: com.mioo.dao.data.local.OfflineThreadDao,
+    private val subscriptionWatchDao: SubscriptionWatchDao,
+    private val subscriptionNotifier: com.mioo.dao.notification.SubscriptionNotifier,
     private val forumRepository: ForumRepository,
     private val settingsDataStore: SettingsDataStore,
     @ApplicationContext private val context: Context,
@@ -389,6 +414,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             }
             val response = apiService.showf(fid, page)
+            schedulePassiveWatchSync(response)
             val networkJson = threadListAdapter.toJson(response)
             // SWR: skip identical network payload so UI does not rebuild twice
             if (!(emittedCache && cachedJson == networkJson)) {
@@ -423,6 +449,7 @@ class ThreadRepositoryImpl @Inject constructor(
                 }
             }
             val response = apiService.timeline(id, page)
+            schedulePassiveWatchSync(response)
             val networkJson = threadListAdapter.toJson(response)
             if (!(emittedCache && cachedJson == networkJson)) {
                 cacheDao.insertCache(CacheEntity(cacheKey, page, networkJson))
@@ -470,6 +497,7 @@ class ThreadRepositoryImpl @Inject constructor(
                     try {
                         saveToHistory(fetched.thread)
                         cloudFeedDao.updateThreadMetadata(tid, fetched.thread.title.effectiveTitle(), fetched.thread.replyCount ?: 0)
+                        schedulePassiveWatchSync(listOf(fetched.thread))
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -770,10 +798,22 @@ class ThreadRepositoryImpl @Inject constructor(
                 lastKnownReplyCount = count
             )
         )
+        upsertWatchOnSubscribe(
+            threadId = thread.idStr,
+            title = thread.title.effectiveTitle(),
+            poUserHash = thread.userHash,
+            replyCount = count,
+            source = SubscriptionWatchSource.LOCAL_BOOKMARK
+        )
     }
 
     override suspend fun removeBookmark(id: String) {
         historyDao.deleteBookmarkById(id)
+        val existing = subscriptionWatchDao.getById(id)
+        if (existing != null && existing.source == SubscriptionWatchSource.LOCAL_BOOKMARK) {
+            subscriptionWatchDao.deleteById(id)
+            watchedThreadIdsCache = null
+        }
     }
 
     override suspend fun insertBookmarks(threads: List<Thread>) {
@@ -793,10 +833,26 @@ class ThreadRepositoryImpl @Inject constructor(
             )
         }
         historyDao.insertBookmarks(entities)
+        threads.forEach { thread ->
+            upsertWatchOnSubscribe(
+                threadId = thread.idStr,
+                title = thread.title.effectiveTitle(),
+                poUserHash = thread.userHash,
+                replyCount = thread.replyCount ?: 0,
+                source = SubscriptionWatchSource.LOCAL_BOOKMARK
+            )
+        }
     }
 
     override suspend fun markBookmarkRead(threadId: String, replyCount: Int) {
         historyDao.markBookmarkRead(threadId, replyCount)
+        subscriptionWatchDao.markRead(
+            threadId = threadId,
+            replyCount = replyCount,
+            latestReplyId = 0L,
+            nowMs = System.currentTimeMillis()
+        )
+        subscriptionNotifier.cancelThreadNotification(threadId)
     }
 
     override suspend fun refreshBookmarkReplyCounts(limit: Int) {
@@ -825,85 +881,356 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun pollSubscriptionUpdatesForNotification(limit: Int): List<BookmarkNewReply> {
-        val updates = LinkedHashMap<String, BookmarkNewReply>()
-        val snapshot = settingsDataStore.getNotifiedReplySnapshot().toMutableMap()
+    @Volatile
+    private var watchedThreadIdsCache: Set<String>? = null
 
-        // 1) Local bookmarks (app-side favorites)
-        require(limit >= 0)
-        val bookmarks = historyDao.getRecentBookmarks(limit)
-        for (bookmark in bookmarks) {
+    private fun schedulePassiveWatchSync(threads: List<Thread>) {
+        if (threads.isEmpty()) return
+        preloadScope.launch {
             try {
-                val thread = fetchThread(bookmark.id, 1)
-                val count = thread.replyCount ?: 0
+                val watched = watchedThreadIdsCache ?: subscriptionWatchDao.getAllThreadIds().toHashSet().also {
+                    watchedThreadIdsCache = it
+                }
+                if (watched.isEmpty()) return@launch
+                val matched = threads.filter { it.idStr in watched && it.replyCount != null }
+                if (matched.isEmpty()) return@launch
+                val nowMs = System.currentTimeMillis()
+                for (thread in matched) {
+                    subscriptionWatchDao.updateObservedCount(
+                        threadId = thread.idStr,
+                        replyCount = thread.replyCount ?: 0,
+                        title = thread.title.effectiveTitle(),
+                        poUserHash = thread.userHash,
+                        nowMs = nowMs
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private suspend fun upsertWatchOnSubscribe(
+        threadId: String,
+        title: String?,
+        poUserHash: String,
+        replyCount: Int,
+        source: String
+    ) {
+        val nowMs = System.currentTimeMillis()
+        val existing = subscriptionWatchDao.getById(threadId)
+        val mergedSource = when {
+            existing == null -> source
+            existing.source == source || existing.source == SubscriptionWatchSource.BOTH -> existing.source
+            else -> SubscriptionWatchSource.BOTH
+        }
+        val entity = if (existing == null) {
+            SubscriptionWatchEntity(
+                threadId = threadId,
+                title = title,
+                poUserHash = poUserHash,
+                source = mergedSource,
+                notifyMode = SubscriptionNotifyMode.ALL,
+                lastReadReplyCount = replyCount,
+                lastNotifiedReplyCount = replyCount,
+                lastKnownReplyCount = replyCount,
+                lastActivityAt = nowMs,
+                lastCheckedAt = nowMs,
+                nextCheckAt = nowMs + com.mioo.dao.notification.SubscriptionPollPolicy.nextCheckDelayMs(
+                    com.mioo.dao.notification.WatchTier.HOT,
+                    com.mioo.dao.notification.SubscriptionPollPolicy.DEFAULT_BASE_INTERVAL_MINUTES
+                )
+            )
+        } else {
+            existing.copy(
+                title = title ?: existing.title,
+                poUserHash = poUserHash.ifBlank { existing.poUserHash },
+                source = mergedSource,
+                lastKnownReplyCount = maxOf(existing.lastKnownReplyCount, replyCount)
+            )
+        }
+        subscriptionWatchDao.upsert(entity)
+        watchedThreadIdsCache = null
+    }
+
+    override fun observeThreadNotifyMode(threadId: String): Flow<Int> =
+        subscriptionWatchDao.observeNotifyMode(threadId).map { it ?: SubscriptionNotifyMode.ALL }
+
+    override suspend fun setThreadNotifyMode(
+        threadId: String,
+        mode: Int,
+        title: String?,
+        poUserHash: String,
+        replyCount: Int
+    ) {
+        val existing = subscriptionWatchDao.getById(threadId)
+        if (existing == null) {
+            val nowMs = System.currentTimeMillis()
+            subscriptionWatchDao.upsert(
+                SubscriptionWatchEntity(
+                    threadId = threadId,
+                    title = title,
+                    poUserHash = poUserHash,
+                    source = SubscriptionWatchSource.LOCAL_BOOKMARK,
+                    notifyMode = mode,
+                    lastReadReplyCount = replyCount,
+                    lastNotifiedReplyCount = replyCount,
+                    lastKnownReplyCount = replyCount,
+                    lastActivityAt = nowMs
+                )
+            )
+            watchedThreadIdsCache = null
+        } else {
+            subscriptionWatchDao.updateNotifyMode(threadId, mode)
+        }
+    }
+
+    override suspend fun markSubscriptionNotifiedRead(threadId: String) {
+        val existing = subscriptionWatchDao.getById(threadId) ?: return
+        val count = existing.lastKnownReplyCount
+        historyDao.markBookmarkRead(threadId, count)
+        subscriptionWatchDao.markRead(
+            threadId = threadId,
+            replyCount = count,
+            latestReplyId = existing.lastNotifiedReplyId,
+            nowMs = System.currentTimeMillis()
+        )
+        subscriptionNotifier.cancelThreadNotification(threadId)
+    }
+
+    override suspend fun pollSubscriptionUpdatesForNotification(force: Boolean): SubscriptionPollResult {
+        val nowMs = System.currentTimeMillis()
+        if (!force) {
+            val quietEnabled = settingsDataStore.subscriptionQuietHoursFlow.first()
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            if (com.mioo.dao.notification.SubscriptionPollPolicy.isInQuietHours(hour, quietEnabled)) {
+                settingsDataStore.saveSubscriptionCheckStatus(nowMs, "夜间免打扰，已跳过本次检查")
+                return SubscriptionPollResult(emptyList(), 0, skippedReason = "夜间免打扰")
+            }
+            val (cooldownUntil, _) = settingsDataStore.getSubscriptionCooldownState()
+            if (cooldownUntil > nowMs) {
+                settingsDataStore.saveSubscriptionCheckStatus(nowMs, "接口冷却中，稍后再试")
+                return SubscriptionPollResult(emptyList(), 0, skippedReason = "接口冷却中")
+            }
+        }
+
+        // Seed/merge watches from local bookmarks, legacy snapshot, and cloud-feed index.
+        val legacySnapshot = settingsDataStore.getNotifiedReplySnapshot()
+        val existingWatches = subscriptionWatchDao.getAll().associateBy { it.threadId }.toMutableMap()
+        val toUpsert = ArrayList<SubscriptionWatchEntity>()
+
+        val bookmarks = historyDao.getRecentBookmarks(100)
+        for (bookmark in bookmarks) {
+            val baseline = maxOf(
+                bookmark.lastReadReplyCount,
+                bookmark.lastKnownReplyCount,
+                legacySnapshot[bookmark.id] ?: 0
+            )
+            val existing = existingWatches[bookmark.id]
+            if (existing == null) {
+                val created = SubscriptionWatchEntity(
+                    threadId = bookmark.id,
+                    title = bookmark.title.effectiveTitle(),
+                    poUserHash = bookmark.userid,
+                    source = SubscriptionWatchSource.LOCAL_BOOKMARK,
+                    lastReadReplyCount = bookmark.lastReadReplyCount,
+                    lastNotifiedReplyCount = baseline,
+                    lastKnownReplyCount = baseline,
+                    lastActivityAt = bookmark.timestamp.takeIf { it > 0L } ?: nowMs
+                )
+                existingWatches[bookmark.id] = created
+                toUpsert.add(created)
+            } else if (existing.lastReadReplyCount < bookmark.lastReadReplyCount) {
+                val updated = existing.copy(
+                    lastReadReplyCount = bookmark.lastReadReplyCount,
+                    lastNotifiedReplyCount = maxOf(existing.lastNotifiedReplyCount, bookmark.lastReadReplyCount)
+                )
+                existingWatches[bookmark.id] = updated
+                toUpsert.add(updated)
+            }
+        }
+
+        // Low-frequency cloud feed discovery (at most once every 6 hours, or when forced).
+        val lastFeedSync = settingsDataStore.getSubscriptionLastFeedSyncAt()
+        val folders = runCatching { settingsDataStore.feedFoldersFlow.first() }.getOrDefault(emptyList())
+        if (folders.isNotEmpty() && (force || nowMs - lastFeedSync >= com.mioo.dao.notification.SubscriptionPollPolicy.CLOUD_FEED_DISCOVERY_INTERVAL_MS)) {
+            for (folder in folders.take(3)) {
+                try {
+                    val feedThreads = fetchIndexedFeedPage(folder.uuid, 1)?.threads ?: continue
+                    for (thread in feedThreads.take(30)) {
+                        val tid = thread.idStr
+                        val existing = existingWatches[tid]
+                        val legacyCount = legacySnapshot[tid] ?: 0
+                        if (existing == null) {
+                            val created = SubscriptionWatchEntity(
+                                threadId = tid,
+                                title = thread.title.effectiveTitle(),
+                                poUserHash = thread.userHash,
+                                source = SubscriptionWatchSource.CLOUD_FEED,
+                                lastNotifiedReplyCount = legacyCount,
+                                lastKnownReplyCount = legacyCount,
+                                lastActivityAt = nowMs
+                            )
+                            existingWatches[tid] = created
+                            toUpsert.add(created)
+                        } else if (existing.source == SubscriptionWatchSource.LOCAL_BOOKMARK) {
+                            val merged = existing.copy(source = SubscriptionWatchSource.BOTH)
+                            existingWatches[tid] = merged
+                            toUpsert.add(merged)
+                        }
+                    }
+                    delay(250)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+            }
+            settingsDataStore.saveSubscriptionLastFeedSyncAt(nowMs)
+        }
+
+        if (toUpsert.isNotEmpty()) {
+            subscriptionWatchDao.upsertAll(toUpsert)
+        }
+        watchedThreadIdsCache = existingWatches.keys.toSet()
+
+        val allWatches = existingWatches.values.toList()
+        val baseInterval = settingsDataStore.notificationIntervalMinutesFlow.first()
+        val candidates = if (force) {
+            com.mioo.dao.notification.SubscriptionPollPolicy.selectDueWatches(
+                allWatches.map { it.copy(nextCheckAt = 0L) },
+                nowMs
+            )
+        } else {
+            com.mioo.dao.notification.SubscriptionPollPolicy.selectDueWatches(allWatches, nowMs)
+        }
+
+        if (candidates.isEmpty()) {
+            settingsDataStore.saveSubscriptionCheckStatus(nowMs, "暂无到期订阅串")
+            return SubscriptionPollResult(emptyList(), 0)
+        }
+
+        val updates = ArrayList<BookmarkNewReply>()
+        var checkedCount = 0
+        var previewFetchesUsed = 0
+        var hitRateLimitOrServerError = false
+
+        for ((index, watch) in candidates.withIndex()) {
+            if (index > 0) {
+                delay(kotlin.random.Random.nextLong(400L, 801L))
+            }
+            try {
+                val thread = fetchThread(watch.threadId, 1)
+                checkedCount++
+                val newCount = thread.replyCount ?: 0
+                val poHash = thread.userHash.ifBlank { watch.poUserHash }
+                val effectiveTitle = thread.title.effectiveTitle() ?: watch.title ?: "No.${watch.threadId}"
+                val baseline = maxOf(watch.lastNotifiedReplyCount, watch.lastReadReplyCount)
+                val wasDormant = com.mioo.dao.notification.SubscriptionPollPolicy.classifyTier(
+                    watch.lastActivityAt,
+                    nowMs
+                ) == com.mioo.dao.notification.WatchTier.DORMANT
+
+                var nextNotifiedCount = watch.lastNotifiedReplyCount
+                var nextNotifiedReplyId = watch.lastNotifiedReplyId
+                val hasCountIncrease = newCount > baseline
+
+                if (hasCountIncrease && watch.notifyMode != SubscriptionNotifyMode.MUTE) {
+                    val lastPage = com.mioo.dao.notification.SubscriptionPollPolicy.calculateLastPage(newCount)
+                    val latestReplies = if (lastPage <= 1) {
+                        thread.replies.orEmpty()
+                    } else if (previewFetchesUsed < com.mioo.dao.notification.SubscriptionPollPolicy.MAX_PREVIEW_FETCHES_PER_RUN ||
+                        watch.notifyMode == SubscriptionNotifyMode.PO_ONLY
+                    ) {
+                        previewFetchesUsed++
+                        runCatching { fetchThread(watch.threadId, lastPage).replies.orEmpty() }
+                            .getOrDefault(emptyList())
+                    } else {
+                        emptyList()
+                    }
+
+                    val newReplies = latestReplies.filter { it.id > watch.lastNotifiedReplyId }
+                    val newPoReplies = if (poHash.isNotBlank()) {
+                        newReplies.filter { it.userHash == poHash }
+                    } else {
+                        emptyList()
+                    }
+                    val hasNewPoReply = newPoReplies.isNotEmpty()
+                    val newestReplyId = latestReplies.maxOfOrNull { it.id } ?: watch.lastNotifiedReplyId
+
+                    if (com.mioo.dao.notification.SubscriptionPollPolicy.shouldNotifyUpdate(
+                            watch = watch,
+                            newReplyCount = newCount,
+                            hasNewPoReply = hasNewPoReply
+                        )
+                    ) {
+                        val previewTarget = if (hasNewPoReply) newPoReplies.lastOrNull() else newReplies.lastOrNull()
+                        val previewText = com.mioo.dao.notification.SubscriptionPollPolicy.extractPlainPreview(
+                            previewTarget?.content
+                        )
+                        val delta = (newCount - baseline).coerceAtLeast(1)
+                        updates.add(
+                            BookmarkNewReply(
+                                threadId = watch.threadId,
+                                title = effectiveTitle,
+                                newReplyDelta = delta,
+                                totalReplies = newCount,
+                                previewText = previewText,
+                                isPoUpdate = hasNewPoReply,
+                                isRevivedDormant = wasDormant
+                            )
+                        )
+                    }
+                    nextNotifiedCount = maxOf(nextNotifiedCount, newCount)
+                    nextNotifiedReplyId = maxOf(nextNotifiedReplyId, newestReplyId)
+                }
+
+                val hasAnyGrowth = newCount > watch.lastKnownReplyCount
+                val nextActivityAt = if (hasAnyGrowth) nowMs else watch.lastActivityAt
+                val nextIdleChecks = if (hasAnyGrowth) 0 else watch.consecutiveIdleChecks + 1
+                val tier = com.mioo.dao.notification.SubscriptionPollPolicy.classifyTier(nextActivityAt, nowMs)
+                val nextDelay = com.mioo.dao.notification.SubscriptionPollPolicy.nextCheckDelayMs(tier, baseInterval)
+
+                val updatedWatch = watch.copy(
+                    title = effectiveTitle,
+                    poUserHash = poHash,
+                    lastKnownReplyCount = maxOf(watch.lastKnownReplyCount, newCount),
+                    lastNotifiedReplyCount = nextNotifiedCount,
+                    lastNotifiedReplyId = nextNotifiedReplyId,
+                    lastActivityAt = nextActivityAt,
+                    lastCheckedAt = nowMs,
+                    nextCheckAt = nowMs + nextDelay,
+                    consecutiveIdleChecks = nextIdleChecks
+                )
+                subscriptionWatchDao.upsert(updatedWatch)
                 historyDao.updateBookmarkMetadata(
-                    id = bookmark.id,
+                    id = watch.threadId,
                     content = thread.content,
                     title = thread.title,
                     now = thread.now,
-                    knownCount = count
+                    knownCount = newCount
                 )
-                val baseline = snapshot[bookmark.id]
-                    ?: bookmark.lastReadReplyCount.coerceAtLeast(bookmark.lastKnownReplyCount)
-                if (count > baseline) {
-                    val delta = (count - baseline).coerceAtLeast(1)
-                    updates[bookmark.id] = BookmarkNewReply(
-                        threadId = bookmark.id,
-                        title = thread.title.effectiveTitle()
-                            ?: bookmark.title.effectiveTitle()
-                            ?: "No.${bookmark.id}",
-                        newReplyDelta = delta,
-                        totalReplies = count
-                    )
-                    snapshot[bookmark.id] = count
-                } else if (!snapshot.containsKey(bookmark.id)) {
-                    snapshot[bookmark.id] = count
-                }
-                delay(150)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: retrofit2.HttpException) {
+                if (e.code() == 429 || e.code() >= 500) {
+                    hitRateLimitOrServerError = true
+                    val (_, prevErrors) = settingsDataStore.getSubscriptionCooldownState()
+                    val nextErrors = prevErrors + 1
+                    val cooldownMs = com.mioo.dao.notification.SubscriptionPollPolicy.nextCooldownMs(nextErrors)
+                    settingsDataStore.saveSubscriptionCooldownState(nowMs + cooldownMs, nextErrors)
+                    settingsDataStore.saveSubscriptionCheckStatus(nowMs, "接口限流/异常(${e.code()})，已进入冷却")
+                    break
+                }
             } catch (_: Exception) {
             }
         }
 
-        // 2) Official X-island cloud subscriptions (feed?uuid=) — same source as 蓝岛订阅
-        val folders = try {
-            settingsDataStore.feedFoldersFlow.first()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            emptyList()
+        if (!hitRateLimitOrServerError) {
+            settingsDataStore.saveSubscriptionCooldownState(0L, 0)
+            settingsDataStore.saveSubscriptionCheckStatus(nowMs, "检查 $checkedCount 串 · ${updates.size} 条更新")
         }
-        for (folder in folders.take(5)) {
-            try {
-                val feedThreads = fetchIndexedFeedPage(folder.uuid, 1)?.threads ?: continue
-                for (thread in feedThreads.take(limit)) {
-                    val id = thread.idStr
-                    val count = thread.replyCount ?: 0
-                    val baseline = snapshot[id]
-                    if (baseline == null) {
-                        // First sighting: record baseline without notifying
-                        snapshot[id] = count
-                    } else if (count > baseline) {
-                        val delta = (count - baseline).coerceAtLeast(1)
-                        updates[id] = BookmarkNewReply(
-                            threadId = id,
-                            title = thread.title.effectiveTitle() ?: "No.$id",
-                            newReplyDelta = delta,
-                            totalReplies = count
-                        )
-                        snapshot[id] = count
-                    }
-                }
-                delay(200)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-            }
-        }
-
-        settingsDataStore.saveNotifiedReplySnapshot(snapshot)
-        return updates.values.toList()
+        return SubscriptionPollResult(updates, checkedCount)
     }
 
     override suspend fun saveThreadProgress(threadId: String, page: Int, firstVisibleIndex: Int, scrollOffset: Int, anchorPostId: String?) {
