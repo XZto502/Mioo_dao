@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "mioo_dao"
 include(":app")
+include(":benchmark")

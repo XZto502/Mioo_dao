@@ -65,6 +65,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -1240,7 +1243,12 @@ private fun ForumThreadListPane(
         // as targetValue changes can cancel a diagonal drag before the drawer settles.
         modifier = Modifier.fillMaxSize()
             .then(if (listReady) initialViewport.modifier else Modifier)
-            .useUnbufferedFlingGrab(responsiveFling),
+            .useUnbufferedFlingGrab(responsiveFling)
+            .semantics {
+                @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+                testTagsAsResourceId = true
+            }
+            .testTag("forum_board_list"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(
             start = 12.dp,

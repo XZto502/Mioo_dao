@@ -7,6 +7,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
+    id("androidx.baselineprofile")
 }
 
 private val channelVersionPattern = Regex("^(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?(?:\\+[a-z0-9.-]+)?$", RegexOption.IGNORE_CASE)
@@ -182,6 +183,11 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+baselineProfile {
+    automaticGenerationDuringBuild = false
+    saveInSrc = true
+}
+
 dependencies {
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.12.0")
@@ -239,6 +245,7 @@ dependencies {
 
     // Baseline Profile installer — applies AOT profile on first install/update
     implementation("androidx.profileinstaller:profileinstaller:1.3.1")
+    baselineProfile(project(":benchmark"))
 
     // ZXing Embedded QR Scanner
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
