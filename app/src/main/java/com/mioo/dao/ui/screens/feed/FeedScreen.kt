@@ -792,7 +792,7 @@ private fun FeedSearchResultCard(
             }
             if (match.replyCount > 0) {
                 Spacer(Modifier.height(10.dp))
-                com.mioo.dao.ui.components.ReadingPill("${match.replyCount} 回复", maxWidth = 160)
+                com.mioo.dao.ui.components.ReadingPill("${match.replyCount} replies", maxWidth = 160)
             }
         }
     }
@@ -944,7 +944,7 @@ private fun RemoteBookmarkRow(
                     color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
                     Text(
-                        text = if (item.replyCount > 0) "${item.replyCount} 回复" else "云端订阅",
+                        text = if (item.replyCount > 0) "${item.replyCount} replies" else "云端订阅",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFeatureSettings = "tnum"
                         ),

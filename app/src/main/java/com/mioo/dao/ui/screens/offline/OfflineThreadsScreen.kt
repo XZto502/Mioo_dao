@@ -371,7 +371,7 @@ fun OfflineThreadCard(
                     color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
                     Text(
-                        text = "已缓存 ${summary.cachedPages} 页 (${summary.replyCount} 回复)",
+                        text = "已缓存 ${summary.cachedPages} 页 (${summary.replyCount} replies)",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFeatureSettings = "tnum"
                         ),
