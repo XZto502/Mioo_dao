@@ -58,6 +58,7 @@ import com.mioo.dao.ui.components.ReadingIdentity
 import com.mioo.dao.ui.components.ImageViewer
 import com.mioo.dao.ui.components.ListThumbAsyncImage
 import com.mioo.dao.ui.components.formatReadingTimestamp
+import com.mioo.dao.ui.components.pagerHorizontalSwipeArbitration
 import com.mioo.dao.ui.components.slowFlingClick
 import com.mioo.dao.ui.theme.*
 import kotlinx.coroutines.launch
@@ -196,7 +197,18 @@ fun HistoryScreen(
                     androidx.compose.foundation.LocalOverscrollConfiguration provides null,
                     androidx.compose.ui.platform.LocalViewConfiguration provides pagerTouchGuard
                 ) {
-                HorizontalPager(state = pager, beyondBoundsPageCount = 0, modifier = Modifier.fillMaxSize(), key = { types[it].name }) { page ->
+                HorizontalPager(
+                    state = pager,
+                    beyondBoundsPageCount = 0,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pagerHorizontalSwipeArbitration(
+                            pagerState = pager,
+                            currentListState = { listStates[types.getOrNull(pager.currentPage)] },
+                            scope = scope
+                        ),
+                    key = { types[it].name }
+                ) { page ->
                     val category = types[page]
                     val quoteColor = MaterialTheme.colorScheme.primary
                     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -231,30 +243,27 @@ fun HistoryScreen(
                         }
                     } else if (readyRecords.isNotEmpty()) {
                         val initialViewport = com.mioo.dao.ui.components.rememberInitialListViewport(true)
-                        val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
                         val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
-                        CompositionLocalProvider(androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration) {
-                            LazyColumn(
-                                state = list,
-                                flingBehavior = responsiveFling,
-                                userScrollEnabled = initialViewport.ready,
-                                modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
-                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
-                                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
-                                    val onClick = remember(entry, viewModel, onNavigateToThread) {
-                                        { viewModel.open(entry, onNavigateToThread) }
-                                    }
-                                    HistoryCard(
-                                        entry,
-                                        onClick = onClick,
-                                        onLongClick = { deleteItem = entry },
-                                        onImageClick = { image = it },
-                                        modifier = Modifier.slowFlingClick(responsiveFling, onClick)
-                                    )
+                        LazyColumn(
+                            state = list,
+                            flingBehavior = responsiveFling,
+                            userScrollEnabled = initialViewport.ready,
+                            modifier = Modifier.fillMaxSize().then(initialViewport.modifier),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp,
+                                bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 104.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(readyRecords, key = { it.id }, contentType = { it.type }) { entry ->
+                                val onClick = remember(entry, viewModel, onNavigateToThread) {
+                                    { viewModel.open(entry, onNavigateToThread) }
                                 }
+                                HistoryCard(
+                                    entry,
+                                    onClick = onClick,
+                                    onLongClick = { deleteItem = entry },
+                                    onImageClick = { image = it },
+                                    modifier = Modifier.slowFlingClick(responsiveFling, onClick)
+                                )
                             }
                         }
                     }

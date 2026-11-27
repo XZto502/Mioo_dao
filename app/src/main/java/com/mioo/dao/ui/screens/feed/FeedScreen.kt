@@ -99,6 +99,7 @@ import com.mioo.dao.ui.components.PrefetchListImages
 import com.mioo.dao.ui.components.ResponsiveListFling
 import com.mioo.dao.ui.components.ThreadCard
 import com.mioo.dao.ui.components.ThreadListItem
+import com.mioo.dao.ui.components.pagerHorizontalSwipeArbitration
 import com.mioo.dao.ui.components.slowFlingClick
 import com.mioo.dao.ui.theme.DaoTheme
 import com.mioo.dao.ui.theme.readingTopBarColor
@@ -347,7 +348,18 @@ fun FeedScreen(
                 androidx.compose.foundation.LocalOverscrollConfiguration provides null,
                 androidx.compose.ui.platform.LocalViewConfiguration provides pagerTouchGuard
             ) {
-            HorizontalPager(state = pager, beyondBoundsPageCount = 1, modifier = Modifier.fillMaxSize(), key = { pageKey(folderIds[it]) }) { page ->
+            HorizontalPager(
+                state = pager,
+                beyondBoundsPageCount = 1,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pagerHorizontalSwipeArbitration(
+                        pagerState = pager,
+                        currentListState = { listStates[pageKey(folderIds.getOrNull(pager.currentPage))] },
+                        scope = scope
+                    ),
+                key = { pageKey(folderIds[it]) }
+            ) { page ->
                 val folderId = folderIds[page]
                 val current = folderId == uiState.selectedFolderId
                 val cachedRows by remember(viewModel, folderId) {
@@ -461,11 +473,7 @@ fun FeedScreen(
                         if (current && shouldLoadMore.value) viewModel.loadMoreRemote()
                     }
 
-                    val responsiveConfiguration = com.mioo.dao.ui.components.rememberResponsiveListConfiguration()
                     val responsiveFling = com.mioo.dao.ui.components.rememberResponsiveListFling()
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        androidx.compose.ui.platform.LocalViewConfiguration provides responsiveConfiguration
-                    ) {
                     LazyColumn(
                         state = listState,
                         flingBehavior = responsiveFling,
@@ -549,7 +557,6 @@ fun FeedScreen(
                                 )
                             }
                         }
-                    }
                     }
                 }
             }
