@@ -55,7 +55,8 @@ data class ForumScreenSettings(
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val threadRepository: ThreadRepository,
-    private val backupRepository: BackupRepository
+    private val backupRepository: BackupRepository,
+    private val subscriptionScheduler: com.mioo.dao.notification.SubscriptionScheduler
 ) : ViewModel() {
     val offlineUpdatePolicy = settingsRepository.offlineUpdatePolicy
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false to true)
@@ -382,6 +383,33 @@ class SettingsViewModel @Inject constructor(
 
     fun updateNotificationIntervalMinutes(minutes: Int) {
         settingsRepository.updateNotificationIntervalMinutes(minutes)
+    }
+
+    val subscriptionQuietHours: StateFlow<Boolean> = settingsRepository.subscriptionQuietHours
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val subscriptionCheckStatus: StateFlow<com.mioo.dao.data.local.SubscriptionCheckStatus> =
+        settingsRepository.subscriptionCheckStatus
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                com.mioo.dao.data.local.SubscriptionCheckStatus()
+            )
+
+    fun updateSubscriptionQuietHours(enabled: Boolean) {
+        settingsRepository.updateSubscriptionQuietHours(enabled)
+    }
+
+    private var lastManualCheckAtMs = 0L
+
+    fun runSubscriptionCheckNow(): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastManualCheckAtMs != 0L && now - lastManualCheckAtMs < 60_000L) {
+            return false
+        }
+        lastManualCheckAtMs = now
+        subscriptionScheduler.runOnceNow(force = true)
+        return true
     }
 
     fun updateGlassEffectEnabled(enabled: Boolean) {

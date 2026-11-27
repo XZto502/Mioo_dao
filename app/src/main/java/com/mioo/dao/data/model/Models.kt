@@ -37,8 +37,8 @@ data class UserSettings(
     val preloadCount: Int = 10,
     /** Local poll of bookmarked threads for new-reply system notifications (蓝岛-style). */
     val subscriptionNotificationsEnabled: Boolean = false,
-    /** Minutes between background checks; clamped 15–180. */
-    val notificationIntervalMinutes: Int = 30,
+    /** Minutes between background checks; clamped 30–180. */
+    val notificationIntervalMinutes: Int = 60,
     /** Semi-transparent glass surfaces + ambient glow background. */
     val glassEffectEnabled: Boolean = true,
     /** Image disk-cache cap in megabytes. Oldest files are dropped past this. */

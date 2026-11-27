@@ -186,6 +186,7 @@ class BackupRepository @Inject constructor(
             o.put("updateChannel", settingsDataStore.updateChannelFlow.first().name)
             o.put("offlineAutoUpdate", offlinePolicy.first)
             o.put("offlineWifiOnly", offlinePolicy.second)
+            o.put("subscriptionQuietHoursEnabled", settingsDataStore.subscriptionQuietHoursFlow.first())
             o.put("enableCreatorMode", settingsDataStore.creatorModeFlow.first())
             o.put("confirmCookieBeforeSend", settingsDataStore.confirmCookieBeforeSendFlow.first())
             o.put("smartPreloadMode", settingsDataStore.smartPreloadModeFlow.first())
@@ -413,6 +414,7 @@ class BackupRepository @Inject constructor(
             if (o.has("smartPreloadMode")) settingsDataStore.saveSmartPreloadMode(o.optString("smartPreloadMode"))
             if (o.has("preloadCount")) settingsDataStore.savePreloadCount(o.optInt("preloadCount"))
             if (o.has("subscriptionNotificationsEnabled")) settingsDataStore.saveSubscriptionNotifications(o.optBoolean("subscriptionNotificationsEnabled"))
+            if (o.has("subscriptionQuietHoursEnabled")) settingsDataStore.saveSubscriptionQuietHours(o.optBoolean("subscriptionQuietHoursEnabled", false))
             if (o.has("notificationIntervalMinutes")) settingsDataStore.saveNotificationIntervalMinutes(o.optInt("notificationIntervalMinutes"))
             if (o.has("cacheLimitMb")) settingsDataStore.saveCacheLimitMb(o.optInt("cacheLimitMb"))
             settingsRestored = true

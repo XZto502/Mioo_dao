@@ -1139,7 +1139,9 @@ fun SettingsScreen(
                 }
             }
         }
-        // 5. Subscription notifications (蓝岛-style local poll)
+        // 5. Subscription notifications
+        val subscriptionQuietHours by viewModel.subscriptionQuietHours.collectAsState()
+        val subscriptionCheckStatus by viewModel.subscriptionCheckStatus.collectAsState()
         val notifPermissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
         ) { granted ->
@@ -1205,17 +1207,90 @@ fun SettingsScreen(
                 if (settings.subscriptionNotificationsEnabled) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "检查间隔: ${settings.notificationIntervalMinutes} 分钟（最短 15 分钟）",
+                        text = "基准检查间隔: ${settings.notificationIntervalMinutes} 分钟（冷门串自动降频）",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Slider(
-                        value = settings.notificationIntervalMinutes.toFloat(),
+                        value = settings.notificationIntervalMinutes.coerceIn(30, 180).toFloat(),
                         onValueChange = {
                             viewModel.updateNotificationIntervalMinutes(it.toInt())
                         },
-                        valueRange = 15f..180f,
-                        steps = 10
+                        valueRange = 30f..180f,
+                        steps = 9
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.updateSubscriptionQuietHours(!subscriptionQuietHours)
+                            }
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "夜间免打扰（00:00–08:00）",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "开启后夜间暂停后台检查，减少请求与打扰",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = subscriptionQuietHours,
+                            onCheckedChange = { viewModel.updateSubscriptionQuietHours(it) }
+                        )
+                    }
+                    if (subscriptionCheckStatus.lastCheckAt > 0L) {
+                        val timeText = remember(subscriptionCheckStatus.lastCheckAt) {
+                            java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date(subscriptionCheckStatus.lastCheckAt))
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "上次检查 $timeText · ${subscriptionCheckStatus.summary}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (viewModel.runSubscriptionCheckNow()) {
+                                    Toast.makeText(context, "已开始检查订阅更新", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "检查过于频繁，请稍后再试", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("立即检查一次")
+                        }
+                        TextButton(
+                            onClick = {
+                                val appSettingsIntent = android.content.Intent(
+                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.fromParts("package", context.packageName, null)
+                                )
+                                runCatching { context.startActivity(appSettingsIntent) }
+                            }
+                        ) {
+                            Text("前往应用设置")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "提示：小米等国产系统可能会限制后台定时检查；如收不到通知，请在系统设置中允许喵岛自启动并将省电策略设为「无限制」。",
+                        style = settingsDescriptionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
                     )
                 }
             }

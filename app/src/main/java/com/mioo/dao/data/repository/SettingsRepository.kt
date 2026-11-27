@@ -206,6 +206,15 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    val subscriptionQuietHours = settingsDataStore.subscriptionQuietHoursFlow
+    val subscriptionCheckStatus = settingsDataStore.subscriptionCheckStatusFlow
+
+    fun updateSubscriptionQuietHours(enabled: Boolean) {
+        repositoryScope.launch {
+            settingsDataStore.saveSubscriptionQuietHours(enabled)
+        }
+    }
+
     fun updateGlassEffectEnabled(enabled: Boolean) {
         repositoryScope.launch {
             settingsDataStore.saveGlassEffectEnabled(enabled)
