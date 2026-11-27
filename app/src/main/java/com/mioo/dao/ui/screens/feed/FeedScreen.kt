@@ -381,13 +381,17 @@ fun FeedScreen(
                 }.collectAsState(
                     initial = if (folderId == null) emptyList() else viewModel.cloudIndex.value.byFolder[folderId].orEmpty()
                 )
-                val pageState = if (current) uiState else pageSnapshots[pageKey(folderId)] ?: run {
-                    val preview = folderId?.let { cachedFolderPreviews[it] }.orEmpty()
-                    FeedUiState(
-                        selectedFolderId = folderId,
-                        remoteDisplayItems = preview,
-                        isLoading = folderId != null && preview.isEmpty()
-                    )
+                val pageState = when {
+                    folderId == null -> uiState.copy(selectedFolderId = null)
+                    current -> uiState
+                    else -> pageSnapshots[pageKey(folderId)] ?: run {
+                        val preview = cachedFolderPreviews[folderId].orEmpty()
+                        FeedUiState(
+                            selectedFolderId = folderId,
+                            remoteDisplayItems = preview,
+                            isLoading = preview.isEmpty()
+                        )
+                    }
                 }
                 val listState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
                 SideEffect { listStates[pageKey(folderId)] = listState }
@@ -409,6 +413,13 @@ fun FeedScreen(
                     }
                 }
                 uiState.selectedFolderId == null &&
+                    !uiState.offlineLoaded &&
+                    uiState.offlineSummaries.isEmpty() && offlineTransfers.isEmpty() &&
+                    uiState.localDisplayItems.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize())
+                }
+                uiState.selectedFolderId == null &&
+                    uiState.offlineLoaded &&
                     uiState.offlineSummaries.isEmpty() && offlineTransfers.isEmpty() &&
                     uiState.localDisplayItems.isEmpty() -> {
                     Box(

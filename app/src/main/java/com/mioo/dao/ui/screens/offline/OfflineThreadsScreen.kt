@@ -94,9 +94,9 @@ class OfflineThreadsViewModel @Inject constructor(
     private val threadRepository: ThreadRepository
 ) : ViewModel() {
 
-    val summaries: StateFlow<List<OfflineThreadSummary>> =
+    val summaries: StateFlow<List<OfflineThreadSummary>?> =
         threadRepository.getOfflineThreadSummaries()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val transfers get() = threadRepository.offlineTransfers
 
@@ -147,7 +147,8 @@ fun OfflineThreadsScreen(
     onNavigateToThread: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val summaries by viewModel.summaries.collectAsState()
+    val summariesState by viewModel.summaries.collectAsState()
+    val summaries = summariesState.orEmpty()
     val transfers by viewModel.transfers.collectAsState()
     var showClearAllDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -202,7 +203,13 @@ fun OfflineThreadsScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
     ) { paddingValues ->
-        if (summaries.isEmpty() && transfers.isEmpty()) {
+        if (summariesState == null && transfers.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            )
+        } else if (summaries.isEmpty() && transfers.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()

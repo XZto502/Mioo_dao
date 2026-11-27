@@ -46,6 +46,8 @@ data class FeedUiState(
     val offlineSummaries: List<com.mioo.dao.data.local.OfflineThreadSummary> = emptyList(),
     /** 尚未离线完成的本地收藏（后台巡检补齐中），排在离线列表后展示。 */
     val localDisplayItems: List<BookmarkListItem> = emptyList(),
+    /** 本地离线/收藏流是否已完成首帧读取（避免冷启动闪现「暂无离线串」）。 */
+    val offlineLoaded: Boolean = false,
     val remoteThreads: List<Thread> = emptyList(),
     val remoteDisplayItems: List<ThreadListItem> = emptyList(),
     /** 云端订阅串的已知回复数（threadId → count）。feed 接口不带回复数，靠后台逐串补抓。 */
@@ -197,7 +199,8 @@ class FeedViewModel @Inject constructor(
                     it.copy(
                         bookmarkedThreads = pending,
                         offlineSummaries = summaries,
-                        localDisplayItems = items
+                        localDisplayItems = items,
+                        offlineLoaded = true
                     )
                 }
             }
