@@ -191,7 +191,10 @@ class StartupAndScrollBenchmark {
     }
 
     private companion object {
-        const val TARGET_PACKAGE = "com.mioo.dao"
+        val TARGET_PACKAGE = androidx.test.platform.app.InstrumentationRegistry.getArguments()
+            .getString("miooTargetPackage", "com.mioo.dao").also {
+                require(it == "com.mioo.dao" || it == "com.mioo.dao.beta")
+            }
         const val DETAIL_LIST_TAG = "thread_reading_list"
         const val BOARD_LIST_TAG = "forum_board_list"
     }

@@ -16,4 +16,10 @@
 
 以改动前的喵岛测试版为基线。在同一设备上，分别用改动前后的构建打开相同版面或同一长串，记录提交号、串号及实际刷新率。测试冷启首滑、连续快滑、慢拖、反向打断、打开详情再返回。
 
+在有正式版的手机上运行五项 Macrobenchmark 时，分别构建 `:app:assembleBeta` 和 `:benchmark:assembleBenchmarkRelease`，核对并安装 beta APK 和测试 APK。用以下命令显式指定目标包和测试类（PowerShell 中 `$adb` 为 adb 路径，`$serial` 为设备序列号）：
+
+```powershell
+& $adb -s $serial shell am instrument -w -e class com.mioo.dao.benchmark.StartupAndScrollBenchmark -e miooTargetPackage com.mioo.dao.beta com.mioo.dao.benchmark/androidx.test.runner.AndroidJUnitRunner
+```
+
 确认卡片已加载后，在每个滑动场景前执行 `dumpsys gfxinfo com.mioo.dao.beta reset`，结束后保存 `dumpsys gfxinfo com.mioo.dao.beta framestats`。按场景记录有效帧数、卡顿率、超时帧及 P50/P90/P95/P99。零帧或离开目标页面的轮次作废。验证惯性滑动手感时，另记相同手势松手后的位移和停稳时间。
