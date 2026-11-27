@@ -137,13 +137,14 @@ fun FeedScreen(
     val forumNames = remember(forumGroups) {
         forumGroups.flatMap { it.forums }.associate { it.id to it.name }
     }
+    val cachedFolderPreviews by viewModel.cachedFolderPreviews.collectAsState()
     val folderIds = remember(uiState.feedFolders) { listOf(null) + uiState.feedFolders.map { it.uuid } }
     val pager = rememberPagerState(initialPage = folderIds.indexOf(uiState.selectedFolderId).coerceAtLeast(0)) { folderIds.size }
     val listStates = remember { mutableStateMapOf<String, LazyListState>() }
     val pageSnapshots = remember { mutableStateMapOf<String, FeedUiState>() }
     fun pageKey(id: String?) = id ?: "__offline__"
     SideEffect {
-        if (!uiState.isLoading) pageSnapshots[pageKey(uiState.selectedFolderId)] = uiState
+        if (!uiState.isLoading || uiState.remoteDisplayItems.isNotEmpty()) pageSnapshots[pageKey(uiState.selectedFolderId)] = uiState
     }
     LaunchedEffect(folderIds) {
         val selectedIndex = folderIds.indexOf(viewModel.uiState.value.selectedFolderId).coerceAtLeast(0)
@@ -368,8 +369,14 @@ fun FeedScreen(
                 }.collectAsState(
                     initial = if (folderId == null) emptyList() else viewModel.cloudIndex.value.byFolder[folderId].orEmpty()
                 )
-                val pageState = if (current) uiState else pageSnapshots[pageKey(folderId)]
-                    ?: FeedUiState(selectedFolderId = folderId, isLoading = cachedRows.isEmpty())
+                val pageState = if (current) uiState else pageSnapshots[pageKey(folderId)] ?: run {
+                    val preview = folderId?.let { cachedFolderPreviews[it] }.orEmpty()
+                    FeedUiState(
+                        selectedFolderId = folderId,
+                        remoteDisplayItems = preview,
+                        isLoading = folderId != null && preview.isEmpty()
+                    )
+                }
                 val listState = rememberSaveable(pageKey(folderId), saver = LazyListState.Saver) { LazyListState() }
                 SideEffect { listStates[pageKey(folderId)] = listState }
                 val uiState = pageState

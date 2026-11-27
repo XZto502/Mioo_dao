@@ -103,6 +103,9 @@ class FeedViewModel @Inject constructor(
     private val _errorEvents = Channel<String>(Channel.BUFFERED)
     val errorEvents = _errorEvents.receiveAsFlow()
 
+    private val _cachedFolderPreviews = MutableStateFlow<Map<String, List<ThreadListItem>>>(emptyMap())
+    val cachedFolderPreviews: StateFlow<Map<String, List<ThreadListItem>>> = _cachedFolderPreviews
+
     private var remotePage = 1
     private var remoteLoadingMore = false
     private var remoteEndReached = false
@@ -116,9 +119,67 @@ class FeedViewModel @Inject constructor(
             val saved = settingsDataStore.lastFeedFolderFlow.first().ifBlank { null }
             val folders = settingsDataStore.feedFoldersFlow.first()
             val selected = saved?.takeIf { id -> folders.any { it.uuid == id } }
-            _uiState.update { it.copy(feedFolders = folders, selectedFolderId = selected, selectionReady = true) }
-            if (selected != null) loadRemoteFeed(selected)
+            if (selected != null) {
+                val cachedThreads = threadRepository.getCachedFeedPage(selected, 1)
+                val knownCounts = if (cachedThreads.isNotEmpty()) {
+                    threadRepository.getCloudFeedReplyCounts(selected)
+                } else emptyMap()
+                val cachedItems = if (cachedThreads.isNotEmpty()) {
+                    buildRemoteItems(cachedThreads, knownCounts)
+                } else emptyList()
+                if (cachedItems.isNotEmpty()) {
+                    remoteFolderCache[selected] = CachedRemoteFolder(
+                        threads = cachedThreads,
+                        displayItems = cachedItems,
+                        replyCounts = knownCounts,
+                        page = 1,
+                        endReached = false,
+                        hasMore = true,
+                        refreshedThisSession = false
+                    )
+                    _cachedFolderPreviews.update { it + (selected to cachedItems) }
+                }
+                _uiState.update {
+                    it.copy(
+                        feedFolders = folders,
+                        selectedFolderId = selected,
+                        selectionReady = true,
+                        remoteThreads = cachedThreads,
+                        remoteDisplayItems = cachedItems,
+                        remoteReplyCounts = knownCounts,
+                        isLoading = cachedItems.isEmpty(),
+                        hasMoreRemote = cachedItems.isNotEmpty()
+                    )
+                }
+                loadRemoteFeed(selected)
+            } else {
+                _uiState.update { it.copy(feedFolders = folders, selectedFolderId = null, selectionReady = true) }
+            }
             if (saved != selected) settingsDataStore.saveLastFeedFolder(selected)
+
+            // Prewarm cached page-1 previews for remaining cloud folders so horizontal swipe
+            // never flashes an empty state before the silent network refresh finishes.
+            folders.forEach { folder ->
+                if (folder.uuid !in remoteFolderCache) {
+                    val threads = threadRepository.getCachedFeedPage(folder.uuid, 1)
+                    if (threads.isNotEmpty()) {
+                        val counts = threadRepository.getCloudFeedReplyCounts(folder.uuid)
+                        val items = buildRemoteItems(threads, counts)
+                        if (items.isNotEmpty() && folder.uuid !in remoteFolderCache) {
+                            remoteFolderCache[folder.uuid] = CachedRemoteFolder(
+                                threads = threads,
+                                displayItems = items,
+                                replyCounts = counts,
+                                page = 1,
+                                endReached = false,
+                                hasMore = true,
+                                refreshedThisSession = false
+                            )
+                            _cachedFolderPreviews.update { it + (folder.uuid to items) }
+                        }
+                    }
+                }
+            }
         }
         // 「已离线」标签：离线串列表 + 尚未离线的存量收藏（后台巡检会逐串补齐）
         viewModelScope.launch {
@@ -176,7 +237,8 @@ class FeedViewModel @Inject constructor(
         val replyCounts: Map<String, Int>,
         val page: Int,
         val endReached: Boolean,
-        val hasMore: Boolean
+        val hasMore: Boolean,
+        val refreshedThisSession: Boolean = true
     )
 
     private var remoteFeedJob: kotlinx.coroutines.Job? = null
@@ -209,12 +271,15 @@ class FeedViewModel @Inject constructor(
                     remoteReplyCounts = cached.replyCounts
                 )
             }
+            if (uuid != null && !cached.refreshedThisSession) {
+                loadRemoteFeed(uuid)
+            }
             return
         }
         _uiState.update {
             it.copy(
                 selectedFolderId = uuid,
-                isLoading = false,
+                isLoading = uuid != null,
                 remoteLoadFailed = false,
                 isLoadingMore = false,
                 hasMoreRemote = false,
@@ -263,8 +328,10 @@ class FeedViewModel @Inject constructor(
                         replyCounts = knownCounts,
                         page = 1,
                         endReached = remoteEndReached,
-                        hasMore = hasMore
+                        hasMore = hasMore,
+                        refreshedThisSession = true
                     )
+                    _cachedFolderPreviews.update { it + (uuid to items) }
                     _uiState.update {
                         it.copy(
                             remoteThreads = threads,

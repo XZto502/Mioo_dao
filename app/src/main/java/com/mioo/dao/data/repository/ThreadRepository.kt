@@ -193,6 +193,9 @@ interface ThreadRepository {
     /** 该夹内已缓存的回复数（threadId → count，仅含 >0 的已知值）。 */
     suspend fun getCloudFeedReplyCounts(uuid: String): Map<String, Int>
 
+    /** 读取云端收藏夹本地缓存页（冷启动首屏立即展示，不触发网络请求）。 */
+    suspend fun getCachedFeedPage(uuid: String, page: Int = 1): List<Thread>
+
     /** 从本地离线缓存与浏览历史兜底查询缺失的板块 ID（threadId → fid）。 */
     suspend fun resolveThreadForumIds(threadIds: List<String>): Map<String, Long>
 
@@ -1508,14 +1511,23 @@ class ThreadRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getCachedFeedPage(uuid: String, page: Int): List<Thread> =
+        withContext(Dispatchers.IO) {
+            if (cloudFeedRepairMarker(context, uuid).exists()) return@withContext emptyList()
+            val cached = cacheDao.getCache("feed_$uuid", page) ?: return@withContext emptyList()
+            runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull().orEmpty()
+        }
+
     override fun getFeed(uuid: String, page: Int): Flow<XdResponse<List<Thread>>> = flow {
         val cacheKey = "feed_$uuid"
         var emittedCache = false
         var cachedList: List<Thread>? = null
+        var cacheWasStale = false
         try {
             val cached = if (cloudFeedRepairMarker(context, uuid).exists()) null
-                else cacheDao.getCache(cacheKey, page)?.takeUnless { it.feedStale }
+            else cacheDao.getCache(cacheKey, page)
             if (cached != null) {
+                cacheWasStale = cached.feedStale
                 val decoded = runCatching { threadListAdapter.fromJson(cached.jsonResponse) }.getOrNull()
                 if (!decoded.isNullOrEmpty()) {
                     cachedList = decoded
@@ -1523,8 +1535,8 @@ class ThreadRepositoryImpl @Inject constructor(
                     emittedCache = true
                 }
             }
-            val accepted = fetchIndexedFeedPage(uuid, page) { it != cachedList }
-                ?: fetchIndexedFeedPage(uuid, page) { it != cachedList }
+            val accepted = fetchIndexedFeedPage(uuid, page) { cacheWasStale || it != cachedList }
+                ?: fetchIndexedFeedPage(uuid, page) { cacheWasStale || it != cachedList }
                 ?: throw java.io.IOException("收藏夹正在更新，请重试")
             val response = accepted.threads
             if (!(emittedCache && cachedList == response)) {
