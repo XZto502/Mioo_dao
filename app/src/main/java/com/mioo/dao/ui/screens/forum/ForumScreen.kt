@@ -166,6 +166,7 @@ fun ForumScreen(
     drawerState: DrawerState,
     boardDrawerSlot: BoardDrawerSlot,
     onScrollInProgressChange: (Boolean) -> Unit = {},
+    onOpenNetworkDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier,
 
     headerData: com.mioo.dao.ui.components.CustomHeaderData = com.mioo.dao.ui.components.CustomHeaderData(),
@@ -695,12 +696,37 @@ fun ForumScreen(
                             .padding(bottom = 96.dp, start = 16.dp, end = 16.dp)
                             .fillMaxWidth()
                     ) {
-                        Text(
-                            text = error,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(
+                                    onClick = { viewModel.refresh() },
+                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                ) {
+                                    Text("重试")
+                                }
+                                TextButton(
+                                    onClick = onOpenNetworkDiagnostics,
+                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                ) {
+                                    Text("网络诊断")
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -883,11 +909,18 @@ private fun ForumBoardDrawer(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "切换板块",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-            )
+            Column {
+                Text(
+                    text = "切换板块",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+                Text(
+                    text = "长按板块可置顶",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             IconButton(
                 onClick = {
                     // Ensure groups load even if cold-start deferral skipped them

@@ -242,6 +242,7 @@ fun ThreadScreen(
     settingsViewModel: SettingsViewModel = hiltViewModel(),
     onBackClick: () -> Unit,
     onNavigateToThread: (String) -> Unit = {},
+    onOpenNetworkDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier,
     registerSystemBack: (((() -> Unit)?) -> Unit)? = null,
     retireReadingListStage: () -> Int = { 0 }
@@ -812,11 +813,29 @@ fun ThreadScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = listUi.errorMessage ?: "发生错误",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        Text(
+                            text = listUi.errorMessage ?: "发生错误",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = { viewModel.jumpToPage(1) }) {
+                                Text("重试")
+                            }
+                            TextButton(onClick = onOpenNetworkDiagnostics) {
+                                Text("网络诊断")
+                            }
+                        }
+                    }
                 }
             } else if (allowHeavyList && listUi.thread != null) {
                 val displayItems = listUi.displayItems

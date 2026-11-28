@@ -151,11 +151,22 @@ fun KaomojiQuickPanel(
         }
     }
 
-    LazyVerticalGrid(
-        state = grid,
-        columns = GridCells.Fixed(KAOMOJI_PER_ROW),
+    androidx.compose.foundation.layout.Column(
         modifier = modifier.fillMaxWidth().height(heightDp.dp)
-            .pointerInput(grid) {
+    ) {
+        Text(
+            text = "长按拖动排序 · 自定义项可点按编辑",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 2.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        LazyVerticalGrid(
+            state = grid,
+            columns = GridCells.Fixed(KAOMOJI_PER_ROW),
+            modifier = Modifier.fillMaxWidth().weight(1f)
+                .pointerInput(grid) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { position ->
                         if (readyCurrent) {
@@ -257,6 +268,7 @@ fun KaomojiQuickPanel(
             }
             }
         }
+    }
     }
     editing?.let { item ->
         CustomKaomojiDialog(item, onDismiss = { editing = null; onEditingChange(false) }, onSave = { saved ->

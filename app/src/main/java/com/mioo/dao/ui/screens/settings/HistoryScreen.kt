@@ -248,8 +248,30 @@ fun HistoryScreen(
                     }
                     if (recordsLoaded && readyRecords.isEmpty()) {
                         Box(Modifier.fillMaxSize().padding(bottom = 104.dp), contentAlignment = Alignment.Center) {
-                            Text(if (categoryQuery.isBlank()) "暂无${category.label}" else "没有匹配的记录",
-                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 24.dp)
+                            ) {
+                                Text(
+                                    if (categoryQuery.isBlank()) "暂无${category.label}" else "没有匹配的记录",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (categoryQuery.isBlank()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = if (category == HistoryType.BROWSE) {
+                                            "看过的串会自动记在这里，长按可删除"
+                                        } else {
+                                            "发出的回复与新串会记在这里，长按可删除"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
                         }
                     } else if (readyRecords.isNotEmpty()) {
                         val initialViewport = com.mioo.dao.ui.components.rememberInitialListViewport(true)
