@@ -302,7 +302,7 @@ fun SettingsScreen(
 
     val scrollState = rememberScrollState()
     val sectionPositions = remember { HashMap<String, Int>() }
-    val viewportTopInRoot = remember { floatArrayOf(0f) }
+    val contentOriginY = remember { floatArrayOf(0f) }
 
     var searching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -337,6 +337,14 @@ fun SettingsScreen(
         if (!highlightSection.isNullOrBlank()) {
             triggerSectionJump(highlightSection)
         }
+    }
+
+    LaunchedEffect(searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isEmpty()) return@LaunchedEffect
+        kotlinx.coroutines.delay(180L)
+        val firstMatch = matchSettingSectionMetas(q).firstOrNull() ?: return@LaunchedEffect
+        triggerSectionJump(firstMatch.id)
     }
 
     LaunchedEffect(activeHighlightSection, highlightNonce) {
@@ -377,7 +385,7 @@ fun SettingsScreen(
     }
 
     fun Modifier.sectionAnchor(sectionId: String): Modifier = this.onGloballyPositioned { coords ->
-        sectionPositions[sectionId] = (coords.positionInRoot().y - viewportTopInRoot[0] + scrollState.value).toInt()
+        sectionPositions[sectionId] = (coords.positionInRoot().y - contentOriginY[0]).toInt()
     }
 
     fun Modifier.sectionHighlight(sectionId: String): Modifier = this.settingsSectionHighlight(
@@ -414,6 +422,16 @@ fun SettingsScreen(
                                     },
                                 singleLine = true,
                                 placeholder = { Text("搜索设置（如：饼干、通知、备份）") },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(
+                                    onSearch = {
+                                        focusManager.clearFocus(force = true)
+                                        keyboard?.hide()
+                                        matchSettingSectionMetas(searchQuery).firstOrNull()?.let {
+                                            triggerSectionJump(it.id)
+                                        }
+                                    }
+                                ),
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
@@ -464,20 +482,14 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .navigationBarsPadding()
-                .onGloballyPositioned { coords ->
-                    viewportTopInRoot[0] = coords.positionInRoot().y
-                }
-                .verticalScroll(scrollState)
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-        if (searchQuery.isNotBlank()) {
-            val matchedSections = remember(searchQuery) { matchSettingSectionMetas(searchQuery) }
-            SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
+            if (searchQuery.isNotBlank()) {
+                val matchedSections = remember(searchQuery) { matchSettingSectionMetas(searchQuery) }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .background(secondaryCardBackground())
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (matchedSections.isEmpty()) {
@@ -487,49 +499,70 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        Text(
-                            text = "快速跳转",
-                            style = settingsDescriptionStyle(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             matchedSections.forEach { section ->
+                                val selected = activeHighlightSection == section.id
                                 val pillShape = RoundedCornerShape(10.dp)
                                 Box(
                                     modifier = Modifier
                                         .clip(pillShape)
-                                        .background(secondaryPageBackground(), pillShape)
+                                        .background(
+                                            if (selected) MaterialTheme.colorScheme.primaryContainer
+                                            else secondaryPageBackground(),
+                                            pillShape
+                                        )
                                         .border(
                                             1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+                                            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
                                             pillShape
                                         )
                                         .clickable(
                                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                             indication = null
                                         ) {
-                                            closeSearch()
+                                            focusManager.clearFocus(force = true)
+                                            keyboard?.hide()
                                             triggerSectionJump(section.id)
                                         }
-                                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = section.title,
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                             }
                         }
                     }
                 }
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)
+                )
             }
-        }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { coords ->
+                            contentOriginY[0] = coords.positionInRoot().y
+                        }
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
 
         Column(
             modifier = Modifier
@@ -2093,8 +2126,10 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(100.dp))
+                }
+            }
+        }
     }
-}
 
     if (showAddFolderDialog) {
         FolderInputDialog(
