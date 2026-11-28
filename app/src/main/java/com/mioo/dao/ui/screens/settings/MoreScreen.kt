@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.TipsAndUpdates
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,6 +46,7 @@ fun MoreScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToDrafts: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToGuide: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -74,6 +76,8 @@ fun MoreScreen(
                     MoreEntry(Icons.Default.Settings, "应用设置", "饼干管理、显示模式、字号与屏蔽规则", onNavigateToSettings)
                     MoreDivider()
                     MoreEntry(Icons.Default.Description, "草稿箱", "未发完的回复与新串草稿，随时恢复编辑", onNavigateToDrafts)
+                    MoreDivider()
+                    MoreEntry(Icons.Outlined.TipsAndUpdates, "功能指南", "使用技巧、手势说明与 1.1.8 最近新增", onNavigateToGuide)
                 }
             }
             Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = cardColor,
