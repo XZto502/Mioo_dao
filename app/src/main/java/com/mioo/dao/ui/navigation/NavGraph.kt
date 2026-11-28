@@ -122,6 +122,7 @@ import com.mioo.dao.ui.screens.forum.ForumScreen
 import com.mioo.dao.ui.screens.forum.ForumViewModel
 import com.mioo.dao.ui.screens.search.SearchScreen
 import com.mioo.dao.ui.screens.search.SearchViewModel
+import com.mioo.dao.ui.screens.settings.FeatureGuideScreen
 import com.mioo.dao.ui.screens.settings.NetworkDiagnosticsScreen
 import com.mioo.dao.ui.screens.settings.NetworkDiagnosticsViewModel
 import com.mioo.dao.ui.screens.settings.SettingsScreen
@@ -134,7 +135,12 @@ import com.mioo.dao.ui.screens.thread.ThreadViewModel
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object SettingsDetail : Screen("settings_detail")
+    object SettingsDetail : Screen("settings_detail?section={section}") {
+        fun createRoute(section: String? = null): String =
+            if (section.isNullOrBlank()) "settings_detail"
+            else "settings_detail?section=$section"
+    }
+    object FeatureGuide : Screen("feature_guide")
     object NetworkDiagnostics : Screen("network_diagnostics")
     object DraftBox : Screen("draft_box")
     object Search : Screen("search")
@@ -461,7 +467,7 @@ fun MiooDaoNavGraph(
                         onComposerOpenChange = { isComposerOpen = it },
                         onNavigateToSettings = {
                             flushPendingBack?.invoke()
-                            navController.navigate(Screen.SettingsDetail.route)
+                            navController.navigate(Screen.SettingsDetail.createRoute())
                         },
                         onNavigateToDrafts = {
                             flushPendingBack?.invoke()
@@ -470,6 +476,16 @@ fun MiooDaoNavGraph(
                         onNavigateToSearch = {
                             flushPendingBack?.invoke()
                             navController.navigate(Screen.Search.route)
+                        },
+                        onNavigateToGuide = {
+                            flushPendingBack?.invoke()
+                            navController.navigate(Screen.FeatureGuide.route)
+                        },
+                        onOpenNetworkDiagnostics = {
+                            flushPendingBack?.invoke()
+                            if (navController.currentBackStackEntry?.destination?.route != Screen.NetworkDiagnostics.route) {
+                                navController.navigate(Screen.NetworkDiagnostics.route)
+                            }
                         }
                     )
                     // Keep the dock on the home layer so incoming destinations cover it.
@@ -512,6 +528,37 @@ fun MiooDaoNavGraph(
                         onOpenNetworkDiagnostics = {
                             if (navController.currentBackStackEntry?.destination?.route == Screen.SettingsDetail.route) {
                                 navController.navigate(Screen.NetworkDiagnostics.route)
+                            }
+                        },
+                        highlightSection = entry.arguments?.getString("section")
+                    )
+                }
+            }
+
+            Screen.FeatureGuide.route -> {
+                PageBackdrop {
+                    FeatureGuideScreen(
+                        onBackClick = {
+                            requestPageBack?.invoke()
+                        },
+                        onNavigateToSettingsSection = { section ->
+                            if (navController.currentBackStackEntry?.destination?.route == Screen.FeatureGuide.route) {
+                                navController.navigate(Screen.SettingsDetail.createRoute(section))
+                            }
+                        },
+                        onNavigateToNetworkDiagnostics = {
+                            if (navController.currentBackStackEntry?.destination?.route == Screen.FeatureGuide.route) {
+                                navController.navigate(Screen.NetworkDiagnostics.route)
+                            }
+                        },
+                        onNavigateToDrafts = {
+                            if (navController.currentBackStackEntry?.destination?.route == Screen.FeatureGuide.route) {
+                                navController.navigate(Screen.DraftBox.route)
+                            }
+                        },
+                        onNavigateToSearch = {
+                            if (navController.currentBackStackEntry?.destination?.route == Screen.FeatureGuide.route) {
+                                navController.navigate(Screen.Search.route)
                             }
                         }
                     )
@@ -568,6 +615,12 @@ fun MiooDaoNavGraph(
                             }
                         },
                         onNavigateToThread = navigateToThread,
+                        onOpenNetworkDiagnostics = {
+                            flushPendingBack?.invoke()
+                            if (navController.currentBackStackEntry?.destination?.route != Screen.NetworkDiagnostics.route) {
+                                navController.navigate(Screen.NetworkDiagnostics.route)
+                            }
+                        },
                         registerSystemBack = if (isRootExternalThread) null else remember(entry.id) {
                             { handler ->
                                 if (handler == null) threadLeaveHandlers.remove(entry.id)
@@ -736,7 +789,17 @@ private fun ParallaxPageHost(
         controller.createGraph(startDestination = startDestination) {
             composable(Screen.Home.route) {}
             composable(Screen.Search.route) {}
-            composable(Screen.SettingsDetail.route) {}
+            composable(
+                Screen.SettingsDetail.route,
+                arguments = listOf(
+                    navArgument("section") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) {}
+            composable(Screen.FeatureGuide.route) {}
             composable(Screen.NetworkDiagnostics.route) {}
             composable(Screen.DraftBox.route) {}
             composable(
@@ -1126,7 +1189,9 @@ private fun MainTabs(
     onComposerOpenChange: (Boolean) -> Unit = {},
     onNavigateToSettings: () -> Unit,
     onNavigateToDrafts: () -> Unit,
-    onNavigateToSearch: () -> Unit
+    onNavigateToSearch: () -> Unit,
+    onNavigateToGuide: () -> Unit,
+    onOpenNetworkDiagnostics: () -> Unit
 ) {
     val tabState = rememberSaveableStateHolder()
     val slidePx = with(LocalDensity.current) { 20.dp.roundToPx() }
@@ -1279,7 +1344,9 @@ private fun MainTabs(
                         onForumScrollInProgressChange = onForumScrollInProgressChange,
                         onNavigateToSettings = onNavigateToSettings,
                         onNavigateToDrafts = onNavigateToDrafts,
-                        onNavigateToSearch = onNavigateToSearch
+                        onNavigateToSearch = onNavigateToSearch,
+                        onNavigateToGuide = onNavigateToGuide,
+                        onOpenNetworkDiagnostics = onOpenNetworkDiagnostics
                     )
                 }
             }
@@ -1307,7 +1374,9 @@ private fun TabPageContent(
     onForumScrollInProgressChange: (Boolean) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToDrafts: () -> Unit,
-    onNavigateToSearch: () -> Unit
+    onNavigateToSearch: () -> Unit,
+    onNavigateToGuide: () -> Unit,
+    onOpenNetworkDiagnostics: () -> Unit
 ) {
     tabState.SaveableStateProvider(page) {
         when (page) {
@@ -1323,6 +1392,7 @@ private fun TabPageContent(
                     onScrollInProgressChange = onForumScrollInProgressChange,
                     onImageViewerOpenChange = onImageViewerOpenChange,
                     onComposerOpenChange = onComposerOpenChange,
+                    onOpenNetworkDiagnostics = onOpenNetworkDiagnostics,
                     headerData = boardHeader,
                     headerModifier = boardHeaderMod,
                     bodyModifier = boardBodyMod
@@ -1352,7 +1422,8 @@ private fun TabPageContent(
                     viewModel = viewModel,
                     onNavigateToSettings = onNavigateToSettings,
                     onNavigateToDrafts = onNavigateToDrafts,
-                    onNavigateToSearch = onNavigateToSearch
+                    onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToGuide = onNavigateToGuide
                 )
             }
         }
