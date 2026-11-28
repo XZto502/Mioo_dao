@@ -340,10 +340,9 @@ fun SettingsScreen(
     }
 
     LaunchedEffect(searchQuery) {
-        val q = searchQuery.trim()
-        if (q.isEmpty()) return@LaunchedEffect
+        if (!isEffectiveSettingsQuery(searchQuery)) return@LaunchedEffect
         kotlinx.coroutines.delay(180L)
-        val firstMatch = matchSettingSectionMetas(q).firstOrNull() ?: return@LaunchedEffect
+        val firstMatch = matchSettingSectionMetas(searchQuery).firstOrNull() ?: return@LaunchedEffect
         triggerSectionJump(firstMatch.id)
     }
 
@@ -483,10 +482,11 @@ fun SettingsScreen(
                 .padding(paddingValues)
                 .navigationBarsPadding()
         ) {
+            val effectiveQuery = isEffectiveSettingsQuery(searchQuery)
             val matchedSections = remember(searchQuery) {
-                if (searchQuery.isBlank()) emptyList() else matchSettingSectionMetas(searchQuery)
+                if (!effectiveQuery) emptyList() else matchSettingSectionMetas(searchQuery)
             }
-            if (searchQuery.isNotBlank() && matchedSections.size != 1) {
+            if (effectiveQuery && matchedSections.size != 1) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

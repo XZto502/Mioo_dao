@@ -56,7 +56,7 @@ class SettingsSearchIndexTest {
 
     @Test
     fun cookiesAliasesMatch() {
-        listOf("饼干", "确认", "鉴权", "UserHash").forEach { query ->
+        listOf("饼干", "确认", "鉴权", "UserHash", "草稿", "草稿箱").forEach { query ->
             assertTrue("Expected cookies to match '$query'", SettingsSectionIds.COOKIES in matchSettingSections(query))
         }
     }
@@ -77,7 +77,7 @@ class SettingsSearchIndexTest {
 
     @Test
     fun appearanceAliasesMatch() {
-        listOf("主题", "字号", "头图", "字体", "模糊", "行距", "AMOLED").forEach { query ->
+        listOf("主题", "头图", "模糊", "AMOLED").forEach { query ->
             assertTrue(
                 "Expected appearance to match '$query'",
                 SettingsSectionIds.APPEARANCE in matchSettingSections(query)
@@ -108,9 +108,20 @@ class SettingsSearchIndexTest {
 
     @Test
     fun kaomojiAliasesMatch() {
-        listOf("颜文字", "快捷输入", "草稿", "创作者", "涂鸦").forEach { query ->
+        listOf("颜文字", "快捷输入", "创作者", "涂鸦").forEach { query ->
             assertTrue("Expected kaomoji to match '$query'", SettingsSectionIds.KAOMOJI in matchSettingSections(query))
         }
+    }
+
+    @Test
+    fun singleAsciiLetterDoesNotSpamMatches() {
+        listOf("a", "e", "o", "c", "s").forEach { single ->
+            assertEquals("Expected empty match for '$single'", emptySet<String>(), matchSettingSections(single))
+        }
+        assertEquals(setOf(SettingsSectionIds.APPEARANCE), matchSettingSections("am"))
+        assertEquals(setOf(SettingsSectionIds.COOKIES), matchSettingSections("co"))
+        assertEquals(setOf(SettingsSectionIds.OFFLINE), matchSettingSections("wi"))
+        assertEquals(setOf(SettingsSectionIds.READING), matchSettingSections("字号"))
     }
 
     @Test

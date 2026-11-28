@@ -28,7 +28,7 @@ val SETTINGS_SECTIONS: List<SettingSectionMeta> = listOf(
         id = SettingsSectionIds.APPEARANCE,
         title = "外观与主题",
         aliases = listOf(
-            "主题", "字号", "头图", "字体", "模糊", "行距",
+            "主题", "头图", "模糊",
             "深色", "浅色", "暗黑", "纯黑", "amoled", "配色",
             "主题色", "毛玻璃", "顶栏", "顶栏背景", "背景", "appearance", "theme"
         )
@@ -37,7 +37,7 @@ val SETTINGS_SECTIONS: List<SettingSectionMeta> = listOf(
         id = SettingsSectionIds.KAOMOJI,
         title = "颜文字与创作",
         aliases = listOf(
-            "颜文字", "快捷输入", "草稿", "草稿箱", "创作者", "创作模式",
+            "颜文字", "快捷输入", "创作者", "创作模式",
             "涂鸦", "表情", "编辑器", "kaomoji"
         )
     ),
@@ -55,7 +55,7 @@ val SETTINGS_SECTIONS: List<SettingSectionMeta> = listOf(
         title = "发言与饼干",
         aliases = listOf(
             "饼干", "确认", "鉴权", "userhash", "扫码", "二维码",
-            "备注", "发言", "cookie", "cookies", "auth"
+            "备注", "发言", "草稿", "草稿箱", "cookie", "cookies", "auth"
         )
     ),
     SettingSectionMeta(
@@ -108,13 +108,32 @@ val SETTINGS_SECTIONS: List<SettingSectionMeta> = listOf(
     )
 )
 
+private fun String.isAsciiOnly(): Boolean = all { it.code < 128 }
+
+/**
+ * Pure ASCII queries need at least 2 characters so typing a single letter like "a"
+ * does not spam unrelated sections; Chinese queries match from 1 character (e.g. "卡").
+ */
+fun isEffectiveSettingsQuery(query: String): Boolean {
+    val needle = query.trim()
+    if (needle.isEmpty()) return false
+    return !needle.isAsciiOnly() || needle.length >= 2
+}
+
 fun matchSettingSectionMetas(query: String): List<SettingSectionMeta> {
     val needle = query.trim().lowercase()
-    if (needle.isEmpty()) return emptyList()
+    if (!isEffectiveSettingsQuery(needle)) return emptyList()
+    val asciiOnly = needle.isAsciiOnly()
     return SETTINGS_SECTIONS.filter { section ->
-        section.title.lowercase().contains(needle) ||
-            section.id.lowercase().contains(needle) ||
-            section.aliases.any { alias -> alias.lowercase().contains(needle) }
+        if (asciiOnly) {
+            section.id.lowercase().startsWith(needle) ||
+                section.aliases.any { alias ->
+                    alias.isAsciiOnly() && alias.lowercase().startsWith(needle)
+                }
+        } else {
+            section.title.lowercase().contains(needle) ||
+                section.aliases.any { alias -> alias.lowercase().contains(needle) }
+        }
     }
 }
 
