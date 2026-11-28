@@ -483,8 +483,10 @@ fun SettingsScreen(
                 .padding(paddingValues)
                 .navigationBarsPadding()
         ) {
-            if (searchQuery.isNotBlank()) {
-                val matchedSections = remember(searchQuery) { matchSettingSectionMetas(searchQuery) }
+            val matchedSections = remember(searchQuery) {
+                if (searchQuery.isBlank()) emptyList() else matchSettingSectionMetas(searchQuery)
+            }
+            if (searchQuery.isNotBlank() && matchedSections.size != 1) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -564,23 +566,29 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
 
-        Column(
-            modifier = Modifier
+        Text(
+            text = "外观与主题",
+            style = settingsDescriptionStyle(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.sectionAnchor(SettingsSectionIds.APPEARANCE)
+        )
+        AppearanceSettingsGroup(
+            settings = settings,
+            viewModel = viewModel,
+            cardModifier = Modifier.sectionHighlight(SettingsSectionIds.APPEARANCE)
+        )
+        SettingsGroupCard(
+            Modifier
                 .fillMaxWidth()
-                .sectionAnchor(SettingsSectionIds.APPEARANCE)
-                .sectionHighlight(SettingsSectionIds.APPEARANCE),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .sectionHighlight(SettingsSectionIds.APPEARANCE)
         ) {
-            AppearanceSettingsGroup(settings, viewModel)
-            SettingsGroupCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SettingsHeaderIcon(Icons.Outlined.Image, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("自定义顶栏背景", style = settingsItemStyle())
-                    }
-                    com.mioo.dao.ui.components.HeaderImageSettingsContent()
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SettingsHeaderIcon(Icons.Outlined.Image, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("自定义顶栏背景", style = settingsItemStyle())
                 }
+                com.mioo.dao.ui.components.HeaderImageSettingsContent()
             }
         }
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2118,11 +2126,14 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .sectionAnchor(SettingsSectionIds.OFFLINE)
-                .sectionHighlight(SettingsSectionIds.OFFLINE),
+                .sectionAnchor(SettingsSectionIds.OFFLINE),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OfflineSettingsGroup(settings, viewModel)
+            OfflineSettingsGroup(
+                settings = settings,
+                viewModel = viewModel,
+                cardModifier = Modifier.sectionHighlight(SettingsSectionIds.OFFLINE)
+            )
         }
 
         Spacer(modifier = Modifier.height(100.dp))

@@ -58,9 +58,12 @@ private enum class CacheClearConfirmTarget {
 
 
 @Composable
-internal fun AppearanceSettingsGroup(settings: com.mioo.dao.data.model.UserSettings, viewModel: SettingsViewModel) {
-        Text("外观与主题", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        SettingsGroupCard(Modifier.fillMaxWidth()) {
+internal fun AppearanceSettingsGroup(
+    settings: com.mioo.dao.data.model.UserSettings,
+    viewModel: SettingsViewModel,
+    cardModifier: Modifier = Modifier
+) {
+        SettingsGroupCard(Modifier.fillMaxWidth().then(cardModifier)) {
         // 3. Dark Mode Toggle (显示模式)
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
@@ -227,9 +230,13 @@ internal fun AppearanceSettingsGroup(settings: com.mioo.dao.data.model.UserSetti
 }
 
 @Composable
-internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings, viewModel: SettingsViewModel) {
+internal fun OfflineSettingsGroup(
+    settings: com.mioo.dao.data.model.UserSettings,
+    viewModel: SettingsViewModel,
+    cardModifier: Modifier = Modifier
+) {
         val offlinePolicy by viewModel.offlineUpdatePolicy.collectAsState()
-        SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
+        SettingsGroupCard(modifier = Modifier.fillMaxWidth().then(cardModifier), elevation = CardDefaults.cardElevation(0.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -258,7 +265,7 @@ internal fun OfflineSettingsGroup(settings: com.mioo.dao.data.model.UserSettings
         val preloadProgress by viewModel.preloadProgressState.collectAsState()
 
         SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(cardModifier),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
