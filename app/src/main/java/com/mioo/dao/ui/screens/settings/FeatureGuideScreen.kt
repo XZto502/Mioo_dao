@@ -31,7 +31,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.Forum
@@ -100,52 +99,21 @@ data class GuideSection(
 object FeatureGuideCatalog {
     val sections: List<GuideSection> = listOf(
         GuideSection(
-            id = "whats_new",
-            title = "最近新增 · 1.1.8",
-            items = listOf(
-                GuideItem(
-                    id = "new_subscription_dnd",
-                    title = "订阅新回复提醒与自定义免打扰",
-                    summary = "后台检查订阅串更新，可设夜间免打扰时段",
-                    triggerBadge = "设置",
-                    keywords = listOf("1.1.8", "通知", "提醒", "轮询", "静音", "dnd"),
-                    action = GuideAction.OpenSettings("subscription"),
-                    actionLabel = "前往设置"
-                ),
-                GuideItem(
-                    id = "new_favorites_board_offline",
-                    title = "收藏夹板块标签与离线统一",
-                    summary = "收藏卡片直显所属板块，离线与云端同视图",
-                    triggerBadge = "点击",
-                    keywords = listOf("1.1.8", "收藏", "板块", "离线", "云端"),
-                    action = GuideAction.None
-                ),
-                GuideItem(
-                    id = "new_history_favorites_swipe",
-                    title = "历史与收藏更流畅的横滑切换",
-                    summary = "左右轻滑顺畅切换分组，减少误触",
-                    triggerBadge = "横滑",
-                    keywords = listOf("1.1.8", "历史", "收藏", "手势", "切页"),
-                    action = GuideAction.None
-                )
-            )
-        ),
-        GuideSection(
             id = "reading",
-            title = "读串与互动",
+            title = "看串",
             items = listOf(
                 GuideItem(
                     id = "read_quote_copy",
-                    title = "点串号引用、长按串号复制",
-                    summary = "点串号快速引用回复，长按直接复制串号",
+                    title = "引用和复制串号",
+                    summary = "点楼层上的 No.xxx 引用，长按直接复制串号",
                     triggerBadge = "点击",
                     keywords = listOf("引用", "复制", "串号", "长按", "楼层"),
                     action = GuideAction.None
                 ),
                 GuideItem(
                     id = "read_block_card",
-                    title = "长按卡片屏蔽",
-                    summary = "长按串或回复卡片，屏蔽串号、饼干或词条",
+                    title = "屏蔽串或饼干",
+                    summary = "长按串或回复卡片，可以屏蔽这个串、饼干或关键词",
                     triggerBadge = "长按",
                     keywords = listOf("屏蔽", "拉黑", "过滤", "饼干", "关键词"),
                     action = GuideAction.OpenSettings("blocks"),
@@ -153,25 +121,25 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "read_page_jump",
-                    title = "串内页码跳转",
-                    summary = "点页码指示直跳任意页，追长串更省力",
+                    title = "跳页",
+                    summary = "点页码气泡可以直接跳到指定页",
                     triggerBadge = "点击",
                     keywords = listOf("跳页", "页码", "翻页", "长串"),
                     action = GuideAction.None
                 ),
                 GuideItem(
                     id = "read_po_and_search",
-                    title = "只看 PO 与串内搜索",
-                    summary = "顶栏一键只看 PO，或在当前串内检索回复",
+                    title = "只看 PO 和串内搜索",
+                    summary = "串详情顶栏可以切换只看 PO，或者搜当前串里的回复",
                     triggerBadge = "点击",
                     keywords = listOf("po", "只看楼主", "串内搜索", "查找"),
                     action = GuideAction.None
                 ),
                 GuideItem(
                     id = "read_multi_share",
-                    title = "多楼层分享卡片",
-                    summary = "选中多条回复生成长图卡片，方便整理分享",
-                    triggerBadge = "长按",
+                    title = "多楼层长图分享",
+                    summary = "在分享菜单里多选楼层，拼成一张图保存或发给别人",
+                    triggerBadge = "点击",
                     keywords = listOf("分享", "截图", "长图", "多选", "楼层"),
                     action = GuideAction.None
                 )
@@ -179,20 +147,20 @@ object FeatureGuideCatalog {
         ),
         GuideSection(
             id = "posting",
-            title = "发言与创作",
+            title = "发串与回复",
             items = listOf(
                 GuideItem(
                     id = "post_creator_mode",
-                    title = "创作者模式展开编辑器",
-                    summary = "展开全屏编辑区，写长文排版更专注",
+                    title = "大编辑框",
+                    summary = "点回复框右上角的箭头，可以展开全屏编辑器",
                     triggerBadge = "点击",
                     keywords = listOf("创作者", "全屏", "编辑器", "长文", "发串"),
                     action = GuideAction.None
                 ),
                 GuideItem(
                     id = "post_kaomoji_reorder",
-                    title = "颜文字长按拖动排序",
-                    summary = "长按颜文字拖动调整顺序，常用放前面",
+                    title = "颜文字排序",
+                    summary = "打开颜文字面板后，长按拖动就能改排列顺序",
                     triggerBadge = "长按",
                     keywords = listOf("颜文字", "排序", "拖动", "自定义"),
                     action = GuideAction.OpenSettings("kaomoji"),
@@ -200,17 +168,17 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "post_quick_input",
-                    title = "快捷输入长按编辑",
-                    summary = "长按快捷输入项，可修改或增删常用短语",
+                    title = "编辑快捷输入",
+                    summary = "长按快捷输入条里的词条，可以修改或删掉",
                     triggerBadge = "长按",
                     keywords = listOf("快捷输入", "短语", "编辑", "模板"),
                     action = GuideAction.None
                 ),
                 GuideItem(
                     id = "post_auto_drafts",
-                    title = "离开自动存多份草稿",
-                    summary = "退出编辑自动保存，支持多份草稿随时续写",
-                    triggerBadge = "点击",
+                    title = "自动存草稿",
+                    summary = "没发完直接退出也会存下来，草稿箱支持留多份",
+                    triggerBadge = "自动",
                     keywords = listOf("草稿", "自动保存", "恢复", "草稿箱"),
                     action = GuideAction.OpenDrafts,
                     actionLabel = "草稿箱"
@@ -218,7 +186,7 @@ object FeatureGuideCatalog {
                 GuideItem(
                     id = "post_cookie_confirm",
                     title = "发送前确认饼干",
-                    summary = "发串前核对当前饼干，避免误切或串号暴露",
+                    summary = "多饼干时可以在设置里打开，发之前弹窗核对一次",
                     triggerBadge = "设置",
                     keywords = listOf("饼干", "确认", "切换", "隐私", "cookie"),
                     action = GuideAction.OpenSettings("cookies"),
@@ -226,8 +194,8 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "post_doodle_dice_spoiler",
-                    title = "涂鸦板与掷骰/剧透标签",
-                    summary = "内置手绘涂鸦板，支持一键插入掷骰与剧透",
+                    title = "涂鸦、掷骰和剧透",
+                    summary = "工具栏里有手绘涂鸦板，也能直接插入掷骰和剧透标签",
                     triggerBadge = "点击",
                     keywords = listOf("涂鸦", "画板", "掷骰", "roll", "剧透", "隐白"),
                     action = GuideAction.None
@@ -236,12 +204,12 @@ object FeatureGuideCatalog {
         ),
         GuideSection(
             id = "collections",
-            title = "收藏与追串",
+            title = "收藏与历史",
             items = listOf(
                 GuideItem(
                     id = "collect_cloud_offline",
-                    title = "云端收藏与离线缓存",
-                    summary = "同步云端收藏夹，并缓存已读内容供离线看",
+                    title = "云端收藏和离线缓存",
+                    summary = "云端收藏夹和本地离线串分开存放，离线后断网也能看",
                     triggerBadge = "设置",
                     keywords = listOf("收藏", "云端", "离线", "缓存", "同步"),
                     action = GuideAction.OpenSettings("offline"),
@@ -249,8 +217,8 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "collect_subscription_dnd",
-                    title = "订阅新回复提醒与免打扰",
-                    summary = "定时轮询订阅串新回复，免打扰时段静音",
+                    title = "订阅新回复通知",
+                    summary = "后台定时检查云端和本地收藏的新回复，可设免打扰时段",
                     triggerBadge = "设置",
                     keywords = listOf("订阅", "提醒", "通知", "免打扰", "追串"),
                     action = GuideAction.OpenSettings("subscription"),
@@ -258,16 +226,16 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "collect_swipe_delete",
-                    title = "收藏/历史左右滑切页与长按删除",
-                    summary = "左右滑切换分类页，长按单条即可快捷删除",
+                    title = "左右滑切分类、长按删除",
+                    summary = "在收藏和历史页左右滑切换分组，长按单条记录可移除",
                     triggerBadge = "横滑",
                     keywords = listOf("收藏", "历史", "横滑", "长按", "删除"),
                     action = GuideAction.None
                 ),
                 GuideItem(
                     id = "collect_clipboard_search",
-                    title = "剪贴板串号识别与搜索直达",
-                    summary = "自动识别复制的串号或链接，搜索页一键直达",
+                    title = "剪贴板串号识别",
+                    summary = "复制串号或链接后打开搜索页，可以直接跳转过去",
                     triggerBadge = "点击",
                     keywords = listOf("剪贴板", "串号", "直达", "搜索", "链接"),
                     action = GuideAction.OpenSearch,
@@ -277,20 +245,20 @@ object FeatureGuideCatalog {
         ),
         GuideSection(
             id = "images",
-            title = "图片浏览",
+            title = "看图",
             items = listOf(
                 GuideItem(
                     id = "image_cross_page",
-                    title = "大图跨楼层/跨页左右连续翻看",
-                    summary = "大图模式左右连翻，自动衔接本串跨页图片",
+                    title = "跨楼层左右翻图",
+                    summary = "点开大图后左右滑，可以一直翻到后面楼层和下一页的图",
                     triggerBadge = "横滑",
                     keywords = listOf("大图", "看图", "跨页", "跨楼层", "连翻"),
                     action = GuideAction.None
                 ),
                 GuideItem(
                     id = "image_zoom_long",
-                    title = "双击缩放与长图铺满",
-                    summary = "双击放大或还原，长图自动适配宽度浏览",
+                    title = "双击缩放和长图",
+                    summary = "双击放大或还原，长图默认按屏幕宽度展开",
                     triggerBadge = "点击",
                     keywords = listOf("双击", "缩放", "长图", "铺满", "手势"),
                     action = GuideAction.None
@@ -299,12 +267,12 @@ object FeatureGuideCatalog {
         ),
         GuideSection(
             id = "personalization",
-            title = "个性化与排障",
+            title = "外观与设置",
             items = listOf(
                 GuideItem(
                     id = "pref_predictive_back",
-                    title = "预测返回与防误触",
-                    summary = "支持预测性返回手势与滑动防误触保护",
+                    title = "预测返回和防误触",
+                    summary = "支持系统预测返回手势，也可以开防误触减少滑偏",
                     triggerBadge = "设置",
                     keywords = listOf("预测返回", "返回", "防误触", "手势"),
                     action = GuideAction.OpenSettings("gestures"),
@@ -312,8 +280,8 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "pref_appearance",
-                    title = "主题/字号/自定义头图",
-                    summary = "切换深浅与纯黑主题，自定字号与板块头图",
+                    title = "主题、字号和头图",
+                    summary = "可以切深色或纯黑主题、调正文字号和自选板块头图",
                     triggerBadge = "设置",
                     keywords = listOf("主题", "深色", "amoled", "字号", "头图", "毛玻璃"),
                     action = GuideAction.OpenSettings("appearance"),
@@ -321,8 +289,8 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "pref_backup",
-                    title = "备份与恢复",
-                    summary = "导出或恢复饼干、屏蔽规则与偏好配置",
+                    title = "备份和恢复",
+                    summary = "把饼干、屏蔽规则和设置导出成文件，换手机时直接导回",
                     triggerBadge = "设置",
                     keywords = listOf("备份", "恢复", "导出", "导入", "迁移"),
                     action = GuideAction.OpenSettings("backup"),
@@ -330,8 +298,8 @@ object FeatureGuideCatalog {
                 ),
                 GuideItem(
                     id = "pref_network_diagnostics",
-                    title = "网络诊断与兼容模式",
-                    summary = "检测 X 岛连通链路，按需切换网络兼容模式",
+                    title = "网络诊断和兼容模式",
+                    summary = "打不开或加载慢的时候，用网络诊断测一下或者开兼容模式",
                     triggerBadge = "设置",
                     keywords = listOf("网络", "诊断", "排障", "兼容模式", "连接"),
                     action = GuideAction.OpenNetworkDiagnostics,
@@ -707,7 +675,6 @@ private fun TriggerBadgePill(text: String) {
 }
 
 private fun sectionIconFor(sectionId: String): ImageVector = when (sectionId) {
-    "whats_new" -> Icons.Outlined.AutoAwesome
     "reading" -> Icons.Outlined.Forum
     "posting" -> Icons.Outlined.Create
     "collections" -> Icons.Outlined.BookmarkBorder

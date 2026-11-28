@@ -77,7 +77,7 @@ fun MoreScreen(
                     MoreDivider()
                     MoreEntry(Icons.Default.Description, "草稿箱", "未发完的回复与新串草稿，随时恢复编辑", onNavigateToDrafts)
                     MoreDivider()
-                    MoreEntry(Icons.Outlined.TipsAndUpdates, "功能指南", "使用技巧、手势说明与 1.1.8 最近新增", onNavigateToGuide)
+                    MoreEntry(Icons.Outlined.TipsAndUpdates, "功能指南", "常用操作、隐藏手势和设置入口", onNavigateToGuide)
                 }
             }
             Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = cardColor,
