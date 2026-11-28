@@ -375,12 +375,13 @@ fun FeedScreen(
             ) { page ->
                 val folderId = folderIds[page]
                 val current = folderId == uiState.selectedFolderId
+                val initialCachedRows = remember(viewModel, folderId) {
+                    viewModel.currentCloudFolderRows(folderId)
+                }
                 val cachedRows by remember(viewModel, folderId) {
                     if (folderId == null) flowOf(emptyList())
                     else viewModel.cloudIndex.map { it.byFolder[folderId].orEmpty() }.distinctUntilChanged()
-                }.collectAsState(
-                    initial = if (folderId == null) emptyList() else viewModel.cloudIndex.value.byFolder[folderId].orEmpty()
-                )
+                }.collectAsState(initial = initialCachedRows)
                 val pageState = when {
                     folderId == null -> uiState.copy(selectedFolderId = null)
                     current -> uiState

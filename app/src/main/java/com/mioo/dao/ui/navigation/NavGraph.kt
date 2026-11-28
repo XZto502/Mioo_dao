@@ -825,12 +825,14 @@ private fun ParallaxPageHost(
             ) {}
         }
     }
-    remember(controller, storeOwner, graph) {
+    val configuredController = remember(controller, storeOwner, graph) {
         controller.setViewModelStore(storeOwner.viewModelStore)
         controller.graph = graph
-        Unit
+        controller
     }
-    val navigator = remember(controller) { controller.navigatorProvider.getNavigator(ComposeNavigator::class.java) }
+    val navigator = remember(configuredController) {
+        configuredController.navigatorProvider.getNavigator(ComposeNavigator::class.java)
+    }
     DisposableEffect(controller, lifecycleOwner) {
         controller.setLifecycleOwner(lifecycleOwner)
         onDispose {

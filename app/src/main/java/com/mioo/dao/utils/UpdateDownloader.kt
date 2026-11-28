@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Environment
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.mioo.dao.data.model.GithubRelease
 import java.io.File
@@ -165,11 +166,12 @@ object UpdateDownloader {
         }
 
         val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            context.applicationContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            context.applicationContext.registerReceiver(receiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            context.applicationContext,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
     private fun clearReceiver(context: Context) {

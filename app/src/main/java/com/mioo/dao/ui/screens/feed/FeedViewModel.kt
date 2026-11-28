@@ -90,6 +90,9 @@ class FeedViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CloudFeedIndexSnapshot(emptyList()))
 
+    internal fun currentCloudFolderRows(folderId: String?) =
+        if (folderId == null) emptyList() else cloudIndex.value.byFolder[folderId].orEmpty()
+
     val fullyIndexedCloudFolders = threadRepository.observeFullyIndexedCloudFolders()
         .map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
