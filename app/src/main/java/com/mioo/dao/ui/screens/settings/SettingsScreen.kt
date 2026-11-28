@@ -317,6 +317,7 @@ fun SettingsScreen(
     var highlightNonce by remember { mutableIntStateOf(0) }
     val highlightAlpha = remember { Animatable(0f) }
     val highlightPrimaryColor = MaterialTheme.colorScheme.primary
+    val highlightShape = MaterialTheme.shapes.medium
     val scrollTopOffsetPx = with(LocalDensity.current) { 12.dp.roundToPx() }
 
     fun closeSearch() {
@@ -343,28 +344,29 @@ fun SettingsScreen(
         withFrameNanos {}
         var targetY = sectionPositions[target]
         var attempts = 0
-        while (targetY == null && attempts < 10) {
+        while (targetY == null && attempts < 15) {
             withFrameNanos {}
             targetY = sectionPositions[target]
             attempts++
         }
         if (targetY != null) {
             val dest = (targetY - scrollTopOffsetPx).coerceAtLeast(0)
-            if (reducedMotion) {
-                scrollState.scrollTo(dest)
-            } else {
-                scrollState.animateScrollTo(dest)
-            }
+            scrollState.scrollTo(dest)
         }
-        highlightAlpha.snapTo(1f)
+        highlightAlpha.snapTo(0f)
         if (reducedMotion) {
-            kotlinx.coroutines.delay(900L)
+            highlightAlpha.snapTo(1f)
+            kotlinx.coroutines.delay(850L)
             highlightAlpha.snapTo(0f)
         } else {
-            kotlinx.coroutines.delay(500L)
+            highlightAlpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 180)
+            )
+            kotlinx.coroutines.delay(850L)
             highlightAlpha.animateTo(
                 targetValue = 0f,
-                animationSpec = tween(durationMillis = 900)
+                animationSpec = tween(durationMillis = 600)
             )
         }
         activeHighlightSection = null
@@ -381,7 +383,8 @@ fun SettingsScreen(
     fun Modifier.sectionHighlight(sectionId: String): Modifier = this.settingsSectionHighlight(
         isHighlighted = activeHighlightSection == sectionId,
         alphaProvider = { highlightAlpha.value },
-        primaryColor = highlightPrimaryColor
+        primaryColor = highlightPrimaryColor,
+        shape = highlightShape
     )
 
     Scaffold(
@@ -2425,24 +2428,35 @@ private fun MiooTonalApplyChip(
 private fun Modifier.settingsSectionHighlight(
     isHighlighted: Boolean,
     alphaProvider: () -> Float,
-    primaryColor: Color
+    primaryColor: Color,
+    shape: androidx.compose.ui.graphics.Shape
 ): Modifier {
     if (!isHighlighted) return this
-    return this.drawWithContent {
-        drawContent()
-        val a = alphaProvider().coerceIn(0f, 1f)
-        if (a > 0f) {
-            val radius = 12.dp.toPx()
-            val corner = CornerRadius(radius, radius)
-            drawRoundRect(
-                color = primaryColor.copy(alpha = 0.08f * a),
-                cornerRadius = corner
-            )
-            drawRoundRect(
-                color = primaryColor.copy(alpha = 0.55f * a),
-                cornerRadius = corner,
-                style = Stroke(width = 1.5.dp.toPx())
-            )
+    return this
+        .clip(shape)
+        .drawWithContent {
+            drawContent()
+            val a = alphaProvider().coerceIn(0f, 1f)
+            if (a > 0f) {
+                val strokeWidthPx = 1.5.dp.toPx()
+                val halfStroke = strokeWidthPx / 2f
+                val radius = 16.dp.toPx()
+                val corner = CornerRadius(radius, radius)
+                drawRoundRect(
+                    color = primaryColor.copy(alpha = 0.08f * a),
+                    cornerRadius = corner
+                )
+                val innerRadius = (radius - halfStroke).coerceAtLeast(0f)
+                drawRoundRect(
+                    color = primaryColor.copy(alpha = 0.55f * a),
+                    topLeft = androidx.compose.ui.geometry.Offset(halfStroke, halfStroke),
+                    size = androidx.compose.ui.geometry.Size(
+                        width = (size.width - strokeWidthPx).coerceAtLeast(0f),
+                        height = (size.height - strokeWidthPx).coerceAtLeast(0f)
+                    ),
+                    cornerRadius = CornerRadius(innerRadius, innerRadius),
+                    style = Stroke(width = strokeWidthPx)
+                )
+            }
         }
-    }
 }
