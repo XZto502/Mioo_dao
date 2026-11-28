@@ -9,7 +9,33 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import com.mioo.dao.ui.theme.isReducedMotionEnabled
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -124,12 +150,13 @@ import com.mioo.dao.ui.theme.settingsDescriptionStyle
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBackClick: () -> Unit,
     onOpenNetworkDiagnostics: () -> Unit = {},
+    highlightSection: String? = null,
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settingsState.collectAsState()
@@ -273,15 +300,149 @@ fun SettingsScreen(
         ).show()
     }
 
+    val scrollState = rememberScrollState()
+    val sectionPositions = remember { HashMap<String, Int>() }
+    val viewportTopInRoot = remember { floatArrayOf(0f) }
+
+    var searching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val showSearch = searching || searchQuery.isNotEmpty()
+    val searchFocus = remember { FocusRequester() }
+    var searchFocusPending by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val reducedMotion = isReducedMotionEnabled()
+
+    var activeHighlightSection by remember { mutableStateOf<String?>(null) }
+    var highlightNonce by remember { mutableIntStateOf(0) }
+    val highlightAlpha = remember { Animatable(0f) }
+    val highlightPrimaryColor = MaterialTheme.colorScheme.primary
+    val scrollTopOffsetPx = with(LocalDensity.current) { 12.dp.roundToPx() }
+
+    fun closeSearch() {
+        searchFocusPending = false
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+        searchQuery = ""
+        searching = false
+    }
+
+    fun triggerSectionJump(sectionId: String) {
+        activeHighlightSection = sectionId
+        highlightNonce += 1
+    }
+
+    LaunchedEffect(highlightSection) {
+        if (!highlightSection.isNullOrBlank()) {
+            triggerSectionJump(highlightSection)
+        }
+    }
+
+    LaunchedEffect(activeHighlightSection, highlightNonce) {
+        val target = activeHighlightSection ?: return@LaunchedEffect
+        withFrameNanos {}
+        var targetY = sectionPositions[target]
+        var attempts = 0
+        while (targetY == null && attempts < 10) {
+            withFrameNanos {}
+            targetY = sectionPositions[target]
+            attempts++
+        }
+        if (targetY != null) {
+            val dest = (targetY - scrollTopOffsetPx).coerceAtLeast(0)
+            if (reducedMotion) {
+                scrollState.scrollTo(dest)
+            } else {
+                scrollState.animateScrollTo(dest)
+            }
+        }
+        highlightAlpha.snapTo(1f)
+        if (reducedMotion) {
+            kotlinx.coroutines.delay(900L)
+            highlightAlpha.snapTo(0f)
+        } else {
+            kotlinx.coroutines.delay(500L)
+            highlightAlpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 900)
+            )
+        }
+        activeHighlightSection = null
+    }
+
+    BackHandler(enabled = showSearch) {
+        closeSearch()
+    }
+
+    fun Modifier.sectionAnchor(sectionId: String): Modifier = this.onGloballyPositioned { coords ->
+        sectionPositions[sectionId] = (coords.positionInRoot().y - viewportTopInRoot[0] + scrollState.value).toInt()
+    }
+
+    fun Modifier.sectionHighlight(sectionId: String): Modifier = this.settingsSectionHighlight(
+        isHighlighted = activeHighlightSection == sectionId,
+        alphaProvider = { highlightAlpha.value },
+        primaryColor = highlightPrimaryColor
+    )
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("应用设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1) },
+                title = {
+                    AnimatedContent(
+                        targetState = showSearch,
+                        transitionSpec = {
+                            fadeIn(tween(if (reducedMotion) 0 else 180)) togetherWith
+                                fadeOut(tween(if (reducedMotion) 0 else 130))
+                        },
+                        label = "settingsSearch"
+                    ) { active ->
+                        if (active) {
+                            TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(searchFocus)
+                                    .onGloballyPositioned {
+                                        if (searchFocusPending) {
+                                            searchFocusPending = false
+                                            searchFocus.requestFocus()
+                                        }
+                                    },
+                                singleLine = true,
+                                placeholder = { Text("搜索设置（如：饼干、通知、备份）") },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                )
+                            )
+                        } else {
+                            Text("应用设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        if (showSearch) {
+                            closeSearch()
+                        } else {
+                            searchFocusPending = true
+                            searching = true
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                            contentDescription = if (showSearch) "关闭搜索" else "搜索设置"
                         )
                     }
                 },
@@ -300,24 +461,100 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
+                .onGloballyPositioned { coords ->
+                    viewportTopInRoot[0] = coords.positionInRoot().y
+                }
+                .verticalScroll(scrollState)
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-
-        AppearanceSettingsGroup(settings, viewModel)
-        SettingsGroupCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SettingsHeaderIcon(Icons.Outlined.Image, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("自定义顶栏背景", style = settingsItemStyle())
+        if (searchQuery.isNotBlank()) {
+            val matchedSections = remember(searchQuery) { matchSettingSectionMetas(searchQuery) }
+            SettingsGroupCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (matchedSections.isEmpty()) {
+                        Text(
+                            text = "没有找到相关设置",
+                            style = settingsDescriptionStyle(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "快速跳转",
+                            style = settingsDescriptionStyle(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            matchedSections.forEach { section ->
+                                val pillShape = RoundedCornerShape(10.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(pillShape)
+                                        .background(secondaryPageBackground(), pillShape)
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+                                            pillShape
+                                        )
+                                        .clickable(
+                                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            closeSearch()
+                                            triggerSectionJump(section.id)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = section.title,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
-                com.mioo.dao.ui.components.HeaderImageSettingsContent()
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.APPEARANCE)
+                .sectionHighlight(SettingsSectionIds.APPEARANCE),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            AppearanceSettingsGroup(settings, viewModel)
+            SettingsGroupCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SettingsHeaderIcon(Icons.Outlined.Image, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("自定义顶栏背景", style = settingsItemStyle())
+                    }
+                    com.mioo.dao.ui.components.HeaderImageSettingsContent()
+                }
             }
         }
         Text("阅读与排版", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingsGroupCard(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.KAOMOJI)
+                .sectionHighlight(SettingsSectionIds.KAOMOJI)
+        ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -343,7 +580,14 @@ fun SettingsScreen(
             }
             TextButton(onClick = { confirmResetQuickInputs = true }) { Text("恢复默认") }
         }
+        }
         SettingsGroupDivider()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.READING)
+                .sectionHighlight(SettingsSectionIds.READING)
+        ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text("板块列表预览行数", style = settingsItemStyle())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -603,6 +847,7 @@ fun SettingsScreen(
 
 
         }
+        }
         // 骰点高亮（跑团/安科）
         SettingsGroupCard(
             modifier = Modifier.fillMaxWidth(),
@@ -647,7 +892,10 @@ fun SettingsScreen(
         Text("发言与饼干", style = settingsDescriptionStyle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 1. Cookie Configuration (饼干设置)
         SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.COOKIES)
+                .sectionHighlight(SettingsSectionIds.COOKIES),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -922,7 +1170,10 @@ fun SettingsScreen(
         }
         // 7. Block Management (屏蔽管理)
         SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.BLOCKS)
+                .sectionHighlight(SettingsSectionIds.BLOCKS),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -937,7 +1188,13 @@ fun SettingsScreen(
                         style = settingsItemStyle()
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "管理已屏蔽的串、发言饼干 ID 与关键字，也可在板块或串内长按卡片直接屏蔽。",
+                    style = settingsDescriptionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     text = "已屏蔽的串",
@@ -1165,7 +1422,10 @@ fun SettingsScreen(
         }
 
         SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.SUBSCRIPTION)
+                .sectionHighlight(SettingsSectionIds.SUBSCRIPTION),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -1567,6 +1827,13 @@ fun SettingsScreen(
                 )
             }
         }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.GESTURES)
+                .sectionHighlight(SettingsSectionIds.GESTURES),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         SettingsGroupCard(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1594,6 +1861,7 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::setScrollTouchGuardEnabled
                 )
             }
+        }
         }
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Column(Modifier.fillMaxWidth().clickable { showUpdateChannelDialog = true }.padding(16.dp)) {
@@ -1671,6 +1939,13 @@ fun SettingsScreen(
                 )
             }
         }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.NETWORK)
+                .sectionHighlight(SettingsSectionIds.NETWORK),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         SettingsGroupCard(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(0.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("网络兼容模式", style = settingsItemStyle())
@@ -1698,7 +1973,11 @@ fun SettingsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onOpenNetworkDiagnostics)
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        onClick = onOpenNetworkDiagnostics
+                    )
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1720,6 +1999,7 @@ fun SettingsScreen(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
+        }
         }
         // 省流量模式开关
         SettingsGroupCard(
@@ -1764,7 +2044,10 @@ fun SettingsScreen(
         }
         // 备份与恢复
         SettingsGroupCard(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.BACKUP)
+                .sectionHighlight(SettingsSectionIds.BACKUP),
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -1796,7 +2079,15 @@ fun SettingsScreen(
                 }
             }
         }
-        OfflineSettingsGroup(settings, viewModel)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sectionAnchor(SettingsSectionIds.OFFLINE)
+                .sectionHighlight(SettingsSectionIds.OFFLINE),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OfflineSettingsGroup(settings, viewModel)
+        }
 
         Spacer(modifier = Modifier.height(100.dp))
     }
@@ -2128,5 +2419,30 @@ private fun MiooTonalApplyChip(
             fontWeight = FontWeight.Medium,
             color = textColor
         )
+    }
+}
+
+private fun Modifier.settingsSectionHighlight(
+    isHighlighted: Boolean,
+    alphaProvider: () -> Float,
+    primaryColor: Color
+): Modifier {
+    if (!isHighlighted) return this
+    return this.drawWithContent {
+        drawContent()
+        val a = alphaProvider().coerceIn(0f, 1f)
+        if (a > 0f) {
+            val radius = 12.dp.toPx()
+            val corner = CornerRadius(radius, radius)
+            drawRoundRect(
+                color = primaryColor.copy(alpha = 0.08f * a),
+                cornerRadius = corner
+            )
+            drawRoundRect(
+                color = primaryColor.copy(alpha = 0.55f * a),
+                cornerRadius = corner,
+                style = Stroke(width = 1.5.dp.toPx())
+            )
+        }
     }
 }
